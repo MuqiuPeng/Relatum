@@ -1,0 +1,8 @@
+[package]
+name = "relatum"
+version = "0.1.0"
+edition = "2021"
+description = "A relation-centered foundation for mathematical structures"
+license = "MIT"
+
+[dependencies]
