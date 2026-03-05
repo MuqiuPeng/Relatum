@@ -6,6 +6,35 @@ use std::fmt;
 use super::equation::Equation;
 use super::operation::{Operation, OperationId};
 
+/// Error from structure operations (e.g. declaring an operation with conflicting arity).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StructureError {
+    /// Same operation name declared again with a different arity.
+    OperationArityConflict {
+        name: String,
+        existing: usize,
+        requested: usize,
+    },
+}
+
+impl fmt::Display for StructureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StructureError::OperationArityConflict {
+                name,
+                existing,
+                requested,
+            } => write!(
+                f,
+                "operation '{}' already declared with arity {}, requested {}",
+                name, existing, requested
+            ),
+        }
+    }
+}
+
+impl std::error::Error for StructureError {}
+
 /// An algebraic structure described by its signature (operations) and axioms (equations).
 ///
 /// Operations are registered via [`declare_operation`](Structure::declare_operation), which
@@ -30,16 +59,30 @@ impl Structure {
         }
     }
 
-    /// Declares an operation by name and arity. If the name is already registered,
-    /// returns the existing [`OperationId`]; otherwise allocates a new id and returns it.
-    pub fn declare_operation(&mut self, name: &str, arity: usize) -> OperationId {
+    /// Declares an operation by name and arity.
+    /// If the name is not yet registered: creates it and returns `Ok(id)`.
+    /// If the name exists with the same arity: returns `Ok(existing_id)`.
+    /// If the name exists with a different arity: returns `Err(StructureError::OperationArityConflict)`.
+    pub fn declare_operation(
+        &mut self,
+        name: &str,
+        arity: usize,
+    ) -> Result<OperationId, StructureError> {
         if let Some(&id) = self.op_lookup.get(name) {
-            return id;
+            let existing_arity = self.operations[id.0 as usize].arity();
+            if existing_arity != arity {
+                return Err(StructureError::OperationArityConflict {
+                    name: name.to_string(),
+                    existing: existing_arity,
+                    requested: arity,
+                });
+            }
+            return Ok(id);
         }
         let id = OperationId(self.operations.len() as u32);
         self.operations.push(Operation::new(name, arity));
         self.op_lookup.insert(name.to_string(), id);
-        id
+        Ok(id)
     }
 
     /// Adds an equation and returns `self` for chaining.
@@ -148,9 +191,9 @@ mod tests {
         let (x, y, z) = (var("x"), var("y"), var("z"));
 
         let mut group = Structure::new("Group");
-        let mul = group.declare_operation("mul", 2);
-        let inv = group.declare_operation("inv", 1);
-        let e = group.declare_operation("e", 0);
+        let mul = group.declare_operation("mul", 2).unwrap();
+        let inv = group.declare_operation("inv", 1).unwrap();
+        let e = group.declare_operation("e", 0).unwrap();
 
         group = group
             .with_equation(Equation::new(
@@ -224,7 +267,7 @@ mod tests {
     #[test]
     fn test_validation_catches_invalid_op_id() {
         let mut s = Structure::new("Bad");
-        s.declare_operation("add", 2);
+        s.declare_operation("add", 2).unwrap();
         let bad_id = crate::algebra::operation::OperationId(99);
         s = s.with_equation(Equation::new(
             "oops",
@@ -238,7 +281,7 @@ mod tests {
     #[test]
     fn test_validation_catches_arity_mismatch() {
         let mut s = Structure::new("Bad");
-        let mul = s.declare_operation("mul", 2);
+        let mul = s.declare_operation("mul", 2).unwrap();
         s = s.with_equation(Equation::new(
             "oops",
             Term::app(mul, vec![Term::var("x")]), // arity 1, expected 2
@@ -246,5 +289,22 @@ mod tests {
         ));
         let errs = s.validate().unwrap_err();
         assert!(errs.iter().any(|e| e.contains("arity mismatch")));
+    }
+
+    #[test]
+    fn test_declare_operation_arity_conflict() {
+        let mut s = Structure::new("Test");
+        assert!(s.declare_operation("mul", 2).is_ok());
+        let err = s.declare_operation("mul", 1).unwrap_err();
+        assert_eq!(
+            err,
+            StructureError::OperationArityConflict {
+                name: "mul".to_string(),
+                existing: 2,
+                requested: 1,
+            }
+        );
+        // Same arity again is ok
+        assert!(s.declare_operation("mul", 2).is_ok());
     }
 }

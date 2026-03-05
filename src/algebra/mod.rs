@@ -29,9 +29,9 @@
 //! let (x, y, z) = (Term::var("x"), Term::var("y"), Term::var("z"));
 //!
 //! let mut group = Structure::new("Group");
-//! let mul = group.declare_operation("mul", 2);
-//! let inv = group.declare_operation("inv", 1);
-//! let e = group.declare_operation("e", 0);
+//! let mul = group.declare_operation("mul", 2).unwrap();
+//! let inv = group.declare_operation("inv", 1).unwrap();
+//! let e = group.declare_operation("e", 0).unwrap();
 //!
 //! group = group
 //!     .with_equation(Equation::new(
@@ -61,5 +61,5 @@ pub mod term;
 
 pub use equation::Equation;
 pub use operation::{Operation, OperationId};
-pub use structure::Structure;
+pub use structure::{Structure, StructureError};
 pub use term::Term;
