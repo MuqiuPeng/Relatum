@@ -2,6 +2,24 @@
 
 use std::fmt;
 
+/// Stable identifier for an operation within a structure/signature.
+/// Allocated by [`Structure::declare_operation`]; used in [`crate::algebra::Term`] instead of string names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct OperationId(pub u32);
+
+impl OperationId {
+    #[inline]
+    pub const fn id(self) -> u32 {
+        self.0
+    }
+}
+
+impl fmt::Display for OperationId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
 /// An algebraic operation defined by its name and arity.
 ///
 /// Examples:

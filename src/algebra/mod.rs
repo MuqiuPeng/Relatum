@@ -28,24 +28,26 @@
 //!
 //! let (x, y, z) = (Term::var("x"), Term::var("y"), Term::var("z"));
 //!
-//! let group = Structure::new("Group")
-//!     .with_operation(Operation::binary("mul"))
-//!     .with_operation(Operation::unary("inv"))
-//!     .with_operation(Operation::nullary("e"))
+//! let mut group = Structure::new("Group");
+//! let mul = group.declare_operation("mul", 2);
+//! let inv = group.declare_operation("inv", 1);
+//! let e = group.declare_operation("e", 0);
+//!
+//! group = group
 //!     .with_equation(Equation::new(
 //!         "associativity",
-//!         Term::app("mul", vec![
-//!             Term::app("mul", vec![x.clone(), y.clone()]),
+//!         Term::app(mul, vec![
+//!             Term::app(mul, vec![x.clone(), y.clone()]),
 //!             z.clone(),
 //!         ]),
-//!         Term::app("mul", vec![
+//!         Term::app(mul, vec![
 //!             x.clone(),
-//!             Term::app("mul", vec![y.clone(), z.clone()]),
+//!             Term::app(mul, vec![y.clone(), z.clone()]),
 //!         ]),
 //!     ))
 //!     .with_equation(Equation::new(
 //!         "right_identity",
-//!         Term::app("mul", vec![x.clone(), Term::constant("e")]),
+//!         Term::app(mul, vec![x.clone(), Term::constant(e)]),
 //!         x.clone(),
 //!     ));
 //!
@@ -58,6 +60,6 @@ pub mod structure;
 pub mod term;
 
 pub use equation::Equation;
-pub use operation::Operation;
+pub use operation::{Operation, OperationId};
 pub use structure::Structure;
 pub use term::Term;

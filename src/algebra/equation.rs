@@ -54,29 +54,32 @@ impl fmt::Display for Equation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::algebra::operation::OperationId;
 
     #[test]
     fn test_equation_creation() {
         let x = Term::var("x");
-        let e = Term::constant("e");
-        let lhs = Term::app("mul", vec![x.clone(), e]);
+        let mul = OperationId(0);
+        let e = OperationId(1);
+        let lhs = Term::app(mul, vec![x.clone(), Term::constant(e)]);
         let rhs = x;
         let eq = Equation::new("right_identity", lhs, rhs);
 
         assert_eq!(eq.name(), "right_identity");
-        assert_eq!(format!("{}", eq), "right_identity: mul(x, e) = x");
+        assert_eq!(format!("{}", eq), "right_identity: #0(x, #1) = x");
     }
 
     #[test]
     fn test_equation_equality() {
+        let mul = OperationId(0);
+        let e = OperationId(1);
         let mk = |name: &str| {
             Equation::new(
                 name,
-                Term::app("mul", vec![Term::var("x"), Term::constant("e")]),
+                Term::app(mul, vec![Term::var("x"), Term::constant(e)]),
                 Term::var("x"),
             )
         };
-        // Same name and content -> equal
         assert_eq!(mk("id"), mk("id"));
     }
 }

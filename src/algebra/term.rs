@@ -2,20 +2,25 @@
 
 use std::fmt;
 
+use crate::algebra::operation::OperationId;
+
 /// A symbolic expression node in an algebraic term tree.
 ///
 /// A `Term` is either:
 /// - A variable: `Var("x")`
-/// - An operation applied to arguments: `App { op: "mul", args: [x, y] }`
+/// - An operation applied to arguments: `App { op: OperationId, args: [x, y] }`
 ///
 /// Nullary operations (constants) are represented as `App` with an empty args list:
-/// `App { op: "e", args: [] }`
+/// `App { op: e_id, args: [] }`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
     /// A variable symbol (e.g., `x`, `y`, `z`).
     Var(String),
     /// An operation applied to zero or more argument terms.
-    App { op: String, args: Vec<Term> },
+    App {
+        op: OperationId,
+        args: Vec<Term>,
+    },
 }
 
 impl Term {
@@ -25,17 +30,14 @@ impl Term {
     }
 
     /// Creates an operation application term.
-    pub fn app(op: impl Into<String>, args: Vec<Term>) -> Self {
-        Term::App {
-            op: op.into(),
-            args,
-        }
+    pub fn app(op: OperationId, args: Vec<Term>) -> Self {
+        Term::App { op, args }
     }
 
     /// Creates a nullary constant term (operation with no arguments).
-    pub fn constant(name: impl Into<String>) -> Self {
+    pub fn constant(op: OperationId) -> Self {
         Term::App {
-            op: name.into(),
+            op,
             args: Vec::new(),
         }
     }
@@ -88,6 +90,7 @@ impl fmt::Display for Term {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::algebra::operation::OperationId;
 
     #[test]
     fn test_var() {
@@ -98,17 +101,18 @@ mod tests {
 
     #[test]
     fn test_constant() {
-        let e = Term::constant("e");
+        let e = Term::constant(OperationId(0));
         assert!(!e.is_var());
-        assert_eq!(format!("{}", e), "e");
+        assert_eq!(format!("{}", e), "#0");
     }
 
     #[test]
     fn test_app() {
         let x = Term::var("x");
         let y = Term::var("y");
-        let mul_xy = Term::app("mul", vec![x, y]);
-        assert_eq!(format!("{}", mul_xy), "mul(x, y)");
+        let mul = OperationId(0);
+        let mul_xy = Term::app(mul, vec![x, y]);
+        assert_eq!(format!("{}", mul_xy), "#0(x, y)");
     }
 
     #[test]
@@ -116,28 +120,36 @@ mod tests {
         let x = Term::var("x");
         let y = Term::var("y");
         let z = Term::var("z");
-        let inner = Term::app("mul", vec![x, y]);
-        let outer = Term::app("mul", vec![inner, z]);
-        assert_eq!(format!("{}", outer), "mul(mul(x, y), z)");
+        let mul = OperationId(0);
+        let inner = Term::app(mul, vec![x, y]);
+        let outer = Term::app(mul, vec![inner, z]);
+        assert_eq!(format!("{}", outer), "#0(#0(x, y), z)");
     }
 
     #[test]
     fn test_variables() {
         let x = Term::var("x");
         let y = Term::var("y");
-        let e = Term::constant("e");
-        let term = Term::app("mul", vec![
-            Term::app("inv", vec![x]),
-            Term::app("add", vec![y, e]),
-        ]);
+        let mul = OperationId(0);
+        let inv = OperationId(1);
+        let add = OperationId(2);
+        let e = OperationId(3);
+        let term = Term::app(
+            mul,
+            vec![
+                Term::app(inv, vec![x]),
+                Term::app(add, vec![y, Term::constant(e)]),
+            ],
+        );
         assert_eq!(term.variables(), vec!["x", "y"]);
     }
 
     #[test]
     fn test_equality() {
-        let a = Term::app("mul", vec![Term::var("x"), Term::var("y")]);
-        let b = Term::app("mul", vec![Term::var("x"), Term::var("y")]);
-        let c = Term::app("mul", vec![Term::var("y"), Term::var("x")]);
+        let mul = OperationId(0);
+        let a = Term::app(mul, vec![Term::var("x"), Term::var("y")]);
+        let b = Term::app(mul, vec![Term::var("x"), Term::var("y")]);
+        let c = Term::app(mul, vec![Term::var("y"), Term::var("x")]);
         assert_eq!(a, b);
         assert_ne!(a, c);
     }

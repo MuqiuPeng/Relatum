@@ -1,35 +1,22 @@
 //! Algebraic structures defined by operations and equations.
 
+use std::collections::HashMap;
 use std::fmt;
 
 use super::equation::Equation;
-use super::operation::Operation;
+use super::operation::{Operation, OperationId};
 
 /// An algebraic structure described by its signature (operations) and axioms (equations).
 ///
-/// A `Structure` is a purely declarative description — it says *what* a structure is,
-/// not how to compute within it.
-///
-/// # Example
-///
-/// ```
-/// use relatum::algebra::{Operation, Term, Equation, Structure};
-///
-/// let group = Structure::new("Group")
-///     .with_operation(Operation::binary("mul"))
-///     .with_operation(Operation::unary("inv"))
-///     .with_operation(Operation::nullary("e"))
-///     .with_equation(Equation::new(
-///         "right_identity",
-///         Term::app("mul", vec![Term::var("x"), Term::constant("e")]),
-///         Term::var("x"),
-///     ));
-/// assert_eq!(group.operations().len(), 3);
-/// ```
+/// Operations are registered via [`declare_operation`](Structure::declare_operation), which
+/// returns an [`OperationId`] for use in [`Term::app`] and [`Term::constant`].
 #[derive(Debug, Clone)]
 pub struct Structure {
     name: String,
+    /// operations[id.0 as usize] is the operation for that id
     operations: Vec<Operation>,
+    /// name -> OperationId for lookup and deduplication
+    op_lookup: HashMap<String, OperationId>,
     equations: Vec<Equation>,
 }
 
@@ -38,14 +25,21 @@ impl Structure {
         Structure {
             name: name.into(),
             operations: Vec::new(),
+            op_lookup: HashMap::new(),
             equations: Vec::new(),
         }
     }
 
-    /// Adds an operation and returns `self` for chaining.
-    pub fn with_operation(mut self, op: Operation) -> Self {
-        self.operations.push(op);
-        self
+    /// Declares an operation by name and arity. If the name is already registered,
+    /// returns the existing [`OperationId`]; otherwise allocates a new id and returns it.
+    pub fn declare_operation(&mut self, name: &str, arity: usize) -> OperationId {
+        if let Some(&id) = self.op_lookup.get(name) {
+            return id;
+        }
+        let id = OperationId(self.operations.len() as u32);
+        self.operations.push(Operation::new(name, arity));
+        self.op_lookup.insert(name.to_string(), id);
+        id
     }
 
     /// Adds an equation and returns `self` for chaining.
@@ -66,13 +60,23 @@ impl Structure {
         &self.equations
     }
 
-    /// Finds an operation by name.
-    pub fn find_operation(&self, name: &str) -> Option<&Operation> {
-        self.operations.iter().find(|op| op.name() == name)
+    /// Returns the operation for the given id, if valid.
+    pub fn get_operation(&self, id: OperationId) -> Option<&Operation> {
+        self.operations.get(id.0 as usize)
     }
 
-    /// Checks that every operation referenced in equations is declared,
-    /// and that argument counts match declared arities.
+    /// Finds an operation by name, returning its id.
+    pub fn find_operation_id(&self, name: &str) -> Option<OperationId> {
+        self.op_lookup.get(name).copied()
+    }
+
+    /// Finds an operation by name.
+    pub fn find_operation(&self, name: &str) -> Option<&Operation> {
+        self.find_operation_id(name)
+            .and_then(|id| self.get_operation(id))
+    }
+
+    /// Checks that every operation id in equations is valid and arities match.
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
@@ -94,9 +98,9 @@ impl Structure {
         match term {
             Term::Var(_) => {}
             Term::App { op, args } => {
-                match self.find_operation(op) {
+                match self.get_operation(*op) {
                     None => {
-                        errors.push(format!("undeclared operation: {}", op));
+                        errors.push(format!("invalid operation id: {}", op.0));
                     }
                     Some(decl) if decl.arity() != args.len() => {
                         errors.push(format!(
@@ -136,61 +140,57 @@ mod tests {
     use super::*;
     use crate::algebra::term::Term;
 
-    // ── helpers ──────────────────────────────────────────────
-
     fn var(name: &str) -> Term {
         Term::var(name)
-    }
-
-    fn mul(a: Term, b: Term) -> Term {
-        Term::app("mul", vec![a, b])
-    }
-
-    fn inv(a: Term) -> Term {
-        Term::app("inv", vec![a])
-    }
-
-    fn e() -> Term {
-        Term::constant("e")
     }
 
     fn build_group() -> Structure {
         let (x, y, z) = (var("x"), var("y"), var("z"));
 
-        Structure::new("Group")
-            .with_operation(Operation::binary("mul"))
-            .with_operation(Operation::unary("inv"))
-            .with_operation(Operation::nullary("e"))
-            // associativity: mul(mul(x,y),z) = mul(x,mul(y,z))
+        let mut group = Structure::new("Group");
+        let mul = group.declare_operation("mul", 2);
+        let inv = group.declare_operation("inv", 1);
+        let e = group.declare_operation("e", 0);
+
+        group = group
             .with_equation(Equation::new(
                 "associativity",
-                mul(mul(x.clone(), y.clone()), z.clone()),
-                mul(x.clone(), mul(y.clone(), z.clone())),
+                Term::app(
+                    mul,
+                    vec![
+                        Term::app(mul, vec![x.clone(), y.clone()]),
+                        z.clone(),
+                    ],
+                ),
+                Term::app(
+                    mul,
+                    vec![
+                        x.clone(),
+                        Term::app(mul, vec![y.clone(), z.clone()]),
+                    ],
+                ),
             ))
-            // right identity: mul(x, e) = x
             .with_equation(Equation::new(
                 "right_identity",
-                mul(x.clone(), e()),
+                Term::app(mul, vec![x.clone(), Term::constant(e)]),
                 x.clone(),
             ))
-            // left identity: mul(e, x) = x
             .with_equation(Equation::new(
                 "left_identity",
-                mul(e(), x.clone()),
+                Term::app(mul, vec![Term::constant(e), x.clone()]),
                 x.clone(),
             ))
-            // right inverse: mul(x, inv(x)) = e
             .with_equation(Equation::new(
                 "right_inverse",
-                mul(x.clone(), inv(x.clone())),
-                e(),
+                Term::app(mul, vec![x.clone(), Term::app(inv, vec![x.clone()])]),
+                Term::constant(e),
             ))
-            // left inverse: mul(inv(x), x) = e
             .with_equation(Equation::new(
                 "left_inverse",
-                mul(inv(x.clone()), x.clone()),
-                e(),
-            ))
+                Term::app(mul, vec![Term::app(inv, vec![x.clone()]), x.clone()]),
+                Term::constant(e),
+            ));
+        group
     }
 
     // ── tests ───────────────────────────────────────────────
@@ -222,27 +222,28 @@ mod tests {
     }
 
     #[test]
-    fn test_validation_catches_undeclared_op() {
-        let s = Structure::new("Bad")
-            .with_operation(Operation::binary("add"))
-            .with_equation(Equation::new(
-                "oops",
-                Term::app("mul", vec![Term::var("x"), Term::var("y")]),
-                Term::var("x"),
-            ));
+    fn test_validation_catches_invalid_op_id() {
+        let mut s = Structure::new("Bad");
+        s.declare_operation("add", 2);
+        let bad_id = crate::algebra::operation::OperationId(99);
+        s = s.with_equation(Equation::new(
+            "oops",
+            Term::app(bad_id, vec![Term::var("x"), Term::var("y")]),
+            Term::var("x"),
+        ));
         let errs = s.validate().unwrap_err();
-        assert!(errs.iter().any(|e| e.contains("undeclared operation: mul")));
+        assert!(errs.iter().any(|e| e.contains("invalid operation id")));
     }
 
     #[test]
     fn test_validation_catches_arity_mismatch() {
-        let s = Structure::new("Bad")
-            .with_operation(Operation::binary("mul"))
-            .with_equation(Equation::new(
-                "oops",
-                Term::app("mul", vec![Term::var("x")]), // arity 1, expected 2
-                Term::var("x"),
-            ));
+        let mut s = Structure::new("Bad");
+        let mul = s.declare_operation("mul", 2);
+        s = s.with_equation(Equation::new(
+            "oops",
+            Term::app(mul, vec![Term::var("x")]), // arity 1, expected 2
+            Term::var("x"),
+        ));
         let errs = s.validate().unwrap_err();
         assert!(errs.iter().any(|e| e.contains("arity mismatch")));
     }
