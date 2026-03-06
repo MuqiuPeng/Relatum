@@ -9,31 +9,38 @@
 //!   equations (relations) that their operations must satisfy.
 //! - **Declarative only**: this layer describes *what* a structure is,
 //!   it does not perform computation or inference.
-//! - **Extensible foundation**: designed to support future layers like
-//!   rewrite engines, e-graphs, or symbolic reasoning.
+//! - **Global registry**: all operations live in a shared [`OpRegistry`],
+//!   so that multiple structures can coexist and interact with globally
+//!   unique [`OperationId`]s.
+//! - **Separation of concerns**: the registry owns operation identity;
+//!   structures are pure axiom containers.
 //!
 //! # Core types
 //!
 //! | Type | Role |
 //! |------|------|
-//! | [`Operation`] | Named operator with fixed arity (e.g., `mul/2`, `inv/1`, `e/0`) |
+//! | [`OpRegistry`] | Global operation registry — allocates unique [`OperationId`]s |
+//! | [`Operation`] | Named operator with arity (e.g., `mul/2`, `inv/1`, `e/0`) |
 //! | [`Term`] | Symbolic expression tree (variables, constants, nested applications) |
 //! | [`Equation`] | Axiom asserting two terms are equal (e.g., associativity) |
-//! | [`Structure`] | A complete algebraic structure: operations + equations |
+//! | [`Structure`] | A named set of axioms referencing globally-registered operations |
 //!
 //! # Example: defining a group
 //!
 //! ```
 //! use relatum::algebra::*;
 //!
+//! let mut reg = OpRegistry::new();
+//!
+//! // Operations are declared in the global registry
+//! let mul = reg.declare_operation("mul", 2).unwrap();
+//! let inv = reg.declare_operation("inv", 1).unwrap();
+//! let e   = reg.declare_operation("e", 0).unwrap();
+//!
 //! let (x, y, z) = (Term::var("x"), Term::var("y"), Term::var("z"));
 //!
-//! let mut group = Structure::new("Group");
-//! let mul = group.declare_operation("mul", 2).unwrap();
-//! let inv = group.declare_operation("inv", 1).unwrap();
-//! let e = group.declare_operation("e", 0).unwrap();
-//!
-//! group = group
+//! // Structure is a pure axiom container
+//! let group = Structure::new("Group")
 //!     .with_equation(Equation::new(
 //!         "associativity",
 //!         Term::app(mul, vec![
@@ -51,16 +58,22 @@
 //!         x.clone(),
 //!     ));
 //!
-//! assert!(group.validate().is_ok());
+//! assert!(group.validate(&reg).is_ok());
 //! ```
 
 pub mod builders;
+pub mod closure;
 pub mod equation;
 pub mod operation;
+pub mod parser;
+pub mod registry;
 pub mod structure;
 pub mod term;
 
+pub use closure::{ClosureEngine, ClosureResult, DerivedCategory};
 pub use equation::Equation;
-pub use operation::{Operation, OperationId};
-pub use structure::{Structure, StructureError};
+pub use operation::{Arity, Operation, OperationId};
+pub use parser::Parser;
+pub use registry::{OpRegistry, RegistryError};
+pub use structure::Structure;
 pub use term::Term;

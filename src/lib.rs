@@ -1,50 +1,30 @@
 //! # Relatum
 //!
-//! A relation-centered foundation for mathematical structures.
+//! Equational closure engine for algebraic structures.
 //!
-//! ## Philosophy
+//! Relatum lets you define algebraic structures (groups, rings, etc.) by their
+//! operations and equations, then computes equational closure over ground facts.
 //!
-//! Traditional systems define objects first, then relations between them.
-//! Relatum inverts this: **relations are the fundamental building blocks**,
-//! and objects (nodes) are simply positions within the relational structure.
-//!
-//! ## Core Concepts
-//!
-//! - **Node**: A position in the relational network, identified by an integer ID.
-//!   Nodes have no inherent properties - their meaning emerges from relations.
-//!
-//! - **Relation**: A directed connection between two nodes. This is the most
-//!   basic structural element in the system.
-//!
-//! - **Network**: A collection of nodes and relations, with efficient indexing
-//!   for traversal in both directions.
-//!
-//! ## Example
+//! ## Quick start
 //!
 //! ```rust
-//! use relatum::{Network, Node, Relation};
+//! use relatum::algebra::{builders, ClosureEngine, Equation, OpRegistry, Parser, Term};
 //!
-//! // Create a new relational network
-//! let mut net = Network::new();
+//! // Create a shared registry and pick a structure
+//! let mut reg = OpRegistry::new();
+//! let monoid = builders::monoid(&mut reg).unwrap();
 //!
-//! // Create nodes (positions in the network)
-//! let a = net.create_node();
-//! let b = net.create_node();
-//! let c = net.create_node();
+//! // Parse a fact against the registry, then hand it to the engine
+//! let fact = Parser::new(&reg).parse_equation("seed", "a = a").unwrap();
+//! let mut engine = ClosureEngine::new(reg);
+//! engine.add_structure(&monoid);
+//! engine.add_fact(fact);
 //!
-//! // Establish relations between nodes
-//! net.relate(a, b);
-//! net.relate(b, c);
-//! net.relate(a, c);
-//!
-//! // Query the structure
-//! assert!(net.contains_relation(a, b));
-//! assert_eq!(net.out_degree(a), 2);
-//!
-//! // Traverse outgoing relations
-//! for target in net.outgoing(a) {
-//!     println!("a -> {}", target);
-//! }
+//! // Compute closure — derives mul(a, e) = a, mul(e, a) = a, etc.
+//! let result = engine.compute_closure(2);
+//! println!("{} equivalence classes, {} derived equations",
+//!     result.equivalence_classes.len(),
+//!     result.derived_equations.len());
 //! ```
 
 pub mod algebra;
@@ -53,10 +33,14 @@ pub mod network;
 pub mod node;
 pub mod relation;
 
-// Re-export core types at crate root
+// Primary exports: algebra and closure engine
+pub use algebra::{
+    builders, ClosureEngine, ClosureResult, Equation, OpRegistry, Parser, RegistryError, Structure,
+    Term,
+};
+
+// Graph layer (secondary)
+pub use iter::{NetworkIterExt, Path};
 pub use network::Network;
 pub use node::Node;
 pub use relation::Relation;
-
-// Re-export iterator utilities
-pub use iter::{NetworkIterExt, Path};

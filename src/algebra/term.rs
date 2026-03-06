@@ -44,6 +44,20 @@ impl Term {
         matches!(self, Term::Var(_))
     }
 
+    /// Returns the nesting depth of this term.
+    ///
+    /// - A variable has depth 1.
+    /// - A nullary constant has depth 1.
+    /// - `f(a₁, …, aₙ)` has depth `1 + max(depth(aᵢ))`.
+    pub fn depth(&self) -> usize {
+        match self {
+            Term::Var(_) => 1,
+            Term::App { args, .. } => {
+                1 + args.iter().map(|a| a.depth()).max().unwrap_or(0)
+            }
+        }
+    }
+
     /// Returns the set of variable names appearing in this term.
     pub fn variables(&self) -> Vec<&str> {
         let mut vars = Vec::new();

@@ -21,6 +21,10 @@ pub struct Equation {
     name: String,
     lhs: Term,
     rhs: Term,
+    /// Optional high-level category for grouping related axioms
+    /// (e.g. `"identity"`, `"additive_group"`).
+    /// Empty string means uncategorized.
+    category: String,
 }
 
 impl Equation {
@@ -29,11 +33,22 @@ impl Equation {
             name: name.into(),
             lhs,
             rhs,
+            category: String::new(),
         }
+    }
+
+    /// Sets the category for this equation, returning `self` for chaining.
+    pub fn with_category(mut self, category: impl Into<String>) -> Self {
+        self.category = category.into();
+        self
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn category(&self) -> &str {
+        &self.category
     }
 
     pub fn lhs(&self) -> &Term {
