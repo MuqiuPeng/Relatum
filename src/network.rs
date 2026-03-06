@@ -143,9 +143,9 @@ impl Network {
 
     /// Returns an iterator over all relations in the network.
     pub fn relations(&self) -> impl Iterator<Item = Relation> + '_ {
-        self.outgoing.iter().flat_map(|(&from, targets)| {
-            targets.iter().map(move |&to| Relation::new(from, to))
-        })
+        self.outgoing
+            .iter()
+            .flat_map(|(&from, targets)| targets.iter().map(move |&to| Relation::new(from, to)))
     }
 
     /// Returns the number of nodes in the network.

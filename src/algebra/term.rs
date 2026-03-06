@@ -17,10 +17,7 @@ pub enum Term {
     /// A variable symbol (e.g., `x`, `y`, `z`).
     Var(String),
     /// An operation applied to zero or more argument terms.
-    App {
-        op: OperationId,
-        args: Vec<Term>,
-    },
+    App { op: OperationId, args: Vec<Term> },
 }
 
 impl Term {

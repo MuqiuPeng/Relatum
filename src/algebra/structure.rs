@@ -131,6 +131,7 @@ impl Structure {
         if errors.is_empty() {
             Ok(())
         } else {
+            errors.sort();
             errors.dedup();
             Err(errors)
         }
@@ -200,17 +201,11 @@ mod tests {
                 "associativity",
                 Term::app(
                     mul,
-                    vec![
-                        Term::app(mul, vec![x.clone(), y.clone()]),
-                        z.clone(),
-                    ],
+                    vec![Term::app(mul, vec![x.clone(), y.clone()]), z.clone()],
                 ),
                 Term::app(
                     mul,
-                    vec![
-                        x.clone(),
-                        Term::app(mul, vec![y.clone(), z.clone()]),
-                    ],
+                    vec![x.clone(), Term::app(mul, vec![y.clone(), z.clone()])],
                 ),
             ))
             .with_equation(Equation::new(
