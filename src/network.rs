@@ -86,6 +86,7 @@ impl Network {
     /// Removes a relation between two nodes.
     ///
     /// Returns true if the relation existed and was removed.
+    /// Cleans up empty entry sets so the maps do not accumulate empty buckets.
     pub fn unrelate(&mut self, from: Node, to: Node) -> bool {
         let removed = self
             .outgoing
@@ -98,6 +99,12 @@ impl Network {
                 sources.remove(&from);
             }
             self.relation_count -= 1;
+            if self.outgoing.get(&from).map(|s| s.is_empty()).unwrap_or(false) {
+                self.outgoing.remove(&from);
+            }
+            if self.incoming.get(&to).map(|s| s.is_empty()).unwrap_or(false) {
+                self.incoming.remove(&to);
+            }
         }
 
         removed
@@ -174,12 +181,14 @@ impl Network {
     }
 
     /// Clears all nodes and relations from the network.
+    ///
+    /// Does not reset the next node id; nodes created after `clear()` will
+    /// continue from the previous counter, preserving global id uniqueness.
     pub fn clear(&mut self) {
         self.outgoing.clear();
         self.incoming.clear();
         self.nodes.clear();
         self.relation_count = 0;
-        // Note: we don't reset next_id to maintain ID uniqueness
     }
 }
 

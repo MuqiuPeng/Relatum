@@ -10,13 +10,12 @@ use crate::node::Node;
 /// A directed binary relation between two nodes.
 ///
 /// This is the fundamental structural element of the system.
-/// A relation connects a source node (`from`) to a target node (`to`).
+/// A relation connects a source node to a target node; use [`source`](Relation::source)
+/// and [`target`](Relation::target) for access.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Relation {
-    /// The source node of this relation.
-    pub from: Node,
-    /// The target node of this relation.
-    pub to: Node,
+    from: Node,
+    to: Node,
 }
 
 impl Relation {
