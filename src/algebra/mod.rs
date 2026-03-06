@@ -54,6 +54,7 @@
 //! assert!(group.validate().is_ok());
 //! ```
 
+pub mod builders;
 pub mod equation;
 pub mod operation;
 pub mod structure;

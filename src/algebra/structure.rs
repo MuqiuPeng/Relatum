@@ -91,6 +91,11 @@ impl Structure {
         self
     }
 
+    /// Adds an equation by mutable reference.
+    pub fn add_equation(&mut self, eq: Equation) {
+        self.equations.push(eq);
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
