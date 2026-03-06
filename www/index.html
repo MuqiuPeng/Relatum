@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relatum — Equational Closure Engine</title>
+<style>
+:root {
+  --bg: #1a1b26;
+  --surface: #24283b;
+  --surface2: #2f3347;
+  --border: #3b4261;
+  --text: #c0caf5;
+  --text-dim: #565f89;
+  --accent: #7aa2f7;
+  --accent2: #bb9af7;
+  --green: #9ece6a;
+  --orange: #e0af68;
+  --red: #f7768e;
+  --cyan: #7dcfff;
+  --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* -- header --------------------------------- */
+
+header {
+  text-align: center;
+  padding: 24px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+header h1 {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 2px;
+}
+
+header p {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* -- panels --------------------------------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--orange);
+}
+
+.panel-body {
+  padding: 14px 16px;
+}
+
+/* -- structure selector --------------------- */
+
+.struct-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.struct-bar .label {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.struct-bar button {
+  background: var(--surface2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  padding: 6px 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.struct-bar button:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+
+.struct-bar button.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+/* -- active structure tags ------------------- */
+
+.active-structs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.struct-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(122, 162, 247, 0.12);
+  border: 1px solid rgba(122, 162, 247, 0.3);
+  border-radius: 4px;
+  padding: 3px 6px 3px 4px;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.struct-tag-name {
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 1px 4px;
+  outline: none;
+  min-width: 40px;
+  width: auto;
+}
+
+.struct-tag-name:hover {
+  border-bottom-color: var(--accent);
+}
+
+.struct-tag-name:focus {
+  border-bottom-color: var(--accent);
+  background: rgba(122, 162, 247, 0.08);
+  border-radius: 2px;
+}
+
+.struct-tag .struct-tag-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  font-family: var(--mono);
+  transition: color 0.1s;
+}
+
+.struct-tag .struct-tag-remove:hover {
+  color: var(--red);
+}
+
+/* -- structure info badges ------------------ */
+
+.struct-info {
+  margin-top: 12px;
+  display: none;
+}
+
+.struct-info.visible { display: block; }
+
+.struct-section-name {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  margin: 10px 0 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+}
+
+.struct-section-name:first-child { margin-top: 0; }
+
+.op-badge {
+  display: inline-block;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 8px;
+  margin: 3px 4px 3px 0;
+  font-size: 13px;
+}
+
+.op-name { color: var(--cyan); }
+.op-arity { color: var(--text-dim); }
+.op-badge.user-op { border-color: var(--accent2); }
+.op-badge.user-op .op-name { color: var(--accent2); }
+
+.axiom-row {
+  margin: 4px 0;
+  padding: 3px 0 3px 12px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+}
+
+.axiom-name { color: var(--green); font-size: 11px; }
+.eq-equals { color: var(--orange); font-weight: 600; margin: 0 4px; }
+
+/* -- fact input ----------------------------- */
+
+.fact-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.fact-input-row input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.fact-input-row input:focus {
+  border-color: var(--accent);
+}
+
+.fact-input-row input::placeholder {
+  color: var(--text-dim);
+}
+
+.btn {
+  background: var(--surface2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  padding: 8px 18px;
+  font-family: var(--mono);
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.btn-danger {
+  color: var(--red);
+  border-color: transparent;
+  background: transparent;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.btn-danger:hover {
+  background: rgba(247,118,142,0.15);
+  border-color: rgba(247,118,142,0.3);
+}
+
+/* -- fact list ------------------------------ */
+
+.fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.fact-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  transition: border-color 0.15s;
+}
+
+.fact-item:hover {
+  border-color: var(--accent);
+}
+
+.fact-index {
+  color: var(--text-dim);
+  font-size: 11px;
+  min-width: 18px;
+}
+
+.fact-expr {
+  flex: 1;
+}
+
+.fact-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.error-msg {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+/* -- closure controls ----------------------- */
+
+.closure-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.closure-controls .label {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.closure-controls select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.closure-controls select:focus {
+  border-color: var(--accent);
+}
+
+/* -- result --------------------------------- */
+
+.stat-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.stat-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(122, 162, 247, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(122, 162, 247, 0.3);
+}
+
+.stat-badge.warn {
+  background: rgba(247,118,142,0.15);
+  color: var(--red);
+  border-color: rgba(247,118,142,0.3);
+}
+
+.section-title {
+  color: var(--orange);
+  font-weight: 600;
+  font-size: 13px;
+  margin: 14px 0 8px;
+}
+
+.section-title:first-child { margin-top: 0; }
+
+/* equivalence classes */
+
+.class-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 6px 0;
+}
+
+.class-label {
+  color: var(--accent2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.class-terms {
+  margin-top: 4px;
+}
+
+.class-term {
+  display: inline-block;
+  background: var(--surface2);
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin: 2px 4px 2px 0;
+  font-size: 13px;
+}
+
+/* category blocks */
+
+.cat-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.cat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.cat-header:hover {
+  background: var(--surface2);
+}
+
+.cat-rule {
+  color: var(--accent2);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.cat-count {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.cat-desc {
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.cat-body {
+  padding: 6px 12px 8px;
+}
+
+.cat-body.collapsed {
+  display: none;
+}
+
+.derived-row {
+  margin: 3px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--surface2);
+  font-size: 12px;
+}
+
+.more-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-left: 12px;
+}
+
+.result-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.chevron {
+  color: var(--text-dim);
+  font-size: 11px;
+  transition: transform 0.15s;
+}
+
+.chevron.open { transform: rotate(90deg); }
+
+/* -- help button in header ------------------ */
+
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  text-decoration: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  position: absolute;
+  right: 20px;
+  top: 28px;
+  transition: all 0.15s;
+}
+
+.help-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* -- preset dropdown ------------------------ */
+
+.preset-wrapper {
+  position: relative;
+}
+
+.preset-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--accent2);
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.preset-btn:hover {
+  background: var(--accent2);
+  color: var(--bg);
+  border-color: var(--accent2);
+}
+
+.preset-dropdown {
+  position: absolute;
+  top: 42px;
+  left: 0;
+  z-index: 50;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 420px;
+  max-height: 340px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  display: none;
+}
+
+.preset-dropdown.open { display: block; }
+
+.preset-dropdown-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--orange);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.preset-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.preset-item:last-child { border-bottom: none; }
+
+.preset-item:hover {
+  background: var(--surface2);
+}
+
+.preset-formula {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.preset-desc {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 2px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header style="position:relative">
+    <h1>RELATUM</h1>
+    <p>equational closure engine</p>
+    <a href="doc.html" class="help-btn" title="Documentation">?</a>
+  </header>
+
+  <!-- Structure Selector -->
+  <div class="panel">
+    <div class="panel-header">Structures</div>
+    <div class="panel-body">
+      <div class="struct-bar">
+        <span class="label">Add:</span>
+        <button onclick="addStructure('semigroup')">Semigroup</button>
+        <button onclick="addStructure('monoid')">Monoid</button>
+        <button onclick="addStructure('group')">Group</button>
+        <button onclick="addStructure('ring')">Ring</button>
+        <button onclick="addStructure('empty')">Empty</button>
+      </div>
+      <div id="active-structs" class="active-structs"></div>
+      <div id="op-input-area" class="op-input-area" style="display:none">
+        <div class="fact-input-row" style="margin-top:10px">
+          <input type="text" id="op-input" placeholder="e.g. f/2, zero/0, neg/1"
+                 autocomplete="off" spellcheck="false">
+          <button class="btn" onclick="addOperation()">Add Op</button>
+        </div>
+        <div id="op-error"></div>
+      </div>
+      <div id="struct-info" class="struct-info"></div>
+    </div>
+  </div>
+
+  <!-- Facts -->
+  <div class="panel">
+    <div class="panel-header">
+      <span>Facts</span>
+      <button class="btn-danger" onclick="clearFacts()" title="Clear all facts">clear all</button>
+    </div>
+    <div class="panel-body">
+      <div class="fact-input-row">
+        <div class="preset-wrapper">
+          <button class="preset-btn" id="preset-btn" onclick="togglePresets()" disabled title="Insert preset formula">+</button>
+          <div class="preset-dropdown" id="preset-dropdown"></div>
+        </div>
+        <input type="text" id="fact-input" placeholder="e.g. mul(a, b) = mul(b, a)"
+               autocomplete="off" spellcheck="false" disabled>
+        <button class="btn" id="add-fact-btn" onclick="addFact()" disabled>Add</button>
+      </div>
+      <div id="fact-error"></div>
+      <div id="fact-list" class="fact-list">
+        <div class="fact-empty">Add a structure first, then enter ground equations.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Closure -->
+  <div class="panel">
+    <div class="panel-header">Closure</div>
+    <div class="panel-body">
+      <div class="closure-controls">
+        <span class="label">Rounds:</span>
+        <select id="rounds-select">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
+        <button class="btn btn-primary" id="compute-btn" onclick="runClosure()" disabled>
+          Compute Closure
+        </button>
+        <span id="compute-time" class="label"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="panel" id="result-panel" style="display:none">
+    <div class="panel-header">Result</div>
+    <div class="panel-body" id="result-body"></div>
+  </div>
+</div>
+
+<script>
+// ===============================================================
+//  Operation Registry (global, shared across structures)
+// ===============================================================
+
+class OpRegistry {
+  constructor() {
+    this._ops = [];       // [{ name, arity, userDefined }]
+    this._lookup = {};    // name -> index
+  }
+
+  declare(name, arity, userDefined) {
+    if (name in this._lookup) {
+      const existing = this._ops[this._lookup[name]];
+      if (existing.arity !== arity) {
+        throw new Error(`Operation '${name}' already declared with arity ${existing.arity}, requested ${arity}`);
+      }
+      return existing;
+    }
+    const op = { name, arity, userDefined: !!userDefined };
+    this._lookup[name] = this._ops.length;
+    this._ops.push(op);
+    return op;
+  }
+
+  get(name) { return this._ops[this._lookup[name]] || null; }
+  has(name) { return name in this._lookup; }
+  operations() { return this._ops; }
+  opNames() { return this._ops.map(o => o.name); }
+  size() { return this._ops.length; }
+
+  clear() { this._ops = []; this._lookup = {}; }
+}
+
+const registry = new OpRegistry();
+
+// ===============================================================
+//  Algebraic Structure Blueprints (pure data, no registry calls)
+// ===============================================================
+
+const BLUEPRINTS = {
+  semigroup: () => ({
+    name: "Semigroup",
+    ops: [{ name: "mul", arity: 2 }],
+    equations: [
+      { name: "mul_associativity", category: "associativity",
+        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" }
+    ]
+  }),
+  monoid: () => ({
+    name: "Monoid",
+    ops: [{ name: "mul", arity: 2 }, { name: "e", arity: 0 }],
+    equations: [
+      { name: "mul_associativity", category: "associativity",
+        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" },
+      { name: "mul_left_identity", category: "identity",
+        lhs: "mul(e, x)", rhs: "x" },
+      { name: "mul_right_identity", category: "identity",
+        lhs: "mul(x, e)", rhs: "x" }
+    ]
+  }),
+  group: () => ({
+    name: "Group",
+    ops: [{ name: "mul", arity: 2 }, { name: "e", arity: 0 }, { name: "inv", arity: 1 }],
+    equations: [
+      { name: "mul_associativity", category: "associativity",
+        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" },
+      { name: "mul_left_identity", category: "identity",
+        lhs: "mul(e, x)", rhs: "x" },
+      { name: "mul_right_identity", category: "identity",
+        lhs: "mul(x, e)", rhs: "x" },
+      { name: "mul_left_inverse", category: "inverse",
+        lhs: "mul(inv(x), x)", rhs: "e" },
+      { name: "mul_right_inverse", category: "inverse",
+        lhs: "mul(x, inv(x))", rhs: "e" }
+    ]
+  }),
+  ring: () => ({
+    name: "Ring",
+    ops: [{ name: "add", arity: 2 }, { name: "zero", arity: 0 },
+          { name: "neg", arity: 1 }, { name: "mul", arity: 2 },
+          { name: "one", arity: 0 }],
+    equations: [
+      { name: "add_associativity", category: "additive_group",
+        lhs: "add(add(x, y), z)", rhs: "add(x, add(y, z))" },
+      { name: "add_left_identity", category: "additive_group",
+        lhs: "add(zero, x)", rhs: "x" },
+      { name: "add_right_identity", category: "additive_group",
+        lhs: "add(x, zero)", rhs: "x" },
+      { name: "add_left_inverse", category: "additive_group",
+        lhs: "add(neg(x), x)", rhs: "zero" },
+      { name: "add_right_inverse", category: "additive_group",
+        lhs: "add(x, neg(x))", rhs: "zero" },
+      { name: "add_commutativity", category: "additive_group",
+        lhs: "add(x, y)", rhs: "add(y, x)" },
+      { name: "mul_associativity", category: "multiplicative_monoid",
+        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" },
+      { name: "mul_left_identity", category: "multiplicative_monoid",
+        lhs: "mul(one, x)", rhs: "x" },
+      { name: "mul_right_identity", category: "multiplicative_monoid",
+        lhs: "mul(x, one)", rhs: "x" },
+      { name: "left_distributivity", category: "distributivity",
+        lhs: "mul(x, add(y, z))", rhs: "add(mul(x, y), mul(x, z))" },
+      { name: "right_distributivity", category: "distributivity",
+        lhs: "mul(add(x, y), z)", rhs: "add(mul(x, z), mul(y, z))" }
+    ]
+  }),
+  empty: () => ({
+    name: "Custom",
+    ops: [],
+    equations: []
+  }),
+};
+
+// Rewrite an axiom string replacing plain op names with namespaced versions.
+// Sort by length desc to avoid partial matches (e.g. "neg" before "e").
+function nsRewriteAxiom(str, opMap) {
+  const sorted = Object.keys(opMap).sort((a, b) => b.length - a.length);
+  for (const plain of sorted) {
+    str = str.replace(new RegExp('\\b' + plain + '\\b', 'g'), opMap[plain]);
+  }
+  return str;
+}
+
+// ===============================================================
+//  Term Parser
+// ===============================================================
+
+// autoRegister: if true, unknown id(...) patterns are registered as new ops in the global registry
+function parseTerm(input, autoRegister) {
+  let pos = 0;
+
+  function skipWS() { while (pos < input.length && input[pos] === ' ') pos++; }
+
+  function readIdent() {
+    skipWS();
+    const start = pos;
+    while (pos < input.length && /[a-zA-Z0-9_:]/.test(input[pos])) pos++;
+    return pos > start ? input.slice(start, pos) : null;
+  }
+
+  function parseSingle() {
+    const id = readIdent();
+    if (!id) throw new Error(`Expected identifier at position ${pos}`);
+    skipWS();
+    if (pos < input.length && input[pos] === '(') {
+      pos++;
+      const args = [];
+      skipWS();
+      if (pos < input.length && input[pos] !== ')') {
+        args.push(parseSingle());
+        while (true) {
+          skipWS();
+          if (pos < input.length && input[pos] === ')') break;
+          if (input[pos] !== ',') throw new Error(`Expected ',' or ')' at position ${pos}`);
+          pos++;
+          args.push(parseSingle());
+        }
+      }
+      pos++;
+      // Auto-register unknown operation in the global registry
+      const existing = registry.get(id);
+      if (!existing) {
+        if (!autoRegister) throw new Error(`Unknown operation: ${id}`);
+        registry.declare(id, args.length, true);
+      } else if (existing.arity !== args.length) {
+        throw new Error(`${id} expects ${existing.arity} args, got ${args.length}`);
+      }
+      return { type: 'app', op: id, args };
+    }
+    const existing = registry.get(id);
+    if (existing && existing.arity === 0) {
+      return { type: 'app', op: id, args: [] };
+    }
+    return { type: 'var', name: id };
+  }
+
+  const result = parseSingle();
+  skipWS();
+  if (pos < input.length) throw new Error(`Unexpected character at position ${pos}`);
+  return result;
+}
+
+function parseEquation(input, autoRegister) {
+  let depth = 0, eqIdx = -1;
+  for (let i = 0; i < input.length; i++) {
+    if (input[i] === '(') depth++;
+    else if (input[i] === ')') depth--;
+    else if (input[i] === '=' && depth === 0) { eqIdx = i; break; }
+  }
+  if (eqIdx === -1) throw new Error("Expected '=' in equation");
+  const lhs = parseTerm(input.slice(0, eqIdx).trim(), autoRegister);
+  const rhs = parseTerm(input.slice(eqIdx + 1).trim(), autoRegister);
+  return { lhs, rhs };
+}
+
+// ===============================================================
+//  Closure Engine
+// ===============================================================
+
+const MAX_UNIVERSE = 500;
+const MAX_DERIVED = 200;
+const MAX_SUBS_PER_AXIOM = 2000;
+const MAX_DEPTH = 8;
+
+// ── Term helpers ──────────────────────────────────────────────
+
+function termDepth(t) {
+  if (t.type === 'var') return 1;
+  return 1 + (t.args.length > 0 ? Math.max(...t.args.map(termDepth)) : 0);
+}
+
+// ── Expanding axiom detection ─────────────────────────────────
+
+function properSubterms(term) {
+  const out = [];
+  if (term.type === 'app') {
+    for (const a of term.args) collectAllSubterms(a, out);
+  }
+  return out;
+}
+
+function collectAllSubterms(term, out) {
+  out.push(term);
+  if (term.type === 'app') {
+    for (const a of term.args) collectAllSubterms(a, out);
+  }
+}
+
+function patternMatches(pattern, term) {
+  return patternMatchesInner(pattern, term, {});
+}
+
+function patternMatchesInner(pattern, term, bindings) {
+  if (pattern.type === 'var') {
+    if (pattern.name in bindings) {
+      return termKey(bindings[pattern.name]) === termKey(term);
+    }
+    bindings[pattern.name] = term;
+    return true;
+  }
+  if (term.type !== 'app') return false;
+  if (pattern.op !== term.op || pattern.args.length !== term.args.length) return false;
+  // Clone bindings for backtracking safety (simple approach)
+  const snap = { ...bindings };
+  for (let i = 0; i < pattern.args.length; i++) {
+    if (!patternMatchesInner(pattern.args[i], term.args[i], bindings)) {
+      Object.assign(bindings, snap);
+      return false;
+    }
+  }
+  return true;
+}
+
+function detectExpanding(parsedAxiom) {
+  const ld = termDepth(parsedAxiom.lhs);
+  const rd = termDepth(parsedAxiom.rhs);
+  if (ld === rd) return false;
+  const [pattern, host] = ld < rd ? [parsedAxiom.lhs, parsedAxiom.rhs] : [parsedAxiom.rhs, parsedAxiom.lhs];
+  if (pattern.type === 'var') return false;
+  return properSubterms(host).some(sub => patternMatches(pattern, sub));
+}
+
+const CATEGORY_DESCRIPTIONS = {
+  congruence: "Congruence closure: if ai = bi for all i, then f(a1..an) = f(b1..bn)",
+  associativity: "Associativity: (x * y) * z = x * (y * z)",
+  identity: "Identity: e * x = x, x * e = x",
+  inverse: "Inverse: x\u207B\u00B9 * x = e, x * x\u207B\u00B9 = e",
+  additive_group: "Additive abelian group: associativity, commutativity, identity, and inverse for addition",
+  multiplicative_monoid: "Multiplicative monoid: associativity and identity for multiplication",
+  distributivity: "Distributivity: multiplication distributes over addition",
+};
+
+function termKey(t) {
+  if (t._key) return t._key;
+  const k = t.type === 'var' ? `v:${t.name}` : `a:${t.op}(${t.args.map(termKey).join(',')})`;
+  t._key = k;
+  return k;
+}
+
+class UnionFind {
+  constructor() { this.parent = new Map(); this.rank = new Map(); }
+  makeSet(t) {
+    const k = termKey(t);
+    if (!this.parent.has(k)) { this.parent.set(k, k); this.rank.set(k, 0); }
+  }
+  find(t) {
+    let k = termKey(t);
+    const path = [];
+    while (true) {
+      const p = this.parent.get(k);
+      if (!p || p === k) break;
+      path.push(k);
+      k = p;
+    }
+    for (const n of path) this.parent.set(n, k);
+    return k;
+  }
+  union(a, b) {
+    const ra = this.find(a), rb = this.find(b);
+    if (ra === rb) return false;
+    const rka = this.rank.get(ra) || 0, rkb = this.rank.get(rb) || 0;
+    if (rka < rkb) this.parent.set(ra, rb);
+    else {
+      this.parent.set(rb, ra);
+      if (rka === rkb) this.rank.set(ra, rka + 1);
+    }
+    return true;
+  }
+}
+
+function collectSubterms(term, out) {
+  out.push(term);
+  if (term.type === 'app') for (const a of term.args) collectSubterms(a, out);
+}
+
+function addTerm(universe, uf, term) {
+  const subs = [];
+  collectSubterms(term, subs);
+  for (const t of subs) {
+    if (universe.size >= MAX_UNIVERSE) break;
+    const k = termKey(t);
+    if (!universe.has(k)) { universe.set(k, t); uf.makeSet(t); }
+  }
+}
+
+function collectVarNames(term, vars) {
+  if (term.type === 'var') vars.add(term.name);
+  else if (term.type === 'app') for (const a of term.args) collectVarNames(a, vars);
+}
+
+function substitute(term, sub) {
+  if (term.type === 'var') return sub[term.name] || term;
+  return { type: 'app', op: term.op, args: term.args.map(a => substitute(a, sub)) };
+}
+
+function* enumerateSubs(vars, terms) {
+  if (vars.length === 0) { yield {}; return; }
+  const v = vars[0], rest = vars.slice(1);
+  for (const t of terms) {
+    for (const s of enumerateSubs(rest, terms)) {
+      s[v] = t;
+      yield s;
+    }
+  }
+}
+
+function computeClosure(structure, facts, maxRounds) {
+  const uf = new UnionFind();
+  const universe = new Map();
+  const derived = [];
+  const catEqs = {};
+  const warnings = [];
+  let capped = false;
+
+  const parsedAxioms = structure.equations.map(axiom => {
+    const lhs = parseTerm(axiom.lhs, false);
+    const rhs = parseTerm(axiom.rhs, false);
+    const vars = new Set();
+    collectVarNames(lhs, vars);
+    collectVarNames(rhs, vars);
+    return { name: axiom.name, lhs, rhs, vars: [...vars].sort(), category: axiom.category || axiom.name };
+  });
+
+  // Static analysis: detect expanding axioms
+  const expandingSet = new Set();
+  for (const ax of parsedAxioms) {
+    if (detectExpanding(ax)) {
+      expandingSet.add(ax.name);
+      warnings.push(`Axiom "${ax.name}" is recursive (one side embeds in the other); depth capped at ${MAX_DEPTH}`);
+    }
+  }
+
+  for (const f of facts) { addTerm(universe, uf, f.lhs); addTerm(universe, uf, f.rhs); }
+  for (const f of facts) uf.union(f.lhs, f.rhs);
+
+  let stepsUsed = 0, deriveCount = 0;
+  let depthGrewRounds = 0;
+  let prevMaxDepth = 0;
+  for (const t of universe.values()) prevMaxDepth = Math.max(prevMaxDepth, termDepth(t));
+
+  for (let round = 0; round < maxRounds; round++) {
+    stepsUsed++;
+    let changed = false;
+    let depthCappedThisRound = false;
+    if (deriveCount >= MAX_DERIVED) { capped = true; break; }
+
+    // Congruence
+    const byOp = {};
+    for (const t of universe.values()) {
+      if (t.type === 'app') (byOp[t.op] = byOp[t.op] || []).push(t);
+    }
+    for (const terms of Object.values(byOp)) {
+      for (let i = 0; i < terms.length && !capped; i++) {
+        for (let j = i + 1; j < terms.length && !capped; j++) {
+          const ai = terms[i].args, aj = terms[j].args;
+          if (ai.length !== aj.length) continue;
+          if (ai.every((a, idx) => uf.find(a) === uf.find(aj[idx])) && uf.union(terms[i], terms[j])) {
+            deriveCount++;
+            const eq = { lhs: terms[i], rhs: terms[j] };
+            derived.push(eq);
+            (catEqs['congruence'] = catEqs['congruence'] || []).push(eq);
+            changed = true;
+            if (deriveCount >= MAX_DERIVED) capped = true;
+          }
+        }
+      }
+      if (capped) break;
+    }
+    if (capped) break;
+
+    // Axiom instantiation
+    const groundTerms = [...universe.values()];
+    for (const axiom of parsedAxioms) {
+      if (capped) break;
+      const isExpanding = expandingSet.has(axiom.name);
+
+      // For expanding axioms, only use shallow terms as substitution candidates
+      const candidates = isExpanding
+        ? groundTerms.filter(t => termDepth(t) < MAX_DEPTH - 1)
+        : groundTerms;
+
+      const numSubs = Math.pow(candidates.length, axiom.vars.length);
+      const pool = numSubs <= MAX_SUBS_PER_AXIOM
+        ? candidates
+        : candidates.slice(0, Math.floor(Math.pow(MAX_SUBS_PER_AXIOM, 1 / Math.max(axiom.vars.length, 1))));
+
+      for (const sub of enumerateSubs(axiom.vars, pool)) {
+        const lhs = substitute(axiom.lhs, sub);
+        const rhs = substitute(axiom.rhs, sub);
+
+        // Depth guard
+        if (termDepth(lhs) > MAX_DEPTH || termDepth(rhs) > MAX_DEPTH) {
+          depthCappedThisRound = true;
+          continue;
+        }
+
+        addTerm(universe, uf, lhs);
+        addTerm(universe, uf, rhs);
+        if (uf.union(lhs, rhs)) {
+          deriveCount++;
+          const eq = { lhs, rhs };
+          derived.push(eq);
+          (catEqs[axiom.category] = catEqs[axiom.category] || []).push(eq);
+          changed = true;
+          if (deriveCount >= MAX_DERIVED) { capped = true; break; }
+        }
+      }
+    }
+    if (capped) break;
+
+    // Depth-growth detection
+    let curMaxDepth = 0;
+    for (const t of universe.values()) curMaxDepth = Math.max(curMaxDepth, termDepth(t));
+    if (curMaxDepth > prevMaxDepth) depthGrewRounds++;
+    else depthGrewRounds = 0;
+    prevMaxDepth = curMaxDepth;
+
+    if (depthGrewRounds >= 3 && depthCappedThisRound) {
+      warnings.push(`Recursive expansion detected: term depth grew for ${depthGrewRounds} consecutive rounds (max depth ${curMaxDepth}); halting early`);
+      break;
+    }
+
+    if (!changed) break;
+  }
+
+  // Equivalence classes
+  const groups = {};
+  for (const t of universe.values()) {
+    const root = uf.find(t);
+    (groups[root] = groups[root] || []).push(t);
+  }
+  const classes = Object.values(groups).filter(c => c.length > 1);
+
+  // Categories
+  const categories = [];
+  if (catEqs['congruence']) {
+    categories.push({ rule: 'congruence', description: CATEGORY_DESCRIPTIONS['congruence'], equations: catEqs['congruence'] });
+  }
+  for (const key of Object.keys(catEqs).filter(k => k !== 'congruence').sort()) {
+    categories.push({ rule: key, description: CATEGORY_DESCRIPTIONS[key] || `Derived from: ${key}`, equations: catEqs[key] });
+  }
+
+  return { derived, categories, classes, stepsUsed, universeSize: universe.size, capped, warnings };
+}
+
+// ===============================================================
+//  State
+// ===============================================================
+
+const structures = new Map();  // name -> { name, equations }
+let facts = [];      // { lhs, rhs, raw }
+let lastResult = null;
+
+// ===============================================================
+//  Rendering helpers
+// ===============================================================
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatTerm(t) {
+  if (t.type === 'var') return t.name;
+  if (t.args.length === 0) return t.op;
+  return `${t.op}(${t.args.map(formatTerm).join(', ')})`;
+}
+
+const _hlRegexCache = {};
+function hlTerm(t) {
+  const s = typeof t === 'string' ? t : formatTerm(t);
+  let r = esc(s);
+  // Sort longest first so "Ring:mul" is matched before "Ring:one" wouldn't collide,
+  // but more importantly "Group:inv" before "Group:e" to avoid partial matches.
+  const ops = registry.opNames().slice().sort((a, b) => b.length - a.length);
+  for (const op of ops) {
+    if (!_hlRegexCache[op]) {
+      const escaped = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      _hlRegexCache[op] = new RegExp(`(?<![a-zA-Z0-9_:])${escaped}(?![a-zA-Z0-9_:])`, 'g');
+    }
+    r = r.replace(_hlRegexCache[op], `<span class="op-name">${op}</span>`);
+  }
+  return r;
+}
+
+// ===============================================================
+//  UI Actions
+// ===============================================================
+
+const factInput = document.getElementById('fact-input');
+const addFactBtn = document.getElementById('add-fact-btn');
+const factListEl = document.getElementById('fact-list');
+const factErrorEl = document.getElementById('fact-error');
+const computeBtn = document.getElementById('compute-btn');
+const structInfoEl = document.getElementById('struct-info');
+const resultPanel = document.getElementById('result-panel');
+const resultBody = document.getElementById('result-body');
+const computeTimeEl = document.getElementById('compute-time');
+
+function renderStructureInfo() {
+  if (structures.size === 0) {
+    structInfoEl.innerHTML = '';
+    structInfoEl.classList.remove('visible');
+    return;
+  }
+  let html = '<div style="margin-top:8px">';
+
+  // Global operations
+  const ops = registry.operations();
+  if (ops.length > 0) {
+    html += '<div style="margin-bottom:6px;color:var(--text-dim);font-size:12px">Operations</div>';
+    for (const op of ops) {
+      html += `<span class="op-badge${op.userDefined ? ' user-op' : ''}">` +
+              `<span class="op-name">${esc(op.name)}</span><span class="op-arity">/${op.arity}</span></span>`;
+    }
+  }
+
+  // Per-structure axioms
+  for (const [id, entry] of structures) {
+    const s = entry.structure;
+    if (!s || s.equations.length === 0) continue;
+    html += `<div class="struct-section-name">${esc(s.name)}</div>`;
+    for (const eq of s.equations) {
+      html += `<div class="axiom-row"><span class="axiom-name">${esc(eq.name)}</span> ` +
+              `${hlTerm(eq.lhs)}<span class="eq-equals">=</span>${hlTerm(eq.rhs)}</div>`;
+    }
+  }
+
+  html += '</div>';
+  structInfoEl.innerHTML = html;
+  structInfoEl.classList.add('visible');
+}
+
+let structIdCounter = 0;
+
+function rebuildRegistry() {
+  const userOps = registry.operations().filter(o => o.userDefined).map(o => ({ name: o.name, arity: o.arity }));
+  registry.clear();
+  // Clear highlight cache since op names change
+  for (const k in _hlRegexCache) delete _hlRegexCache[k];
+
+  for (const [id, entry] of structures) {
+    const bp = BLUEPRINTS[entry.builder]();
+    const prefix = entry.displayName;
+
+    // Build mapping: plain op name -> namespaced name
+    const opMap = {};
+    for (const op of bp.ops) {
+      const nsName = prefix + ':' + op.name;
+      registry.declare(nsName, op.arity);
+      opMap[op.name] = nsName;
+    }
+
+    // Rewrite axiom strings with namespaced op names
+    const equations = bp.equations.map(eq => ({
+      ...eq,
+      lhs: nsRewriteAxiom(eq.lhs, opMap),
+      rhs: nsRewriteAxiom(eq.rhs, opMap),
+    }));
+
+    entry.structure = { name: prefix, equations };
+  }
+
+  // Re-declare user-defined ops (these stay as-is, no namespace)
+  for (const op of userOps) {
+    try { registry.declare(op.name, op.arity, true); } catch (_) {}
+  }
+}
+
+function refreshUI() {
+  lastResult = null;
+  resultPanel.style.display = 'none';
+  computeTimeEl.textContent = '';
+
+  const hasStructures = structures.size > 0;
+
+  document.getElementById('op-input-area').style.display = hasStructures ? '' : 'none';
+  document.getElementById('op-error').textContent = '';
+
+  factInput.disabled = !hasStructures;
+  updateFactPlaceholder();
+  addFactBtn.disabled = !hasStructures;
+  presetBtn.disabled = !hasStructures;
+  computeBtn.disabled = !hasStructures || facts.length === 0;
+
+  // Disable buttons for already-added singular structures
+  document.querySelectorAll('.struct-bar button').forEach(b => {
+    const key = b.textContent.toLowerCase();
+    if (key === 'empty') return;
+    const alreadyAdded = [...structures.values()].some(e => e.builder === key);
+    b.classList.toggle('active', alreadyAdded);
+    b.disabled = alreadyAdded;
+  });
+
+  renderActiveTags();
+  renderStructureInfo();
+  renderFactList();
+  if (hasStructures) factInput.focus();
+}
+
+function addStructure(builder) {
+  if (builder !== 'empty') {
+    for (const entry of structures.values()) {
+      if (entry.builder === builder) return;
+    }
+  }
+  const id = ++structIdCounter;
+  const bp = BLUEPRINTS[builder]();
+  let displayName = bp.name;
+  // Ensure unique display name for Custom
+  if (builder === 'empty') {
+    const existingCustom = [...structures.values()].filter(e => e.builder === 'empty').length;
+    if (existingCustom > 0) displayName = 'Custom' + (existingCustom + 1);
+  }
+  structures.set(id, { builder, displayName, structure: null });
+  rebuildRegistry();
+  refreshUI();
+}
+
+function removeStructure(id) {
+  structures.delete(id);
+  rebuildRegistry();
+  refreshUI();
+}
+
+// Rewrite term tree op names when a structure is renamed
+function rewriteTermPrefix(term, oldPrefix, newPrefix) {
+  if (term.type === 'app') {
+    if (term.op.startsWith(oldPrefix + ':')) {
+      term.op = newPrefix + ':' + term.op.slice(oldPrefix.length + 1);
+    }
+    for (const arg of term.args) rewriteTermPrefix(arg, oldPrefix, newPrefix);
+    delete term._key; // invalidate memoized key
+  }
+}
+
+function renameStructure(id, newName) {
+  const entry = structures.get(id);
+  if (!entry) return;
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed === entry.displayName) return;
+  const oldPrefix = entry.displayName;
+  const newPrefix = trimmed;
+
+  // Rewrite all existing facts to use new prefix
+  for (const fact of facts) {
+    rewriteTermPrefix(fact.lhs, oldPrefix, newPrefix);
+    rewriteTermPrefix(fact.rhs, oldPrefix, newPrefix);
+    fact.raw = fact.raw.split(oldPrefix + ':').join(newPrefix + ':');
+  }
+
+  entry.displayName = newPrefix;
+  rebuildRegistry();
+  renderActiveTags();
+  renderStructureInfo();
+  renderFactList();
+}
+
+function renderActiveTags() {
+  const el = document.getElementById('active-structs');
+  if (structures.size === 0) { el.innerHTML = ''; return; }
+  let html = '';
+  for (const [id, entry] of structures) {
+    const name = entry.displayName;
+    html += `<span class="struct-tag">` +
+            `<input class="struct-tag-name" value="${esc(name)}" ` +
+            `onchange="renameStructure(${id}, this.value)" ` +
+            `oninput="this.size=Math.max(this.value.length,3)" ` +
+            `onkeydown="if(event.key==='Enter')this.blur()" ` +
+            `size="${Math.max(name.length, 3)}">` +
+            `<button class="struct-tag-remove" onclick="removeStructure(${id})" title="Remove">\u2715</button></span>`;
+  }
+  el.innerHTML = html;
+}
+
+function updateFactPlaceholder() {
+  if (structures.size === 0) return;
+  const ops = registry.operations();
+  if (ops.length === 0) {
+    factInput.placeholder = 'Define operations first, or type e.g. f(a, b) = g(a)';
+  } else {
+    // Show a compact example with the first few ops
+    const examples = ops.slice(0, 4).map(o =>
+      o.arity === 0 ? o.name : `${o.name}(${Array.from({length: o.arity}, (_, i) => String.fromCharCode(97 + i)).join(', ')})`
+    );
+    factInput.placeholder = examples.join('  ') + (ops.length > 4 ? '  \u2026' : '');
+  }
+}
+
+function addOperation() {
+  const opInput = document.getElementById('op-input');
+  const opError = document.getElementById('op-error');
+  const raw = opInput.value.trim();
+  if (!raw || structures.size === 0) return;
+  opError.textContent = '';
+
+  // Parse comma-separated entries like "f/2, zero/0, Struct:neg/1"
+  const entries = raw.split(',').map(s => s.trim()).filter(s => s);
+  const added = [];
+
+  for (const entry of entries) {
+    const m = entry.match(/^([a-zA-Z_][a-zA-Z0-9_:.]*)\/(\d+)$/);
+    if (!m) {
+      opError.innerHTML = `<span class="error-msg">Invalid format "${esc(entry)}" — use name/arity, e.g. f/2 or MyStruct:f/2</span>`;
+      return;
+    }
+    const name = m[1], arity = parseInt(m[2]);
+    const existing = registry.get(name);
+    if (existing) {
+      if (existing.arity !== arity) {
+        opError.innerHTML = `<span class="error-msg">"${esc(name)}" already exists with arity ${existing.arity}</span>`;
+        return;
+      }
+      continue;
+    }
+    registry.declare(name, arity, true);
+    added.push(`${name}/${arity}`);
+  }
+
+  opInput.value = '';
+  if (added.length > 0) {
+    renderStructureInfo();
+    updateFactPlaceholder();
+  }
+}
+
+function addFact() {
+  const raw = factInput.value.trim();
+  if (!raw || structures.size === 0) return;
+  factErrorEl.textContent = '';
+
+  try {
+    const opsBefore = registry.size();
+    const eq = parseEquation(raw, true);
+    facts.push({ lhs: eq.lhs, rhs: eq.rhs, raw });
+    factInput.value = '';
+    computeBtn.disabled = false;
+    lastResult = null;
+    resultPanel.style.display = 'none';
+    computeTimeEl.textContent = '';
+    // If new operations were auto-registered, refresh structure info
+    if (registry.size() > opsBefore) {
+      renderStructureInfo();
+    }
+    renderFactList();
+    factInput.focus();
+  } catch (e) {
+    factErrorEl.innerHTML = `<span class="error-msg">${esc(e.message)}</span>`;
+  }
+}
+
+function removeFact(index) {
+  facts.splice(index, 1);
+  computeBtn.disabled = facts.length === 0;
+  if (facts.length === 0) {
+    lastResult = null;
+    resultPanel.style.display = 'none';
+    computeTimeEl.textContent = '';
+  }
+  renderFactList();
+}
+
+function clearFacts() {
+  facts = [];
+  lastResult = null;
+  resultPanel.style.display = 'none';
+  computeBtn.disabled = true;
+  computeTimeEl.textContent = '';
+  renderFactList();
+}
+
+function renderFactList() {
+  if (facts.length === 0) {
+    factListEl.innerHTML = `<div class="fact-empty">${structures.size > 0
+      ? 'No facts yet. Add ground equations above.'
+      : 'Add a structure first, then enter ground equations.'}</div>`;
+    return;
+  }
+  let html = '';
+  for (let i = 0; i < facts.length; i++) {
+    html += `<div class="fact-item">` +
+            `<span class="fact-index">${i + 1}</span>` +
+            `<span class="fact-expr">${hlTerm(facts[i].lhs)}<span class="eq-equals">=</span>${hlTerm(facts[i].rhs)}</span>` +
+            `<button class="btn-danger" onclick="removeFact(${i})" title="Remove">\u2715</button>` +
+            `</div>`;
+  }
+  factListEl.innerHTML = html;
+}
+
+function mergedStructure() {
+  const allEqs = [];
+  const names = [];
+  for (const entry of structures.values()) {
+    if (!entry.structure) continue;
+    allEqs.push(...entry.structure.equations);
+    names.push(entry.structure.name);
+  }
+  return { name: names.join(' + '), equations: allEqs };
+}
+
+function runClosure() {
+  if (structures.size === 0 || facts.length === 0) return;
+  const rounds = parseInt(document.getElementById('rounds-select').value);
+
+  const t0 = performance.now();
+  lastResult = computeClosure(mergedStructure(), facts, rounds);
+  const elapsed = (performance.now() - t0).toFixed(1);
+  computeTimeEl.textContent = `${elapsed} ms`;
+
+  renderResult(lastResult);
+}
+
+function renderResult(result) {
+  let html = '';
+
+  // Warnings
+  if (result.warnings && result.warnings.length > 0) {
+    for (const w of result.warnings) {
+      html += `<div style="background:rgba(247,118,142,0.1);border:1px solid rgba(247,118,142,0.3);border-radius:4px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--red)">\u26A0 ${esc(w)}</div>`;
+    }
+  }
+
+  // Stats
+  html += '<div class="stat-badges">';
+  html += `<span class="stat-badge">${result.stepsUsed} rounds</span>`;
+  html += `<span class="stat-badge">${result.universeSize} terms</span>`;
+  html += `<span class="stat-badge">${result.derived.length} derived</span>`;
+  html += `<span class="stat-badge">${result.classes.length} classes</span>`;
+  if (result.capped) html += `<span class="stat-badge warn">capped at ${MAX_DERIVED}</span>`;
+  html += '</div>';
+
+  // Equivalence classes
+  if (result.classes.length > 0) {
+    html += '<div class="section-title">Equivalence Classes</div>';
+    const showClasses = Math.min(result.classes.length, 20);
+    for (let i = 0; i < showClasses; i++) {
+      const cls = result.classes[i];
+      html += `<div class="class-box">` +
+              `<span class="class-label">class ${i + 1} (${cls.length} terms)</span>` +
+              `<div class="class-terms">`;
+      const showTerms = Math.min(cls.length, 15);
+      for (let j = 0; j < showTerms; j++) {
+        html += `<span class="class-term">${hlTerm(cls[j])}</span>`;
+      }
+      if (cls.length > showTerms) {
+        html += `<span class="class-term" style="color:var(--text-dim)">+${cls.length - showTerms} more</span>`;
+      }
+      html += '</div></div>';
+    }
+    if (result.classes.length > showClasses) {
+      html += `<div class="more-hint">... and ${result.classes.length - showClasses} more classes</div>`;
+    }
+  } else {
+    html += '<div class="result-empty">No non-trivial equivalence classes.</div>';
+  }
+
+  // Categories
+  if (result.categories.length > 0) {
+    html += '<div class="section-title">Derived Equations by Category</div>';
+    for (let ci = 0; ci < result.categories.length; ci++) {
+      const cat = result.categories[ci];
+      const maxPerCat = 8;
+      const show = Math.min(cat.equations.length, maxPerCat);
+      html += `<div class="cat-block">` +
+              `<div class="cat-header" onclick="toggleCat(this)">` +
+              `<span><span class="cat-rule">${esc(cat.rule)}</span></span>` +
+              `<span><span class="cat-count">${cat.equations.length} equations</span> <span class="chevron open">\u25B6</span></span>` +
+              `</div>` +
+              `<div class="cat-desc">${esc(cat.description)}</div>` +
+              `<div class="cat-body">`;
+      for (let i = 0; i < show; i++) {
+        const d = cat.equations[i];
+        html += `<div class="derived-row">${hlTerm(d.lhs)}<span class="eq-equals">=</span>${hlTerm(d.rhs)}</div>`;
+      }
+      if (cat.equations.length > show) {
+        html += `<div class="more-hint">... +${cat.equations.length - show} more</div>`;
+      }
+      html += '</div></div>';
+    }
+  }
+
+  resultBody.innerHTML = html;
+  resultPanel.style.display = '';
+  resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleCat(header) {
+  const body = header.parentElement.querySelector('.cat-body');
+  const chevron = header.querySelector('.chevron');
+  body.classList.toggle('collapsed');
+  chevron.classList.toggle('open');
+}
+
+// Enter key to add fact
+factInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') addFact();
+});
+
+// Enter key to add operation
+document.getElementById('op-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addOperation();
+});
+
+// Escape key closes dropdown
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('preset-dropdown').classList.remove('open');
+  }
+});
+
+// ===============================================================
+//  Preset Formulas
+// ===============================================================
+
+// Returns context-sensitive presets namespaced per structure
+function getPresets() {
+  if (structures.size === 0) return [];
+  const presets = [];
+
+  // Always available: seed facts (variables are global, no namespace needed)
+  presets.push({
+    label: 'Seed elements',
+    items: [
+      { formula: 'a = a', desc: 'Introduce element a into the universe for axiom instantiation' },
+      { formula: 'b = b', desc: 'Introduce element b (useful for multi-variable axioms like associativity)' },
+      { formula: 'c = c', desc: 'Introduce element c (third ground element)' },
+    ]
+  });
+
+  // Per-structure presets
+  for (const entry of structures.values()) {
+    const s = entry.structure;
+    if (!s) continue;
+    const p = s.name; // namespace prefix
+    // Collect this structure's base op names
+    const baseOps = new Set();
+    for (const op of registry.operations()) {
+      if (op.name.startsWith(p + ':')) baseOps.add(op.name.slice(p.length + 1));
+    }
+
+    // Multiplicative (mul, e, inv)
+    if (baseOps.has('mul')) {
+      const mul = p+':mul';
+      const items = [
+        { formula: `${mul}(a, b) = ${mul}(b, a)`, desc: 'Commutativity: a * b = b * a' },
+      ];
+      if (baseOps.has('e')) {
+        const e = p+':e';
+        items.push(
+          { formula: `${mul}(a, ${e}) = a`, desc: 'Right identity: a * e = a' },
+          { formula: `${mul}(${e}, a) = a`, desc: 'Left identity: e * a = a' },
+        );
+      }
+      if (baseOps.has('inv')) {
+        const inv = p+':inv', e = p+':e';
+        items.push(
+          { formula: `${mul}(a, ${inv}(a)) = ${e}`, desc: 'Right inverse: a * a\u207B\u00B9 = e' },
+          { formula: `${mul}(${inv}(a), a) = ${e}`, desc: 'Left inverse: a\u207B\u00B9 * a = e' },
+          { formula: `${inv}(${inv}(a)) = a`, desc: 'Double inverse: (a\u207B\u00B9)\u207B\u00B9 = a' },
+        );
+      }
+      items.push(
+        { formula: `${mul}(a, a) = a`, desc: 'Idempotency: a * a = a' },
+        { formula: `${mul}(${mul}(a, b), c) = ${mul}(a, ${mul}(b, c))`, desc: 'Associativity instance' },
+      );
+      presets.push({ label: `${p} \u2014 Multiplicative`, items });
+    }
+
+    // Additive (add, zero, neg)
+    if (baseOps.has('add')) {
+      const add = p+':add';
+      const items = [
+        { formula: `${add}(a, b) = ${add}(b, a)`, desc: 'Commutativity: a + b = b + a' },
+      ];
+      if (baseOps.has('zero')) {
+        const zero = p+':zero';
+        items.push(
+          { formula: `${add}(a, ${zero}) = a`, desc: 'Right identity: a + 0 = a' },
+          { formula: `${add}(${zero}, a) = a`, desc: 'Left identity: 0 + a = a' },
+        );
+      }
+      if (baseOps.has('neg')) {
+        const neg = p+':neg', zero = p+':zero';
+        items.push(
+          { formula: `${add}(a, ${neg}(a)) = ${zero}`, desc: 'Right inverse: a + (-a) = 0' },
+          { formula: `${neg}(${neg}(a)) = a`, desc: 'Double negation' },
+          { formula: `${neg}(${zero}) = ${zero}`, desc: 'Negation of zero: -0 = 0' },
+        );
+      }
+      if (baseOps.has('mul')) {
+        const mul = p+':mul', zero = p+':zero';
+        items.push(
+          { formula: `${mul}(a, ${zero}) = ${zero}`, desc: 'Absorption: a * 0 = 0' },
+          { formula: `${mul}(a, ${add}(b, c)) = ${add}(${mul}(a, b), ${mul}(a, c))`, desc: 'Left distributivity instance' },
+        );
+      }
+      presets.push({ label: `${p} \u2014 Additive`, items });
+    }
+  }
+
+  // Generic (always available, no namespace — auto-registers)
+  presets.push({
+    label: 'Generic / Custom',
+    items: [
+      { formula: 'f(a) = a', desc: 'f is identity on a (auto-registers f/1 if not defined)' },
+      { formula: 'f(a, b) = f(b, a)', desc: 'f is commutative (auto-registers f/2 if not defined)' },
+      { formula: 'f(f(a)) = a', desc: 'f is an involution' },
+    ]
+  });
+
+  return presets;
+}
+
+const presetBtn = document.getElementById('preset-btn');
+const presetDropdown = document.getElementById('preset-dropdown');
+
+function togglePresets() {
+  const isOpen = presetDropdown.classList.contains('open');
+  if (isOpen) {
+    presetDropdown.classList.remove('open');
+    return;
+  }
+  // Build dropdown content
+  const groups = getPresets();
+  let html = '';
+  for (const group of groups) {
+    html += `<div class="preset-dropdown-header">${esc(group.label)}</div>`;
+    for (const item of group.items) {
+      html += `<div class="preset-item" onclick="selectPreset('${esc(item.formula.replace(/'/g, "\\'"))}')">` +
+              `<div class="preset-formula">${esc(item.formula)}</div>` +
+              `<div class="preset-desc">${esc(item.desc)}</div>` +
+              `</div>`;
+    }
+  }
+  presetDropdown.innerHTML = html;
+  presetDropdown.classList.add('open');
+}
+
+function selectPreset(formula) {
+  factInput.value = formula;
+  presetDropdown.classList.remove('open');
+  factInput.focus();
+}
+
+// Close preset dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.preset-wrapper')) {
+    presetDropdown.classList.remove('open');
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relatum — Documentation</title>
+<style>
+:root {
+  --bg: #1a1b26;
+  --surface: #24283b;
+  --surface2: #2f3347;
+  --border: #3b4261;
+  --text: #c0caf5;
+  --text-dim: #565f89;
+  --accent: #7aa2f7;
+  --accent2: #bb9af7;
+  --green: #9ece6a;
+  --orange: #e0af68;
+  --red: #f7768e;
+  --cyan: #7dcfff;
+  --mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  --sidebar-w: 260px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+/* ── sidebar ─────────────────────────────── */
+
+.sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.sidebar-header {
+  padding: 18px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-header a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  display: block;
+}
+
+.sidebar-header a:hover { opacity: 0.8; }
+
+.sidebar-header .subtitle {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* search */
+.search-box {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.search-box input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 10px 7px 30px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: var(--accent);
+}
+
+.search-box {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+/* nav */
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.sidebar-nav::-webkit-scrollbar { width: 4px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.nav-group {
+  margin-bottom: 4px;
+}
+
+.nav-group-title {
+  padding: 8px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--orange);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-group-title .arrow {
+  font-size: 9px;
+  transition: transform 0.15s;
+  color: var(--text-dim);
+}
+
+.nav-group.collapsed .arrow {
+  transform: rotate(-90deg);
+}
+
+.nav-group.collapsed .nav-items {
+  display: none;
+}
+
+.nav-item {
+  display: block;
+  padding: 4px 16px 4px 28px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-decoration: none;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: all 0.1s;
+}
+
+.nav-item:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.nav-item.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(122,162,247,0.06);
+}
+
+.nav-item.search-hidden {
+  display: none;
+}
+
+.nav-group.search-hidden {
+  display: none;
+}
+
+/* back link */
+.sidebar-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-footer a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.sidebar-footer a:hover { text-decoration: underline; }
+
+/* search results overlay */
+.search-results {
+  display: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  font-size: 12px;
+  color: var(--text-dim);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.search-results.visible {
+  display: block;
+}
+
+.search-result-item {
+  display: block;
+  padding: 6px 8px;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.search-result-item:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.search-result-item .sr-section {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.search-result-item:hover .sr-section {
+  color: var(--surface);
+}
+
+.search-result-item mark {
+  background: transparent;
+  color: var(--orange);
+  font-weight: 700;
+}
+
+.search-result-item:hover mark {
+  color: var(--bg);
+}
+
+.search-no-results {
+  padding: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ── main content ────────────────────────── */
+
+.main {
+  margin-left: var(--sidebar-w);
+  min-height: 100vh;
+}
+
+.page {
+  display: none;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 30px 32px 80px;
+}
+
+.page.active {
+  display: block;
+}
+
+/* headings */
+h1 {
+  color: var(--accent);
+  font-size: 22px;
+  margin-bottom: 6px;
+}
+
+h1 + .page-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 24px;
+}
+
+h2 {
+  color: var(--orange);
+  font-size: 17px;
+  margin: 32px 0 12px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+h3 {
+  color: var(--accent2);
+  font-size: 15px;
+  margin: 22px 0 10px;
+}
+
+h4 {
+  color: var(--green);
+  font-size: 14px;
+  margin: 16px 0 8px;
+}
+
+/* text */
+p { margin-bottom: 12px; }
+ul, ol { padding-left: 22px; margin-bottom: 12px; }
+li { margin-bottom: 4px; }
+strong { color: var(--text); }
+em { color: var(--accent2); font-style: normal; }
+
+/* inline code */
+code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 13px;
+  color: var(--cyan);
+}
+
+/* code blocks */
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 18px;
+  margin: 10px 0 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+pre .cm { color: var(--text-dim); }
+pre .kw { color: var(--accent2); }
+pre .op { color: var(--cyan); }
+pre .eq { color: var(--orange); font-weight: 600; }
+pre .vr { color: var(--text); }
+pre .hl { color: var(--green); }
+
+/* table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 16px;
+  font-size: 13px;
+}
+
+th {
+  text-align: left;
+  color: var(--orange);
+  font-weight: 600;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+}
+
+td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+td code { font-size: 12px; }
+
+/* callout */
+.callout {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  padding: 12px 16px;
+  margin: 14px 0;
+  font-size: 13px;
+}
+
+.callout.warn { border-left-color: var(--orange); }
+.callout.danger { border-left-color: var(--red); }
+.callout strong { color: var(--accent); }
+.callout.warn strong { color: var(--orange); }
+.callout.danger strong { color: var(--red); }
+
+/* page nav (prev/next) */
+.page-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.page-nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.page-nav a:hover { text-decoration: underline; }
+.page-nav .next { margin-left: auto; }
+
+/* mobile */
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 10px; left: 10px;
+  z-index: 20;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 18px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+}
+
+@media (max-width: 800px) {
+  .sidebar { transform: translateX(-100%); transition: transform 0.2s; }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .mobile-toggle { display: block; }
+  .page { padding: 60px 16px 80px; }
+}
+</style>
+</head>
+<body>
+
+<button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+
+<!-- ── sidebar ────────────────────────────── -->
+<div class="sidebar">
+
+  <div class="sidebar-header">
+    <a href="doc.html">RELATUM</a>
+    <div class="subtitle">Documentation</div>
+  </div>
+
+  <div class="search-box">
+    <span class="search-icon">⌕</span>
+    <input type="text" id="searchInput" placeholder="Search docs..." autocomplete="off">
+  </div>
+
+  <div class="search-results" id="searchResults"></div>
+
+  <nav class="sidebar-nav" id="sidebarNav">
+    <!-- Getting Started -->
+    <div class="nav-group" data-group="start">
+      <div class="nav-group-title" onclick="toggleGroup(this)">
+        <span class="arrow">▼</span> Getting Started
+      </div>
+      <div class="nav-items">
+        <a class="nav-item active" data-page="overview">Overview</a>
+        <a class="nav-item" data-page="quick-start">Quick Start</a>
+      </div>
+    </div>
+
+    <!-- Core Concepts -->
+    <div class="nav-group" data-group="core">
+      <div class="nav-group-title" onclick="toggleGroup(this)">
+        <span class="arrow">▼</span> Core Concepts
+      </div>
+      <div class="nav-items">
+        <a class="nav-item" data-page="structures">Algebraic Structures</a>
+        <a class="nav-item" data-page="operations">Operations</a>
+        <a class="nav-item" data-page="terms">Terms &amp; Equations</a>
+      </div>
+    </div>
+
+    <!-- Engine -->
+    <div class="nav-group" data-group="engine">
+      <div class="nav-group-title" onclick="toggleGroup(this)">
+        <span class="arrow">▼</span> Closure Engine
+      </div>
+      <div class="nav-items">
+        <a class="nav-item" data-page="algorithm">Algorithm</a>
+        <a class="nav-item" data-page="categories">Categorized Output</a>
+        <a class="nav-item" data-page="safety">Safety &amp; Limits</a>
+      </div>
+    </div>
+
+    <!-- Examples -->
+    <div class="nav-group" data-group="examples">
+      <div class="nav-group-title" onclick="toggleGroup(this)">
+        <span class="arrow">▼</span> Examples
+      </div>
+      <div class="nav-items">
+        <a class="nav-item" data-page="ex-monoid">Monoid Identity</a>
+        <a class="nav-item" data-page="ex-group">Group: Double Inverse</a>
+        <a class="nav-item" data-page="ex-ring">Ring: Zero Absorption</a>
+        <a class="nav-item" data-page="ex-custom">Custom Structure</a>
+        <a class="nav-item" data-page="ex-recursive">Recursive Detection</a>
+      </div>
+    </div>
+
+    <!-- Reference -->
+    <div class="nav-group" data-group="ref">
+      <div class="nav-group-title" onclick="toggleGroup(this)">
+        <span class="arrow">▼</span> Reference
+      </div>
+      <div class="nav-items">
+        <a class="nav-item" data-page="api">Rust API</a>
+        <a class="nav-item" data-page="shortcuts">Keyboard Shortcuts</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <a href="index.html">&larr; Back to App</a>
+  </div>
+</div>
+
+<!-- ── main content ──────────────────────── -->
+<div class="main">
+
+<!-- ─── Overview ─────────────────────────── -->
+<div class="page active" id="page-overview">
+<h1>Overview</h1>
+<p class="page-desc">What is Relatum and how does it work?</p>
+
+<p>Relatum is an <strong>equational closure engine</strong>. Given an algebraic structure
+(operations + axioms) and a set of ground facts (equations between concrete terms),
+it derives all implied equalities by iteratively applying:</p>
+
+<ul>
+  <li><strong>Reflexivity / Symmetry / Transitivity</strong> &mdash; handled implicitly by a union-find data structure</li>
+  <li><strong>Congruence</strong> &mdash; if <code>ai = bi</code> for all i, then <code>f(a1..an) = f(b1..bn)</code></li>
+  <li><strong>Axiom instantiation</strong> &mdash; substitute axiom variables with every combination of known ground terms</li>
+</ul>
+
+<p>The result is a set of <em>equivalence classes</em>: groups of terms that are provably equal
+under the given structure's axioms.</p>
+
+<h2>How it fits together</h2>
+
+<svg viewBox="0 0 480 340" style="width:100%;max-width:480px;display:block;margin:16px auto;">
+  <!-- Structure box -->
+  <rect x="40" y="20" width="170" height="60" rx="8" fill="#24283b" stroke="#7aa2f7" stroke-width="1.5"/>
+  <text x="125" y="45" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="14" font-weight="700">Structure</text>
+  <text x="125" y="65" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">ops + axioms</text>
+
+  <!-- Facts box -->
+  <rect x="270" y="20" width="170" height="60" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
+  <text x="355" y="45" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="14" font-weight="700">Facts</text>
+  <text x="355" y="65" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">equations</text>
+
+  <!-- Arrows down to merge point -->
+  <line x1="125" y1="80" x2="125" y2="110" stroke="#3b4261" stroke-width="1.5"/>
+  <line x1="355" y1="80" x2="355" y2="110" stroke="#3b4261" stroke-width="1.5"/>
+  <line x1="125" y1="110" x2="240" y2="110" stroke="#3b4261" stroke-width="1.5"/>
+  <line x1="355" y1="110" x2="240" y2="110" stroke="#3b4261" stroke-width="1.5"/>
+  <!-- Arrow down -->
+  <line x1="240" y1="110" x2="240" y2="140" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="240,148 234,138 246,138" fill="#3b4261"/>
+
+  <!-- Closure Engine box -->
+  <rect x="130" y="150" width="220" height="60" rx="8" fill="#24283b" stroke="#e0af68" stroke-width="1.5"/>
+  <text x="240" y="175" text-anchor="middle" fill="#e0af68" font-family="monospace" font-size="14" font-weight="700">Closure Engine</text>
+  <text x="240" y="195" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">N rounds</text>
+
+  <!-- Loop arrow on right side -->
+  <path d="M350,165 Q380,165 380,180 Q380,195 350,195" fill="none" stroke="#565f89" stroke-width="1" stroke-dasharray="4,3"/>
+  <polygon points="350,195 358,191 356,199" fill="#565f89"/>
+  <text x="393" y="183" fill="#565f89" font-family="monospace" font-size="10">repeat</text>
+
+  <!-- Arrow down -->
+  <line x1="240" y1="210" x2="240" y2="250" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="240,258 234,248 246,248" fill="#3b4261"/>
+
+  <!-- Result box -->
+  <rect x="100" y="260" width="280" height="60" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.5"/>
+  <text x="240" y="285" text-anchor="middle" fill="#bb9af7" font-family="monospace" font-size="14" font-weight="700">Equivalence Classes</text>
+  <text x="240" y="305" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">+ derived equations</text>
+</svg>
+
+<div class="page-nav">
+  <span></span>
+  <a class="next" onclick="goPage('quick-start')">Quick Start &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Quick Start ──────────────────────── -->
+<div class="page" id="page-quick-start">
+<h1>Quick Start</h1>
+<p class="page-desc">A minimal session to see the engine in action.</p>
+
+<h2>Step 1 &mdash; Load a Structure</h2>
+<p>Click <strong>Monoid</strong> in the Structure panel. This gives you:</p>
+<ul>
+  <li>Operations: <code>mul/2</code>, <code>e/0</code></li>
+  <li>Axioms: associativity, left identity, right identity</li>
+</ul>
+
+<h2>Step 2 &mdash; Add a Seed Fact</h2>
+<p>Type <code>a = a</code> in the fact input and press Enter.</p>
+
+<div class="callout">
+  <strong>Why <code>a = a</code>?</strong> The engine only instantiates axiom variables with terms
+  already in the universe. The fact <code>a = a</code> introduces the ground element <code>a</code>
+  into the universe, making it available for substitution.
+</div>
+
+<h2>Step 3 &mdash; Compute Closure</h2>
+<p>Set rounds to <strong>2</strong> and click <strong>Compute Closure</strong>.</p>
+
+<h2>Result</h2>
+<pre>
+<span class="cm">-- Derived equations:</span>
+<span class="cm">--   [identity]  mul(a, e) = a</span>
+<span class="cm">--   [identity]  mul(e, a) = a</span>
+<span class="cm">--   [identity]  mul(e, e) = e</span>
+<span class="cm">--   [assoc]     mul(mul(a, a), a) = mul(a, mul(a, a))</span>
+<span class="cm">--   ...</span>
+
+<span class="cm">-- Equivalence class:</span>
+<span class="cm">--   { a, mul(a, e), mul(e, a) }</span>
+</pre>
+
+<div class="page-nav">
+  <a onclick="goPage('overview')">&larr; Overview</a>
+  <a class="next" onclick="goPage('structures')">Structures &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Structures ───────────────────────── -->
+<div class="page" id="page-structures">
+<h1>Algebraic Structures</h1>
+<p class="page-desc">Operations, axioms, and built-in structures.</p>
+
+<p>A <strong>structure</strong> consists of:</p>
+<ul>
+  <li><strong>Operations</strong> &mdash; named functions with fixed arity (e.g. <code>mul/2</code>, <code>inv/1</code>, <code>e/0</code>)</li>
+  <li><strong>Axioms (Equations)</strong> &mdash; universally quantified equalities (e.g. associativity)</li>
+</ul>
+
+<h2>Built-in Structures</h2>
+
+<table>
+  <tr><th>Name</th><th>Operations</th><th>Axioms</th><th>Description</th></tr>
+  <tr>
+    <td><strong>Semigroup</strong></td>
+    <td><code>mul/2</code></td>
+    <td>1</td>
+    <td>Associative binary operation</td>
+  </tr>
+  <tr>
+    <td><strong>Monoid</strong></td>
+    <td><code>mul/2</code>, <code>e/0</code></td>
+    <td>3</td>
+    <td>Semigroup + identity element</td>
+  </tr>
+  <tr>
+    <td><strong>Group</strong></td>
+    <td><code>mul/2</code>, <code>e/0</code>, <code>inv/1</code></td>
+    <td>5</td>
+    <td>Monoid + inverse operation</td>
+  </tr>
+  <tr>
+    <td><strong>Ring</strong></td>
+    <td><code>add/2</code>, <code>zero/0</code>, <code>neg/1</code>, <code>mul/2</code>, <code>one/0</code></td>
+    <td>11</td>
+    <td>Abelian group (add) + monoid (mul) + distributivity</td>
+  </tr>
+  <tr>
+    <td><strong>Empty</strong></td>
+    <td><em>none</em></td>
+    <td>0</td>
+    <td>Blank slate for custom structures</td>
+  </tr>
+</table>
+
+<h2>Axioms of a Group</h2>
+<pre>
+<span class="cm">-- Associativity</span>
+<span class="op">mul</span>(<span class="op">mul</span>(<span class="vr">x</span>, <span class="vr">y</span>), <span class="vr">z</span>) <span class="eq">=</span> <span class="op">mul</span>(<span class="vr">x</span>, <span class="op">mul</span>(<span class="vr">y</span>, <span class="vr">z</span>))
+
+<span class="cm">-- Left identity</span>
+<span class="op">mul</span>(<span class="op">e</span>, <span class="vr">x</span>) <span class="eq">=</span> <span class="vr">x</span>
+
+<span class="cm">-- Right identity</span>
+<span class="op">mul</span>(<span class="vr">x</span>, <span class="op">e</span>) <span class="eq">=</span> <span class="vr">x</span>
+
+<span class="cm">-- Left inverse</span>
+<span class="op">mul</span>(<span class="op">inv</span>(<span class="vr">x</span>), <span class="vr">x</span>) <span class="eq">=</span> <span class="op">e</span>
+
+<span class="cm">-- Right inverse</span>
+<span class="op">mul</span>(<span class="vr">x</span>, <span class="op">inv</span>(<span class="vr">x</span>)) <span class="eq">=</span> <span class="op">e</span>
+</pre>
+
+<h2>Structure Hierarchy</h2>
+
+<svg viewBox="0 0 520 200" style="width:100%;max-width:520px;display:block;margin:16px auto;">
+  <!-- Semigroup -->
+  <rect x="10" y="70" width="110" height="46" rx="6" fill="#24283b" stroke="#7aa2f7" stroke-width="1.5"/>
+  <text x="65" y="89" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="12" font-weight="700">Semigroup</text>
+  <text x="65" y="105" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">mul/2</text>
+
+  <!-- Arrow -->
+  <line x1="120" y1="93" x2="145" y2="93" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="152,93 143,88 143,98" fill="#3b4261"/>
+  <text x="136" y="83" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="9">⊂</text>
+
+  <!-- Monoid -->
+  <rect x="155" y="70" width="110" height="46" rx="6" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
+  <text x="210" y="89" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="12" font-weight="700">Monoid</text>
+  <text x="210" y="105" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">+ e/0</text>
+
+  <!-- Arrow -->
+  <line x1="265" y1="93" x2="290" y2="93" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="297,93 288,88 288,98" fill="#3b4261"/>
+  <text x="281" y="83" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="9">⊂</text>
+
+  <!-- Group -->
+  <rect x="300" y="70" width="110" height="46" rx="6" fill="#24283b" stroke="#e0af68" stroke-width="1.5"/>
+  <text x="355" y="89" text-anchor="middle" fill="#e0af68" font-family="monospace" font-size="12" font-weight="700">Group</text>
+  <text x="355" y="105" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">+ inv/1</text>
+
+  <!-- Arrow down to Ring -->
+  <line x1="355" y1="116" x2="355" y2="140" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="355,147 349,138 361,138" fill="#3b4261"/>
+
+  <!-- Ring -->
+  <rect x="280" y="148" width="150" height="46" rx="6" fill="#24283b" stroke="#bb9af7" stroke-width="1.5"/>
+  <text x="355" y="167" text-anchor="middle" fill="#bb9af7" font-family="monospace" font-size="12" font-weight="700">Ring</text>
+  <text x="355" y="183" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">+ add, zero, neg, one</text>
+
+  <!-- Label on arrow -->
+  <text x="370" y="134" fill="#565f89" font-family="monospace" font-size="9">add abelian group</text>
+  <text x="370" y="144" fill="#565f89" font-family="monospace" font-size="9">+ distributivity</text>
+</svg>
+
+<h2>Custom Structures</h2>
+
+<p>Click <strong>Empty</strong> to start with a blank structure. You can then define your own
+operations via the <code>Add Op</code> input or by auto-registration in facts.
+Custom structures have no axioms &mdash; only congruence closure and your explicit facts
+drive the derivation.</p>
+
+<div class="page-nav">
+  <a onclick="goPage('quick-start')">&larr; Quick Start</a>
+  <a class="next" onclick="goPage('operations')">Operations &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Operations ───────────────────────── -->
+<div class="page" id="page-operations">
+<h1>Operations</h1>
+<p class="page-desc">Declaring and auto-registering operations.</p>
+
+<h2>Declaring Operations</h2>
+
+<p>Use the <code>Add Op</code> input with the format <code>name/arity</code>. Multiple entries
+can be comma-separated:</p>
+
+<pre>
+<span class="cm">-- Declare a binary operation "star" and a constant "unit"</span>
+<span class="hl">star/2, unit/0</span>
+
+<span class="cm">-- Declare a unary operation</span>
+<span class="hl">flip/1</span>
+</pre>
+
+<table>
+  <tr><th>Arity</th><th>Meaning</th><th>Example</th></tr>
+  <tr><td><code>0</code></td><td>Constant (nullary)</td><td><code>e/0</code> &rarr; written as <code>e</code> in terms</td></tr>
+  <tr><td><code>1</code></td><td>Unary function</td><td><code>inv/1</code> &rarr; <code>inv(x)</code></td></tr>
+  <tr><td><code>2</code></td><td>Binary function</td><td><code>mul/2</code> &rarr; <code>mul(x, y)</code></td></tr>
+  <tr><td><code>n</code></td><td>n-ary function</td><td><code>f/3</code> &rarr; <code>f(x, y, z)</code></td></tr>
+</table>
+
+<div class="callout">
+  <strong>Arity matters.</strong> A nullary operation <code>e/0</code> is treated as a <em>constant</em>,
+  not a variable. In terms, bare <code>e</code> is parsed as the constant <code>e()</code>, while bare
+  <code>x</code> (not a declared operation) is a variable.
+</div>
+
+<h2>Auto-registration</h2>
+
+<p>When adding facts, any unknown identifier followed by parentheses is automatically
+registered as a new operation. The arity is inferred from the argument count:</p>
+
+<pre>
+<span class="cm">-- Typing this fact on a Monoid automatically registers h/2:</span>
+<span class="op">h</span>(<span class="vr">a</span>, <span class="vr">b</span>) <span class="eq">=</span> <span class="op">mul</span>(<span class="vr">a</span>, <span class="vr">b</span>)
+
+<span class="cm">-- Registers g/1:</span>
+<span class="op">g</span>(<span class="vr">a</span>) <span class="eq">=</span> <span class="vr">a</span>
+</pre>
+
+<p>Auto-registered operations appear with a <span style="color:var(--accent2)">purple</span>
+border in the Structure panel, distinguishing them from built-in operations.</p>
+
+<div class="callout warn">
+  <strong>Arity conflicts.</strong> If you use the same name with different argument counts
+  (e.g. <code>f(a)</code> then <code>f(a,b)</code>), the parser will raise an error.
+</div>
+
+<div class="page-nav">
+  <a onclick="goPage('structures')">&larr; Structures</a>
+  <a class="next" onclick="goPage('terms')">Terms &amp; Equations &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Terms & Equations ────────────────── -->
+<div class="page" id="page-terms">
+<h1>Terms &amp; Equations</h1>
+<p class="page-desc">Syntax, facts, and preset formulas.</p>
+
+<h2>Term Syntax</h2>
+
+<p>A <strong>term</strong> is one of:</p>
+
+<table>
+  <tr><th>Form</th><th>Meaning</th><th>Example</th></tr>
+  <tr><td><code>name</code></td><td>Variable (if not a nullary op)</td><td><code>a</code>, <code>x</code>, <code>foo</code></td></tr>
+  <tr><td><code>name</code></td><td>Constant (if declared as arity 0)</td><td><code>e</code>, <code>zero</code>, <code>one</code></td></tr>
+  <tr><td><code>name(t1, ..., tn)</code></td><td>Operation application</td><td><code>mul(a, inv(b))</code></td></tr>
+</table>
+
+<p>Terms can be nested to arbitrary depth:</p>
+
+<pre>
+<span class="op">mul</span>(<span class="op">mul</span>(<span class="vr">a</span>, <span class="op">inv</span>(<span class="vr">b</span>)), <span class="op">mul</span>(<span class="vr">c</span>, <span class="op">e</span>))
+</pre>
+
+<h2>Adding Facts</h2>
+
+<p>A <strong>fact</strong> is an equation between two terms, written with <code>=</code>:</p>
+
+<pre>
+<span class="cm">-- Simple seed: introduce a into the universe</span>
+<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+
+<span class="cm">-- Concrete identity instance</span>
+<span class="op">mul</span>(<span class="vr">a</span>, <span class="op">e</span>) <span class="eq">=</span> <span class="vr">a</span>
+
+<span class="cm">-- Claim commutativity for specific elements</span>
+<span class="op">mul</span>(<span class="vr">a</span>, <span class="vr">b</span>) <span class="eq">=</span> <span class="op">mul</span>(<span class="vr">b</span>, <span class="vr">a</span>)
+
+<span class="cm">-- Complex equation</span>
+<span class="op">mul</span>(<span class="op">inv</span>(<span class="vr">a</span>), <span class="op">mul</span>(<span class="vr">a</span>, <span class="vr">b</span>)) <span class="eq">=</span> <span class="vr">b</span>
+</pre>
+
+<p>Each fact introduces all its subterms into the universe and asserts the two sides
+are equivalent. Facts can be deleted individually with the <span style="color:var(--red)">&times;</span>
+button, or all at once with <strong>clear all</strong>.</p>
+
+<div class="callout">
+  <strong>Variables in facts.</strong> Variables in facts (like <code>a</code>, <code>b</code>) are treated
+  as <em>specific ground elements</em>, not universally quantified. The fact <code>mul(a, b) = mul(b, a)</code>
+  asserts that <em>these particular</em> a and b commute, not that multiplication is commutative in general.
+  Universal quantification belongs in axioms (the structure's equations).
+</div>
+
+<h2>Preset Formulas (+)</h2>
+
+<p>The <span style="color:var(--accent2);font-weight:700">+</span> button next to the input
+opens a dropdown of context-sensitive preset formulas. Each preset includes:</p>
+
+<ul>
+  <li>The formula text (fills the input on click)</li>
+  <li>A description explaining the algebraic meaning</li>
+</ul>
+
+<p>Presets are grouped by category and adapt to the current structure's operations.
+For example, inverse-related presets only appear when <code>inv</code> is defined.</p>
+
+<div class="page-nav">
+  <a onclick="goPage('operations')">&larr; Operations</a>
+  <a class="next" onclick="goPage('algorithm')">Algorithm &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Algorithm ────────────────────────── -->
+<div class="page" id="page-algorithm">
+<h1>Closure Algorithm</h1>
+<p class="page-desc">How the closure engine computes equivalences step by step.</p>
+
+<p>The closure computation proceeds in rounds:</p>
+
+<ol>
+  <li><strong>Seed</strong> &mdash; Collect all subterms from facts into the <em>universe</em>.
+      Merge each fact's LHS and RHS in the union-find.</li>
+  <li><strong>Congruence</strong> &mdash; For every pair of <code>f(a1..an)</code> and <code>f(b1..bn)</code>
+      in the universe where <code>ai = bi</code> for all i, merge them.</li>
+  <li><strong>Axiom instantiation</strong> &mdash; For each structure axiom, substitute its variables
+      with every combination of ground terms from the universe. Merge the resulting LHS and RHS.
+      New subterms are added to the universe.</li>
+  <li><strong>Repeat</strong> steps 2&ndash;3 for the configured number of rounds, or until a fixed point
+      (no new merges in a round).</li>
+  <li><strong>Extract</strong> equivalence classes from the union-find (groups of terms with &gt;1 member).</li>
+</ol>
+
+<div class="callout warn">
+  <strong>Exponential growth.</strong> Each round can dramatically increase the universe size
+  because axiom instantiation generates <code>|universe|^|vars|</code> substitutions per axiom.
+  Start with 1&ndash;2 rounds and increase carefully.
+</div>
+
+<h2>Visual walkthrough</h2>
+
+<svg viewBox="0 0 580 420" style="width:100%;max-width:580px;display:block;margin:16px auto;">
+  <!-- Round 0 -->
+  <rect x="10" y="10" width="560" height="80" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
+  <text x="24" y="32" fill="#e0af68" font-family="monospace" font-size="13" font-weight="700">Round 0  — Seed</text>
+  <text x="24" y="52" fill="#565f89" font-family="monospace" font-size="11">Universe:</text>
+  <!-- universe bubbles -->
+  <rect x="110" y="40" width="30" height="22" rx="11" fill="#2f3347" stroke="#7aa2f7" stroke-width="1"/>
+  <text x="125" y="56" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="12">a</text>
+  <rect x="150" y="40" width="28" height="22" rx="11" fill="#2f3347" stroke="#9ece6a" stroke-width="1"/>
+  <text x="164" y="56" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="12">e</text>
+  <text x="200" y="56" fill="#565f89" font-family="monospace" font-size="11">Merge: a = a (trivial)</text>
+  <text x="24" y="78" fill="#565f89" font-family="monospace" font-size="11">Equiv: { a } { e }</text>
+
+  <!-- Arrow -->
+  <line x1="290" y1="90" x2="290" y2="115" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="290,122 284,113 296,113" fill="#3b4261"/>
+
+  <!-- Round 1 -->
+  <rect x="10" y="125" width="560" height="140" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
+  <text x="24" y="147" fill="#e0af68" font-family="monospace" font-size="13" font-weight="700">Round 1  — Congruence + Instantiation</text>
+  <text x="24" y="170" fill="#565f89" font-family="monospace" font-size="11">Congruence: nothing new</text>
+  <text x="24" y="190" fill="#bb9af7" font-family="monospace" font-size="11">Axiom: mul(e, x) = x</text>
+  <text x="24" y="210" fill="#565f89" font-family="monospace" font-size="11">  x→a:  mul(e,a) = a</text>
+  <text x="260" y="210" fill="#9ece6a" font-family="monospace" font-size="11">→ new term: mul(e,a)</text>
+  <text x="24" y="228" fill="#565f89" font-family="monospace" font-size="11">  x→e:  mul(e,e) = e</text>
+  <text x="260" y="228" fill="#9ece6a" font-family="monospace" font-size="11">→ new term: mul(e,e)</text>
+  <text x="24" y="252" fill="#565f89" font-family="monospace" font-size="11">Universe:</text>
+  <!-- universe bubbles round 1 -->
+  <rect x="110" y="240" width="30" height="20" rx="10" fill="#2f3347" stroke="#7aa2f7" stroke-width="1"/>
+  <text x="125" y="254" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="11">a</text>
+  <rect x="146" y="240" width="28" height="20" rx="10" fill="#2f3347" stroke="#9ece6a" stroke-width="1"/>
+  <text x="160" y="254" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="11">e</text>
+  <rect x="180" y="240" width="80" height="20" rx="10" fill="#2f3347" stroke="#7dcfff" stroke-width="1"/>
+  <text x="220" y="254" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="10">mul(e,a)</text>
+  <rect x="268" y="240" width="78" height="20" rx="10" fill="#2f3347" stroke="#7dcfff" stroke-width="1"/>
+  <text x="307" y="254" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="10">mul(e,e)</text>
+  <rect x="352" y="240" width="78" height="20" rx="10" fill="#2f3347" stroke="#7dcfff" stroke-width="1"/>
+  <text x="391" y="254" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="10">mul(a,e)</text>
+  <text x="440" y="254" fill="#565f89" font-family="monospace" font-size="11">...</text>
+
+  <!-- Arrow -->
+  <line x1="290" y1="265" x2="290" y2="290" stroke="#3b4261" stroke-width="1.5"/>
+  <polygon points="290,297 284,288 296,288" fill="#3b4261"/>
+
+  <!-- Round 2 -->
+  <rect x="10" y="300" width="560" height="110" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
+  <text x="24" y="322" fill="#e0af68" font-family="monospace" font-size="13" font-weight="700">Round 2  — Deeper Instantiation</text>
+  <text x="24" y="345" fill="#565f89" font-family="monospace" font-size="11">Congruence: mul(e,a) ≟ mul(e,e)?  a≠e → no merge</text>
+  <text x="24" y="365" fill="#bb9af7" font-family="monospace" font-size="11">Axiom: mul(e, x) = x</text>
+  <text x="24" y="385" fill="#565f89" font-family="monospace" font-size="11">  x→mul(e,a):  mul(e, mul(e,a)) = mul(e,a)</text>
+  <text x="370" y="385" fill="#9ece6a" font-family="monospace" font-size="11">→ new term</text>
+  <text x="24" y="400" fill="#565f89" font-family="monospace" font-size="11">  ...</text>
+</svg>
+
+<div class="page-nav">
+  <a onclick="goPage('terms')">&larr; Terms &amp; Equations</a>
+  <a class="next" onclick="goPage('categories')">Categories &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Categories ───────────────────────── -->
+<div class="page" id="page-categories">
+<h1>Categorized Output</h1>
+<p class="page-desc">How derived equations are grouped for readability.</p>
+
+<p>Derived equations are grouped by category:</p>
+
+<table>
+  <tr><th>Category</th><th>Description</th></tr>
+  <tr><td><code>congruence</code></td><td>Derived by congruence closure</td></tr>
+  <tr><td><code>associativity</code></td><td>Derived from associativity axiom instantiation</td></tr>
+  <tr><td><code>identity</code></td><td>Derived from identity axiom instantiation</td></tr>
+  <tr><td><code>inverse</code></td><td>Derived from inverse axiom instantiation</td></tr>
+  <tr><td><code>additive_group</code></td><td>All additive group axioms (ring)</td></tr>
+  <tr><td><code>multiplicative_monoid</code></td><td>Multiplicative monoid axioms (ring)</td></tr>
+  <tr><td><code>distributivity</code></td><td>Distributive law instantiations (ring)</td></tr>
+</table>
+
+<p>Each category block is collapsible and shows up to 8 equations, with a "+N more" hint
+if there are additional ones.</p>
+
+<h2>Example output</h2>
+
+<svg viewBox="0 0 520 280" style="width:100%;max-width:520px;display:block;margin:16px auto;">
+  <!-- identity category -->
+  <rect x="10" y="10" width="500" height="130" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
+  <!-- header bar -->
+  <rect x="10" y="10" width="500" height="30" rx="8" fill="#2f3347"/>
+  <rect x="10" y="30" width="500" height="10" fill="#2f3347"/>
+  <circle cx="28" cy="25" r="5" fill="#9ece6a"/>
+  <text x="44" y="30" fill="#9ece6a" font-family="monospace" font-size="13" font-weight="700">identity</text>
+  <text x="130" y="30" fill="#565f89" font-family="monospace" font-size="11">— 3 equations</text>
+  <!-- description -->
+  <text x="24" y="58" fill="#565f89" font-family="monospace" font-size="11" font-style="italic">Identity: e * x = x,  x * e = x</text>
+  <!-- equations -->
+  <text x="24" y="82" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#7dcfff">e</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#c0caf5">a</tspan></text>
+  <text x="24" y="102" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#7dcfff">e</tspan>, <tspan fill="#c0caf5">a</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#c0caf5">a</tspan></text>
+  <text x="24" y="122" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#7dcfff">e</tspan>, <tspan fill="#7dcfff">e</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#7dcfff">e</tspan></text>
+
+  <!-- associativity category -->
+  <rect x="10" y="155" width="500" height="115" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
+  <!-- header bar -->
+  <rect x="10" y="155" width="500" height="30" rx="8" fill="#2f3347"/>
+  <rect x="10" y="175" width="500" height="10" fill="#2f3347"/>
+  <circle cx="28" cy="170" r="5" fill="#7aa2f7"/>
+  <text x="44" y="175" fill="#7aa2f7" font-family="monospace" font-size="13" font-weight="700">associativity</text>
+  <text x="170" y="175" fill="#565f89" font-family="monospace" font-size="11">— 1 equation</text>
+  <!-- description -->
+  <text x="24" y="203" fill="#565f89" font-family="monospace" font-size="11" font-style="italic">(a * b) * c = a * (b * c)</text>
+  <!-- equations -->
+  <text x="24" y="228" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#c0caf5">a</tspan>), <tspan fill="#c0caf5">a</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#c0caf5">a</tspan>))</text>
+  <text x="24" y="250" fill="#565f89" font-family="monospace" font-size="11">...</text>
+</svg>
+
+<div class="page-nav">
+  <a onclick="goPage('algorithm')">&larr; Algorithm</a>
+  <a class="next" onclick="goPage('safety')">Safety &amp; Limits &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Safety ───────────────────────────── -->
+<div class="page" id="page-safety">
+<h1>Safety &amp; Limits</h1>
+<p class="page-desc">How the engine prevents combinatorial explosion.</p>
+
+<h2>Term Depth Cap (MAX_DEPTH = 8)</h2>
+<p>Terms nested deeper than 8 levels are never added to the universe. This prevents
+infinite growth from recursive axioms.</p>
+
+<h2>Static Expanding Axiom Detection</h2>
+<p>Before computing, the engine analyzes each axiom. An axiom is <em>expanding</em> if one side
+can be pattern-matched as a proper subterm of the other. For example:</p>
+
+<svg viewBox="0 0 540 310" style="width:100%;max-width:540px;display:block;margin:16px auto;">
+  <!-- ── Expanding example ── -->
+  <rect x="5" y="5" width="530" height="120" rx="8" fill="#24283b" stroke="#f7768e" stroke-width="1.5"/>
+  <text x="18" y="26" fill="#f7768e" font-family="monospace" font-size="12" font-weight="700">EXPANDING</text>
+  <text x="120" y="26" fill="#565f89" font-family="monospace" font-size="11">f(x) = f(f(x))</text>
+
+  <!-- LHS tree: f(x) -->
+  <text x="70" y="55" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="13" font-weight="700">f</text>
+  <line x1="70" y1="60" x2="70" y2="80" stroke="#3b4261" stroke-width="1.5"/>
+  <text x="70" y="95" text-anchor="middle" fill="#c0caf5" font-family="monospace" font-size="13">x</text>
+
+  <!-- = sign -->
+  <text x="145" y="75" text-anchor="middle" fill="#e0af68" font-family="monospace" font-size="18" font-weight="700">=</text>
+
+  <!-- RHS tree: f(f(x)) -->
+  <text x="230" y="45" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="13" font-weight="700">f</text>
+  <line x1="230" y1="50" x2="230" y2="65" stroke="#3b4261" stroke-width="1.5"/>
+  <text x="230" y="80" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="13" font-weight="700">f</text>
+  <line x1="230" y1="85" x2="230" y2="100" stroke="#3b4261" stroke-width="1.5"/>
+  <text x="230" y="115" text-anchor="middle" fill="#c0caf5" font-family="monospace" font-size="13">x</text>
+
+  <!-- highlight: f(x) embeds in f(f(x)) -->
+  <rect x="215" y="68" width="30" height="52" rx="4" fill="none" stroke="#f7768e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="260" y="98" fill="#f7768e" font-family="monospace" font-size="10">← f(x) embeds here</text>
+
+  <!-- warning icon -->
+  <text x="430" y="70" fill="#f7768e" font-family="monospace" font-size="24">&#x26A0;</text>
+  <text x="455" y="70" fill="#f7768e" font-family="monospace" font-size="11">depth grows</text>
+  <text x="455" y="85" fill="#f7768e" font-family="monospace" font-size="11">unboundedly</text>
+
+  <!-- ── NOT expanding: associativity ── -->
+  <rect x="5" y="140" width="530" height="70" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
+  <text x="18" y="161" fill="#9ece6a" font-family="monospace" font-size="12" font-weight="700">SAFE</text>
+  <text x="65" y="161" fill="#565f89" font-family="monospace" font-size="11">mul(mul(x,y),z) = mul(x,mul(y,z))</text>
+  <text x="18" y="185" fill="#565f89" font-family="monospace" font-size="11">Neither side is a subterm of the other → depth stays bounded</text>
+  <text x="480" y="170" fill="#9ece6a" font-family="monospace" font-size="18">&#x2713;</text>
+
+  <!-- ── NOT expanding: identity ── -->
+  <rect x="5" y="225" width="530" height="70" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
+  <text x="18" y="246" fill="#9ece6a" font-family="monospace" font-size="12" font-weight="700">SAFE</text>
+  <text x="65" y="246" fill="#565f89" font-family="monospace" font-size="11">mul(e, x) = x</text>
+  <text x="18" y="270" fill="#565f89" font-family="monospace" font-size="11">Bare variable pattern → simplification rule, not expanding</text>
+  <text x="480" y="255" fill="#9ece6a" font-family="monospace" font-size="18">&#x2713;</text>
+</svg>
+
+<p>Expanding axioms are flagged with a warning, and their substitution pool is restricted
+to shallow terms.</p>
+
+<h2>Dynamic Depth-Growth Detection</h2>
+<p>If the maximum term depth in the universe grows for 3 consecutive rounds and terms are
+being depth-capped, the engine halts early and reports a warning.</p>
+
+<h2>Other Limits</h2>
+<table>
+  <tr><th>Limit</th><th>Value</th><th>Effect</th></tr>
+  <tr><td>MAX_UNIVERSE</td><td>500</td><td>Maximum distinct terms in the universe</td></tr>
+  <tr><td>MAX_DERIVED</td><td>200</td><td>Maximum derived equations before capping</td></tr>
+  <tr><td>MAX_SUBS_PER_AXIOM</td><td>2000</td><td>Maximum substitutions per axiom per round</td></tr>
+  <tr><td>MAX_DEPTH</td><td>8</td><td>Maximum term nesting depth</td></tr>
+</table>
+
+<div class="callout danger">
+  <strong>When limits are hit.</strong> The engine does not crash — it stops early and includes
+  a warning in the result. You can still inspect partial results. If you see a limit warning,
+  try reducing the number of seed facts or rounds.
+</div>
+
+<div class="page-nav">
+  <a onclick="goPage('categories')">&larr; Categories</a>
+  <a class="next" onclick="goPage('ex-monoid')">Examples &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Monoid ──────────────────── -->
+<div class="page" id="page-ex-monoid">
+<h1>Example: Monoid Identity</h1>
+<p class="page-desc">Show that the identity axioms apply to a specific element.</p>
+
+<pre>
+<span class="cm">-- Structure: Monoid (mul/2, e/0)</span>
+<span class="cm">-- Axioms: associativity, left identity, right identity</span>
+
+<span class="cm">-- Step 1: Seed</span>
+<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+
+<span class="cm">-- Step 2: Compute Closure (2 rounds)</span>
+<span class="cm">-- Derived equations:</span>
+<span class="cm">--   [identity]  mul(a, e) = a</span>
+<span class="cm">--   [identity]  mul(e, a) = a</span>
+<span class="cm">--   [identity]  mul(e, e) = e</span>
+<span class="cm">--   [assoc]     mul(mul(a, a), a) = mul(a, mul(a, a))</span>
+<span class="cm">--   ...</span>
+<span class="cm">-- Equivalence class: { a, mul(a, e), mul(e, a) }</span>
+</pre>
+
+<div class="page-nav">
+  <a onclick="goPage('safety')">&larr; Safety &amp; Limits</a>
+  <a class="next" onclick="goPage('ex-group')">Double Inverse &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Group ───────────────────── -->
+<div class="page" id="page-ex-group">
+<h1>Example: Double Inverse</h1>
+<p class="page-desc">Derive that inv(inv(a)) = a in a group.</p>
+
+<pre>
+<span class="cm">-- Structure: Group (mul/2, e/0, inv/1)</span>
+
+<span class="cm">-- Step 1: Seed</span>
+<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+
+<span class="cm">-- Step 2: Compute Closure (3 rounds)</span>
+<span class="cm">-- The engine derives (among others):</span>
+<span class="cm">--   mul(a, inv(a)) = e</span>
+<span class="cm">--   mul(inv(a), a) = e</span>
+<span class="cm">--   mul(inv(inv(a)), inv(a)) = e</span>
+<span class="cm">--   inv(inv(a)) = a              ← double inverse!</span>
+<span class="cm">--</span>
+<span class="cm">-- Equivalence class includes:</span>
+<span class="cm">--   { a, mul(a, e), mul(e, a), inv(inv(a)), ... }</span>
+</pre>
+
+<div class="callout">
+  <strong>How does this work?</strong> The engine instantiates the inverse axiom with <code>x → inv(a)</code>,
+  producing <code>mul(inv(inv(a)), inv(a)) = e</code>. Combined with <code>mul(a, inv(a)) = e</code>
+  and congruence/transitivity, it concludes <code>inv(inv(a)) = a</code>.
+</div>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-monoid')">&larr; Monoid Identity</a>
+  <a class="next" onclick="goPage('ex-ring')">Zero Absorption &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Ring ────────────────────── -->
+<div class="page" id="page-ex-ring">
+<h1>Example: Zero Absorption</h1>
+<p class="page-desc">Derive mul(a, zero) = zero in a ring.</p>
+
+<pre>
+<span class="cm">-- Structure: Ring</span>
+<span class="cm">-- (add/2, zero/0, neg/1, mul/2, one/0)</span>
+
+<span class="cm">-- Step 1: Seed</span>
+<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+
+<span class="cm">-- Step 2: Compute Closure (3 rounds)</span>
+<span class="cm">-- The distributive law with y → zero, z → zero gives:</span>
+<span class="cm">--   mul(a, add(zero, zero)) = add(mul(a, zero), mul(a, zero))</span>
+<span class="cm">-- Since add(zero, zero) = zero (identity), we get:</span>
+<span class="cm">--   mul(a, zero) = add(mul(a, zero), mul(a, zero))</span>
+<span class="cm">-- Adding neg(mul(a, zero)) to both sides (via inverse axiom):</span>
+<span class="cm">--   zero = mul(a, zero)</span>
+</pre>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-group')">&larr; Double Inverse</a>
+  <a class="next" onclick="goPage('ex-custom')">Custom Structure &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Custom ──────────────────── -->
+<div class="page" id="page-ex-custom">
+<h1>Example: Custom Structure</h1>
+<p class="page-desc">Explore a custom operation without any axioms.</p>
+
+<pre>
+<span class="cm">-- Structure: Empty (click "Empty")</span>
+
+<span class="cm">-- Step 1: Define operations</span>
+<span class="cm">-- In "Add Op" input:</span>
+<span class="hl">f/1, g/1</span>
+
+<span class="cm">-- Step 2: Add facts</span>
+<span class="op">f</span>(<span class="op">g</span>(<span class="vr">a</span>)) <span class="eq">=</span> <span class="vr">a</span>        <span class="cm">-- f is left-inverse of g</span>
+<span class="op">g</span>(<span class="op">f</span>(<span class="vr">a</span>)) <span class="eq">=</span> <span class="vr">a</span>        <span class="cm">-- g is left-inverse of f</span>
+<span class="op">f</span>(<span class="vr">b</span>) <span class="eq">=</span> <span class="op">g</span>(<span class="vr">b</span>)          <span class="cm">-- f and g agree on b</span>
+
+<span class="cm">-- Step 3: Compute Closure (2 rounds)</span>
+<span class="cm">-- Congruence derives:</span>
+<span class="cm">--   f(f(b)) = f(g(b))    (since f(b) = g(b), apply f to both)</span>
+<span class="cm">--   g(f(b)) = g(g(b))    (since f(b) = g(b), apply g to both)</span>
+<span class="cm">-- Combined with the inverse facts:</span>
+<span class="cm">--   f(f(b)) = b           (because f(g(b)) = b)</span>
+<span class="cm">--   g(g(b)) = b           (because g(f(b)) = b)</span>
+</pre>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-ring')">&larr; Zero Absorption</a>
+  <a class="next" onclick="goPage('ex-recursive')">Recursive Detection &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Recursive ───────────────── -->
+<div class="page" id="page-ex-recursive">
+<h1>Example: Recursive Detection</h1>
+<p class="page-desc">How the engine handles potentially infinite axioms.</p>
+
+<pre>
+<span class="cm">-- Structure: Empty</span>
+
+<span class="cm">-- Step 1: Define operation</span>
+<span class="hl">f/1</span>
+
+<span class="cm">-- Step 2: Add facts</span>
+<span class="op">f</span>(<span class="vr">a</span>) <span class="eq">=</span> <span class="vr">a</span>
+<span class="op">f</span>(<span class="op">f</span>(<span class="vr">a</span>)) <span class="eq">=</span> <span class="vr">a</span>
+
+<span class="cm">-- The engine does NOT infinitely nest f(f(f(...))).</span>
+<span class="cm">-- Since f(a) = a and f(f(a)) = a, congruence gives:</span>
+<span class="cm">--   f(a) = f(f(a)) = a</span>
+<span class="cm">-- All collapse into one equivalence class:</span>
+<span class="cm">--   { a, f(a), f(f(a)) }</span>
+</pre>
+
+<div class="callout danger">
+  <strong>With axioms (not just facts), expanding patterns ARE detected.</strong>
+  If a <em>structure axiom</em> like <code>f(x) = f(f(x))</code> is present, the engine
+  recognizes it as recursive before computing and caps depth at 8. A warning is shown:
+  <br><br>
+  <span style="color:var(--red)">&#x26A0; Axiom "wrap" is recursive (one side embeds in the other); depth capped at 8</span>
+</div>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-custom')">&larr; Custom Structure</a>
+  <a class="next" onclick="goPage('api')">Rust API &rarr;</a>
+</div>
+</div>
+
+<!-- ─── API Reference ────────────────────── -->
+<div class="page" id="page-api">
+<h1>Rust API</h1>
+<p class="page-desc">Using Relatum as a library in your Rust project.</p>
+
+<h2>Basic usage</h2>
+
+<pre>
+<span class="kw">use</span> relatum::algebra::{builders, Equation, Term};
+<span class="kw">use</span> relatum::algebra::closure::ClosureEngine;
+
+<span class="cm">// Build a monoid</span>
+<span class="kw">let</span> monoid = builders::monoid().unwrap();
+<span class="kw">let</span> mul = monoid.find_operation_id(<span class="hl">"mul"</span>).unwrap();
+<span class="kw">let</span> e_op = monoid.find_operation_id(<span class="hl">"e"</span>).unwrap();
+
+<span class="cm">// Create engine and add facts</span>
+<span class="kw">let mut</span> engine = ClosureEngine::new(monoid);
+<span class="kw">let</span> a = Term::var(<span class="hl">"a"</span>);
+engine.add_fact(Equation::new(<span class="hl">"seed"</span>, a.clone(), a.clone()));
+
+<span class="cm">// Compute closure (2 rounds)</span>
+<span class="kw">let</span> result = engine.compute_closure(<span class="hl">2</span>);
+
+<span class="cm">// Check result</span>
+<span class="kw">let</span> mul_a_e = Term::app(mul, <span class="kw">vec!</span>[a.clone(), Term::constant(e_op)]);
+assert!(result.equivalence_classes.iter().any(|c| {
+    c.contains(&a) && c.contains(&mul_a_e)
+}));
+</pre>
+
+<h2>Inspecting results</h2>
+
+<pre>
+<span class="cm">// Inspect categories</span>
+<span class="kw">for</span> cat <span class="kw">in</span> &result.categories {
+    println!(<span class="hl">"{}: {} equations"</span>, cat.rule, cat.equations.len());
+    println!(<span class="hl">"  {}"</span>, cat.description);
+}
+
+<span class="cm">// Check warnings</span>
+<span class="kw">for</span> w <span class="kw">in</span> &result.warnings {
+    eprintln!(<span class="hl">"Warning: {}"</span>, w);
+}
+</pre>
+
+<h2>Equation with Category</h2>
+
+<pre>
+<span class="kw">use</span> relatum::algebra::Equation;
+
+<span class="cm">// Equations can carry a category for grouped output</span>
+<span class="kw">let</span> eq = Equation::new(<span class="hl">"my_axiom"</span>, lhs, rhs)
+    .with_category(<span class="hl">"my_category"</span>);
+
+assert_eq!(eq.category(), <span class="hl">"my_category"</span>);
+</pre>
+
+<h2>Term Depth</h2>
+
+<pre>
+<span class="kw">use</span> relatum::algebra::Term;
+<span class="kw">use</span> relatum::algebra::operation::OperationId;
+
+<span class="kw">let</span> f = OperationId(<span class="hl">0</span>);
+<span class="kw">let</span> x = Term::var(<span class="hl">"x"</span>);
+
+<span class="cm">// x has depth 1</span>
+assert_eq!(x.depth(), <span class="hl">1</span>);
+
+<span class="cm">// f(x) has depth 2</span>
+assert_eq!(Term::app(f, <span class="kw">vec!</span>[x.clone()]).depth(), <span class="hl">2</span>);
+
+<span class="cm">// f(f(x)) has depth 3</span>
+<span class="kw">let</span> ffx = Term::app(f, <span class="kw">vec!</span>[Term::app(f, <span class="kw">vec!</span>[x])]);
+assert_eq!(ffx.depth(), <span class="hl">3</span>);
+</pre>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-recursive')">&larr; Recursive Detection</a>
+  <a class="next" onclick="goPage('shortcuts')">Shortcuts &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Shortcuts ────────────────────────── -->
+<div class="page" id="page-shortcuts">
+<h1>Keyboard Shortcuts</h1>
+<p class="page-desc">Quick keys for the web interface.</p>
+
+<table>
+  <tr><th>Key</th><th>Context</th><th>Action</th></tr>
+  <tr><td><code>Enter</code></td><td>Fact input</td><td>Add the typed fact</td></tr>
+  <tr><td><code>Enter</code></td><td>Add Op input</td><td>Add the typed operation</td></tr>
+  <tr><td><code>Esc</code></td><td>Preset dropdown open</td><td>Close the dropdown</td></tr>
+</table>
+
+<div class="page-nav">
+  <a onclick="goPage('api')">&larr; Rust API</a>
+  <span></span>
+</div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ── page navigation ─────────────────────
+
+const pages = [
+  'overview','quick-start','structures','operations','terms',
+  'algorithm','categories','safety',
+  'ex-monoid','ex-group','ex-ring','ex-custom','ex-recursive',
+  'api','shortcuts'
+];
+
+function goPage(id) {
+  // hide all pages
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  // show target
+  const target = document.getElementById('page-' + id);
+  if (target) {
+    target.classList.add('active');
+    window.scrollTo(0, 0);
+  }
+  // update nav
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.page === id);
+  });
+  // expand parent group if collapsed
+  const activeNav = document.querySelector('.nav-item[data-page="' + id + '"]');
+  if (activeNav) {
+    const group = activeNav.closest('.nav-group');
+    if (group && group.classList.contains('collapsed')) {
+      group.classList.remove('collapsed');
+    }
+  }
+  // update hash
+  history.replaceState(null, '', '#' + id);
+  // close mobile sidebar
+  document.querySelector('.sidebar').classList.remove('open');
+}
+
+// nav item clicks
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => goPage(item.dataset.page));
+});
+
+// toggle nav groups
+function toggleGroup(el) {
+  el.closest('.nav-group').classList.toggle('collapsed');
+}
+
+// load from hash
+function loadFromHash() {
+  const hash = location.hash.replace('#', '');
+  if (hash && pages.includes(hash)) {
+    goPage(hash);
+  }
+}
+window.addEventListener('hashchange', loadFromHash);
+loadFromHash();
+
+// ── search ──────────────────────────────
+
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+
+// build search index
+const searchIndex = [];
+document.querySelectorAll('.page').forEach(page => {
+  const pageId = page.id.replace('page-', '');
+  const h1 = page.querySelector('h1');
+  const title = h1 ? h1.textContent : pageId;
+
+  // index the page title
+  searchIndex.push({ pageId, title, text: title, type: 'page' });
+
+  // index each h2/h3
+  page.querySelectorAll('h2, h3, h4').forEach(h => {
+    searchIndex.push({ pageId, title, text: h.textContent, type: 'heading' });
+  });
+
+  // index paragraphs (first 120 chars)
+  page.querySelectorAll('p, li, td').forEach(el => {
+    const t = el.textContent.trim();
+    if (t.length > 10) {
+      searchIndex.push({ pageId, title, text: t.slice(0, 120), type: 'content' });
+    }
+  });
+
+  // index code blocks (first 100 chars of each line)
+  page.querySelectorAll('pre').forEach(pre => {
+    const lines = pre.textContent.split('\n').filter(l => l.trim().length > 5);
+    lines.forEach(line => {
+      searchIndex.push({ pageId, title, text: line.trim().slice(0, 100), type: 'code' });
+    });
+  });
+});
+
+let searchTimeout;
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(doSearch, 150);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    searchInput.value = '';
+    searchResults.classList.remove('visible');
+    searchInput.blur();
+  }
+  if (e.key === 'Enter') {
+    // go to first result
+    const first = searchResults.querySelector('.search-result-item');
+    if (first) first.click();
+  }
+});
+
+function doSearch() {
+  const q = searchInput.value.trim().toLowerCase();
+  if (q.length < 2) {
+    searchResults.classList.remove('visible');
+    searchResults.innerHTML = '';
+    // restore nav
+    document.querySelectorAll('.nav-item, .nav-group').forEach(el => el.classList.remove('search-hidden'));
+    return;
+  }
+
+  const keywords = q.split(/\s+/);
+  const scored = [];
+  const seen = new Set();
+
+  for (const entry of searchIndex) {
+    const lower = entry.text.toLowerCase();
+    const allMatch = keywords.every(kw => lower.includes(kw));
+    if (!allMatch) continue;
+
+    const key = entry.pageId + ':' + entry.text.slice(0, 40);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    let score = 0;
+    if (entry.type === 'page') score = 100;
+    else if (entry.type === 'heading') score = 80;
+    else if (entry.type === 'content') score = 50;
+    else score = 30;
+
+    // boost exact match
+    if (lower === q) score += 50;
+    // boost starts-with
+    if (lower.startsWith(q)) score += 20;
+
+    scored.push({ ...entry, score });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, 12);
+
+  if (top.length === 0) {
+    searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
+    searchResults.classList.add('visible');
+    return;
+  }
+
+  // highlight matching text
+  function highlight(text, kws) {
+    let html = escHtml(text);
+    for (const kw of kws) {
+      const re = new RegExp('(' + escRegex(kw) + ')', 'gi');
+      html = html.replace(re, '<mark>$1</mark>');
+    }
+    return html;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function escRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  let html = '';
+  for (const r of top) {
+    const snippet = r.text.length > 80 ? r.text.slice(0, 80) + '...' : r.text;
+    html += '<a class="search-result-item" data-page="' + r.pageId + '">'
+      + highlight(snippet, keywords)
+      + '<div class="sr-section">' + escHtml(r.title) + '</div>'
+      + '</a>';
+  }
+
+  searchResults.innerHTML = html;
+  searchResults.classList.add('visible');
+
+  // click handlers
+  searchResults.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      goPage(item.dataset.page);
+      searchResults.classList.remove('visible');
+      searchInput.value = '';
+    });
+  });
+
+  // also filter sidebar nav
+  const matchingPages = new Set(top.map(r => r.pageId));
+  document.querySelectorAll('.nav-item').forEach(nav => {
+    nav.classList.toggle('search-hidden', !matchingPages.has(nav.dataset.page));
+  });
+  document.querySelectorAll('.nav-group').forEach(group => {
+    const hasVisible = group.querySelector('.nav-item:not(.search-hidden)');
+    group.classList.toggle('search-hidden', !hasVisible);
+  });
+}
+
+// close search results on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.search-box') && !e.target.closest('.search-results')) {
+    searchResults.classList.remove('visible');
+    // restore nav
+    document.querySelectorAll('.nav-item, .nav-group').forEach(el => el.classList.remove('search-hidden'));
+  }
+});
+
+// keyboard shortcut: / to focus search
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+    e.preventDefault();
+    searchInput.focus();
+  }
+});
+</script>
+
+</body>
+</html>
