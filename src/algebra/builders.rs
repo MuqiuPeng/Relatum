@@ -54,12 +54,13 @@ fn eq(name: &str, lhs: Term, rhs: Term) -> Equation {
 
 // ── internal: declare axiom groups on a mutable Structure ───
 
-/// Declares `mul/2` in the registry and adds associativity to the structure.
+/// Declares `mul/2` in the registry, adopts it, and adds associativity.
 fn declare_semigroup_axioms(
     s: &mut Structure,
     reg: &mut OpRegistry,
 ) -> Result<OperationId, RegistryError> {
     let mul = reg.declare_operation("mul", 2)?;
+    s.adopt_operation(mul);
     let (x, y, z) = (var("x"), var("y"), var("z"));
 
     s.add_equation(
@@ -74,13 +75,14 @@ fn declare_semigroup_axioms(
     Ok(mul)
 }
 
-/// Declares `e/0` in the registry and adds identity axioms for `mul`.
+/// Declares `e/0` in the registry, adopts it, and adds identity axioms for `mul`.
 fn declare_monoid_axioms(
     s: &mut Structure,
     reg: &mut OpRegistry,
     mul: OperationId,
 ) -> Result<OperationId, RegistryError> {
     let e = reg.declare_operation("e", 0)?;
+    s.adopt_operation(e);
     let x = var("x");
 
     s.add_equation(
@@ -98,7 +100,7 @@ fn declare_monoid_axioms(
     Ok(e)
 }
 
-/// Declares `inv/1` in the registry and adds inverse axioms for `mul` with identity `e`.
+/// Declares `inv/1` in the registry, adopts it, and adds inverse axioms.
 fn declare_group_axioms(
     s: &mut Structure,
     reg: &mut OpRegistry,
@@ -106,6 +108,7 @@ fn declare_group_axioms(
     e: OperationId,
 ) -> Result<OperationId, RegistryError> {
     let inv = reg.declare_operation("inv", 1)?;
+    s.adopt_operation(inv);
     let x = var("x");
 
     s.add_equation(
@@ -128,7 +131,7 @@ fn declare_group_axioms(
     Ok(inv)
 }
 
-/// Declares `add/2`, `zero/0`, `neg/1` in the registry and adds abelian group axioms.
+/// Declares `add/2`, `zero/0`, `neg/1` in the registry, adopts them, and adds abelian group axioms.
 fn declare_additive_abelian_group_axioms(
     s: &mut Structure,
     reg: &mut OpRegistry,
@@ -136,6 +139,9 @@ fn declare_additive_abelian_group_axioms(
     let add = reg.declare_operation("add", 2)?;
     let zero = reg.declare_operation("zero", 0)?;
     let neg = reg.declare_operation("neg", 1)?;
+    s.adopt_operation(add);
+    s.adopt_operation(zero);
+    s.adopt_operation(neg);
     let (x, y, z) = (var("x"), var("y"), var("z"));
 
     let cat = "additive_group";
@@ -192,13 +198,15 @@ fn declare_additive_abelian_group_axioms(
     Ok((add, zero, neg))
 }
 
-/// Declares `one/0` in the registry and adds multiplicative monoid axioms for `mul`.
+/// Declares `one/0` in the registry, adopts `mul` and `one`, and adds multiplicative monoid axioms.
 fn declare_multiplicative_monoid_axioms(
     s: &mut Structure,
     reg: &mut OpRegistry,
     mul: OperationId,
 ) -> Result<OperationId, RegistryError> {
     let one = reg.declare_operation("one", 0)?;
+    s.adopt_operation(mul);
+    s.adopt_operation(one);
     let x = var("x");
 
     let cat = "multiplicative_monoid";
@@ -319,6 +327,7 @@ mod tests {
         let s = semigroup(&mut reg).unwrap();
         assert!(s.validate(&reg).is_ok());
         assert_eq!(s.name(), "Semigroup");
+        assert_eq!(s.operations().len(), 1);
         assert_eq!(s.referenced_operations().len(), 1);
         assert_eq!(s.equations().len(), 1);
         assert!(reg.find_operation("mul").is_some());
@@ -330,6 +339,7 @@ mod tests {
         let s = monoid(&mut reg).unwrap();
         assert!(s.validate(&reg).is_ok());
         assert_eq!(s.name(), "Monoid");
+        assert_eq!(s.operations().len(), 2);
         assert_eq!(s.referenced_operations().len(), 2);
         assert_eq!(s.equations().len(), 3);
         assert!(reg.find_operation("e").is_some());
@@ -341,6 +351,7 @@ mod tests {
         let s = group(&mut reg).unwrap();
         assert!(s.validate(&reg).is_ok());
         assert_eq!(s.name(), "Group");
+        assert_eq!(s.operations().len(), 3);
         assert_eq!(s.referenced_operations().len(), 3);
         assert_eq!(s.equations().len(), 5);
         assert!(reg.find_operation("inv").is_some());
@@ -352,6 +363,7 @@ mod tests {
         let s = ring(&mut reg).unwrap();
         assert!(s.validate(&reg).is_ok());
         assert_eq!(s.name(), "Ring");
+        assert_eq!(s.operations().len(), 5);
         assert_eq!(s.referenced_operations().len(), 5);
         assert_eq!(s.equations().len(), 11);
         assert!(reg.find_operation("add").is_some());
@@ -369,9 +381,16 @@ mod tests {
         let gr = group(&mut reg).unwrap();
         let ri = ring(&mut reg).unwrap();
 
-        assert!(sg.referenced_operations().len() < mo.referenced_operations().len());
-        assert!(mo.referenced_operations().len() < gr.referenced_operations().len());
-        assert!(gr.referenced_operations().len() < ri.referenced_operations().len());
+        // Adopted operations grow monotonically
+        assert!(sg.operations().len() < mo.operations().len());
+        assert!(mo.operations().len() < gr.operations().len());
+        assert!(gr.operations().len() < ri.operations().len());
+
+        // Referenced ops match adopted ops for well-formed builders
+        assert_eq!(sg.operations().len(), sg.referenced_operations().len());
+        assert_eq!(mo.operations().len(), mo.referenced_operations().len());
+        assert_eq!(gr.operations().len(), gr.referenced_operations().len());
+        assert_eq!(ri.operations().len(), ri.referenced_operations().len());
 
         assert!(sg.equations().len() < mo.equations().len());
         assert!(mo.equations().len() < gr.equations().len());

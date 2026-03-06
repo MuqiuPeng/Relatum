@@ -4,7 +4,7 @@ use std::fmt;
 
 /// Stable identifier for an operation within a structure/signature.
 /// Allocated by [`crate::algebra::OpRegistry::declare_operation`]; used in [`crate::algebra::Term`] instead of string names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OperationId(pub u32);
 
 impl OperationId {

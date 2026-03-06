@@ -12,8 +12,8 @@
 //! - **Global registry**: all operations live in a shared [`OpRegistry`],
 //!   so that multiple structures can coexist and interact with globally
 //!   unique [`OperationId`]s.
-//! - **Separation of concerns**: the registry owns operation identity;
-//!   structures are pure axiom containers.
+//! - **Global registration, local adoption**: the registry owns operation
+//!   identity; structures explicitly adopt the operations they use.
 //!
 //! # Core types
 //!
@@ -23,7 +23,7 @@
 //! | [`Operation`] | Named operator with arity (e.g., `mul/2`, `inv/1`, `e/0`) |
 //! | [`Term`] | Symbolic expression tree (variables, constants, nested applications) |
 //! | [`Equation`] | Axiom asserting two terms are equal (e.g., associativity) |
-//! | [`Structure`] | A named set of axioms referencing globally-registered operations |
+//! | [`Structure`] | A theory: adopted operations + equational axioms |
 //!
 //! # Example: defining a group
 //!
@@ -39,8 +39,11 @@
 //!
 //! let (x, y, z) = (Term::var("x"), Term::var("y"), Term::var("z"));
 //!
-//! // Structure is a pure axiom container
+//! // Structure adopts operations and imposes axioms
 //! let group = Structure::new("Group")
+//!     .with_operation(mul)
+//!     .with_operation(inv)
+//!     .with_operation(e)
 //!     .with_equation(Equation::new(
 //!         "associativity",
 //!         Term::app(mul, vec![
