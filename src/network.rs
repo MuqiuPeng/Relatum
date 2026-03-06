@@ -99,10 +99,20 @@ impl Network {
                 sources.remove(&from);
             }
             self.relation_count -= 1;
-            if self.outgoing.get(&from).map(|s| s.is_empty()).unwrap_or(false) {
+            if self
+                .outgoing
+                .get(&from)
+                .map(|s| s.is_empty())
+                .unwrap_or(false)
+            {
                 self.outgoing.remove(&from);
             }
-            if self.incoming.get(&to).map(|s| s.is_empty()).unwrap_or(false) {
+            if self
+                .incoming
+                .get(&to)
+                .map(|s| s.is_empty())
+                .unwrap_or(false)
+            {
                 self.incoming.remove(&to);
             }
         }
