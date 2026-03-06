@@ -10,7 +10,7 @@ use std::fmt;
 /// Nodes are identified by unique integer IDs. They have no inherent properties
 /// other than their identity - all meaning emerges from their relations.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Node(pub u64);
+pub struct Node(u64);
 
 impl Node {
     /// Creates a new node with the given ID.
