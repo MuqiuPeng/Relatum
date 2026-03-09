@@ -74,6 +74,7 @@ body {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  position: relative;
 }
 
 .search-box input {
@@ -88,13 +89,7 @@ body {
   outline: none;
 }
 
-.search-box input:focus {
-  border-color: var(--accent);
-}
-
-.search-box {
-  position: relative;
-}
+.search-box input:focus { border-color: var(--accent); }
 
 .search-icon {
   position: absolute;
@@ -116,9 +111,7 @@ body {
 .sidebar-nav::-webkit-scrollbar { width: 4px; }
 .sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-.nav-group {
-  margin-bottom: 4px;
-}
+.nav-group { margin-bottom: 4px; }
 
 .nav-group-title {
   padding: 8px 16px 4px;
@@ -140,13 +133,8 @@ body {
   color: var(--text-dim);
 }
 
-.nav-group.collapsed .arrow {
-  transform: rotate(-90deg);
-}
-
-.nav-group.collapsed .nav-items {
-  display: none;
-}
+.nav-group.collapsed .arrow { transform: rotate(-90deg); }
+.nav-group.collapsed .nav-items { display: none; }
 
 .nav-item {
   display: block;
@@ -170,13 +158,8 @@ body {
   background: rgba(122,162,247,0.06);
 }
 
-.nav-item.search-hidden {
-  display: none;
-}
-
-.nav-group.search-hidden {
-  display: none;
-}
+.nav-item.search-hidden { display: none; }
+.nav-group.search-hidden { display: none; }
 
 /* back link */
 .sidebar-footer {
@@ -193,62 +176,34 @@ body {
 
 .sidebar-footer a:hover { text-decoration: underline; }
 
-/* search results overlay */
+/* search results */
 .search-results {
   display: none;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface2);
   font-size: 12px;
-  color: var(--text-dim);
   max-height: 260px;
   overflow-y: auto;
 }
 
-.search-results.visible {
-  display: block;
-}
+.search-results.visible { display: block; }
 
 .search-result-item {
   display: block;
   padding: 6px 8px;
   color: var(--text);
-  text-decoration: none;
   cursor: pointer;
   border-radius: 3px;
   margin-bottom: 2px;
   font-size: 12px;
 }
 
-.search-result-item:hover {
-  background: var(--accent);
-  color: var(--bg);
-}
+.search-result-item:hover { background: var(--accent); color: var(--bg); }
+.search-result-item .sr-section { color: var(--text-dim); font-size: 11px; }
+.search-result-item:hover .sr-section { color: var(--surface); }
 
-.search-result-item .sr-section {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.search-result-item:hover .sr-section {
-  color: var(--surface);
-}
-
-.search-result-item mark {
-  background: transparent;
-  color: var(--orange);
-  font-weight: 700;
-}
-
-.search-result-item:hover mark {
-  color: var(--bg);
-}
-
-.search-no-results {
-  padding: 8px;
-  color: var(--text-dim);
-  font-size: 12px;
-}
+.search-no-results { padding: 8px; color: var(--text-dim); font-size: 12px; }
 
 /* ── main content ────────────────────────── */
 
@@ -264,51 +219,20 @@ body {
   padding: 30px 32px 80px;
 }
 
-.page.active {
-  display: block;
-}
+.page.active { display: block; }
 
-/* headings */
-h1 {
-  color: var(--accent);
-  font-size: 22px;
-  margin-bottom: 6px;
-}
+h1 { color: var(--accent); font-size: 22px; margin-bottom: 6px; }
+h1 + .page-desc { color: var(--text-dim); font-size: 12px; margin-bottom: 24px; }
+h2 { color: var(--orange); font-size: 17px; margin: 32px 0 12px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+h3 { color: var(--accent2); font-size: 15px; margin: 22px 0 10px; }
+h4 { color: var(--green); font-size: 14px; margin: 16px 0 8px; }
 
-h1 + .page-desc {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-bottom: 24px;
-}
-
-h2 {
-  color: var(--orange);
-  font-size: 17px;
-  margin: 32px 0 12px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--border);
-}
-
-h3 {
-  color: var(--accent2);
-  font-size: 15px;
-  margin: 22px 0 10px;
-}
-
-h4 {
-  color: var(--green);
-  font-size: 14px;
-  margin: 16px 0 8px;
-}
-
-/* text */
 p { margin-bottom: 12px; }
 ul, ol { padding-left: 22px; margin-bottom: 12px; }
 li { margin-bottom: 4px; }
 strong { color: var(--text); }
 em { color: var(--accent2); font-style: normal; }
 
-/* inline code */
 code {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -318,7 +242,6 @@ code {
   color: var(--cyan);
 }
 
-/* code blocks */
 pre {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -338,30 +261,11 @@ pre .eq { color: var(--orange); font-weight: 600; }
 pre .vr { color: var(--text); }
 pre .hl { color: var(--green); }
 
-/* table */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10px 0 16px;
-  font-size: 13px;
-}
-
-th {
-  text-align: left;
-  color: var(--orange);
-  font-weight: 600;
-  padding: 8px 12px;
-  border-bottom: 2px solid var(--border);
-}
-
-td {
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
+table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 13px; }
+th { text-align: left; color: var(--orange); font-weight: 600; padding: 8px 12px; border-bottom: 2px solid var(--border); }
+td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
 td code { font-size: 12px; }
 
-/* callout */
 .callout {
   background: var(--surface);
   border-left: 3px solid var(--accent);
@@ -377,7 +281,6 @@ td code { font-size: 12px; }
 .callout.warn strong { color: var(--orange); }
 .callout.danger strong { color: var(--red); }
 
-/* page nav (prev/next) */
 .page-nav {
   display: flex;
   justify-content: space-between;
@@ -386,18 +289,10 @@ td code { font-size: 12px; }
   border-top: 1px solid var(--border);
 }
 
-.page-nav a {
-  color: var(--accent);
-  text-decoration: none;
-  font-size: 13px;
-  padding: 6px 0;
-  cursor: pointer;
-}
-
+.page-nav a { color: var(--accent); text-decoration: none; font-size: 13px; padding: 6px 0; cursor: pointer; }
 .page-nav a:hover { text-decoration: underline; }
 .page-nav .next { margin-left: auto; }
 
-/* mobile */
 .mobile-toggle {
   display: none;
   position: fixed;
@@ -424,7 +319,7 @@ td code { font-size: 12px; }
 </head>
 <body>
 
-<button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+<button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
 
 <!-- ── sidebar ────────────────────────────── -->
 <div class="sidebar">
@@ -435,7 +330,7 @@ td code { font-size: 12px; }
   </div>
 
   <div class="search-box">
-    <span class="search-icon">⌕</span>
+    <span class="search-icon">&#8981;</span>
     <input type="text" id="searchInput" placeholder="Search docs..." autocomplete="off">
   </div>
 
@@ -445,7 +340,7 @@ td code { font-size: 12px; }
     <!-- Getting Started -->
     <div class="nav-group" data-group="start">
       <div class="nav-group-title" onclick="toggleGroup(this)">
-        <span class="arrow">▼</span> Getting Started
+        <span class="arrow">&#9660;</span> Getting Started
       </div>
       <div class="nav-items">
         <a class="nav-item active" data-page="overview">Overview</a>
@@ -453,26 +348,28 @@ td code { font-size: 12px; }
       </div>
     </div>
 
-    <!-- Core Concepts -->
-    <div class="nav-group" data-group="core">
+    <!-- Language -->
+    <div class="nav-group" data-group="lang">
       <div class="nav-group-title" onclick="toggleGroup(this)">
-        <span class="arrow">▼</span> Core Concepts
+        <span class="arrow">&#9660;</span> Language
       </div>
       <div class="nav-items">
-        <a class="nav-item" data-page="structures">Algebraic Structures</a>
-        <a class="nav-item" data-page="operations">Operations</a>
-        <a class="nav-item" data-page="terms">Terms &amp; Equations</a>
+        <a class="nav-item" data-page="elements">Elements</a>
+        <a class="nav-item" data-page="relations">Relations</a>
+        <a class="nav-item" data-page="facts">Facts</a>
+        <a class="nav-item" data-page="rules">Rules</a>
+        <a class="nav-item" data-page="derive">Derive</a>
       </div>
     </div>
 
     <!-- Engine -->
     <div class="nav-group" data-group="engine">
       <div class="nav-group-title" onclick="toggleGroup(this)">
-        <span class="arrow">▼</span> Closure Engine
+        <span class="arrow">&#9660;</span> Closure Engine
       </div>
       <div class="nav-items">
         <a class="nav-item" data-page="algorithm">Algorithm</a>
-        <a class="nav-item" data-page="categories">Categorized Output</a>
+        <a class="nav-item" data-page="properties">Relation Properties</a>
         <a class="nav-item" data-page="safety">Safety &amp; Limits</a>
       </div>
     </div>
@@ -480,23 +377,24 @@ td code { font-size: 12px; }
     <!-- Examples -->
     <div class="nav-group" data-group="examples">
       <div class="nav-group-title" onclick="toggleGroup(this)">
-        <span class="arrow">▼</span> Examples
+        <span class="arrow">&#9660;</span> Examples
       </div>
       <div class="nav-items">
-        <a class="nav-item" data-page="ex-monoid">Monoid Identity</a>
-        <a class="nav-item" data-page="ex-group">Group: Double Inverse</a>
-        <a class="nav-item" data-page="ex-ring">Ring: Zero Absorption</a>
-        <a class="nav-item" data-page="ex-custom">Custom Structure</a>
-        <a class="nav-item" data-page="ex-recursive">Recursive Detection</a>
+        <a class="nav-item" data-page="ex-equiv">Equivalence Closure</a>
+        <a class="nav-item" data-page="ex-order">Partial Order</a>
+        <a class="nav-item" data-page="ex-custom">Custom Rules</a>
+        <a class="nav-item" data-page="ex-congruence">Congruence</a>
+        <a class="nav-item" data-page="ex-typed">Membership</a>
       </div>
     </div>
 
     <!-- Reference -->
     <div class="nav-group" data-group="ref">
       <div class="nav-group-title" onclick="toggleGroup(this)">
-        <span class="arrow">▼</span> Reference
+        <span class="arrow">&#9660;</span> Reference
       </div>
       <div class="nav-items">
+        <a class="nav-item" data-page="grammar">Grammar Reference</a>
         <a class="nav-item" data-page="api">Rust API</a>
         <a class="nav-item" data-page="shortcuts">Keyboard Shortcuts</a>
       </div>
@@ -511,65 +409,39 @@ td code { font-size: 12px; }
 <!-- ── main content ──────────────────────── -->
 <div class="main">
 
-<!-- ─── Overview ─────────────────────────── -->
+<!-- ─── Overview ──────────────────────────── -->
 <div class="page active" id="page-overview">
-<h1>Overview</h1>
-<p class="page-desc">What is Relatum and how does it work?</p>
+<h1>Relatum</h1>
+<p class="page-desc">Pure relational closure engine.</p>
 
-<p>Relatum is an <strong>equational closure engine</strong>. Given an algebraic structure
-(operations + axioms) and a set of ground facts (equations between concrete terms),
-it derives all implied equalities by iteratively applying:</p>
+<p>Relatum is a forward-chaining inference engine that operates exclusively on <strong>relations</strong>. There are no predefined mathematical semantics &mdash; equality, order, membership, and any other concept you need are expressed as plain relations with configurable properties.</p>
+
+<h2>Core Ideas</h2>
 
 <ul>
-  <li><strong>Reflexivity / Symmetry / Transitivity</strong> &mdash; handled implicitly by a union-find data structure</li>
-  <li><strong>Congruence</strong> &mdash; if <code>ai = bi</code> for all i, then <code>f(a1..an) = f(b1..bn)</code></li>
-  <li><strong>Axiom instantiation</strong> &mdash; substitute axiom variables with every combination of known ground terms</li>
+  <li><strong>Relations first.</strong> Everything is a named relation between terms: <code>equiv(a, b)</code>, <code>lt(x, y)</code>, <code>knows(alice, bob)</code>.</li>
+  <li><strong>No built-in equality.</strong> Want equivalence? Declare it: <code>rel equiv/2 : equivalence</code>. This gives you symmetry, transitivity, reflexivity, and congruence.</li>
+  <li><strong>Rules derive facts.</strong> Write inference rules like <code>rule trans: lt(?x, ?y), lt(?y, ?z) |- lt(?x, ?z)</code> and the engine will apply them until no new facts can be derived.</li>
+  <li><strong>Membership.</strong> Any element can contain others (<code>&lt;Person&gt; alice, bob</code>). Relations can restrict which container each argument must belong to.</li>
+  <li><strong>Declarative language.</strong> Programs are concise descriptions: declare elements, relations, state facts, and say <code>derive</code>.</li>
 </ul>
 
-<p>The result is a set of <em>equivalence classes</em>: groups of terms that are provably equal
-under the given structure's axioms.</p>
+<h2>What It Looks Like</h2>
 
-<h2>How it fits together</h2>
+<pre>
+<span class="cm"># A minimal Relatum program</span>
 
-<svg viewBox="0 0 480 340" style="width:100%;max-width:480px;display:block;margin:16px auto;">
-  <!-- Structure box -->
-  <rect x="40" y="20" width="170" height="60" rx="8" fill="#24283b" stroke="#7aa2f7" stroke-width="1.5"/>
-  <text x="125" y="45" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="14" font-weight="700">Structure</text>
-  <text x="125" y="65" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">ops + axioms</text>
+<span class="kw">&lt;element&gt;</span> a, b, c
 
-  <!-- Facts box -->
-  <rect x="270" y="20" width="170" height="60" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
-  <text x="355" y="45" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="14" font-weight="700">Facts</text>
-  <text x="355" y="65" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">equations</text>
+<span class="kw">rel</span> <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
 
-  <!-- Arrows down to merge point -->
-  <line x1="125" y1="80" x2="125" y2="110" stroke="#3b4261" stroke-width="1.5"/>
-  <line x1="355" y1="80" x2="355" y2="110" stroke="#3b4261" stroke-width="1.5"/>
-  <line x1="125" y1="110" x2="240" y2="110" stroke="#3b4261" stroke-width="1.5"/>
-  <line x1="355" y1="110" x2="240" y2="110" stroke="#3b4261" stroke-width="1.5"/>
-  <!-- Arrow down -->
-  <line x1="240" y1="110" x2="240" y2="140" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="240,148 234,138 246,138" fill="#3b4261"/>
+<span class="op">equiv</span>(a, b)
+<span class="op">equiv</span>(b, c)
 
-  <!-- Closure Engine box -->
-  <rect x="130" y="150" width="220" height="60" rx="8" fill="#24283b" stroke="#e0af68" stroke-width="1.5"/>
-  <text x="240" y="175" text-anchor="middle" fill="#e0af68" font-family="monospace" font-size="14" font-weight="700">Closure Engine</text>
-  <text x="240" y="195" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">N rounds</text>
+<span class="kw">derive</span>
+</pre>
 
-  <!-- Loop arrow on right side -->
-  <path d="M350,165 Q380,165 380,180 Q380,195 350,195" fill="none" stroke="#565f89" stroke-width="1" stroke-dasharray="4,3"/>
-  <polygon points="350,195 358,191 356,199" fill="#565f89"/>
-  <text x="393" y="183" fill="#565f89" font-family="monospace" font-size="10">repeat</text>
-
-  <!-- Arrow down -->
-  <line x1="240" y1="210" x2="240" y2="250" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="240,258 234,248 246,248" fill="#3b4261"/>
-
-  <!-- Result box -->
-  <rect x="100" y="260" width="280" height="60" rx="8" fill="#24283b" stroke="#bb9af7" stroke-width="1.5"/>
-  <text x="240" y="285" text-anchor="middle" fill="#bb9af7" font-family="monospace" font-size="14" font-weight="700">Equivalence Classes</text>
-  <text x="240" y="305" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="11">+ derived equations</text>
-</svg>
+<p>Output: the engine derives <code>equiv(a, c)</code>, <code>equiv(c, a)</code>, <code>equiv(b, a)</code>, <code>equiv(c, b)</code>, and all reflexive pairs <code>equiv(a, a)</code>, <code>equiv(b, b)</code>, <code>equiv(c, c)</code>.</p>
 
 <div class="page-nav">
   <span></span>
@@ -577,439 +449,356 @@ under the given structure's axioms.</p>
 </div>
 </div>
 
-<!-- ─── Quick Start ──────────────────────── -->
+<!-- ─── Quick Start ───────────────────────── -->
 <div class="page" id="page-quick-start">
 <h1>Quick Start</h1>
-<p class="page-desc">A minimal session to see the engine in action.</p>
+<p class="page-desc">Write your first Relatum program in under a minute.</p>
 
-<h2>Step 1 &mdash; Load a Structure</h2>
-<p>Click <strong>Monoid</strong> in the Structure panel. This gives you:</p>
+<h2>1. Open the App</h2>
+<p>Go to <a href="index.html" style="color:var(--accent)">the web app</a>. You'll see a code editor on the left and an output panel on the right.</p>
+
+<h2>2. Write a Program</h2>
+<p>Type (or load the "Equivalence" example):</p>
+
+<pre>
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+<span class="kw">rel</span> <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
+
+<span class="op">equiv</span>(a, b)
+<span class="op">equiv</span>(b, c)
+
+<span class="kw">derive</span>
+</pre>
+
+<h2>3. Press Run</h2>
+<p>Click <strong>Run</strong> (or press <code>Ctrl+Enter</code>). The output panel shows:</p>
 <ul>
-  <li>Operations: <code>mul/2</code>, <code>e/0</code></li>
-  <li>Axioms: associativity, left identity, right identity</li>
+  <li>Declarations and auto-generated rules</li>
+  <li>Initial facts you provided</li>
+  <li>Derived facts (highlighted in green)</li>
+  <li>Summary statistics: rounds, total facts, saturation status</li>
 </ul>
 
-<h2>Step 2 &mdash; Add a Seed Fact</h2>
-<p>Type <code>a = a</code> in the fact input and press Enter.</p>
+<h2>4. Experiment</h2>
+<p>Try adding more constants, changing properties, or writing custom rules. The engine recomputes from scratch on each Run.</p>
 
 <div class="callout">
-  <strong>Why <code>a = a</code>?</strong> The engine only instantiates axiom variables with terms
-  already in the universe. The fact <code>a = a</code> introduces the ground element <code>a</code>
-  into the universe, making it available for substitution.
+<strong>Tip:</strong> Use the examples dropdown in the editor to load ready-made programs demonstrating different features.
 </div>
-
-<h2>Step 3 &mdash; Compute Closure</h2>
-<p>Set rounds to <strong>2</strong> and click <strong>Compute Closure</strong>.</p>
-
-<h2>Result</h2>
-<pre>
-<span class="cm">-- Derived equations:</span>
-<span class="cm">--   [identity]  mul(a, e) = a</span>
-<span class="cm">--   [identity]  mul(e, a) = a</span>
-<span class="cm">--   [identity]  mul(e, e) = e</span>
-<span class="cm">--   [assoc]     mul(mul(a, a), a) = mul(a, mul(a, a))</span>
-<span class="cm">--   ...</span>
-
-<span class="cm">-- Equivalence class:</span>
-<span class="cm">--   { a, mul(a, e), mul(e, a) }</span>
-</pre>
 
 <div class="page-nav">
   <a onclick="goPage('overview')">&larr; Overview</a>
-  <a class="next" onclick="goPage('structures')">Structures &rarr;</a>
+  <a class="next" onclick="goPage('elements')">Elements &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Structures ───────────────────────── -->
-<div class="page" id="page-structures">
-<h1>Algebraic Structures</h1>
-<p class="page-desc">Operations, axioms, and built-in structures.</p>
+<!-- ─── Elements ──────────────────────────── -->
+<div class="page" id="page-elements">
+<h1>Elements</h1>
+<p class="page-desc">The atoms of your universe.</p>
 
-<p>A <strong>structure</strong> consists of:</p>
-<ul>
-  <li><strong>Operations</strong> &mdash; named functions with fixed arity (e.g. <code>mul/2</code>, <code>inv/1</code>, <code>e/0</code>)</li>
-  <li><strong>Axioms (Equations)</strong> &mdash; universally quantified equalities (e.g. associativity)</li>
-</ul>
+<p>Everything in Relatum is an <strong>element</strong>. Elements are declared by placing them inside a container using angle-bracket syntax.</p>
 
-<h2>Built-in Structures</h2>
+<h2>Syntax</h2>
 
-<table>
-  <tr><th>Name</th><th>Operations</th><th>Axioms</th><th>Description</th></tr>
-  <tr>
-    <td><strong>Semigroup</strong></td>
-    <td><code>mul/2</code></td>
-    <td>1</td>
-    <td>Associative binary operation</td>
-  </tr>
-  <tr>
-    <td><strong>Monoid</strong></td>
-    <td><code>mul/2</code>, <code>e/0</code></td>
-    <td>3</td>
-    <td>Semigroup + identity element</td>
-  </tr>
-  <tr>
-    <td><strong>Group</strong></td>
-    <td><code>mul/2</code>, <code>e/0</code>, <code>inv/1</code></td>
-    <td>5</td>
-    <td>Monoid + inverse operation</td>
-  </tr>
-  <tr>
-    <td><strong>Ring</strong></td>
-    <td><code>add/2</code>, <code>zero/0</code>, <code>neg/1</code>, <code>mul/2</code>, <code>one/0</code></td>
-    <td>11</td>
-    <td>Abelian group (add) + monoid (mul) + distributivity</td>
-  </tr>
-  <tr>
-    <td><strong>Empty</strong></td>
-    <td><em>none</em></td>
-    <td>0</td>
-    <td>Blank slate for custom structures</td>
-  </tr>
-</table>
-
-<h2>Axioms of a Group</h2>
 <pre>
-<span class="cm">-- Associativity</span>
-<span class="op">mul</span>(<span class="op">mul</span>(<span class="vr">x</span>, <span class="vr">y</span>), <span class="vr">z</span>) <span class="eq">=</span> <span class="op">mul</span>(<span class="vr">x</span>, <span class="op">mul</span>(<span class="vr">y</span>, <span class="vr">z</span>))
+<span class="cm"># Declare elements in the root container</span>
+<span class="kw">&lt;element&gt;</span> a, b, c
 
-<span class="cm">-- Left identity</span>
-<span class="op">mul</span>(<span class="op">e</span>, <span class="vr">x</span>) <span class="eq">=</span> <span class="vr">x</span>
-
-<span class="cm">-- Right identity</span>
-<span class="op">mul</span>(<span class="vr">x</span>, <span class="op">e</span>) <span class="eq">=</span> <span class="vr">x</span>
-
-<span class="cm">-- Left inverse</span>
-<span class="op">mul</span>(<span class="op">inv</span>(<span class="vr">x</span>), <span class="vr">x</span>) <span class="eq">=</span> <span class="op">e</span>
-
-<span class="cm">-- Right inverse</span>
-<span class="op">mul</span>(<span class="vr">x</span>, <span class="op">inv</span>(<span class="vr">x</span>)) <span class="eq">=</span> <span class="op">e</span>
+<span class="cm"># Declare elements inside a named container</span>
+<span class="kw">&lt;Person&gt;</span> alice, bob, carol
+<span class="kw">&lt;City&gt;</span> paris, london
 </pre>
 
-<h2>Structure Hierarchy</h2>
+<h2>The Root: &lt;element&gt;</h2>
 
-<svg viewBox="0 0 520 200" style="width:100%;max-width:520px;display:block;margin:16px auto;">
-  <!-- Semigroup -->
-  <rect x="10" y="70" width="110" height="46" rx="6" fill="#24283b" stroke="#7aa2f7" stroke-width="1.5"/>
-  <text x="65" y="89" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="12" font-weight="700">Semigroup</text>
-  <text x="65" y="105" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">mul/2</text>
+<p>There is one built-in intrinsic element: <code>element</code>. Every declared element automatically belongs to <code>element</code>. Writing <code>&lt;element&gt; a, b, c</code> is the simplest way to introduce elements into the universe.</p>
 
-  <!-- Arrow -->
-  <line x1="120" y1="93" x2="145" y2="93" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="152,93 143,88 143,98" fill="#3b4261"/>
-  <text x="136" y="83" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="9">⊂</text>
+<h2>Any Element Can Be a Container</h2>
 
-  <!-- Monoid -->
-  <rect x="155" y="70" width="110" height="46" rx="6" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
-  <text x="210" y="89" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="12" font-weight="700">Monoid</text>
-  <text x="210" y="105" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">+ e/0</text>
+<p>When you write <code>&lt;Person&gt; alice, bob</code>, two things happen:</p>
+<ol>
+  <li><code>Person</code> is declared as an element (in <code>&lt;element&gt;</code>).</li>
+  <li><code>alice</code> and <code>bob</code> are declared as elements that are <em>in</em> <code>Person</code>.</li>
+</ol>
 
-  <!-- Arrow -->
-  <line x1="265" y1="93" x2="290" y2="93" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="297,93 288,88 288,98" fill="#3b4261"/>
-  <text x="281" y="83" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="9">⊂</text>
+<p>Containers are elements too. You can nest them, use them in facts, or make them members of other containers:</p>
 
-  <!-- Group -->
-  <rect x="300" y="70" width="110" height="46" rx="6" fill="#24283b" stroke="#e0af68" stroke-width="1.5"/>
-  <text x="355" y="89" text-anchor="middle" fill="#e0af68" font-family="monospace" font-size="12" font-weight="700">Group</text>
-  <text x="355" y="105" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">+ inv/1</text>
+<pre>
+<span class="kw">&lt;element&gt;</span> Animal
+<span class="kw">&lt;Animal&gt;</span> Cat, Dog
+<span class="kw">&lt;Cat&gt;</span> whiskers, mittens
 
-  <!-- Arrow down to Ring -->
-  <line x1="355" y1="116" x2="355" y2="140" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="355,147 349,138 361,138" fill="#3b4261"/>
+<span class="cm"># Cat is in Animal, whiskers is in Cat</span>
+<span class="cm"># All of them are in element</span>
+</pre>
 
-  <!-- Ring -->
-  <rect x="280" y="148" width="150" height="46" rx="6" fill="#24283b" stroke="#bb9af7" stroke-width="1.5"/>
-  <text x="355" y="167" text-anchor="middle" fill="#bb9af7" font-family="monospace" font-size="12" font-weight="700">Ring</text>
-  <text x="355" y="183" text-anchor="middle" fill="#565f89" font-family="monospace" font-size="10">+ add, zero, neg, one</text>
+<h2>Membership Constrains Relations</h2>
 
-  <!-- Label on arrow -->
-  <text x="370" y="134" fill="#565f89" font-family="monospace" font-size="9">add abelian group</text>
-  <text x="370" y="144" fill="#565f89" font-family="monospace" font-size="9">+ distributivity</text>
-</svg>
+<p>When a relation declares a signature like <code>rel R/2 : Person, City</code>, only elements that are <em>in</em> <code>Person</code> can appear in argument 1, and only elements <em>in</em> <code>City</code> can appear in argument 2. This filtering applies to user-written facts AND to derived facts.</p>
 
-<h2>Custom Structures</h2>
-
-<p>Click <strong>Empty</strong> to start with a blank structure. You can then define your own
-operations via the <code>Add Op</code> input or by auto-registration in facts.
-Custom structures have no axioms &mdash; only congruence closure and your explicit facts
-drive the derivation.</p>
+<div class="callout">
+<strong>Reflexivity respects membership.</strong> If <code>rel eq/2 : Person, Person, reflexive</code>, then <code>eq(t, t)</code> is only generated for elements in <code>Person</code> — not every element in the universe.
+</div>
 
 <div class="page-nav">
   <a onclick="goPage('quick-start')">&larr; Quick Start</a>
-  <a class="next" onclick="goPage('operations')">Operations &rarr;</a>
+  <a class="next" onclick="goPage('relations')">Relations &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Operations ───────────────────────── -->
-<div class="page" id="page-operations">
-<h1>Operations</h1>
-<p class="page-desc">Declaring and auto-registering operations.</p>
+<!-- ─── Relations ─────────────────────────── -->
+<div class="page" id="page-relations">
+<h1>Relations</h1>
+<p class="page-desc">Named connections between terms.</p>
 
-<h2>Declaring Operations</h2>
+<p>A relation is a named predicate with a fixed arity (number of arguments). <code>equiv/2</code> is a binary relation; <code>between/3</code> is ternary.</p>
 
-<p>Use the <code>Add Op</code> input with the format <code>name/arity</code>. Multiple entries
-can be comma-separated:</p>
+<h2>Syntax</h2>
 
 <pre>
-<span class="cm">-- Declare a binary operation "star" and a constant "unit"</span>
-<span class="hl">star/2, unit/0</span>
-
-<span class="cm">-- Declare a unary operation</span>
-<span class="hl">flip/1</span>
+<span class="kw">rel</span> <span class="op">equiv</span>/2                          <span class="cm"># plain relation (untyped)</span>
+<span class="kw">rel</span> <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>              <span class="cm"># with properties</span>
+<span class="kw">rel</span> <span class="op">lt</span>/2 : <span class="hl">reflexive</span>, <span class="hl">transitive</span>       <span class="cm"># multiple properties</span>
+<span class="kw">rel</span> <span class="op">lives_in</span>/2 : <span class="hl">Person</span>, <span class="hl">City</span>         <span class="cm"># membership constraints</span>
+<span class="kw">rel</span> <span class="op">friend</span>/2 : <span class="hl">Person</span>, <span class="hl">Person</span>, <span class="hl">symmetric</span> <span class="cm"># membership + properties</span>
 </pre>
 
+<h2>Properties</h2>
+
 <table>
-  <tr><th>Arity</th><th>Meaning</th><th>Example</th></tr>
-  <tr><td><code>0</code></td><td>Constant (nullary)</td><td><code>e/0</code> &rarr; written as <code>e</code> in terms</td></tr>
-  <tr><td><code>1</code></td><td>Unary function</td><td><code>inv/1</code> &rarr; <code>inv(x)</code></td></tr>
-  <tr><td><code>2</code></td><td>Binary function</td><td><code>mul/2</code> &rarr; <code>mul(x, y)</code></td></tr>
-  <tr><td><code>n</code></td><td>n-ary function</td><td><code>f/3</code> &rarr; <code>f(x, y, z)</code></td></tr>
+  <tr><th>Property</th><th>Meaning</th><th>Auto-generated</th></tr>
+  <tr>
+    <td><code>reflexive</code></td>
+    <td>R(t, t) for every constant t</td>
+    <td>Facts: R(a, a), R(b, b), ...</td>
+  </tr>
+  <tr>
+    <td><code>symmetric</code></td>
+    <td>R(x, y) implies R(y, x)</td>
+    <td>Rule: R(?x, ?y) |- R(?y, ?x)</td>
+  </tr>
+  <tr>
+    <td><code>transitive</code></td>
+    <td>R(x, y) and R(y, z) implies R(x, z)</td>
+    <td>Rule: R(?x, ?y), R(?y, ?z) |- R(?x, ?z)</td>
+  </tr>
+  <tr>
+    <td><code>congruent</code></td>
+    <td>If R(a, b) and S(...a...), then S(...b...)</td>
+    <td>Substitution in existing facts</td>
+  </tr>
+  <tr>
+    <td><code>equivalence</code></td>
+    <td>All four of the above</td>
+    <td>Everything above combined</td>
+  </tr>
 </table>
 
 <div class="callout">
-  <strong>Arity matters.</strong> A nullary operation <code>e/0</code> is treated as a <em>constant</em>,
-  not a variable. In terms, bare <code>e</code> is parsed as the constant <code>e()</code>, while bare
-  <code>x</code> (not a declared operation) is a variable.
+<strong>Equivalence is the strongest.</strong> Writing <code>: equivalence</code> is shorthand for <code>: reflexive, symmetric, transitive, congruent</code>.
 </div>
 
-<h2>Auto-registration</h2>
-
-<p>When adding facts, any unknown identifier followed by parentheses is automatically
-registered as a new operation. The arity is inferred from the argument count:</p>
-
-<pre>
-<span class="cm">-- Typing this fact on a Monoid automatically registers h/2:</span>
-<span class="op">h</span>(<span class="vr">a</span>, <span class="vr">b</span>) <span class="eq">=</span> <span class="op">mul</span>(<span class="vr">a</span>, <span class="vr">b</span>)
-
-<span class="cm">-- Registers g/1:</span>
-<span class="op">g</span>(<span class="vr">a</span>) <span class="eq">=</span> <span class="vr">a</span>
-</pre>
-
-<p>Auto-registered operations appear with a <span style="color:var(--accent2)">purple</span>
-border in the Structure panel, distinguishing them from built-in operations.</p>
-
-<div class="callout warn">
-  <strong>Arity conflicts.</strong> If you use the same name with different argument counts
-  (e.g. <code>f(a)</code> then <code>f(a,b)</code>), the parser will raise an error.
-</div>
+<p>See <a style="color:var(--accent);cursor:pointer" onclick="goPage('elements')">Elements</a> for how membership restricts which elements each argument position accepts.</p>
 
 <div class="page-nav">
-  <a onclick="goPage('structures')">&larr; Structures</a>
-  <a class="next" onclick="goPage('terms')">Terms &amp; Equations &rarr;</a>
+  <a onclick="goPage('elements')">&larr; Elements</a>
+  <a class="next" onclick="goPage('facts')">Facts &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Terms & Equations ────────────────── -->
-<div class="page" id="page-terms">
-<h1>Terms &amp; Equations</h1>
-<p class="page-desc">Syntax, facts, and preset formulas.</p>
+<!-- ─── Facts ─────────────────────────────── -->
+<div class="page" id="page-facts">
+<h1>Facts</h1>
+<p class="page-desc">Ground atoms &mdash; the initial knowledge base.</p>
 
-<h2>Term Syntax</h2>
+<p>A fact is a ground instance of a relation. All terms in a fact must be declared constants.</p>
 
-<p>A <strong>term</strong> is one of:</p>
-
-<table>
-  <tr><th>Form</th><th>Meaning</th><th>Example</th></tr>
-  <tr><td><code>name</code></td><td>Variable (if not a nullary op)</td><td><code>a</code>, <code>x</code>, <code>foo</code></td></tr>
-  <tr><td><code>name</code></td><td>Constant (if declared as arity 0)</td><td><code>e</code>, <code>zero</code>, <code>one</code></td></tr>
-  <tr><td><code>name(t1, ..., tn)</code></td><td>Operation application</td><td><code>mul(a, inv(b))</code></td></tr>
-</table>
-
-<p>Terms can be nested to arbitrary depth:</p>
+<h2>Syntax</h2>
 
 <pre>
-<span class="op">mul</span>(<span class="op">mul</span>(<span class="vr">a</span>, <span class="op">inv</span>(<span class="vr">b</span>)), <span class="op">mul</span>(<span class="vr">c</span>, <span class="op">e</span>))
+<span class="op">equiv</span>(a, b)
+<span class="op">lt</span>(x, y)
+<span class="op">between</span>(a, b, c)
 </pre>
 
-<h2>Adding Facts</h2>
+<p>Each fact is a single line: a relation name followed by parenthesized, comma-separated constants.</p>
 
-<p>A <strong>fact</strong> is an equation between two terms, written with <code>=</code>:</p>
-
-<pre>
-<span class="cm">-- Simple seed: introduce a into the universe</span>
-<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
-
-<span class="cm">-- Concrete identity instance</span>
-<span class="op">mul</span>(<span class="vr">a</span>, <span class="op">e</span>) <span class="eq">=</span> <span class="vr">a</span>
-
-<span class="cm">-- Claim commutativity for specific elements</span>
-<span class="op">mul</span>(<span class="vr">a</span>, <span class="vr">b</span>) <span class="eq">=</span> <span class="op">mul</span>(<span class="vr">b</span>, <span class="vr">a</span>)
-
-<span class="cm">-- Complex equation</span>
-<span class="op">mul</span>(<span class="op">inv</span>(<span class="vr">a</span>), <span class="op">mul</span>(<span class="vr">a</span>, <span class="vr">b</span>)) <span class="eq">=</span> <span class="vr">b</span>
-</pre>
-
-<p>Each fact introduces all its subterms into the universe and asserts the two sides
-are equivalent. Facts can be deleted individually with the <span style="color:var(--red)">&times;</span>
-button, or all at once with <strong>clear all</strong>.</p>
-
-<div class="callout">
-  <strong>Variables in facts.</strong> Variables in facts (like <code>a</code>, <code>b</code>) are treated
-  as <em>specific ground elements</em>, not universally quantified. The fact <code>mul(a, b) = mul(b, a)</code>
-  asserts that <em>these particular</em> a and b commute, not that multiplication is commutative in general.
-  Universal quantification belongs in axioms (the structure's equations).
-</div>
-
-<h2>Preset Formulas (+)</h2>
-
-<p>The <span style="color:var(--accent2);font-weight:700">+</span> button next to the input
-opens a dropdown of context-sensitive preset formulas. Each preset includes:</p>
+<h2>Validation</h2>
 
 <ul>
-  <li>The formula text (fills the input on click)</li>
-  <li>A description explaining the algebraic meaning</li>
+  <li>The relation must be declared with <code>rel</code>.</li>
+  <li>The number of terms must match the relation's arity.</li>
+  <li>Every term must be a declared constant.</li>
 </ul>
 
-<p>Presets are grouped by category and adapt to the current structure's operations.
-For example, inverse-related presets only appear when <code>inv</code> is defined.</p>
+<p>If validation fails, the error message includes the line number.</p>
 
 <div class="page-nav">
-  <a onclick="goPage('operations')">&larr; Operations</a>
+  <a onclick="goPage('relations')">&larr; Relations</a>
+  <a class="next" onclick="goPage('rules')">Rules &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Rules ─────────────────────────────── -->
+<div class="page" id="page-rules">
+<h1>Rules</h1>
+<p class="page-desc">Inference rules for deriving new facts.</p>
+
+<p>Rules express: "if these premises all hold, then derive these conclusions." They are the core mechanism for forward-chaining inference.</p>
+
+<h2>Syntax</h2>
+
+<pre>
+<span class="kw">rule</span> <span class="hl">name</span>: premises <span class="eq">|-</span> conclusions
+</pre>
+
+<p>Premises and conclusions are comma-separated atoms. Variables are prefixed with <code>?</code>.</p>
+
+<h2>Examples</h2>
+
+<pre>
+<span class="cm"># Symmetry: if R(x, y) then R(y, x)</span>
+<span class="kw">rule</span> <span class="hl">sym</span>: R(?x, ?y) <span class="eq">|-</span> R(?y, ?x)
+
+<span class="cm"># Transitivity: if R(x, y) and R(y, z) then R(x, z)</span>
+<span class="kw">rule</span> <span class="hl">trans</span>: R(?x, ?y), R(?y, ?z) <span class="eq">|-</span> R(?x, ?z)
+
+<span class="cm"># Cross-relation: friends know each other</span>
+<span class="kw">rule</span> <span class="hl">f2k</span>: friend(?x, ?y) <span class="eq">|-</span> knows(?x, ?y)
+
+<span class="cm"># Multi-conclusion: equivalence implies both directions</span>
+<span class="kw">rule</span> <span class="hl">both</span>: eq(?x, ?y) <span class="eq">|-</span> leq(?x, ?y), leq(?y, ?x)
+</pre>
+
+<h2>How Variables Work</h2>
+
+<ul>
+  <li>Variables (<code>?x</code>, <code>?y</code>, etc.) are <strong>pattern wildcards</strong> that match any constant.</li>
+  <li>The same variable in multiple positions requires the same constant in all positions.</li>
+  <li>The engine finds <em>all</em> substitutions that satisfy all premises simultaneously, then instantiates conclusions.</li>
+  <li>Only ground conclusions (where every variable got bound) are added as new facts.</li>
+</ul>
+
+<div class="callout warn">
+<strong>Multi-premise rules are expensive.</strong> A rule with N premises requires an N-way join over the fact set. Keep premise counts low for performance.
+</div>
+
+<div class="page-nav">
+  <a onclick="goPage('facts')">&larr; Facts</a>
+  <a class="next" onclick="goPage('derive')">Derive &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Derive ────────────────────────────── -->
+<div class="page" id="page-derive">
+<h1>Derive</h1>
+<p class="page-desc">Compute the closure.</p>
+
+<p>The <code>derive</code> command triggers the closure engine. It applies all rules repeatedly until no new facts can be derived (saturation) or a limit is reached.</p>
+
+<h2>Syntax</h2>
+
+<pre>
+<span class="kw">derive</span>          <span class="cm"># default: up to 100 rounds</span>
+<span class="kw">derive</span> 10       <span class="cm"># limit to 10 rounds</span>
+</pre>
+
+<h2>What Happens</h2>
+
+<p>Each round, the engine:</p>
+<ol>
+  <li>Applies all rules (auto-generated + user-defined) to the current fact set</li>
+  <li>Generates reflexive facts for reflexive relations</li>
+  <li>Applies congruence for congruent relations</li>
+  <li>Checks if any new facts were added</li>
+</ol>
+
+<p>Stops when:</p>
+<ul>
+  <li><strong>Saturated</strong> &mdash; no new facts in a round (fixed point reached)</li>
+  <li><strong>Round limit</strong> &mdash; maximum rounds exceeded</li>
+  <li><strong>Fact limit</strong> &mdash; total facts exceed 10,000 (safety cap)</li>
+</ul>
+
+<div class="page-nav">
+  <a onclick="goPage('rules')">&larr; Rules</a>
   <a class="next" onclick="goPage('algorithm')">Algorithm &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Algorithm ────────────────────────── -->
+<!-- ─── Algorithm ─────────────────────────── -->
 <div class="page" id="page-algorithm">
-<h1>Closure Algorithm</h1>
-<p class="page-desc">How the closure engine computes equivalences step by step.</p>
+<h1>Algorithm</h1>
+<p class="page-desc">How the closure engine works internally.</p>
 
-<p>The closure computation proceeds in rounds:</p>
+<h2>Forward Chaining</h2>
 
-<ol>
-  <li><strong>Seed</strong> &mdash; Collect all subterms from facts into the <em>universe</em>.
-      Merge each fact's LHS and RHS in the union-find.</li>
-  <li><strong>Congruence</strong> &mdash; For every pair of <code>f(a1..an)</code> and <code>f(b1..bn)</code>
-      in the universe where <code>ai = bi</code> for all i, merge them.</li>
-  <li><strong>Axiom instantiation</strong> &mdash; For each structure axiom, substitute its variables
-      with every combination of ground terms from the universe. Merge the resulting LHS and RHS.
-      New subterms are added to the universe.</li>
-  <li><strong>Repeat</strong> steps 2&ndash;3 for the configured number of rounds, or until a fixed point
-      (no new merges in a round).</li>
-  <li><strong>Extract</strong> equivalence classes from the union-find (groups of terms with &gt;1 member).</li>
-</ol>
+<p>Relatum uses a <strong>semi-naive forward chaining</strong> strategy, similar to Datalog evaluation. Starting from initial facts, it repeatedly applies rules to derive new facts until a fixed point.</p>
+
+<h2>Round Structure</h2>
+
+<pre>
+<span class="cm">for each round:</span>
+  <span class="cm">1. Rule application</span>
+     for each rule:
+       find all substitutions matching premises
+       instantiate conclusions with each substitution
+       add new ground facts to the fact set
+
+  <span class="cm">2. Reflexivity</span>
+     for each reflexive relation R:
+       for each constant t in universe:
+         add R(t, t)
+
+  <span class="cm">3. Congruence</span>
+     for each congruent relation R:
+       for each R(a, b) where a != b:
+         for each existing fact S(...a...):
+           add S(...b...) (and vice versa)
+
+  <span class="cm">4. Fixed-point check</span>
+     if no new facts: STOP (saturated)
+</pre>
+
+<h2>Complexity</h2>
+
+<ul>
+  <li><strong>Single-premise rules:</strong> O(|rules| &times; |facts|) per round</li>
+  <li><strong>Multi-premise rules:</strong> O(|facts|<sup>|premises|</sup>) worst case (join)</li>
+  <li><strong>Congruence:</strong> O(|pairs| &times; |facts|) per round</li>
+</ul>
 
 <div class="callout warn">
-  <strong>Exponential growth.</strong> Each round can dramatically increase the universe size
-  because axiom instantiation generates <code>|universe|^|vars|</code> substitutions per axiom.
-  Start with 1&ndash;2 rounds and increase carefully.
+<strong>Beware combinatorial explosion.</strong> A transitive relation over many constants can generate O(n&sup2;) facts. The 10,000-fact safety cap prevents runaway computations.
 </div>
-
-<h2>Visual walkthrough</h2>
-
-<svg viewBox="0 0 580 420" style="width:100%;max-width:580px;display:block;margin:16px auto;">
-  <!-- Round 0 -->
-  <rect x="10" y="10" width="560" height="80" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
-  <text x="24" y="32" fill="#e0af68" font-family="monospace" font-size="13" font-weight="700">Round 0  — Seed</text>
-  <text x="24" y="52" fill="#565f89" font-family="monospace" font-size="11">Universe:</text>
-  <!-- universe bubbles -->
-  <rect x="110" y="40" width="30" height="22" rx="11" fill="#2f3347" stroke="#7aa2f7" stroke-width="1"/>
-  <text x="125" y="56" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="12">a</text>
-  <rect x="150" y="40" width="28" height="22" rx="11" fill="#2f3347" stroke="#9ece6a" stroke-width="1"/>
-  <text x="164" y="56" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="12">e</text>
-  <text x="200" y="56" fill="#565f89" font-family="monospace" font-size="11">Merge: a = a (trivial)</text>
-  <text x="24" y="78" fill="#565f89" font-family="monospace" font-size="11">Equiv: { a } { e }</text>
-
-  <!-- Arrow -->
-  <line x1="290" y1="90" x2="290" y2="115" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="290,122 284,113 296,113" fill="#3b4261"/>
-
-  <!-- Round 1 -->
-  <rect x="10" y="125" width="560" height="140" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
-  <text x="24" y="147" fill="#e0af68" font-family="monospace" font-size="13" font-weight="700">Round 1  — Congruence + Instantiation</text>
-  <text x="24" y="170" fill="#565f89" font-family="monospace" font-size="11">Congruence: nothing new</text>
-  <text x="24" y="190" fill="#bb9af7" font-family="monospace" font-size="11">Axiom: mul(e, x) = x</text>
-  <text x="24" y="210" fill="#565f89" font-family="monospace" font-size="11">  x→a:  mul(e,a) = a</text>
-  <text x="260" y="210" fill="#9ece6a" font-family="monospace" font-size="11">→ new term: mul(e,a)</text>
-  <text x="24" y="228" fill="#565f89" font-family="monospace" font-size="11">  x→e:  mul(e,e) = e</text>
-  <text x="260" y="228" fill="#9ece6a" font-family="monospace" font-size="11">→ new term: mul(e,e)</text>
-  <text x="24" y="252" fill="#565f89" font-family="monospace" font-size="11">Universe:</text>
-  <!-- universe bubbles round 1 -->
-  <rect x="110" y="240" width="30" height="20" rx="10" fill="#2f3347" stroke="#7aa2f7" stroke-width="1"/>
-  <text x="125" y="254" text-anchor="middle" fill="#7aa2f7" font-family="monospace" font-size="11">a</text>
-  <rect x="146" y="240" width="28" height="20" rx="10" fill="#2f3347" stroke="#9ece6a" stroke-width="1"/>
-  <text x="160" y="254" text-anchor="middle" fill="#9ece6a" font-family="monospace" font-size="11">e</text>
-  <rect x="180" y="240" width="80" height="20" rx="10" fill="#2f3347" stroke="#7dcfff" stroke-width="1"/>
-  <text x="220" y="254" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="10">mul(e,a)</text>
-  <rect x="268" y="240" width="78" height="20" rx="10" fill="#2f3347" stroke="#7dcfff" stroke-width="1"/>
-  <text x="307" y="254" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="10">mul(e,e)</text>
-  <rect x="352" y="240" width="78" height="20" rx="10" fill="#2f3347" stroke="#7dcfff" stroke-width="1"/>
-  <text x="391" y="254" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="10">mul(a,e)</text>
-  <text x="440" y="254" fill="#565f89" font-family="monospace" font-size="11">...</text>
-
-  <!-- Arrow -->
-  <line x1="290" y1="265" x2="290" y2="290" stroke="#3b4261" stroke-width="1.5"/>
-  <polygon points="290,297 284,288 296,288" fill="#3b4261"/>
-
-  <!-- Round 2 -->
-  <rect x="10" y="300" width="560" height="110" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
-  <text x="24" y="322" fill="#e0af68" font-family="monospace" font-size="13" font-weight="700">Round 2  — Deeper Instantiation</text>
-  <text x="24" y="345" fill="#565f89" font-family="monospace" font-size="11">Congruence: mul(e,a) ≟ mul(e,e)?  a≠e → no merge</text>
-  <text x="24" y="365" fill="#bb9af7" font-family="monospace" font-size="11">Axiom: mul(e, x) = x</text>
-  <text x="24" y="385" fill="#565f89" font-family="monospace" font-size="11">  x→mul(e,a):  mul(e, mul(e,a)) = mul(e,a)</text>
-  <text x="370" y="385" fill="#9ece6a" font-family="monospace" font-size="11">→ new term</text>
-  <text x="24" y="400" fill="#565f89" font-family="monospace" font-size="11">  ...</text>
-</svg>
 
 <div class="page-nav">
-  <a onclick="goPage('terms')">&larr; Terms &amp; Equations</a>
-  <a class="next" onclick="goPage('categories')">Categories &rarr;</a>
+  <a onclick="goPage('derive')">&larr; Derive</a>
+  <a class="next" onclick="goPage('properties')">Relation Properties &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Categories ───────────────────────── -->
-<div class="page" id="page-categories">
-<h1>Categorized Output</h1>
-<p class="page-desc">How derived equations are grouped for readability.</p>
+<!-- ─── Properties ────────────────────────── -->
+<div class="page" id="page-properties">
+<h1>Relation Properties</h1>
+<p class="page-desc">What each property actually does under the hood.</p>
 
-<p>Derived equations are grouped by category:</p>
+<h2>Reflexive</h2>
+<p>For every constant <code>t</code> in the universe, the engine adds <code>R(t, t)</code> before rule application begins. This includes constants that aren't mentioned in any user-supplied fact.</p>
 
-<table>
-  <tr><th>Category</th><th>Description</th></tr>
-  <tr><td><code>congruence</code></td><td>Derived by congruence closure</td></tr>
-  <tr><td><code>associativity</code></td><td>Derived from associativity axiom instantiation</td></tr>
-  <tr><td><code>identity</code></td><td>Derived from identity axiom instantiation</td></tr>
-  <tr><td><code>inverse</code></td><td>Derived from inverse axiom instantiation</td></tr>
-  <tr><td><code>additive_group</code></td><td>All additive group axioms (ring)</td></tr>
-  <tr><td><code>multiplicative_monoid</code></td><td>Multiplicative monoid axioms (ring)</td></tr>
-  <tr><td><code>distributivity</code></td><td>Distributive law instantiations (ring)</td></tr>
-</table>
+<h2>Symmetric</h2>
+<p>Auto-generates the rule <code>R(?x, ?y) |- R(?y, ?x)</code>. Applied during normal rule matching each round.</p>
 
-<p>Each category block is collapsible and shows up to 8 equations, with a "+N more" hint
-if there are additional ones.</p>
+<h2>Transitive</h2>
+<p>Auto-generates the rule <code>R(?x, ?y), R(?y, ?z) |- R(?x, ?z)</code>. This is a two-premise rule, so it performs a join on the shared variable <code>?y</code>.</p>
 
-<h2>Example output</h2>
+<h2>Congruent</h2>
+<p>If <code>R(a, b)</code> holds and some fact <code>S(..., a, ...)</code> exists, the engine derives <code>S(..., b, ...)</code> (substituting <code>a</code> with <code>b</code> in each position, and vice versa). This generalizes equality to the entire fact base.</p>
 
-<svg viewBox="0 0 520 280" style="width:100%;max-width:520px;display:block;margin:16px auto;">
-  <!-- identity category -->
-  <rect x="10" y="10" width="500" height="130" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
-  <!-- header bar -->
-  <rect x="10" y="10" width="500" height="30" rx="8" fill="#2f3347"/>
-  <rect x="10" y="30" width="500" height="10" fill="#2f3347"/>
-  <circle cx="28" cy="25" r="5" fill="#9ece6a"/>
-  <text x="44" y="30" fill="#9ece6a" font-family="monospace" font-size="13" font-weight="700">identity</text>
-  <text x="130" y="30" fill="#565f89" font-family="monospace" font-size="11">— 3 equations</text>
-  <!-- description -->
-  <text x="24" y="58" fill="#565f89" font-family="monospace" font-size="11" font-style="italic">Identity: e * x = x,  x * e = x</text>
-  <!-- equations -->
-  <text x="24" y="82" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#7dcfff">e</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#c0caf5">a</tspan></text>
-  <text x="24" y="102" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#7dcfff">e</tspan>, <tspan fill="#c0caf5">a</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#c0caf5">a</tspan></text>
-  <text x="24" y="122" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#7dcfff">e</tspan>, <tspan fill="#7dcfff">e</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#7dcfff">e</tspan></text>
-
-  <!-- associativity category -->
-  <rect x="10" y="155" width="500" height="115" rx="8" fill="#24283b" stroke="#3b4261" stroke-width="1"/>
-  <!-- header bar -->
-  <rect x="10" y="155" width="500" height="30" rx="8" fill="#2f3347"/>
-  <rect x="10" y="175" width="500" height="10" fill="#2f3347"/>
-  <circle cx="28" cy="170" r="5" fill="#7aa2f7"/>
-  <text x="44" y="175" fill="#7aa2f7" font-family="monospace" font-size="13" font-weight="700">associativity</text>
-  <text x="170" y="175" fill="#565f89" font-family="monospace" font-size="11">— 1 equation</text>
-  <!-- description -->
-  <text x="24" y="203" fill="#565f89" font-family="monospace" font-size="11" font-style="italic">(a * b) * c = a * (b * c)</text>
-  <!-- equations -->
-  <text x="24" y="228" fill="#c0caf5" font-family="monospace" font-size="12"><tspan fill="#7dcfff">mul</tspan>(<tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#c0caf5">a</tspan>), <tspan fill="#c0caf5">a</tspan>) <tspan fill="#e0af68" font-weight="600">=</tspan> <tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#7dcfff">mul</tspan>(<tspan fill="#c0caf5">a</tspan>, <tspan fill="#c0caf5">a</tspan>))</text>
-  <text x="24" y="250" fill="#565f89" font-family="monospace" font-size="11">...</text>
-</svg>
+<h2>Equivalence = All Four</h2>
+<p>Declaring <code>: equivalence</code> is exactly the same as <code>: reflexive, symmetric, transitive, congruent</code>. It gives you a full equivalence relation that propagates through the entire system.</p>
 
 <div class="page-nav">
   <a onclick="goPage('algorithm')">&larr; Algorithm</a>
@@ -1017,245 +806,287 @@ if there are additional ones.</p>
 </div>
 </div>
 
-<!-- ─── Safety ───────────────────────────── -->
+<!-- ─── Safety ────────────────────────────── -->
 <div class="page" id="page-safety">
 <h1>Safety &amp; Limits</h1>
-<p class="page-desc">How the engine prevents combinatorial explosion.</p>
+<p class="page-desc">Guarding against infinite derivation.</p>
 
-<h2>Term Depth Cap (MAX_DEPTH = 8)</h2>
-<p>Terms nested deeper than 8 levels are never added to the universe. This prevents
-infinite growth from recursive axioms.</p>
+<h2>Built-in Limits</h2>
 
-<h2>Static Expanding Axiom Detection</h2>
-<p>Before computing, the engine analyzes each axiom. An axiom is <em>expanding</em> if one side
-can be pattern-matched as a proper subterm of the other. For example:</p>
-
-<svg viewBox="0 0 540 310" style="width:100%;max-width:540px;display:block;margin:16px auto;">
-  <!-- ── Expanding example ── -->
-  <rect x="5" y="5" width="530" height="120" rx="8" fill="#24283b" stroke="#f7768e" stroke-width="1.5"/>
-  <text x="18" y="26" fill="#f7768e" font-family="monospace" font-size="12" font-weight="700">EXPANDING</text>
-  <text x="120" y="26" fill="#565f89" font-family="monospace" font-size="11">f(x) = f(f(x))</text>
-
-  <!-- LHS tree: f(x) -->
-  <text x="70" y="55" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="13" font-weight="700">f</text>
-  <line x1="70" y1="60" x2="70" y2="80" stroke="#3b4261" stroke-width="1.5"/>
-  <text x="70" y="95" text-anchor="middle" fill="#c0caf5" font-family="monospace" font-size="13">x</text>
-
-  <!-- = sign -->
-  <text x="145" y="75" text-anchor="middle" fill="#e0af68" font-family="monospace" font-size="18" font-weight="700">=</text>
-
-  <!-- RHS tree: f(f(x)) -->
-  <text x="230" y="45" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="13" font-weight="700">f</text>
-  <line x1="230" y1="50" x2="230" y2="65" stroke="#3b4261" stroke-width="1.5"/>
-  <text x="230" y="80" text-anchor="middle" fill="#7dcfff" font-family="monospace" font-size="13" font-weight="700">f</text>
-  <line x1="230" y1="85" x2="230" y2="100" stroke="#3b4261" stroke-width="1.5"/>
-  <text x="230" y="115" text-anchor="middle" fill="#c0caf5" font-family="monospace" font-size="13">x</text>
-
-  <!-- highlight: f(x) embeds in f(f(x)) -->
-  <rect x="215" y="68" width="30" height="52" rx="4" fill="none" stroke="#f7768e" stroke-width="1.5" stroke-dasharray="4,3"/>
-  <text x="260" y="98" fill="#f7768e" font-family="monospace" font-size="10">← f(x) embeds here</text>
-
-  <!-- warning icon -->
-  <text x="430" y="70" fill="#f7768e" font-family="monospace" font-size="24">&#x26A0;</text>
-  <text x="455" y="70" fill="#f7768e" font-family="monospace" font-size="11">depth grows</text>
-  <text x="455" y="85" fill="#f7768e" font-family="monospace" font-size="11">unboundedly</text>
-
-  <!-- ── NOT expanding: associativity ── -->
-  <rect x="5" y="140" width="530" height="70" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
-  <text x="18" y="161" fill="#9ece6a" font-family="monospace" font-size="12" font-weight="700">SAFE</text>
-  <text x="65" y="161" fill="#565f89" font-family="monospace" font-size="11">mul(mul(x,y),z) = mul(x,mul(y,z))</text>
-  <text x="18" y="185" fill="#565f89" font-family="monospace" font-size="11">Neither side is a subterm of the other → depth stays bounded</text>
-  <text x="480" y="170" fill="#9ece6a" font-family="monospace" font-size="18">&#x2713;</text>
-
-  <!-- ── NOT expanding: identity ── -->
-  <rect x="5" y="225" width="530" height="70" rx="8" fill="#24283b" stroke="#9ece6a" stroke-width="1.5"/>
-  <text x="18" y="246" fill="#9ece6a" font-family="monospace" font-size="12" font-weight="700">SAFE</text>
-  <text x="65" y="246" fill="#565f89" font-family="monospace" font-size="11">mul(e, x) = x</text>
-  <text x="18" y="270" fill="#565f89" font-family="monospace" font-size="11">Bare variable pattern → simplification rule, not expanding</text>
-  <text x="480" y="255" fill="#9ece6a" font-family="monospace" font-size="18">&#x2713;</text>
-</svg>
-
-<p>Expanding axioms are flagged with a warning, and their substitution pool is restricted
-to shallow terms.</p>
-
-<h2>Dynamic Depth-Growth Detection</h2>
-<p>If the maximum term depth in the universe grows for 3 consecutive rounds and terms are
-being depth-capped, the engine halts early and reports a warning.</p>
-
-<h2>Other Limits</h2>
 <table>
-  <tr><th>Limit</th><th>Value</th><th>Effect</th></tr>
-  <tr><td>MAX_UNIVERSE</td><td>500</td><td>Maximum distinct terms in the universe</td></tr>
-  <tr><td>MAX_DERIVED</td><td>200</td><td>Maximum derived equations before capping</td></tr>
-  <tr><td>MAX_SUBS_PER_AXIOM</td><td>2000</td><td>Maximum substitutions per axiom per round</td></tr>
-  <tr><td>MAX_DEPTH</td><td>8</td><td>Maximum term nesting depth</td></tr>
+  <tr><th>Limit</th><th>Default</th><th>Purpose</th></tr>
+  <tr><td>Max rounds</td><td>100</td><td>Prevents infinite rule application loops</td></tr>
+  <tr><td>Max facts</td><td>10,000</td><td>Caps memory usage from combinatorial explosion</td></tr>
+  <tr><td>Max substitutions per rule</td><td>50,000</td><td>Prevents single-rule blowup</td></tr>
 </table>
 
-<div class="callout danger">
-  <strong>When limits are hit.</strong> The engine does not crash — it stops early and includes
-  a warning in the result. You can still inspect partial results. If you see a limit warning,
-  try reducing the number of seed facts or rounds.
-</div>
+<h2>When Limits Are Hit</h2>
+
+<p>The engine stops and reports the current state. The output panel shows a <strong>capped</strong> badge instead of <strong>saturated</strong>. The derived facts up to that point are still valid &mdash; they're just not complete.</p>
+
+<h2>Tips for Staying Safe</h2>
+
+<ul>
+  <li>Start with few constants and add more gradually.</li>
+  <li>Use <code>derive 5</code> to limit rounds while experimenting.</li>
+  <li>Be cautious with transitive + many constants &mdash; transitivity over n elements generates up to n&sup2; facts.</li>
+  <li>Congruence with many relations can also multiply quickly.</li>
+</ul>
 
 <div class="page-nav">
-  <a onclick="goPage('categories')">&larr; Categories</a>
-  <a class="next" onclick="goPage('ex-monoid')">Examples &rarr;</a>
+  <a onclick="goPage('properties')">&larr; Relation Properties</a>
+  <a class="next" onclick="goPage('ex-equiv')">Example: Equivalence &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Example: Monoid ──────────────────── -->
-<div class="page" id="page-ex-monoid">
-<h1>Example: Monoid Identity</h1>
-<p class="page-desc">Show that the identity axioms apply to a specific element.</p>
+<!-- ─── Example: Equivalence ──────────────── -->
+<div class="page" id="page-ex-equiv">
+<h1>Example: Equivalence Closure</h1>
+<p class="page-desc">The canonical Relatum example.</p>
 
 <pre>
-<span class="cm">-- Structure: Monoid (mul/2, e/0)</span>
-<span class="cm">-- Axioms: associativity, left identity, right identity</span>
+<span class="kw">&lt;element&gt;</span> a, b, c
 
-<span class="cm">-- Step 1: Seed</span>
-<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+<span class="kw">rel</span> <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
 
-<span class="cm">-- Step 2: Compute Closure (2 rounds)</span>
-<span class="cm">-- Derived equations:</span>
-<span class="cm">--   [identity]  mul(a, e) = a</span>
-<span class="cm">--   [identity]  mul(e, a) = a</span>
-<span class="cm">--   [identity]  mul(e, e) = e</span>
-<span class="cm">--   [assoc]     mul(mul(a, a), a) = mul(a, mul(a, a))</span>
-<span class="cm">--   ...</span>
-<span class="cm">-- Equivalence class: { a, mul(a, e), mul(e, a) }</span>
+<span class="op">equiv</span>(a, b)
+<span class="op">equiv</span>(b, c)
+
+<span class="kw">derive</span>
 </pre>
+
+<h2>What the engine derives</h2>
+
+<p>Starting from <code>equiv(a, b)</code> and <code>equiv(b, c)</code>:</p>
+
+<ul>
+  <li><strong>Symmetry:</strong> equiv(b, a), equiv(c, b)</li>
+  <li><strong>Transitivity:</strong> equiv(a, c) (via a-b, b-c)</li>
+  <li><strong>Symmetry of derived:</strong> equiv(c, a)</li>
+  <li><strong>Reflexivity:</strong> equiv(a, a), equiv(b, b), equiv(c, c)</li>
+</ul>
+
+<p>The engine saturates in 2-3 rounds with 9 total facts (the complete 3&times;3 equivalence class).</p>
 
 <div class="page-nav">
   <a onclick="goPage('safety')">&larr; Safety &amp; Limits</a>
-  <a class="next" onclick="goPage('ex-group')">Double Inverse &rarr;</a>
+  <a class="next" onclick="goPage('ex-order')">Example: Partial Order &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Example: Group ───────────────────── -->
-<div class="page" id="page-ex-group">
-<h1>Example: Double Inverse</h1>
-<p class="page-desc">Derive that inv(inv(a)) = a in a group.</p>
+<!-- ─── Example: Order ────────────────────── -->
+<div class="page" id="page-ex-order">
+<h1>Example: Partial Order</h1>
+<p class="page-desc">Reflexive + transitive, but NOT symmetric.</p>
 
 <pre>
-<span class="cm">-- Structure: Group (mul/2, e/0, inv/1)</span>
+<span class="kw">&lt;element&gt;</span> a, b, c, d
 
-<span class="cm">-- Step 1: Seed</span>
-<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+<span class="kw">rel</span> <span class="op">leq</span>/2 : <span class="hl">reflexive</span>, <span class="hl">transitive</span>
 
-<span class="cm">-- Step 2: Compute Closure (3 rounds)</span>
-<span class="cm">-- The engine derives (among others):</span>
-<span class="cm">--   mul(a, inv(a)) = e</span>
-<span class="cm">--   mul(inv(a), a) = e</span>
-<span class="cm">--   mul(inv(inv(a)), inv(a)) = e</span>
-<span class="cm">--   inv(inv(a)) = a              ← double inverse!</span>
-<span class="cm">--</span>
-<span class="cm">-- Equivalence class includes:</span>
-<span class="cm">--   { a, mul(a, e), mul(e, a), inv(inv(a)), ... }</span>
+<span class="op">leq</span>(a, b)
+<span class="op">leq</span>(b, c)
+<span class="op">leq</span>(c, d)
+
+<span class="kw">derive</span>
 </pre>
+
+<h2>What the engine derives</h2>
+
+<ul>
+  <li><strong>Reflexivity:</strong> leq(a, a), leq(b, b), leq(c, c), leq(d, d)</li>
+  <li><strong>Transitivity:</strong> leq(a, c), leq(a, d), leq(b, d)</li>
+</ul>
+
+<p>Note: <code>leq(b, a)</code> is <em>not</em> derived because the relation is not symmetric. This is exactly what you want for a partial order.</p>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-equiv')">&larr; Equivalence</a>
+  <a class="next" onclick="goPage('ex-custom')">Example: Custom Rules &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Custom Rules ─────────────── -->
+<div class="page" id="page-ex-custom">
+<h1>Example: Custom Rules</h1>
+<p class="page-desc">User-defined inference beyond built-in properties.</p>
+
+<pre>
+<span class="kw">&lt;element&gt;</span> alice, bob, carol
+
+<span class="kw">rel</span> <span class="op">friend</span>/2 : <span class="hl">symmetric</span>
+<span class="kw">rel</span> <span class="op">knows</span>/2
+
+<span class="cm"># If X is friends with Y, then X knows Y</span>
+<span class="kw">rule</span> <span class="hl">f2k</span>: friend(?x, ?y) <span class="eq">|-</span> knows(?x, ?y)
+
+<span class="cm"># Knowing is transitive</span>
+<span class="kw">rule</span> <span class="hl">knows_trans</span>: knows(?x, ?y), knows(?y, ?z) <span class="eq">|-</span> knows(?x, ?z)
+
+<span class="op">friend</span>(alice, bob)
+<span class="op">friend</span>(bob, carol)
+
+<span class="kw">derive</span>
+</pre>
+
+<h2>Derivation chain</h2>
+
+<ol>
+  <li><strong>Symmetry:</strong> friend(bob, alice), friend(carol, bob)</li>
+  <li><strong>f2k rule:</strong> knows(alice, bob), knows(bob, alice), knows(bob, carol), knows(carol, bob)</li>
+  <li><strong>knows_trans:</strong> knows(alice, carol), knows(carol, alice), knows(alice, alice), etc.</li>
+</ol>
+
+<p>The result: everyone knows everyone &mdash; because friendship is symmetric and "knowing" is transitive, the entire network collapses into full connectivity.</p>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-order')">&larr; Partial Order</a>
+  <a class="next" onclick="goPage('ex-congruence')">Example: Congruence &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Congruence ───────────────── -->
+<div class="page" id="page-ex-congruence">
+<h1>Example: Congruence</h1>
+<p class="page-desc">How congruence propagates equivalence through other relations.</p>
+
+<pre>
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+<span class="kw">rel</span> <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
+<span class="kw">rel</span> <span class="op">R</span>/2
+
+<span class="op">equiv</span>(a, b)
+<span class="op">R</span>(a, c)
+
+<span class="kw">derive</span>
+</pre>
+
+<h2>What congruence does</h2>
+
+<p>Because <code>equiv</code> is congruent and <code>equiv(a, b)</code> holds:</p>
+<ul>
+  <li>The engine sees <code>R(a, c)</code> and substitutes <code>a &rarr; b</code>, deriving <code>R(b, c)</code>.</li>
+  <li>If <code>R(c, a)</code> existed, it would also derive <code>R(c, b)</code>.</li>
+</ul>
+
+<p>Congruence is the key mechanism that makes equivalence relations <em>useful</em> &mdash; it propagates the "sameness" of <code>a</code> and <code>b</code> through the entire fact base.</p>
+
+<div class="page-nav">
+  <a onclick="goPage('ex-custom')">&larr; Custom Rules</a>
+  <a class="next" onclick="goPage('ex-typed')">Membership &rarr;</a>
+</div>
+</div>
+
+<!-- ─── Example: Membership ───────────────── -->
+<div class="page" id="page-ex-typed">
+<h1>Example: Membership</h1>
+<p class="page-desc">Restricting which elements each relation argument accepts.</p>
+
+<pre>
+<span class="kw">&lt;Person&gt;</span> alice, bob, carol
+<span class="kw">&lt;City&gt;</span> paris, london
+
+<span class="cm"># lives_in: arg 1 must be in Person, arg 2 must be in City</span>
+<span class="kw">rel</span> <span class="op">lives_in</span>/2 : <span class="hl">Person</span>, <span class="hl">City</span>
+
+<span class="cm"># friend: both args must be in Person, and it's symmetric</span>
+<span class="kw">rel</span> <span class="op">friend</span>/2 : <span class="hl">Person</span>, <span class="hl">Person</span>, <span class="hl">symmetric</span>
+
+<span class="cm"># same_city: equivalence, but only on City</span>
+<span class="kw">rel</span> <span class="op">same_city</span>/2 : <span class="hl">City</span>, <span class="hl">City</span>, <span class="hl">equivalence</span>
+
+<span class="op">lives_in</span>(alice, paris)
+<span class="op">lives_in</span>(bob, paris)
+<span class="op">lives_in</span>(carol, london)
+<span class="op">friend</span>(alice, bob)
+
+<span class="kw">rule</span> <span class="hl">shared</span>: lives_in(?x, ?c), lives_in(?y, ?c) <span class="eq">|-</span> same_city(?c, ?c)
+
+<span class="kw">derive</span>
+</pre>
+
+<h2>What happens</h2>
+
+<ul>
+  <li><strong>Membership prevents nonsense:</strong> <code>lives_in(paris, alice)</code> would be rejected because <code>paris</code> is not in <code>Person</code>.</li>
+  <li><strong>Reflexivity respects membership:</strong> <code>same_city(t, t)</code> is only generated for <code>paris</code> and <code>london</code> &mdash; not for <code>alice</code>, <code>bob</code>, or <code>carol</code>.</li>
+  <li><strong>Rules are membership-filtered:</strong> if a rule would derive a conclusion that violates membership constraints, it is silently dropped.</li>
+  <li><strong>Container names are elements:</strong> <code>Person</code> and <code>City</code> are in the universe. You can write <code>has_type(alice, Person)</code> with an unconstrained relation.</li>
+</ul>
 
 <div class="callout">
-  <strong>How does this work?</strong> The engine instantiates the inverse axiom with <code>x → inv(a)</code>,
-  producing <code>mul(inv(inv(a)), inv(a)) = e</code>. Combined with <code>mul(a, inv(a)) = e</code>
-  and congruence/transitivity, it concludes <code>inv(inv(a)) = a</code>.
+<strong>Membership is lightweight.</strong> It is purely a filtering mechanism &mdash; it doesn't change the engine's algorithm, it just restricts which facts can exist.
 </div>
 
 <div class="page-nav">
-  <a onclick="goPage('ex-monoid')">&larr; Monoid Identity</a>
-  <a class="next" onclick="goPage('ex-ring')">Zero Absorption &rarr;</a>
+  <a onclick="goPage('ex-congruence')">&larr; Congruence</a>
+  <a class="next" onclick="goPage('grammar')">Grammar Reference &rarr;</a>
 </div>
 </div>
 
-<!-- ─── Example: Ring ────────────────────── -->
-<div class="page" id="page-ex-ring">
-<h1>Example: Zero Absorption</h1>
-<p class="page-desc">Derive mul(a, zero) = zero in a ring.</p>
+<!-- ─── Grammar Reference ─────────────────── -->
+<div class="page" id="page-grammar">
+<h1>Grammar Reference</h1>
+<p class="page-desc">Complete syntax of the Relatum DSL.</p>
+
+<h2>Lexical Elements</h2>
+
+<table>
+  <tr><th>Element</th><th>Pattern</th><th>Examples</th></tr>
+  <tr><td>Identifier</td><td><code>[a-zA-Z_][a-zA-Z0-9_]*</code></td><td><code>a</code>, <code>equiv</code>, <code>my_rel</code></td></tr>
+  <tr><td>Variable</td><td><code>?</code> + identifier</td><td><code>?x</code>, <code>?name</code></td></tr>
+  <tr><td>Number</td><td><code>[0-9]+</code></td><td><code>2</code>, <code>100</code></td></tr>
+  <tr><td>Comment</td><td><code>#</code> to end of line</td><td><code># this is ignored</code></td></tr>
+</table>
+
+<h2>Statements</h2>
 
 <pre>
-<span class="cm">-- Structure: Ring</span>
-<span class="cm">-- (add/2, zero/0, neg/1, mul/2, one/0)</span>
+<span class="cm"># Element declaration (root container)</span>
+<span class="kw">&lt;element&gt;</span> name1, name2, ...
 
-<span class="cm">-- Step 1: Seed</span>
-<span class="vr">a</span> <span class="eq">=</span> <span class="vr">a</span>
+<span class="cm"># Element declaration (named container)</span>
+<span class="kw">&lt;Container&gt;</span> member1, member2, ...
 
-<span class="cm">-- Step 2: Compute Closure (3 rounds)</span>
-<span class="cm">-- The distributive law with y → zero, z → zero gives:</span>
-<span class="cm">--   mul(a, add(zero, zero)) = add(mul(a, zero), mul(a, zero))</span>
-<span class="cm">-- Since add(zero, zero) = zero (identity), we get:</span>
-<span class="cm">--   mul(a, zero) = add(mul(a, zero), mul(a, zero))</span>
-<span class="cm">-- Adding neg(mul(a, zero)) to both sides (via inverse axiom):</span>
-<span class="cm">--   zero = mul(a, zero)</span>
+<span class="cm"># Relation declaration</span>
+<span class="kw">rel</span> name/arity
+<span class="kw">rel</span> name/arity : property1, property2, ...
+<span class="kw">rel</span> name/arity : Container1, Container2, ...           <span class="cm"># membership constraints</span>
+<span class="kw">rel</span> name/arity : Container1, Container2, property, ...  <span class="cm"># mixed</span>
+
+<span class="cm"># Rule declaration</span>
+<span class="kw">rule</span> name: atom1, atom2, ... <span class="eq">|-</span> atom3, atom4, ...
+
+<span class="cm"># Fact (ground atom)</span>
+name(term1, term2, ...)
+
+<span class="cm"># Derive command</span>
+<span class="kw">derive</span>
+<span class="kw">derive</span> N
 </pre>
 
-<div class="page-nav">
-  <a onclick="goPage('ex-group')">&larr; Double Inverse</a>
-  <a class="next" onclick="goPage('ex-custom')">Custom Structure &rarr;</a>
-</div>
-</div>
+<h2>Properties</h2>
 
-<!-- ─── Example: Custom ──────────────────── -->
-<div class="page" id="page-ex-custom">
-<h1>Example: Custom Structure</h1>
-<p class="page-desc">Explore a custom operation without any axioms.</p>
+<table>
+  <tr><th>Keyword</th><th>Expands to</th></tr>
+  <tr><td><code>equivalence</code></td><td><code>reflexive, symmetric, transitive, congruent</code></td></tr>
+  <tr><td><code>reflexive</code></td><td>R(t, t) for all t</td></tr>
+  <tr><td><code>symmetric</code></td><td>R(?x, ?y) |- R(?y, ?x)</td></tr>
+  <tr><td><code>transitive</code></td><td>R(?x, ?y), R(?y, ?z) |- R(?x, ?z)</td></tr>
+  <tr><td><code>congruent</code></td><td>substitute equal terms in all facts</td></tr>
+</table>
 
-<pre>
-<span class="cm">-- Structure: Empty (click "Empty")</span>
+<h2>Atoms</h2>
 
-<span class="cm">-- Step 1: Define operations</span>
-<span class="cm">-- In "Add Op" input:</span>
-<span class="hl">f/1, g/1</span>
-
-<span class="cm">-- Step 2: Add facts</span>
-<span class="op">f</span>(<span class="op">g</span>(<span class="vr">a</span>)) <span class="eq">=</span> <span class="vr">a</span>        <span class="cm">-- f is left-inverse of g</span>
-<span class="op">g</span>(<span class="op">f</span>(<span class="vr">a</span>)) <span class="eq">=</span> <span class="vr">a</span>        <span class="cm">-- g is left-inverse of f</span>
-<span class="op">f</span>(<span class="vr">b</span>) <span class="eq">=</span> <span class="op">g</span>(<span class="vr">b</span>)          <span class="cm">-- f and g agree on b</span>
-
-<span class="cm">-- Step 3: Compute Closure (2 rounds)</span>
-<span class="cm">-- Congruence derives:</span>
-<span class="cm">--   f(f(b)) = f(g(b))    (since f(b) = g(b), apply f to both)</span>
-<span class="cm">--   g(f(b)) = g(g(b))    (since f(b) = g(b), apply g to both)</span>
-<span class="cm">-- Combined with the inverse facts:</span>
-<span class="cm">--   f(f(b)) = b           (because f(g(b)) = b)</span>
-<span class="cm">--   g(g(b)) = b           (because g(f(b)) = b)</span>
-</pre>
+<p>An atom is <code>name(term1, term2, ...)</code> where each term is either:</p>
+<ul>
+  <li>A constant identifier (in facts)</li>
+  <li>A <code>?variable</code> (in rule premises/conclusions)</li>
+</ul>
 
 <div class="page-nav">
-  <a onclick="goPage('ex-ring')">&larr; Zero Absorption</a>
-  <a class="next" onclick="goPage('ex-recursive')">Recursive Detection &rarr;</a>
-</div>
-</div>
-
-<!-- ─── Example: Recursive ───────────────── -->
-<div class="page" id="page-ex-recursive">
-<h1>Example: Recursive Detection</h1>
-<p class="page-desc">How the engine handles potentially infinite axioms.</p>
-
-<pre>
-<span class="cm">-- Structure: Empty</span>
-
-<span class="cm">-- Step 1: Define operation</span>
-<span class="hl">f/1</span>
-
-<span class="cm">-- Step 2: Add facts</span>
-<span class="op">f</span>(<span class="vr">a</span>) <span class="eq">=</span> <span class="vr">a</span>
-<span class="op">f</span>(<span class="op">f</span>(<span class="vr">a</span>)) <span class="eq">=</span> <span class="vr">a</span>
-
-<span class="cm">-- The engine does NOT infinitely nest f(f(f(...))).</span>
-<span class="cm">-- Since f(a) = a and f(f(a)) = a, congruence gives:</span>
-<span class="cm">--   f(a) = f(f(a)) = a</span>
-<span class="cm">-- All collapse into one equivalence class:</span>
-<span class="cm">--   { a, f(a), f(f(a)) }</span>
-</pre>
-
-<div class="callout danger">
-  <strong>With axioms (not just facts), expanding patterns ARE detected.</strong>
-  If a <em>structure axiom</em> like <code>f(x) = f(f(x))</code> is present, the engine
-  recognizes it as recursive before computing and caps depth at 8. A warning is shown:
-  <br><br>
-  <span style="color:var(--red)">&#x26A0; Axiom "wrap" is recursive (one side embeds in the other); depth capped at 8</span>
-</div>
-
-<div class="page-nav">
-  <a onclick="goPage('ex-custom')">&larr; Custom Structure</a>
+  <a onclick="goPage('ex-congruence')">&larr; Congruence</a>
   <a class="next" onclick="goPage('api')">Rust API &rarr;</a>
 </div>
 </div>
@@ -1265,81 +1096,89 @@ being depth-capped, the engine halts early and reports a warning.</p>
 <h1>Rust API</h1>
 <p class="page-desc">Using Relatum as a library in your Rust project.</p>
 
-<h2>Basic usage</h2>
+<h2>Relational Engine</h2>
 
 <pre>
-<span class="kw">use</span> relatum::algebra::{builders, Equation, Term};
-<span class="kw">use</span> relatum::algebra::closure::ClosureEngine;
+<span class="kw">use</span> relatum::relational::*;
 
-<span class="cm">// Build a monoid</span>
-<span class="kw">let</span> monoid = builders::monoid().unwrap();
-<span class="kw">let</span> mul = monoid.find_operation_id(<span class="hl">"mul"</span>).unwrap();
-<span class="kw">let</span> e_op = monoid.find_operation_id(<span class="hl">"e"</span>).unwrap();
+<span class="cm">// Create engine and declare entities</span>
+<span class="kw">let mut</span> engine = ClosureEngine::new();
+<span class="kw">let</span> a = engine.define_constant(<span class="hl">"a"</span>);
+<span class="kw">let</span> b = engine.define_constant(<span class="hl">"b"</span>);
+<span class="kw">let</span> c = engine.define_constant(<span class="hl">"c"</span>);
 
-<span class="cm">// Create engine and add facts</span>
-<span class="kw">let mut</span> engine = ClosureEngine::new(monoid);
-<span class="kw">let</span> a = Term::var(<span class="hl">"a"</span>);
-engine.add_fact(Equation::new(<span class="hl">"seed"</span>, a.clone(), a.clone()));
+<span class="cm">// Define equiv as a full equivalence relation</span>
+engine.define_equivalence(<span class="hl">"equiv"</span>);
 
-<span class="cm">// Compute closure (2 rounds)</span>
-<span class="kw">let</span> result = engine.compute_closure(<span class="hl">2</span>);
+<span class="cm">// Add ground facts</span>
+engine.add_fact(Relation::binary(<span class="hl">"equiv"</span>, a.clone(), b.clone()));
+engine.add_fact(Relation::binary(<span class="hl">"equiv"</span>, b, c.clone()));
 
-<span class="cm">// Check result</span>
-<span class="kw">let</span> mul_a_e = Term::app(mul, <span class="kw">vec!</span>[a.clone(), Term::constant(e_op)]);
-assert!(result.equivalence_classes.iter().any(|c| {
-    c.contains(&a) && c.contains(&mul_a_e)
-}));
+<span class="cm">// Derive closure</span>
+<span class="kw">let</span> result = engine.derive_closure();
+
+assert!(result.facts.contains(
+    &amp;Relation::binary(<span class="hl">"equiv"</span>, a.clone(), c.clone())
+));
+assert!(result.saturated);
 </pre>
 
-<h2>Inspecting results</h2>
+<h2>Entity &amp; Relation Declarations</h2>
 
 <pre>
-<span class="cm">// Inspect categories</span>
-<span class="kw">for</span> cat <span class="kw">in</span> &result.categories {
-    println!(<span class="hl">"{}: {} equations"</span>, cat.rule, cat.equations.len());
-    println!(<span class="hl">"  {}"</span>, cat.description);
+<span class="cm">// Constants are ground terms in the universe</span>
+<span class="kw">let</span> x = engine.define_constant(<span class="hl">"x"</span>);
+
+<span class="cm">// Variables are pattern wildcards for rules</span>
+<span class="kw">let</span> v = engine.define_variable(<span class="hl">"v"</span>);
+
+<span class="cm">// Declare a relation schema with arity</span>
+engine.define_relation(<span class="hl">"lt"</span>, <span class="hl">2</span>);
+
+<span class="cm">// Mark properties individually</span>
+engine.mark_reflexive(<span class="hl">"lt"</span>);
+engine.mark_congruent(<span class="hl">"lt"</span>);
+
+<span class="cm">// Or use define_equivalence for the full package</span>
+engine.define_equivalence(<span class="hl">"eq"</span>);
+</pre>
+
+<h2>Custom Rules</h2>
+
+<pre>
+<span class="kw">use</span> relatum::relational::rule::*;
+
+<span class="cm">// Build a custom rule: friend(x, y) |- knows(x, y)</span>
+<span class="kw">let</span> rule = Rule::new(
+    <span class="hl">"friend_implies_knows"</span>,
+    <span class="kw">vec!</span>[RelationPattern::new(<span class="hl">"friend"</span>, <span class="kw">vec!</span>[
+        Term::var(<span class="hl">"x"</span>), Term::var(<span class="hl">"y"</span>)
+    ])],
+    <span class="kw">vec!</span>[RelationPattern::new(<span class="hl">"knows"</span>, <span class="kw">vec!</span>[
+        Term::var(<span class="hl">"x"</span>), Term::var(<span class="hl">"y"</span>)
+    ])],
+);
+engine.add_rule(rule);
+</pre>
+
+<h2>Closure Result</h2>
+
+<pre>
+<span class="kw">let</span> result = engine.derive_closure();
+
+<span class="cm">// All facts (initial + derived)</span>
+<span class="kw">for</span> fact <span class="kw">in</span> &amp;result.facts {
+    println!(<span class="hl">"{}"</span>, fact);
 }
 
-<span class="cm">// Check warnings</span>
-<span class="kw">for</span> w <span class="kw">in</span> &result.warnings {
-    eprintln!(<span class="hl">"Warning: {}"</span>, w);
-}
-</pre>
-
-<h2>Equation with Category</h2>
-
-<pre>
-<span class="kw">use</span> relatum::algebra::Equation;
-
-<span class="cm">// Equations can carry a category for grouped output</span>
-<span class="kw">let</span> eq = Equation::new(<span class="hl">"my_axiom"</span>, lhs, rhs)
-    .with_category(<span class="hl">"my_category"</span>);
-
-assert_eq!(eq.category(), <span class="hl">"my_category"</span>);
-</pre>
-
-<h2>Term Depth</h2>
-
-<pre>
-<span class="kw">use</span> relatum::algebra::Term;
-<span class="kw">use</span> relatum::algebra::operation::OperationId;
-
-<span class="kw">let</span> f = OperationId(<span class="hl">0</span>);
-<span class="kw">let</span> x = Term::var(<span class="hl">"x"</span>);
-
-<span class="cm">// x has depth 1</span>
-assert_eq!(x.depth(), <span class="hl">1</span>);
-
-<span class="cm">// f(x) has depth 2</span>
-assert_eq!(Term::app(f, <span class="kw">vec!</span>[x.clone()]).depth(), <span class="hl">2</span>);
-
-<span class="cm">// f(f(x)) has depth 3</span>
-<span class="kw">let</span> ffx = Term::app(f, <span class="kw">vec!</span>[Term::app(f, <span class="kw">vec!</span>[x])]);
-assert_eq!(ffx.depth(), <span class="hl">3</span>);
+<span class="cm">// Only newly derived facts</span>
+println!(<span class="hl">"Derived {} new facts"</span>, result.derived.len());
+println!(<span class="hl">"Saturated: {}"</span>, result.saturated);
+println!(<span class="hl">"Rounds: {}"</span>, result.rounds);
 </pre>
 
 <div class="page-nav">
-  <a onclick="goPage('ex-recursive')">&larr; Recursive Detection</a>
+  <a onclick="goPage('grammar')">&larr; Grammar Reference</a>
   <a class="next" onclick="goPage('shortcuts')">Shortcuts &rarr;</a>
 </div>
 </div>
@@ -1351,9 +1190,8 @@ assert_eq!(ffx.depth(), <span class="hl">3</span>);
 
 <table>
   <tr><th>Key</th><th>Context</th><th>Action</th></tr>
-  <tr><td><code>Enter</code></td><td>Fact input</td><td>Add the typed fact</td></tr>
-  <tr><td><code>Enter</code></td><td>Add Op input</td><td>Add the typed operation</td></tr>
-  <tr><td><code>Esc</code></td><td>Preset dropdown open</td><td>Close the dropdown</td></tr>
+  <tr><td><code>Ctrl+Enter</code></td><td>Editor</td><td>Run the program</td></tr>
+  <tr><td><code>Tab</code></td><td>Editor</td><td>Insert two spaces</td></tr>
 </table>
 
 <div class="page-nav">
@@ -1368,26 +1206,23 @@ assert_eq!(ffx.depth(), <span class="hl">3</span>);
 // ── page navigation ─────────────────────
 
 const pages = [
-  'overview','quick-start','structures','operations','terms',
-  'algorithm','categories','safety',
-  'ex-monoid','ex-group','ex-ring','ex-custom','ex-recursive',
-  'api','shortcuts'
+  'overview','quick-start',
+  'elements','relations','facts','rules','derive',
+  'algorithm','properties','safety',
+  'ex-equiv','ex-order','ex-custom','ex-congruence','ex-typed',
+  'grammar','api','shortcuts'
 ];
 
 function goPage(id) {
-  // hide all pages
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  // show target
   const target = document.getElementById('page-' + id);
   if (target) {
     target.classList.add('active');
     window.scrollTo(0, 0);
   }
-  // update nav
   document.querySelectorAll('.nav-item').forEach(n => {
     n.classList.toggle('active', n.dataset.page === id);
   });
-  // expand parent group if collapsed
   const activeNav = document.querySelector('.nav-item[data-page="' + id + '"]');
   if (activeNav) {
     const group = activeNav.closest('.nav-group');
@@ -1395,9 +1230,7 @@ function goPage(id) {
       group.classList.remove('collapsed');
     }
   }
-  // update hash
   history.replaceState(null, '', '#' + id);
-  // close mobile sidebar
   document.querySelector('.sidebar').classList.remove('open');
 }
 
@@ -1406,7 +1239,6 @@ document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => goPage(item.dataset.page));
 });
 
-// toggle nav groups
 function toggleGroup(el) {
   el.closest('.nav-group').classList.toggle('collapsed');
 }
@@ -1414,9 +1246,7 @@ function toggleGroup(el) {
 // load from hash
 function loadFromHash() {
   const hash = location.hash.replace('#', '');
-  if (hash && pages.includes(hash)) {
-    goPage(hash);
-  }
+  if (hash && pages.includes(hash)) goPage(hash);
 }
 window.addEventListener('hashchange', loadFromHash);
 loadFromHash();
@@ -1426,22 +1256,18 @@ loadFromHash();
 const searchInput = document.getElementById('searchInput');
 const searchResults = document.getElementById('searchResults');
 
-// build search index
 const searchIndex = [];
 document.querySelectorAll('.page').forEach(page => {
   const pageId = page.id.replace('page-', '');
   const h1 = page.querySelector('h1');
   const title = h1 ? h1.textContent : pageId;
 
-  // index the page title
   searchIndex.push({ pageId, title, text: title, type: 'page' });
 
-  // index each h2/h3
   page.querySelectorAll('h2, h3, h4').forEach(h => {
     searchIndex.push({ pageId, title, text: h.textContent, type: 'heading' });
   });
 
-  // index paragraphs (first 120 chars)
   page.querySelectorAll('p, li, td').forEach(el => {
     const t = el.textContent.trim();
     if (t.length > 10) {
@@ -1449,7 +1275,6 @@ document.querySelectorAll('.page').forEach(page => {
     }
   });
 
-  // index code blocks (first 100 chars of each line)
   page.querySelectorAll('pre').forEach(pre => {
     const lines = pre.textContent.split('\n').filter(l => l.trim().length > 5);
     lines.forEach(line => {
@@ -1471,7 +1296,6 @@ searchInput.addEventListener('keydown', (e) => {
     searchInput.blur();
   }
   if (e.key === 'Enter') {
-    // go to first result
     const first = searchResults.querySelector('.search-result-item');
     if (first) first.click();
   }
@@ -1482,8 +1306,6 @@ function doSearch() {
   if (q.length < 2) {
     searchResults.classList.remove('visible');
     searchResults.innerHTML = '';
-    // restore nav
-    document.querySelectorAll('.nav-item, .nav-group').forEach(el => el.classList.remove('search-hidden'));
     return;
   }
 
@@ -1501,15 +1323,9 @@ function doSearch() {
     seen.add(key);
 
     let score = 0;
-    if (entry.type === 'page') score = 100;
-    else if (entry.type === 'heading') score = 80;
-    else if (entry.type === 'content') score = 50;
-    else score = 30;
-
-    // boost exact match
-    if (lower === q) score += 50;
-    // boost starts-with
-    if (lower.startsWith(q)) score += 20;
+    if (entry.type === 'page') score += 100;
+    else if (entry.type === 'heading') score += 50;
+    else if (entry.type === 'code') score += 20;
 
     scored.push({ ...entry, score });
   }
@@ -1518,77 +1334,19 @@ function doSearch() {
   const top = scored.slice(0, 12);
 
   if (top.length === 0) {
-    searchResults.innerHTML = '<div class="search-no-results">No results found</div>';
+    searchResults.innerHTML = '<div class="search-no-results">No results.</div>';
     searchResults.classList.add('visible');
     return;
   }
 
-  // highlight matching text
-  function highlight(text, kws) {
-    let html = escHtml(text);
-    for (const kw of kws) {
-      const re = new RegExp('(' + escRegex(kw) + ')', 'gi');
-      html = html.replace(re, '<mark>$1</mark>');
-    }
-    return html;
-  }
-
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-  function escRegex(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
   let html = '';
   for (const r of top) {
-    const snippet = r.text.length > 80 ? r.text.slice(0, 80) + '...' : r.text;
-    html += '<a class="search-result-item" data-page="' + r.pageId + '">'
-      + highlight(snippet, keywords)
-      + '<div class="sr-section">' + escHtml(r.title) + '</div>'
-      + '</a>';
+    html += `<div class="search-result-item" onclick="goPage('${r.pageId}');searchResults.classList.remove('visible');searchInput.value=''">` +
+            `${r.text.slice(0, 60)} <span class="sr-section">${r.title}</span></div>`;
   }
-
   searchResults.innerHTML = html;
   searchResults.classList.add('visible');
-
-  // click handlers
-  searchResults.querySelectorAll('.search-result-item').forEach(item => {
-    item.addEventListener('click', () => {
-      goPage(item.dataset.page);
-      searchResults.classList.remove('visible');
-      searchInput.value = '';
-    });
-  });
-
-  // also filter sidebar nav
-  const matchingPages = new Set(top.map(r => r.pageId));
-  document.querySelectorAll('.nav-item').forEach(nav => {
-    nav.classList.toggle('search-hidden', !matchingPages.has(nav.dataset.page));
-  });
-  document.querySelectorAll('.nav-group').forEach(group => {
-    const hasVisible = group.querySelector('.nav-item:not(.search-hidden)');
-    group.classList.toggle('search-hidden', !hasVisible);
-  });
 }
-
-// close search results on outside click
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.search-box') && !e.target.closest('.search-results')) {
-    searchResults.classList.remove('visible');
-    // restore nav
-    document.querySelectorAll('.nav-item, .nav-group').forEach(el => el.classList.remove('search-hidden'));
-  }
-});
-
-// keyboard shortcut: / to focus search
-document.addEventListener('keydown', (e) => {
-  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
-    e.preventDefault();
-    searchInput.focus();
-  }
-});
 </script>
-
 </body>
 </html>

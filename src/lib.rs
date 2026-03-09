@@ -32,6 +32,7 @@ pub mod iter;
 pub mod network;
 pub mod node;
 pub mod relation;
+pub mod relational;
 
 // Primary exports: algebra and closure engine
 pub use algebra::{

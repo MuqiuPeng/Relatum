@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Relatum — Equational Closure Engine</title>
+<title>Relatum — Relational Closure Engine</title>
 <style>
 :root {
   --bg: #1a1b26;
@@ -33,22 +33,28 @@ body {
 }
 
 #app {
-  max-width: 960px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  min-height: calc(100vh - 40px);
 }
 
 /* -- header --------------------------------- */
 
 header {
+  grid-column: 1 / -1;
   text-align: center;
-  padding: 24px 0 16px;
+  padding: 16px 0 12px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  position: relative;
 }
 
 header h1 {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
   color: var(--accent);
   letter-spacing: 2px;
@@ -57,211 +63,117 @@ header h1 {
 header p {
   color: var(--text-dim);
   font-size: 12px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
-/* -- panels --------------------------------- */
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  text-decoration: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  position: absolute;
+  right: 16px;
+  top: 18px;
+  transition: all 0.15s;
+}
+
+.help-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* -- editor panel --------------------------- */
+
+.editor-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
   font-weight: 600;
   color: var(--orange);
+  flex-shrink: 0;
+}
+
+.panel-header .controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
 .panel-body {
-  padding: 14px 16px;
-}
-
-/* -- structure selector --------------------- */
-
-.struct-bar {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
 }
 
-.struct-bar .label {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-right: 4px;
-}
+/* -- code editor ----------------------------- */
 
-.struct-bar button {
-  background: var(--surface2);
-  color: var(--accent);
-  border: 1px solid var(--border);
-  padding: 6px 16px;
-  font-family: var(--mono);
-  font-size: 13px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.struct-bar button:hover {
-  background: var(--border);
-  border-color: var(--accent);
-}
-
-.struct-bar button.active {
-  background: var(--accent);
-  color: var(--bg);
-  border-color: var(--accent);
-}
-
-/* -- active structure tags ------------------- */
-
-.active-structs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-
-.struct-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: rgba(122, 162, 247, 0.12);
-  border: 1px solid rgba(122, 162, 247, 0.3);
-  border-radius: 4px;
-  padding: 3px 6px 3px 4px;
-  font-size: 13px;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.struct-tag-name {
-  background: none;
-  border: none;
-  border-bottom: 1px solid transparent;
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 1px 4px;
-  outline: none;
-  min-width: 40px;
-  width: auto;
-}
-
-.struct-tag-name:hover {
-  border-bottom-color: var(--accent);
-}
-
-.struct-tag-name:focus {
-  border-bottom-color: var(--accent);
-  background: rgba(122, 162, 247, 0.08);
-  border-radius: 2px;
-}
-
-.struct-tag .struct-tag-remove {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-  font-family: var(--mono);
-  transition: color 0.1s;
-}
-
-.struct-tag .struct-tag-remove:hover {
-  color: var(--red);
-}
-
-/* -- structure info badges ------------------ */
-
-.struct-info {
-  margin-top: 12px;
-  display: none;
-}
-
-.struct-info.visible { display: block; }
-
-.struct-section-name {
-  color: var(--accent);
-  font-weight: 600;
-  font-size: 13px;
-  margin: 10px 0 4px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid var(--border);
-}
-
-.struct-section-name:first-child { margin-top: 0; }
-
-.op-badge {
-  display: inline-block;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 2px 8px;
-  margin: 3px 4px 3px 0;
-  font-size: 13px;
-}
-
-.op-name { color: var(--cyan); }
-.op-arity { color: var(--text-dim); }
-.op-badge.user-op { border-color: var(--accent2); }
-.op-badge.user-op .op-name { color: var(--accent2); }
-
-.axiom-row {
-  margin: 4px 0;
-  padding: 3px 0 3px 12px;
-  border-left: 2px solid var(--border);
-  font-size: 13px;
-}
-
-.axiom-name { color: var(--green); font-size: 11px; }
-.eq-equals { color: var(--orange); font-weight: 600; margin: 0 4px; }
-
-/* -- fact input ----------------------------- */
-
-.fact-input-row {
-  display: flex;
-  gap: 8px;
-}
-
-.fact-input-row input {
+#editor {
   flex: 1;
   background: var(--bg);
-  border: 1px solid var(--border);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 14px;
-  padding: 8px 12px;
-  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 12px 14px;
+  border: none;
   outline: none;
-  transition: border-color 0.15s;
+  resize: none;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  min-height: 300px;
 }
 
-.fact-input-row input:focus {
-  border-color: var(--accent);
-}
-
-.fact-input-row input::placeholder {
+#editor::placeholder {
   color: var(--text-dim);
+}
+
+/* -- toolbar --------------------------------- */
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .btn {
   background: var(--surface2);
   color: var(--accent);
   border: 1px solid var(--border);
-  padding: 8px 18px;
+  padding: 6px 16px;
   font-family: var(--mono);
   font-size: 13px;
   border-radius: 4px;
@@ -287,1520 +199,1221 @@ header p {
   border-color: var(--cyan);
 }
 
-.btn-danger {
-  color: var(--red);
-  border-color: transparent;
-  background: transparent;
-  padding: 4px 8px;
-  font-size: 12px;
-}
+.toolbar .spacer { flex: 1; }
+.toolbar .label { color: var(--text-dim); font-size: 11px; }
 
-.btn-danger:hover {
-  background: rgba(247,118,142,0.15);
-  border-color: rgba(247,118,142,0.3);
-}
+/* -- output panel ---------------------------- */
 
-/* -- fact list ------------------------------ */
-
-.fact-list {
+.output-panel {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 10px;
+  min-height: 0;
 }
 
-.fact-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 13px;
-  transition: border-color 0.15s;
-}
-
-.fact-item:hover {
-  border-color: var(--accent);
-}
-
-.fact-index {
-  color: var(--text-dim);
-  font-size: 11px;
-  min-width: 18px;
-}
-
-.fact-expr {
+#output {
   flex: 1;
+  overflow: auto;
+  padding: 12px 14px;
+  font-size: 13px;
+  min-height: 300px;
 }
 
-.fact-empty {
+.out-section {
+  margin-bottom: 14px;
+}
+
+.out-section-title {
+  color: var(--orange);
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.out-decl {
   color: var(--text-dim);
   font-size: 12px;
-  padding: 8px 0;
+  padding: 1px 0;
 }
 
-.error-msg {
+.out-decl .hl { color: var(--cyan); }
+.out-decl .kw { color: var(--accent2); }
+
+.out-fact {
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+  margin: 2px 0;
+}
+
+.out-fact.derived {
+  border-left-color: var(--green);
+  color: var(--green);
+}
+
+.out-fact.initial {
+  color: var(--text-dim);
+}
+
+.out-rule {
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--accent2);
+  font-size: 12px;
+  margin: 2px 0;
+  color: var(--text);
+}
+
+.out-stat {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(122, 162, 247, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(122, 162, 247, 0.3);
+  margin: 2px 4px 2px 0;
+}
+
+.out-stat.ok {
+  background: rgba(158, 206, 106, 0.15);
+  color: var(--green);
+  border-color: rgba(158, 206, 106, 0.3);
+}
+
+.out-stat.warn {
+  background: rgba(247, 118, 142, 0.15);
+  color: var(--red);
+  border-color: rgba(247, 118, 142, 0.3);
+}
+
+.out-error {
   color: var(--red);
   font-size: 12px;
-  margin-top: 6px;
+  padding: 4px 0;
 }
 
-/* -- closure controls ----------------------- */
-
-.closure-controls {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.closure-controls .label {
+.out-error .line-ref {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.closure-controls select {
+/* -- proof tree ------------------------------ */
+
+.proof-goal {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text);
+}
+
+.proof-goal .ok { color: var(--green); }
+.proof-goal .fail { color: var(--red); }
+
+.proof-tree {
+  font-size: 12px;
+  margin: 4px 0 12px;
+  line-height: 1.8;
+}
+
+.proof-node {
+  white-space: pre;
+}
+
+.proof-prefix {
+  color: var(--text-dim);
+}
+
+.proof-fact {
+  color: var(--cyan);
+}
+
+.proof-rule {
+  color: var(--accent2);
+}
+
+.proof-given {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* -- syntax reference panel ------------------ */
+
+.ref-toggle {
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ref-toggle:hover { color: var(--text); }
+
+.syntax-ref {
+  display: none;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.8;
+  overflow: auto;
+  max-height: 260px;
+  flex-shrink: 0;
+}
+
+.syntax-ref.visible { display: block; }
+
+.syntax-ref code {
+  color: var(--cyan);
   background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.syntax-ref .kw { color: var(--accent2); }
+.syntax-ref .cm { color: var(--text-dim); }
+
+.syntax-ref h4 {
+  color: var(--orange);
+  font-size: 11px;
+  margin: 8px 0 2px;
+  font-weight: 600;
+}
+
+.syntax-ref h4:first-child { margin-top: 0; }
+
+/* -- examples dropdown ----------------------- */
+
+.example-select {
+  background: var(--surface2);
   color: var(--text);
   border: 1px solid var(--border);
   font-family: var(--mono);
-  font-size: 13px;
-  padding: 8px 10px;
+  font-size: 12px;
+  padding: 4px 8px;
   border-radius: 4px;
   outline: none;
   cursor: pointer;
 }
 
-.closure-controls select:focus {
-  border-color: var(--accent);
-}
+.example-select:focus { border-color: var(--accent); }
 
-/* -- result --------------------------------- */
+/* -- responsive ------------------------------ */
 
-.stat-badges {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-
-.stat-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 3px;
-  font-size: 12px;
-  font-weight: 600;
-  background: rgba(122, 162, 247, 0.15);
-  color: var(--accent);
-  border: 1px solid rgba(122, 162, 247, 0.3);
-}
-
-.stat-badge.warn {
-  background: rgba(247,118,142,0.15);
-  color: var(--red);
-  border-color: rgba(247,118,142,0.3);
-}
-
-.section-title {
-  color: var(--orange);
-  font-weight: 600;
-  font-size: 13px;
-  margin: 14px 0 8px;
-}
-
-.section-title:first-child { margin-top: 0; }
-
-/* equivalence classes */
-
-.class-box {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px 12px;
-  margin: 6px 0;
-}
-
-.class-label {
-  color: var(--accent2);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.class-terms {
-  margin-top: 4px;
-}
-
-.class-term {
-  display: inline-block;
-  background: var(--surface2);
-  border-radius: 3px;
-  padding: 2px 6px;
-  margin: 2px 4px 2px 0;
-  font-size: 13px;
-}
-
-/* category blocks */
-
-.cat-block {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  margin: 8px 0;
-  overflow: hidden;
-}
-
-.cat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.1s;
-}
-
-.cat-header:hover {
-  background: var(--surface2);
-}
-
-.cat-rule {
-  color: var(--accent2);
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.cat-count {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-.cat-desc {
-  padding: 0 12px;
-  font-size: 11px;
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 6px;
-}
-
-.cat-body {
-  padding: 6px 12px 8px;
-}
-
-.cat-body.collapsed {
-  display: none;
-}
-
-.derived-row {
-  margin: 3px 0;
-  padding: 2px 0 2px 10px;
-  border-left: 2px solid var(--surface2);
-  font-size: 12px;
-}
-
-.more-hint {
-  color: var(--text-dim);
-  font-size: 11px;
-  padding-left: 12px;
-}
-
-.result-empty {
-  color: var(--text-dim);
-  font-size: 13px;
-  padding: 16px 0;
-  text-align: center;
-}
-
-.chevron {
-  color: var(--text-dim);
-  font-size: 11px;
-  transition: transform 0.15s;
-}
-
-.chevron.open { transform: rotate(90deg); }
-
-/* -- help button in header ------------------ */
-
-.help-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--accent);
-  text-decoration: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  font-family: var(--mono);
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  position: absolute;
-  right: 20px;
-  top: 28px;
-  transition: all 0.15s;
-}
-
-.help-btn:hover {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-/* -- preset dropdown ------------------------ */
-
-.preset-wrapper {
-  position: relative;
-}
-
-.preset-btn {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--accent2);
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 18px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.preset-btn:hover {
-  background: var(--accent2);
-  color: var(--bg);
-  border-color: var(--accent2);
-}
-
-.preset-dropdown {
-  position: absolute;
-  top: 42px;
-  left: 0;
-  z-index: 50;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  width: 420px;
-  max-height: 340px;
-  overflow-y: auto;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  display: none;
-}
-
-.preset-dropdown.open { display: block; }
-
-.preset-dropdown-header {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--orange);
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  background: var(--surface);
-}
-
-.preset-item {
-  padding: 8px 12px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
-}
-
-.preset-item:last-child { border-bottom: none; }
-
-.preset-item:hover {
-  background: var(--surface2);
-}
-
-.preset-formula {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.preset-desc {
-  color: var(--text-dim);
-  font-size: 11px;
-  margin-top: 2px;
+@media (max-width: 768px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .editor-panel, .output-panel { min-height: 400px; }
 }
 </style>
 </head>
 <body>
 <div id="app">
-  <header style="position:relative">
+  <header>
     <h1>RELATUM</h1>
-    <p>equational closure engine</p>
+    <p>pure relational closure engine</p>
     <a href="doc.html" class="help-btn" title="Documentation">?</a>
   </header>
 
-  <!-- Structure Selector -->
-  <div class="panel">
-    <div class="panel-header">Structures</div>
-    <div class="panel-body">
-      <div class="struct-bar">
-        <span class="label">Add:</span>
-        <button onclick="addStructure('semigroup')">Semigroup</button>
-        <button onclick="addStructure('monoid')">Monoid</button>
-        <button onclick="addStructure('group')">Group</button>
-        <button onclick="addStructure('ring')">Ring</button>
-        <button onclick="addStructure('empty')">Empty</button>
-      </div>
-      <div id="active-structs" class="active-structs"></div>
-      <div id="op-input-area" class="op-input-area" style="display:none">
-        <div class="fact-input-row" style="margin-top:10px">
-          <input type="text" id="op-input" placeholder="e.g. f/2, zero/0, neg/1"
-                 autocomplete="off" spellcheck="false">
-          <button class="btn" onclick="addOperation()">Add Op</button>
+  <!-- Editor -->
+  <div class="editor-panel">
+    <div class="panel">
+      <div class="panel-header">
+        <span>Source</span>
+        <div class="controls">
+          <select class="example-select" id="example-select" onchange="loadExample(this.value)">
+            <option value="">-- examples --</option>
+            <option value="equiv">Equivalence</option>
+            <option value="order">Partial Order</option>
+            <option value="typed">Membership</option>
+            <option value="custom">Custom Rules</option>
+            <option value="congruence">Congruence</option>
+            <option value="identity">Identity Uniqueness</option>
+            <option value="errors">Errors (demo)</option>
+          </select>
         </div>
-        <div id="op-error"></div>
       </div>
-      <div id="struct-info" class="struct-info"></div>
+      <div class="panel-body">
+        <textarea id="editor" spellcheck="false" placeholder="# Write your Relatum program here...
+# See syntax reference below for help.
+
+<element> a, b, c
+rel equiv/2 : equivalence
+
+equiv(a, b)
+equiv(b, c)
+
+derive"></textarea>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="run()">Run</button>
+        <span class="label" id="run-time"></span>
+        <span class="spacer"></span>
+        <button class="btn" onclick="clearEditor()">Clear</button>
+      </div>
+      <div class="ref-toggle" onclick="toggleRef()">syntax reference &#9662;</div>
+      <div class="syntax-ref" id="syntax-ref">
+        <h4>Elements</h4>
+        <code>&lt;element&gt;</code> <span class="cm">a, b, c</span> &mdash; declare elements (in the root container)<br>
+        <code>&lt;X&gt;</code> <span class="cm">a, b, c</span> &mdash; declare a, b, c as members of X (X is also an element)<br>
+        Every element is in <code>&lt;element&gt;</code> by default. Any element can be a container.<br>
+
+        <h4>Relations</h4>
+        <code>rel</code> <span class="cm">name/arity</span> &mdash; declare a relation (accepts any element)<br>
+        <code>rel</code> <span class="cm">name/arity</span> <code>:</code> <span class="kw">X</span>, <span class="kw">Y</span> &mdash; arg 1 must be in X, arg 2 in Y<br>
+        <code>rel</code> <span class="cm">name/arity</span> <code>:</code> <span class="kw">equivalence</span> &mdash; + symmetry, transitivity, reflexivity, congruence<br>
+        <code>rel</code> <span class="cm">name/arity</span> <code>:</code> <span class="kw">X</span>, <span class="kw">Y</span>, <span class="kw">transitive</span> &mdash; membership + properties can mix<br>
+
+        <h4>Rules</h4>
+        <code>rule</code> <span class="cm">name</span><code>:</code> <span class="cm">premise1, premise2</span> <code>|-</code> <span class="cm">conclusion1, conclusion2</span><br>
+        Variables are prefixed with <code>?</code> &mdash; e.g. <code>R(?x, ?y) |- R(?y, ?x)</code><br>
+
+        <h4>Facts</h4>
+        <span class="cm">relation(term1, term2, ...)</span> &mdash; ground atoms (all terms must be declared constants)<br>
+
+        <h4>Commands</h4>
+        <code>derive</code> &mdash; compute closure and display all derived facts<br>
+        <code>derive</code> <span class="cm">N</span> &mdash; limit to N rounds (default: 100)<br>
+        <code>prove</code> <span class="cm">R(a, b)</span> &mdash; compute closure and show proof tree for a goal<br>
+
+        <h4>Comments</h4>
+        Lines starting with <code>#</code> are ignored.
+      </div>
     </div>
   </div>
 
-  <!-- Facts -->
-  <div class="panel">
-    <div class="panel-header">
-      <span>Facts</span>
-      <button class="btn-danger" onclick="clearFacts()" title="Clear all facts">clear all</button>
-    </div>
-    <div class="panel-body">
-      <div class="fact-input-row">
-        <div class="preset-wrapper">
-          <button class="preset-btn" id="preset-btn" onclick="togglePresets()" disabled title="Insert preset formula">+</button>
-          <div class="preset-dropdown" id="preset-dropdown"></div>
+  <!-- Output -->
+  <div class="output-panel">
+    <div class="panel">
+      <div class="panel-header">
+        <span>Output</span>
+      </div>
+      <div class="panel-body">
+        <div id="output">
+          <div style="color:var(--text-dim);padding:40px 0;text-align:center">
+            Write a program and press <span style="color:var(--accent)">Run</span> to compute closure.
+          </div>
         </div>
-        <input type="text" id="fact-input" placeholder="e.g. mul(a, b) = mul(b, a)"
-               autocomplete="off" spellcheck="false" disabled>
-        <button class="btn" id="add-fact-btn" onclick="addFact()" disabled>Add</button>
-      </div>
-      <div id="fact-error"></div>
-      <div id="fact-list" class="fact-list">
-        <div class="fact-empty">Add a structure first, then enter ground equations.</div>
       </div>
     </div>
-  </div>
-
-  <!-- Closure -->
-  <div class="panel">
-    <div class="panel-header">Closure</div>
-    <div class="panel-body">
-      <div class="closure-controls">
-        <span class="label">Rounds:</span>
-        <select id="rounds-select">
-          <option value="1">1</option>
-          <option value="2" selected>2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-        </select>
-        <button class="btn btn-primary" id="compute-btn" onclick="runClosure()" disabled>
-          Compute Closure
-        </button>
-        <span id="compute-time" class="label"></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Results -->
-  <div class="panel" id="result-panel" style="display:none">
-    <div class="panel-header">Result</div>
-    <div class="panel-body" id="result-body"></div>
   </div>
 </div>
 
 <script>
 // ===============================================================
-//  Operation Registry (global, shared across structures)
+//  Relatum DSL — Parser
 // ===============================================================
 
-class OpRegistry {
-  constructor() {
-    this._ops = [];       // [{ name, arity, userDefined }]
-    this._lookup = {};    // name -> index
-  }
+function parse(source) {
+  const lines = source.split('\n');
+  const program = {
+    elements: new Set(),       // all declared element names (constants + containers)
+    membership: new Map(),     // element -> Set of containers it belongs to
+    relations: new Map(),      // name -> { arity, props: Set, sig: string[]|null }
+    rules: [],
+    facts: [],
+    derives: [],               // [{ maxRounds }]
+    proves: [],                // [{ name, terms, line }]
+    errors: [],
+  };
 
-  declare(name, arity, userDefined) {
-    if (name in this._lookup) {
-      const existing = this._ops[this._lookup[name]];
-      if (existing.arity !== arity) {
-        throw new Error(`Operation '${name}' already declared with arity ${existing.arity}, requested ${arity}`);
-      }
-      return existing;
+  // The intrinsic root: every declared element is in 'element'
+  program.elements.add('element');
+  program.membership.set('element', new Set(['element']));
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineNum = i + 1;
+    const raw = lines[i];
+    const trimmed = raw.replace(/#.*$/, '').trim();
+    if (!trimmed) continue;
+
+    try {
+      parseLine(trimmed, program, lineNum);
+    } catch (e) {
+      program.errors.push({ line: lineNum, message: e.message });
     }
-    const op = { name, arity, userDefined: !!userDefined };
-    this._lookup[name] = this._ops.length;
-    this._ops.push(op);
-    return op;
   }
-
-  get(name) { return this._ops[this._lookup[name]] || null; }
-  has(name) { return name in this._lookup; }
-  operations() { return this._ops; }
-  opNames() { return this._ops.map(o => o.name); }
-  size() { return this._ops.length; }
-
-  clear() { this._ops = []; this._lookup = {}; }
+  return program;
 }
 
-const registry = new OpRegistry();
+const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
-// ===============================================================
-//  Algebraic Structure Blueprints (pure data, no registry calls)
-// ===============================================================
-
-const BLUEPRINTS = {
-  semigroup: () => ({
-    name: "Semigroup",
-    ops: [{ name: "mul", arity: 2 }],
-    equations: [
-      { name: "mul_associativity", category: "associativity",
-        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" }
-    ]
-  }),
-  monoid: () => ({
-    name: "Monoid",
-    ops: [{ name: "mul", arity: 2 }, { name: "e", arity: 0 }],
-    equations: [
-      { name: "mul_associativity", category: "associativity",
-        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" },
-      { name: "mul_left_identity", category: "identity",
-        lhs: "mul(e, x)", rhs: "x" },
-      { name: "mul_right_identity", category: "identity",
-        lhs: "mul(x, e)", rhs: "x" }
-    ]
-  }),
-  group: () => ({
-    name: "Group",
-    ops: [{ name: "mul", arity: 2 }, { name: "e", arity: 0 }, { name: "inv", arity: 1 }],
-    equations: [
-      { name: "mul_associativity", category: "associativity",
-        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" },
-      { name: "mul_left_identity", category: "identity",
-        lhs: "mul(e, x)", rhs: "x" },
-      { name: "mul_right_identity", category: "identity",
-        lhs: "mul(x, e)", rhs: "x" },
-      { name: "mul_left_inverse", category: "inverse",
-        lhs: "mul(inv(x), x)", rhs: "e" },
-      { name: "mul_right_inverse", category: "inverse",
-        lhs: "mul(x, inv(x))", rhs: "e" }
-    ]
-  }),
-  ring: () => ({
-    name: "Ring",
-    ops: [{ name: "add", arity: 2 }, { name: "zero", arity: 0 },
-          { name: "neg", arity: 1 }, { name: "mul", arity: 2 },
-          { name: "one", arity: 0 }],
-    equations: [
-      { name: "add_associativity", category: "additive_group",
-        lhs: "add(add(x, y), z)", rhs: "add(x, add(y, z))" },
-      { name: "add_left_identity", category: "additive_group",
-        lhs: "add(zero, x)", rhs: "x" },
-      { name: "add_right_identity", category: "additive_group",
-        lhs: "add(x, zero)", rhs: "x" },
-      { name: "add_left_inverse", category: "additive_group",
-        lhs: "add(neg(x), x)", rhs: "zero" },
-      { name: "add_right_inverse", category: "additive_group",
-        lhs: "add(x, neg(x))", rhs: "zero" },
-      { name: "add_commutativity", category: "additive_group",
-        lhs: "add(x, y)", rhs: "add(y, x)" },
-      { name: "mul_associativity", category: "multiplicative_monoid",
-        lhs: "mul(mul(x, y), z)", rhs: "mul(x, mul(y, z))" },
-      { name: "mul_left_identity", category: "multiplicative_monoid",
-        lhs: "mul(one, x)", rhs: "x" },
-      { name: "mul_right_identity", category: "multiplicative_monoid",
-        lhs: "mul(x, one)", rhs: "x" },
-      { name: "left_distributivity", category: "distributivity",
-        lhs: "mul(x, add(y, z))", rhs: "add(mul(x, y), mul(x, z))" },
-      { name: "right_distributivity", category: "distributivity",
-        lhs: "mul(add(x, y), z)", rhs: "add(mul(x, z), mul(y, z))" }
-    ]
-  }),
-  empty: () => ({
-    name: "Custom",
-    ops: [],
-    equations: []
-  }),
-};
-
-// Rewrite an axiom string replacing plain op names with namespaced versions.
-// Sort by length desc to avoid partial matches (e.g. "neg" before "e").
-function nsRewriteAxiom(str, opMap) {
-  const sorted = Object.keys(opMap).sort((a, b) => b.length - a.length);
-  for (const plain of sorted) {
-    str = str.replace(new RegExp('\\b' + plain + '\\b', 'g'), opMap[plain]);
+// Register an element, ensuring it exists in the membership map
+function ensureElement(program, name) {
+  if (!program.elements.has(name)) {
+    program.elements.add(name);
+    program.membership.set(name, new Set(['element']));
   }
-  return str;
 }
 
-// ===============================================================
-//  Term Parser
-// ===============================================================
+// Record: `child` is in `container`
+function addMembership(program, child, container) {
+  ensureElement(program, child);
+  ensureElement(program, container);
+  program.membership.get(child).add(container);
+}
 
-// autoRegister: if true, unknown id(...) patterns are registered as new ops in the global registry
-function parseTerm(input, autoRegister) {
-  let pos = 0;
-
-  function skipWS() { while (pos < input.length && input[pos] === ' ') pos++; }
-
-  function readIdent() {
-    skipWS();
-    const start = pos;
-    while (pos < input.length && /[a-zA-Z0-9_:]/.test(input[pos])) pos++;
-    return pos > start ? input.slice(start, pos) : null;
+function parseLine(line, program, lineNum) {
+  // Element declaration: <Container> name1, name2, ...
+  // or <Container> ?var1, ?var2, ...  (variables scoped to container)
+  if (line.startsWith('<')) {
+    const close = line.indexOf('>');
+    if (close < 0) throw new Error("Expected '>' to close container name");
+    const container = line.slice(1, close).trim();
+    if (!IDENT_RE.test(container)) throw new Error(`Invalid container name: '${container}'`);
+    const rest = line.slice(close + 1).trim();
+    if (!rest) throw new Error("Expected element names after <" + container + ">");
+    const names = rest.split(/[,\s]+/).filter(s => s);
+    for (const name of names) {
+      // ?name = variable declaration (ignored for now — variables are inline in rules)
+      if (name.startsWith('?')) continue;
+      if (!IDENT_RE.test(name)) throw new Error(`Invalid element name: '${name}'`);
+      addMembership(program, name, container);
+    }
+    return;
   }
 
-  function parseSingle() {
-    const id = readIdent();
-    if (!id) throw new Error(`Expected identifier at position ${pos}`);
-    skipWS();
-    if (pos < input.length && input[pos] === '(') {
-      pos++;
-      const args = [];
-      skipWS();
-      if (pos < input.length && input[pos] !== ')') {
-        args.push(parseSingle());
-        while (true) {
-          skipWS();
-          if (pos < input.length && input[pos] === ')') break;
-          if (input[pos] !== ',') throw new Error(`Expected ',' or ')' at position ${pos}`);
-          pos++;
-          args.push(parseSingle());
+  // rel declaration
+  if (line.startsWith('rel ')) {
+    const rest = line.slice(4).trim();
+    const colonIdx = rest.indexOf(':');
+    const schemaStr = colonIdx >= 0 ? rest.slice(0, colonIdx).trim() : rest;
+    const propsStr = colonIdx >= 0 ? rest.slice(colonIdx + 1).trim() : '';
+
+    const m = schemaStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\/(\d+)$/);
+    if (!m) throw new Error(`Expected rel name/arity, got '${schemaStr}'`);
+    const name = m[1], arity = parseInt(m[2]);
+
+    // After the colon: a mix of property keywords and element names (type signature).
+    // Keywords go to props; identifiers that aren't keywords go to sig (in order).
+    const KNOWN_PROPS = ['reflexive', 'symmetric', 'transitive', 'congruent', 'equivalence'];
+    const props = new Set();
+    const sig = [];
+    if (propsStr) {
+      for (const p of propsStr.split(/[,\s]+/).filter(s => s)) {
+        const pl = p.toLowerCase();
+        if (pl === 'equivalence') {
+          props.add('reflexive');
+          props.add('symmetric');
+          props.add('transitive');
+          props.add('congruent');
+        } else if (KNOWN_PROPS.includes(pl)) {
+          props.add(pl);
+        } else if (IDENT_RE.test(p)) {
+          sig.push(p);
+        } else {
+          throw new Error(`Unknown property or element: '${p}'`);
         }
       }
-      pos++;
-      // Auto-register unknown operation in the global registry
-      const existing = registry.get(id);
-      if (!existing) {
-        if (!autoRegister) throw new Error(`Unknown operation: ${id}`);
-        registry.declare(id, args.length, true);
-      } else if (existing.arity !== args.length) {
-        throw new Error(`${id} expects ${existing.arity} args, got ${args.length}`);
+    }
+    if (sig.length > 0 && sig.length !== arity) {
+      throw new Error(`Signature for '${name}' has ${sig.length} elements but arity is ${arity}`);
+    }
+    program.relations.set(name, { arity, props, sig: sig.length > 0 ? sig : null });
+    return;
+  }
+
+  // rule declaration
+  if (line.startsWith('rule ')) {
+    const rest = line.slice(5).trim();
+    const colonIdx = rest.indexOf(':');
+    if (colonIdx < 0) throw new Error("Expected 'rule name: premises |- conclusions'");
+    const name = rest.slice(0, colonIdx).trim();
+    const body = rest.slice(colonIdx + 1).trim();
+
+    const turnstile = body.indexOf('|-');
+    if (turnstile < 0) throw new Error("Expected '|-' in rule body");
+    const premStr = body.slice(0, turnstile).trim();
+    const concStr = body.slice(turnstile + 2).trim();
+
+    const premises = parseAtomList(premStr);
+    const conclusions = parseAtomList(concStr);
+    if (premises.length === 0) throw new Error("Rule must have at least one premise");
+    if (conclusions.length === 0) throw new Error("Rule must have at least one conclusion");
+
+    program.rules.push({ name, premises, conclusions, line: lineNum });
+    return;
+  }
+
+  // derive command
+  if (line === 'derive' || line.startsWith('derive ')) {
+    const rest = line.slice(6).trim();
+    const maxRounds = rest ? parseInt(rest) : 100;
+    if (isNaN(maxRounds) || maxRounds < 1) throw new Error("Expected 'derive' or 'derive N'");
+    program.derives.push({ maxRounds, line: lineNum });
+    return;
+  }
+
+  // prove command
+  if (line.startsWith('prove ')) {
+    const rest = line.slice(6).trim();
+    const m = rest.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\)$/);
+    if (!m) throw new Error("Expected 'prove R(a, b, ...)'");
+    const name = m[1];
+    const terms = m[2].split(',').map(s => s.trim()).filter(s => s);
+    program.proves.push({ name, terms, line: lineNum });
+    return;
+  }
+
+  // Otherwise: try to parse as a ground fact — name(t1, t2, ...)
+  const factMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\)$/);
+  if (factMatch) {
+    const name = factMatch[1];
+    const terms = factMatch[2].split(',').map(s => s.trim()).filter(s => s);
+    program.facts.push({ name, terms, line: lineNum });
+    return;
+  }
+
+  throw new Error(`Unrecognized statement: '${line}'`);
+}
+
+function parseAtomList(str) {
+  // Split on commas that are NOT inside parentheses
+  const atoms = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i <= str.length; i++) {
+    if (i === str.length || (str[i] === ',' && depth === 0)) {
+      const part = str.slice(start, i).trim();
+      if (part) atoms.push(parseAtom(part));
+      start = i + 1;
+    } else if (str[i] === '(') depth++;
+    else if (str[i] === ')') depth--;
+  }
+  return atoms;
+}
+
+function parseAtom(str) {
+  const m = str.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\)$/);
+  if (!m) throw new Error(`Invalid atom: '${str}'`);
+  const name = m[1];
+  const terms = m[2].split(',').map(s => s.trim()).filter(s => s);
+  return { name, terms };
+}
+
+// ===============================================================
+//  Relatum DSL — Semantic Validation
+// ===============================================================
+
+function validate(program) {
+  const errors = [...program.errors];
+
+  // Check relation references in facts
+  for (const fact of program.facts) {
+    const def = program.relations.get(fact.name);
+    if (!def) {
+      errors.push({ line: fact.line, message: `Undeclared relation: '${fact.name}'` });
+      continue;
+    }
+    if (fact.terms.length !== def.arity) {
+      errors.push({ line: fact.line, message: `${fact.name} expects ${def.arity} terms, got ${fact.terms.length}` });
+      continue;
+    }
+    for (let ti = 0; ti < fact.terms.length; ti++) {
+      const t = fact.terms[ti];
+      if (!program.elements.has(t)) {
+        errors.push({ line: fact.line, message: `Undeclared element: '${t}'` });
+      } else if (def.sig) {
+        const required = def.sig[ti];
+        const containers = program.membership.get(t);
+        if (!containers || !containers.has(required)) {
+          errors.push({ line: fact.line, message: `'${t}' is not in <${required}> (required by ${fact.name} argument ${ti + 1})` });
+        }
       }
-      return { type: 'app', op: id, args };
     }
-    const existing = registry.get(id);
-    if (existing && existing.arity === 0) {
-      return { type: 'app', op: id, args: [] };
-    }
-    return { type: 'var', name: id };
   }
 
-  const result = parseSingle();
-  skipWS();
-  if (pos < input.length) throw new Error(`Unexpected character at position ${pos}`);
-  return result;
-}
-
-function parseEquation(input, autoRegister) {
-  let depth = 0, eqIdx = -1;
-  for (let i = 0; i < input.length; i++) {
-    if (input[i] === '(') depth++;
-    else if (input[i] === ')') depth--;
-    else if (input[i] === '=' && depth === 0) { eqIdx = i; break; }
+  // Check that signatures reference declared elements
+  for (const [relName, def] of program.relations) {
+    if (def.sig) {
+      for (const eName of def.sig) {
+        if (!program.elements.has(eName)) {
+          errors.push({ line: null, message: `Relation '${relName}' signature references undeclared element '${eName}'` });
+        }
+      }
+    }
   }
-  if (eqIdx === -1) throw new Error("Expected '=' in equation");
-  const lhs = parseTerm(input.slice(0, eqIdx).trim(), autoRegister);
-  const rhs = parseTerm(input.slice(eqIdx + 1).trim(), autoRegister);
-  return { lhs, rhs };
+
+  // Check relation references in rules
+  for (const rule of program.rules) {
+    for (const atom of [...rule.premises, ...rule.conclusions]) {
+      const def = program.relations.get(atom.name);
+      if (!def) {
+        errors.push({ line: rule.line, message: `Undeclared relation in rule '${rule.name}': '${atom.name}'` });
+        continue;
+      }
+      if (atom.terms.length !== def.arity) {
+        errors.push({ line: rule.line, message: `${atom.name} expects ${def.arity} terms, got ${atom.terms.length} in rule '${rule.name}'` });
+      }
+    }
+  }
+
+  // Check prove goals
+  for (const goal of program.proves) {
+    const def = program.relations.get(goal.name);
+    if (!def) {
+      errors.push({ line: goal.line, message: `Undeclared relation in prove: '${goal.name}'` });
+      continue;
+    }
+    if (goal.terms.length !== def.arity) {
+      errors.push({ line: goal.line, message: `${goal.name} expects ${def.arity} terms, got ${goal.terms.length}` });
+      continue;
+    }
+    for (const t of goal.terms) {
+      if (!program.elements.has(t)) {
+        errors.push({ line: goal.line, message: `Undeclared element in prove: '${t}'` });
+      }
+    }
+  }
+
+  // Check derive/prove presence
+  if (program.derives.length === 0 && program.proves.length === 0 && errors.length === 0) {
+    errors.push({ line: null, message: "No 'derive' or 'prove' command — add 'derive' or 'prove R(a, b)'" });
+  }
+
+  return errors;
 }
 
 // ===============================================================
-//  Closure Engine
+//  Relatum — Closure Engine
 // ===============================================================
 
-const MAX_UNIVERSE = 500;
-const MAX_DERIVED = 200;
-const MAX_SUBS_PER_AXIOM = 2000;
-const MAX_DEPTH = 8;
+const MAX_FACTS = 10000;
 
-// ── Term helpers ──────────────────────────────────────────────
+function execute(program) {
+  const output = {
+    declarations: [],
+    initialFacts: [],
+    autoRules: [],
+    userRules: [],
+    derivedFacts: [],
+    proofs: [],
+    stats: null,
+    errors: [],
+  };
 
-function termDepth(t) {
-  if (t.type === 'var') return 1;
-  return 1 + (t.args.length > 0 ? Math.max(...t.args.map(termDepth)) : 0);
-}
-
-// ── Expanding axiom detection ─────────────────────────────────
-
-function properSubterms(term) {
-  const out = [];
-  if (term.type === 'app') {
-    for (const a of term.args) collectAllSubterms(a, out);
-  }
-  return out;
-}
-
-function collectAllSubterms(term, out) {
-  out.push(term);
-  if (term.type === 'app') {
-    for (const a of term.args) collectAllSubterms(a, out);
-  }
-}
-
-function patternMatches(pattern, term) {
-  return patternMatchesInner(pattern, term, {});
-}
-
-function patternMatchesInner(pattern, term, bindings) {
-  if (pattern.type === 'var') {
-    if (pattern.name in bindings) {
-      return termKey(bindings[pattern.name]) === termKey(term);
-    }
-    bindings[pattern.name] = term;
-    return true;
-  }
-  if (term.type !== 'app') return false;
-  if (pattern.op !== term.op || pattern.args.length !== term.args.length) return false;
-  // Clone bindings for backtracking safety (simple approach)
-  const snap = { ...bindings };
-  for (let i = 0; i < pattern.args.length; i++) {
-    if (!patternMatchesInner(pattern.args[i], term.args[i], bindings)) {
-      Object.assign(bindings, snap);
-      return false;
-    }
-  }
-  return true;
-}
-
-function detectExpanding(parsedAxiom) {
-  const ld = termDepth(parsedAxiom.lhs);
-  const rd = termDepth(parsedAxiom.rhs);
-  if (ld === rd) return false;
-  const [pattern, host] = ld < rd ? [parsedAxiom.lhs, parsedAxiom.rhs] : [parsedAxiom.rhs, parsedAxiom.lhs];
-  if (pattern.type === 'var') return false;
-  return properSubterms(host).some(sub => patternMatches(pattern, sub));
-}
-
-const CATEGORY_DESCRIPTIONS = {
-  congruence: "Congruence closure: if ai = bi for all i, then f(a1..an) = f(b1..bn)",
-  associativity: "Associativity: (x * y) * z = x * (y * z)",
-  identity: "Identity: e * x = x, x * e = x",
-  inverse: "Inverse: x\u207B\u00B9 * x = e, x * x\u207B\u00B9 = e",
-  additive_group: "Additive abelian group: associativity, commutativity, identity, and inverse for addition",
-  multiplicative_monoid: "Multiplicative monoid: associativity and identity for multiplication",
-  distributivity: "Distributivity: multiplication distributes over addition",
-};
-
-function termKey(t) {
-  if (t._key) return t._key;
-  const k = t.type === 'var' ? `v:${t.name}` : `a:${t.op}(${t.args.map(termKey).join(',')})`;
-  t._key = k;
-  return k;
-}
-
-class UnionFind {
-  constructor() { this.parent = new Map(); this.rank = new Map(); }
-  makeSet(t) {
-    const k = termKey(t);
-    if (!this.parent.has(k)) { this.parent.set(k, k); this.rank.set(k, 0); }
-  }
-  find(t) {
-    let k = termKey(t);
-    const path = [];
-    while (true) {
-      const p = this.parent.get(k);
-      if (!p || p === k) break;
-      path.push(k);
-      k = p;
-    }
-    for (const n of path) this.parent.set(n, k);
-    return k;
-  }
-  union(a, b) {
-    const ra = this.find(a), rb = this.find(b);
-    if (ra === rb) return false;
-    const rka = this.rank.get(ra) || 0, rkb = this.rank.get(rb) || 0;
-    if (rka < rkb) this.parent.set(ra, rb);
-    else {
-      this.parent.set(rb, ra);
-      if (rka === rkb) this.rank.set(ra, rka + 1);
+  // Runtime type-check: does each term belong to the relation's required container?
+  function typeCheck(relName, terms) {
+    const def = program.relations.get(relName);
+    if (!def || !def.sig) return true;
+    for (let i = 0; i < terms.length; i++) {
+      const containers = program.membership.get(terms[i]);
+      if (!containers || !containers.has(def.sig[i])) return false;
     }
     return true;
   }
-}
 
-function collectSubterms(term, out) {
-  out.push(term);
-  if (term.type === 'app') for (const a of term.args) collectSubterms(a, out);
-}
-
-function addTerm(universe, uf, term) {
-  const subs = [];
-  collectSubterms(term, subs);
-  for (const t of subs) {
-    if (universe.size >= MAX_UNIVERSE) break;
-    const k = termKey(t);
-    if (!universe.has(k)) { universe.set(k, t); uf.makeSet(t); }
-  }
-}
-
-function collectVarNames(term, vars) {
-  if (term.type === 'var') vars.add(term.name);
-  else if (term.type === 'app') for (const a of term.args) collectVarNames(a, vars);
-}
-
-function substitute(term, sub) {
-  if (term.type === 'var') return sub[term.name] || term;
-  return { type: 'app', op: term.op, args: term.args.map(a => substitute(a, sub)) };
-}
-
-function* enumerateSubs(vars, terms) {
-  if (vars.length === 0) { yield {}; return; }
-  const v = vars[0], rest = vars.slice(1);
-  for (const t of terms) {
-    for (const s of enumerateSubs(rest, terms)) {
-      s[v] = t;
-      yield s;
+  // Log declarations: group by container
+  const containerMembers = new Map();
+  for (const [elem, containers] of program.membership) {
+    if (elem === 'element') continue;
+    for (const c of containers) {
+      if (c === 'element') continue;
+      if (!containerMembers.has(c)) containerMembers.set(c, []);
+      containerMembers.get(c).push(elem);
     }
   }
-}
+  const rootOnly = [];
+  for (const [elem, containers] of program.membership) {
+    if (elem === 'element') continue;
+    const nonRoot = [...containers].filter(c => c !== 'element');
+    if (nonRoot.length === 0) rootOnly.push(elem);
+  }
+  if (rootOnly.length > 0) {
+    output.declarations.push({ type: 'elem', text: `<element> ${rootOnly.join(', ')}` });
+  }
+  for (const [container, members] of containerMembers) {
+    output.declarations.push({ type: 'elem', text: `<${container}> ${members.join(', ')}` });
+  }
+  for (const [name, def] of program.relations) {
+    const parts = [];
+    if (def.sig) parts.push(def.sig.join(', '));
+    const propsArr = [...def.props];
+    if (propsArr.length > 0) parts.push(propsArr.join(', '));
+    const suffix = parts.length > 0 ? ' : ' + parts.join(', ') : '';
+    output.declarations.push({ type: 'rel', text: `${name}/${def.arity}${suffix}` });
+  }
 
-function computeClosure(structure, facts, maxRounds) {
-  const uf = new UnionFind();
-  const universe = new Map();
-  const derived = [];
-  const catEqs = {};
-  const warnings = [];
-  let capped = false;
+  // Build initial fact set
+  const allElements = program.elements;
+  const factSet = new Set();
+  const factObjs = [];
+  const provenance = new Map(); // factKey -> { rule, premises: [factKey, ...] }
 
-  const parsedAxioms = structure.equations.map(axiom => {
-    const lhs = parseTerm(axiom.lhs, false);
-    const rhs = parseTerm(axiom.rhs, false);
-    const vars = new Set();
-    collectVarNames(lhs, vars);
-    collectVarNames(rhs, vars);
-    return { name: axiom.name, lhs, rhs, vars: [...vars].sort(), category: axiom.category || axiom.name };
-  });
+  function fkey(name, terms) {
+    return `${name}(${terms.join(',')})`;
+  }
 
-  // Static analysis: detect expanding axioms
-  const expandingSet = new Set();
-  for (const ax of parsedAxioms) {
-    if (detectExpanding(ax)) {
-      expandingSet.add(ax.name);
-      warnings.push(`Axiom "${ax.name}" is recursive (one side embeds in the other); depth capped at ${MAX_DEPTH}`);
+  function addFact(name, terms, rule, premises) {
+    const key = fkey(name, terms);
+    if (factSet.has(key)) return false;
+    if (factSet.size >= MAX_FACTS) return false;
+    factSet.add(key);
+    factObjs.push({ name, terms: [...terms] });
+    provenance.set(key, { rule: rule || 'given', premises: premises || [] });
+    return true;
+  }
+
+  for (const fact of program.facts) {
+    addFact(fact.name, fact.terms, 'given', []);
+    output.initialFacts.push(`${fact.name}(${fact.terms.join(', ')})`);
+  }
+
+  // Build rules (auto-generated from relation properties + user rules)
+  const rules = [];
+
+  for (const [name, def] of program.relations) {
+    if (def.props.has('symmetric')) {
+      const r = {
+        name: `${name}_symmetry`,
+        premises: [{ name, terms: ['?x', '?y'] }],
+        conclusions: [{ name, terms: ['?y', '?x'] }],
+        auto: true,
+      };
+      rules.push(r);
+      output.autoRules.push(r);
+    }
+    if (def.props.has('transitive')) {
+      const r = {
+        name: `${name}_transitivity`,
+        premises: [{ name, terms: ['?x', '?y'] }, { name, terms: ['?y', '?z'] }],
+        conclusions: [{ name, terms: ['?x', '?z'] }],
+        auto: true,
+      };
+      rules.push(r);
+      output.autoRules.push(r);
     }
   }
 
-  for (const f of facts) { addTerm(universe, uf, f.lhs); addTerm(universe, uf, f.rhs); }
-  for (const f of facts) uf.union(f.lhs, f.rhs);
+  for (const rule of program.rules) {
+    const r = { ...rule, auto: false };
+    rules.push(r);
+    output.userRules.push(r);
+  }
 
-  let stepsUsed = 0, deriveCount = 0;
-  let depthGrewRounds = 0;
-  let prevMaxDepth = 0;
-  for (const t of universe.values()) prevMaxDepth = Math.max(prevMaxDepth, termDepth(t));
+  // Compute closure (triggered by derive or prove)
+  const needsClosure = program.derives.length > 0 || program.proves.length > 0;
+  if (needsClosure) {
+    const maxRounds = program.derives.length > 0 ? program.derives[0].maxRounds : 100;
+    const initialCount = factSet.size;
 
-  for (let round = 0; round < maxRounds; round++) {
-    stepsUsed++;
-    let changed = false;
-    let depthCappedThisRound = false;
-    if (deriveCount >= MAX_DERIVED) { capped = true; break; }
-
-    // Congruence
-    const byOp = {};
-    for (const t of universe.values()) {
-      if (t.type === 'app') (byOp[t.op] = byOp[t.op] || []).push(t);
+    // Reflexivity: R(t, t) for each reflexive relation
+    for (const [rname, rdef] of program.relations) {
+      if (!rdef.props.has('reflexive') || rdef.arity !== 2) continue;
+      for (const c of allElements) {
+        if (typeCheck(rname, [c, c])) {
+          addFact(rname, [c, c], `${rname}_reflexivity`, []);
+        }
+      }
     }
-    for (const terms of Object.values(byOp)) {
-      for (let i = 0; i < terms.length && !capped; i++) {
-        for (let j = i + 1; j < terms.length && !capped; j++) {
-          const ai = terms[i].args, aj = terms[j].args;
-          if (ai.length !== aj.length) continue;
-          if (ai.every((a, idx) => uf.find(a) === uf.find(aj[idx])) && uf.union(terms[i], terms[j])) {
-            deriveCount++;
-            const eq = { lhs: terms[i], rhs: terms[j] };
-            derived.push(eq);
-            (catEqs['congruence'] = catEqs['congruence'] || []).push(eq);
-            changed = true;
-            if (deriveCount >= MAX_DERIVED) capped = true;
+
+    let rounds = 0;
+    let saturated = false;
+
+    for (let round = 0; round < maxRounds; round++) {
+      rounds++;
+      let changed = false;
+
+      // Apply rules
+      for (const rule of rules) {
+        const matches = matchPremises(rule.premises, 0, {}, [], factObjs);
+        for (const match of matches) {
+          for (const conc of rule.conclusions) {
+            const terms = conc.terms.map(t => t.startsWith('?') ? (match.sub[t] || t) : t);
+            if (terms.every(t => allElements.has(t)) && typeCheck(conc.name, terms)) {
+              if (addFact(conc.name, terms, rule.name, match.keys)) changed = true;
+            }
+          }
+          if (factSet.size >= MAX_FACTS) break;
+        }
+        if (factSet.size >= MAX_FACTS) break;
+      }
+
+      // Congruence
+      for (const [rname, rdef] of program.relations) {
+        if (!rdef.props.has('congruent') || rdef.arity !== 2) continue;
+        const pairs = [];
+        for (const f of factObjs) {
+          if (f.name === rname && f.terms.length === 2 && f.terms[0] !== f.terms[1]) {
+            pairs.push([f.terms[0], f.terms[1]]);
           }
         }
+        const snapshot = factObjs.length;
+        for (const [a, b] of pairs) {
+          const eqKey = fkey(rname, [a, b]);
+          for (let fi = 0; fi < snapshot; fi++) {
+            const fact = factObjs[fi];
+            if (fact.terms.length < 2) continue;
+            if (fact.terms.includes(a)) {
+              const newTerms = fact.terms.map(t => t === a ? b : t);
+              const srcKey = fkey(fact.name, fact.terms);
+              if (typeCheck(fact.name, newTerms) && addFact(fact.name, newTerms, `${rname}_congruence`, [eqKey, srcKey])) changed = true;
+            }
+            if (fact.terms.includes(b)) {
+              const newTerms = fact.terms.map(t => t === b ? a : t);
+              const srcKey = fkey(fact.name, fact.terms);
+              if (typeCheck(fact.name, newTerms) && addFact(fact.name, newTerms, `${rname}_congruence`, [eqKey, srcKey])) changed = true;
+            }
+          }
+          if (factSet.size >= MAX_FACTS) break;
+        }
+        if (factSet.size >= MAX_FACTS) break;
       }
-      if (capped) break;
-    }
-    if (capped) break;
 
-    // Axiom instantiation
-    const groundTerms = [...universe.values()];
-    for (const axiom of parsedAxioms) {
-      if (capped) break;
-      const isExpanding = expandingSet.has(axiom.name);
-
-      // For expanding axioms, only use shallow terms as substitution candidates
-      const candidates = isExpanding
-        ? groundTerms.filter(t => termDepth(t) < MAX_DEPTH - 1)
-        : groundTerms;
-
-      const numSubs = Math.pow(candidates.length, axiom.vars.length);
-      const pool = numSubs <= MAX_SUBS_PER_AXIOM
-        ? candidates
-        : candidates.slice(0, Math.floor(Math.pow(MAX_SUBS_PER_AXIOM, 1 / Math.max(axiom.vars.length, 1))));
-
-      for (const sub of enumerateSubs(axiom.vars, pool)) {
-        const lhs = substitute(axiom.lhs, sub);
-        const rhs = substitute(axiom.rhs, sub);
-
-        // Depth guard
-        if (termDepth(lhs) > MAX_DEPTH || termDepth(rhs) > MAX_DEPTH) {
-          depthCappedThisRound = true;
-          continue;
-        }
-
-        addTerm(universe, uf, lhs);
-        addTerm(universe, uf, rhs);
-        if (uf.union(lhs, rhs)) {
-          deriveCount++;
-          const eq = { lhs, rhs };
-          derived.push(eq);
-          (catEqs[axiom.category] = catEqs[axiom.category] || []).push(eq);
-          changed = true;
-          if (deriveCount >= MAX_DERIVED) { capped = true; break; }
-        }
+      if (!changed || factSet.size >= MAX_FACTS) {
+        if (!changed) saturated = true;
+        break;
       }
     }
-    if (capped) break;
 
-    // Depth-growth detection
-    let curMaxDepth = 0;
-    for (const t of universe.values()) curMaxDepth = Math.max(curMaxDepth, termDepth(t));
-    if (curMaxDepth > prevMaxDepth) depthGrewRounds++;
-    else depthGrewRounds = 0;
-    prevMaxDepth = curMaxDepth;
+    const derived = factObjs.slice(initialCount);
 
-    if (depthGrewRounds >= 3 && depthCappedThisRound) {
-      warnings.push(`Recursive expansion detected: term depth grew for ${depthGrewRounds} consecutive rounds (max depth ${curMaxDepth}); halting early`);
-      break;
+    // Only show derived facts list when derive is explicit
+    if (program.derives.length > 0) {
+      for (const d of derived) {
+        output.derivedFacts.push(`${d.name}(${d.terms.join(', ')})`);
+      }
     }
 
-    if (!changed) break;
+    output.stats = {
+      rounds,
+      totalFacts: factSet.size,
+      derived: derived.length,
+      saturated,
+      capped: factSet.size >= MAX_FACTS,
+    };
   }
 
-  // Equivalence classes
-  const groups = {};
-  for (const t of universe.values()) {
-    const root = uf.find(t);
-    (groups[root] = groups[root] || []).push(t);
-  }
-  const classes = Object.values(groups).filter(c => c.length > 1);
-
-  // Categories
-  const categories = [];
-  if (catEqs['congruence']) {
-    categories.push({ rule: 'congruence', description: CATEGORY_DESCRIPTIONS['congruence'], equations: catEqs['congruence'] });
-  }
-  for (const key of Object.keys(catEqs).filter(k => k !== 'congruence').sort()) {
-    categories.push({ rule: key, description: CATEGORY_DESCRIPTIONS[key] || `Derived from: ${key}`, equations: catEqs[key] });
+  // Process prove goals — build proof trees
+  for (const goal of program.proves) {
+    const key = fkey(goal.name, goal.terms);
+    const found = factSet.has(key);
+    const proof = {
+      goal: `${goal.name}(${goal.terms.join(', ')})`,
+      found,
+      tree: found ? buildProofTree(key, provenance) : null,
+    };
+    output.proofs.push(proof);
   }
 
-  return { derived, categories, classes, stepsUsed, universeSize: universe.size, capped, warnings };
+  return output;
+}
+
+function matchPremises(premises, idx, sub, keys, factObjs) {
+  if (idx >= premises.length) return [{ sub: { ...sub }, keys: [...keys] }];
+  const prem = premises[idx];
+  const results = [];
+  for (const fact of factObjs) {
+    if (fact.name !== prem.name) continue;
+    if (fact.terms.length !== prem.terms.length) continue;
+    const newSub = { ...sub };
+    let ok = true;
+    for (let i = 0; i < prem.terms.length; i++) {
+      const pt = prem.terms[i];
+      if (pt.startsWith('?')) {
+        if (pt in newSub) {
+          if (newSub[pt] !== fact.terms[i]) { ok = false; break; }
+        } else {
+          newSub[pt] = fact.terms[i];
+        }
+      } else {
+        if (pt !== fact.terms[i]) { ok = false; break; }
+      }
+    }
+    if (ok) {
+      const fk = `${fact.name}(${fact.terms.join(',')})`;
+      const sub_results = matchPremises(premises, idx + 1, newSub, [...keys, fk], factObjs);
+      for (const r of sub_results) results.push(r);
+      if (results.length > 50000) break;
+    }
+  }
+  return results;
+}
+
+function buildProofTree(key, provenance, visited) {
+  if (!visited) visited = new Set();
+  if (visited.has(key)) return { fact: key, rule: 'circular', children: [] };
+  visited.add(key);
+  const prov = provenance.get(key);
+  if (!prov) return { fact: key, rule: '?', children: [] };
+  if (prov.rule === 'given') return { fact: key, rule: 'given', children: [] };
+  const children = prov.premises.map(pk =>
+    buildProofTree(pk, provenance, new Set(visited))
+  );
+  return { fact: key, rule: prov.rule, children };
 }
 
 // ===============================================================
-//  State
-// ===============================================================
-
-const structures = new Map();  // name -> { name, equations }
-let facts = [];      // { lhs, rhs, raw }
-let lastResult = null;
-
-// ===============================================================
-//  Rendering helpers
+//  Rendering
 // ===============================================================
 
 function esc(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function formatTerm(t) {
-  if (t.type === 'var') return t.name;
-  if (t.args.length === 0) return t.op;
-  return `${t.op}(${t.args.map(formatTerm).join(', ')})`;
-}
+function renderOutput(output) {
+  const el = document.getElementById('output');
+  let html = '';
 
-const _hlRegexCache = {};
-function hlTerm(t) {
-  const s = typeof t === 'string' ? t : formatTerm(t);
-  let r = esc(s);
-  // Sort longest first so "Ring:mul" is matched before "Ring:one" wouldn't collide,
-  // but more importantly "Group:inv" before "Group:e" to avoid partial matches.
-  const ops = registry.opNames().slice().sort((a, b) => b.length - a.length);
-  for (const op of ops) {
-    if (!_hlRegexCache[op]) {
-      const escaped = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      _hlRegexCache[op] = new RegExp(`(?<![a-zA-Z0-9_:])${escaped}(?![a-zA-Z0-9_:])`, 'g');
+  // Errors
+  if (output.errors.length > 0) {
+    html += '<div class="out-section">';
+    for (const err of output.errors) {
+      const lineRef = err.line ? `<span class="line-ref">line ${err.line}:</span> ` : '';
+      html += `<div class="out-error">${lineRef}${esc(err.message)}</div>`;
     }
-    r = r.replace(_hlRegexCache[op], `<span class="op-name">${op}</span>`);
+    html += '</div>';
+    el.innerHTML = html;
+    return;
   }
-  return r;
+
+  // Declarations
+  if (output.declarations.length > 0) {
+    html += '<div class="out-section"><div class="out-section-title">Declarations</div>';
+    for (const d of output.declarations) {
+      html += `<div class="out-decl"><span class="hl">${esc(d.text)}</span></div>`;
+    }
+    html += '</div>';
+  }
+
+  // Auto-generated rules
+  if (output.autoRules.length > 0) {
+    html += '<div class="out-section"><div class="out-section-title">Auto Rules</div>';
+    for (const r of output.autoRules) {
+      const prem = r.premises.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
+      const conc = r.conclusions.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
+      html += `<div class="out-rule">${esc(r.name)}: ${esc(prem)} |- ${esc(conc)}</div>`;
+    }
+    html += '</div>';
+  }
+
+  // User rules
+  if (output.userRules.length > 0) {
+    html += '<div class="out-section"><div class="out-section-title">User Rules</div>';
+    for (const r of output.userRules) {
+      const prem = r.premises.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
+      const conc = r.conclusions.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
+      html += `<div class="out-rule">${esc(r.name)}: ${esc(prem)} |- ${esc(conc)}</div>`;
+    }
+    html += '</div>';
+  }
+
+  // Initial facts
+  if (output.initialFacts.length > 0) {
+    html += '<div class="out-section"><div class="out-section-title">Initial Facts</div>';
+    for (const f of output.initialFacts) {
+      html += `<div class="out-fact initial">${esc(f)}</div>`;
+    }
+    html += '</div>';
+  }
+
+  // Derived facts
+  if (output.derivedFacts.length > 0) {
+    html += `<div class="out-section"><div class="out-section-title">Derived Facts (${output.derivedFacts.length})</div>`;
+    const show = Math.min(output.derivedFacts.length, 200);
+    for (let i = 0; i < show; i++) {
+      html += `<div class="out-fact derived">${esc(output.derivedFacts[i])}</div>`;
+    }
+    if (output.derivedFacts.length > show) {
+      html += `<div style="color:var(--text-dim);font-size:11px;padding-left:12px">... +${output.derivedFacts.length - show} more</div>`;
+    }
+    html += '</div>';
+  }
+
+  // Proof trees
+  if (output.proofs && output.proofs.length > 0) {
+    html += '<div class="out-section"><div class="out-section-title">Proofs</div>';
+    for (const proof of output.proofs) {
+      if (proof.found) {
+        html += `<div class="proof-goal">${esc(proof.goal)} <span class="ok">proved</span></div>`;
+        html += '<div class="proof-tree">';
+        html += renderProofTree(proof.tree, '', '');
+        html += '</div>';
+      } else {
+        html += `<div class="proof-goal">${esc(proof.goal)} <span class="fail">not derivable</span></div>`;
+      }
+    }
+    html += '</div>';
+  }
+
+  // Stats
+  if (output.stats) {
+    const s = output.stats;
+    html += '<div class="out-section"><div class="out-section-title">Summary</div>';
+    html += `<span class="out-stat">${s.rounds} rounds</span>`;
+    html += `<span class="out-stat">${s.totalFacts} facts</span>`;
+    html += `<span class="out-stat">${s.derived} derived</span>`;
+    if (s.saturated) html += '<span class="out-stat ok">saturated</span>';
+    if (s.capped) html += `<span class="out-stat warn">capped at ${MAX_FACTS}</span>`;
+    html += '</div>';
+  }
+
+  if (!html) {
+    html = '<div style="color:var(--text-dim);padding:20px 0;text-align:center">No output.</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderProofTree(node, linePrefix, contPrefix) {
+  const pretty = node.fact.replace(/,/g, ', ');
+  const ruleLabel = node.rule === 'given'
+    ? '<span class="proof-given">given</span>'
+    : `<span class="proof-rule">${esc(node.rule)}</span>`;
+
+  let html = `<div class="proof-node">`
+    + `<span class="proof-prefix">${esc(linePrefix)}</span>`
+    + `<span class="proof-fact">${esc(pretty)}</span>`
+    + ` &larr; ${ruleLabel}</div>`;
+
+  for (let i = 0; i < node.children.length; i++) {
+    const isLast = i === node.children.length - 1;
+    html += renderProofTree(
+      node.children[i],
+      contPrefix + (isLast ? '\u2514\u2500\u2500 ' : '\u251C\u2500\u2500 '),
+      contPrefix + (isLast ? '    ' : '\u2502   ')
+    );
+  }
+  return html;
 }
 
 // ===============================================================
 //  UI Actions
 // ===============================================================
 
-const factInput = document.getElementById('fact-input');
-const addFactBtn = document.getElementById('add-fact-btn');
-const factListEl = document.getElementById('fact-list');
-const factErrorEl = document.getElementById('fact-error');
-const computeBtn = document.getElementById('compute-btn');
-const structInfoEl = document.getElementById('struct-info');
-const resultPanel = document.getElementById('result-panel');
-const resultBody = document.getElementById('result-body');
-const computeTimeEl = document.getElementById('compute-time');
+const editor = document.getElementById('editor');
 
-function renderStructureInfo() {
-  if (structures.size === 0) {
-    structInfoEl.innerHTML = '';
-    structInfoEl.classList.remove('visible');
-    return;
-  }
-  let html = '<div style="margin-top:8px">';
-
-  // Global operations
-  const ops = registry.operations();
-  if (ops.length > 0) {
-    html += '<div style="margin-bottom:6px;color:var(--text-dim);font-size:12px">Operations</div>';
-    for (const op of ops) {
-      html += `<span class="op-badge${op.userDefined ? ' user-op' : ''}">` +
-              `<span class="op-name">${esc(op.name)}</span><span class="op-arity">/${op.arity}</span></span>`;
-    }
-  }
-
-  // Per-structure axioms
-  for (const [id, entry] of structures) {
-    const s = entry.structure;
-    if (!s || s.equations.length === 0) continue;
-    html += `<div class="struct-section-name">${esc(s.name)}</div>`;
-    for (const eq of s.equations) {
-      html += `<div class="axiom-row"><span class="axiom-name">${esc(eq.name)}</span> ` +
-              `${hlTerm(eq.lhs)}<span class="eq-equals">=</span>${hlTerm(eq.rhs)}</div>`;
-    }
-  }
-
-  html += '</div>';
-  structInfoEl.innerHTML = html;
-  structInfoEl.classList.add('visible');
-}
-
-let structIdCounter = 0;
-
-function rebuildRegistry() {
-  const userOps = registry.operations().filter(o => o.userDefined).map(o => ({ name: o.name, arity: o.arity }));
-  registry.clear();
-  // Clear highlight cache since op names change
-  for (const k in _hlRegexCache) delete _hlRegexCache[k];
-
-  for (const [id, entry] of structures) {
-    const bp = BLUEPRINTS[entry.builder]();
-    const prefix = entry.displayName;
-
-    // Build mapping: plain op name -> namespaced name
-    const opMap = {};
-    for (const op of bp.ops) {
-      const nsName = prefix + ':' + op.name;
-      registry.declare(nsName, op.arity);
-      opMap[op.name] = nsName;
-    }
-
-    // Rewrite axiom strings with namespaced op names
-    const equations = bp.equations.map(eq => ({
-      ...eq,
-      lhs: nsRewriteAxiom(eq.lhs, opMap),
-      rhs: nsRewriteAxiom(eq.rhs, opMap),
-    }));
-
-    entry.structure = { name: prefix, equations };
-  }
-
-  // Re-declare user-defined ops (these stay as-is, no namespace)
-  for (const op of userOps) {
-    try { registry.declare(op.name, op.arity, true); } catch (_) {}
-  }
-}
-
-function refreshUI() {
-  lastResult = null;
-  resultPanel.style.display = 'none';
-  computeTimeEl.textContent = '';
-
-  const hasStructures = structures.size > 0;
-
-  document.getElementById('op-input-area').style.display = hasStructures ? '' : 'none';
-  document.getElementById('op-error').textContent = '';
-
-  factInput.disabled = !hasStructures;
-  updateFactPlaceholder();
-  addFactBtn.disabled = !hasStructures;
-  presetBtn.disabled = !hasStructures;
-  computeBtn.disabled = !hasStructures || facts.length === 0;
-
-  // Disable buttons for already-added singular structures
-  document.querySelectorAll('.struct-bar button').forEach(b => {
-    const key = b.textContent.toLowerCase();
-    if (key === 'empty') return;
-    const alreadyAdded = [...structures.values()].some(e => e.builder === key);
-    b.classList.toggle('active', alreadyAdded);
-    b.disabled = alreadyAdded;
-  });
-
-  renderActiveTags();
-  renderStructureInfo();
-  renderFactList();
-  if (hasStructures) factInput.focus();
-}
-
-function addStructure(builder) {
-  if (builder !== 'empty') {
-    for (const entry of structures.values()) {
-      if (entry.builder === builder) return;
-    }
-  }
-  const id = ++structIdCounter;
-  const bp = BLUEPRINTS[builder]();
-  let displayName = bp.name;
-  // Ensure unique display name for Custom
-  if (builder === 'empty') {
-    const existingCustom = [...structures.values()].filter(e => e.builder === 'empty').length;
-    if (existingCustom > 0) displayName = 'Custom' + (existingCustom + 1);
-  }
-  structures.set(id, { builder, displayName, structure: null });
-  rebuildRegistry();
-  refreshUI();
-}
-
-function removeStructure(id) {
-  structures.delete(id);
-  rebuildRegistry();
-  refreshUI();
-}
-
-// Rewrite term tree op names when a structure is renamed
-function rewriteTermPrefix(term, oldPrefix, newPrefix) {
-  if (term.type === 'app') {
-    if (term.op.startsWith(oldPrefix + ':')) {
-      term.op = newPrefix + ':' + term.op.slice(oldPrefix.length + 1);
-    }
-    for (const arg of term.args) rewriteTermPrefix(arg, oldPrefix, newPrefix);
-    delete term._key; // invalidate memoized key
-  }
-}
-
-function renameStructure(id, newName) {
-  const entry = structures.get(id);
-  if (!entry) return;
-  const trimmed = newName.trim();
-  if (!trimmed || trimmed === entry.displayName) return;
-  const oldPrefix = entry.displayName;
-  const newPrefix = trimmed;
-
-  // Rewrite all existing facts to use new prefix
-  for (const fact of facts) {
-    rewriteTermPrefix(fact.lhs, oldPrefix, newPrefix);
-    rewriteTermPrefix(fact.rhs, oldPrefix, newPrefix);
-    fact.raw = fact.raw.split(oldPrefix + ':').join(newPrefix + ':');
-  }
-
-  entry.displayName = newPrefix;
-  rebuildRegistry();
-  renderActiveTags();
-  renderStructureInfo();
-  renderFactList();
-}
-
-function renderActiveTags() {
-  const el = document.getElementById('active-structs');
-  if (structures.size === 0) { el.innerHTML = ''; return; }
-  let html = '';
-  for (const [id, entry] of structures) {
-    const name = entry.displayName;
-    html += `<span class="struct-tag">` +
-            `<input class="struct-tag-name" value="${esc(name)}" ` +
-            `onchange="renameStructure(${id}, this.value)" ` +
-            `oninput="this.size=Math.max(this.value.length,3)" ` +
-            `onkeydown="if(event.key==='Enter')this.blur()" ` +
-            `size="${Math.max(name.length, 3)}">` +
-            `<button class="struct-tag-remove" onclick="removeStructure(${id})" title="Remove">\u2715</button></span>`;
-  }
-  el.innerHTML = html;
-}
-
-function updateFactPlaceholder() {
-  if (structures.size === 0) return;
-  const ops = registry.operations();
-  if (ops.length === 0) {
-    factInput.placeholder = 'Define operations first, or type e.g. f(a, b) = g(a)';
-  } else {
-    // Show a compact example with the first few ops
-    const examples = ops.slice(0, 4).map(o =>
-      o.arity === 0 ? o.name : `${o.name}(${Array.from({length: o.arity}, (_, i) => String.fromCharCode(97 + i)).join(', ')})`
-    );
-    factInput.placeholder = examples.join('  ') + (ops.length > 4 ? '  \u2026' : '');
-  }
-}
-
-function addOperation() {
-  const opInput = document.getElementById('op-input');
-  const opError = document.getElementById('op-error');
-  const raw = opInput.value.trim();
-  if (!raw || structures.size === 0) return;
-  opError.textContent = '';
-
-  // Parse comma-separated entries like "f/2, zero/0, Struct:neg/1"
-  const entries = raw.split(',').map(s => s.trim()).filter(s => s);
-  const added = [];
-
-  for (const entry of entries) {
-    const m = entry.match(/^([a-zA-Z_][a-zA-Z0-9_:.]*)\/(\d+)$/);
-    if (!m) {
-      opError.innerHTML = `<span class="error-msg">Invalid format "${esc(entry)}" — use name/arity, e.g. f/2 or MyStruct:f/2</span>`;
-      return;
-    }
-    const name = m[1], arity = parseInt(m[2]);
-    const existing = registry.get(name);
-    if (existing) {
-      if (existing.arity !== arity) {
-        opError.innerHTML = `<span class="error-msg">"${esc(name)}" already exists with arity ${existing.arity}</span>`;
-        return;
-      }
-      continue;
-    }
-    registry.declare(name, arity, true);
-    added.push(`${name}/${arity}`);
-  }
-
-  opInput.value = '';
-  if (added.length > 0) {
-    renderStructureInfo();
-    updateFactPlaceholder();
-  }
-}
-
-function addFact() {
-  const raw = factInput.value.trim();
-  if (!raw || structures.size === 0) return;
-  factErrorEl.textContent = '';
-
-  try {
-    const opsBefore = registry.size();
-    const eq = parseEquation(raw, true);
-    facts.push({ lhs: eq.lhs, rhs: eq.rhs, raw });
-    factInput.value = '';
-    computeBtn.disabled = false;
-    lastResult = null;
-    resultPanel.style.display = 'none';
-    computeTimeEl.textContent = '';
-    // If new operations were auto-registered, refresh structure info
-    if (registry.size() > opsBefore) {
-      renderStructureInfo();
-    }
-    renderFactList();
-    factInput.focus();
-  } catch (e) {
-    factErrorEl.innerHTML = `<span class="error-msg">${esc(e.message)}</span>`;
-  }
-}
-
-function removeFact(index) {
-  facts.splice(index, 1);
-  computeBtn.disabled = facts.length === 0;
-  if (facts.length === 0) {
-    lastResult = null;
-    resultPanel.style.display = 'none';
-    computeTimeEl.textContent = '';
-  }
-  renderFactList();
-}
-
-function clearFacts() {
-  facts = [];
-  lastResult = null;
-  resultPanel.style.display = 'none';
-  computeBtn.disabled = true;
-  computeTimeEl.textContent = '';
-  renderFactList();
-}
-
-function renderFactList() {
-  if (facts.length === 0) {
-    factListEl.innerHTML = `<div class="fact-empty">${structures.size > 0
-      ? 'No facts yet. Add ground equations above.'
-      : 'Add a structure first, then enter ground equations.'}</div>`;
-    return;
-  }
-  let html = '';
-  for (let i = 0; i < facts.length; i++) {
-    html += `<div class="fact-item">` +
-            `<span class="fact-index">${i + 1}</span>` +
-            `<span class="fact-expr">${hlTerm(facts[i].lhs)}<span class="eq-equals">=</span>${hlTerm(facts[i].rhs)}</span>` +
-            `<button class="btn-danger" onclick="removeFact(${i})" title="Remove">\u2715</button>` +
-            `</div>`;
-  }
-  factListEl.innerHTML = html;
-}
-
-function mergedStructure() {
-  const allEqs = [];
-  const names = [];
-  for (const entry of structures.values()) {
-    if (!entry.structure) continue;
-    allEqs.push(...entry.structure.equations);
-    names.push(entry.structure.name);
-  }
-  return { name: names.join(' + '), equations: allEqs };
-}
-
-function runClosure() {
-  if (structures.size === 0 || facts.length === 0) return;
-  const rounds = parseInt(document.getElementById('rounds-select').value);
-
+function run() {
+  const source = editor.value;
   const t0 = performance.now();
-  lastResult = computeClosure(mergedStructure(), facts, rounds);
-  const elapsed = (performance.now() - t0).toFixed(1);
-  computeTimeEl.textContent = `${elapsed} ms`;
-
-  renderResult(lastResult);
-}
-
-function renderResult(result) {
-  let html = '';
-
-  // Warnings
-  if (result.warnings && result.warnings.length > 0) {
-    for (const w of result.warnings) {
-      html += `<div style="background:rgba(247,118,142,0.1);border:1px solid rgba(247,118,142,0.3);border-radius:4px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--red)">\u26A0 ${esc(w)}</div>`;
-    }
-  }
-
-  // Stats
-  html += '<div class="stat-badges">';
-  html += `<span class="stat-badge">${result.stepsUsed} rounds</span>`;
-  html += `<span class="stat-badge">${result.universeSize} terms</span>`;
-  html += `<span class="stat-badge">${result.derived.length} derived</span>`;
-  html += `<span class="stat-badge">${result.classes.length} classes</span>`;
-  if (result.capped) html += `<span class="stat-badge warn">capped at ${MAX_DERIVED}</span>`;
-  html += '</div>';
-
-  // Equivalence classes
-  if (result.classes.length > 0) {
-    html += '<div class="section-title">Equivalence Classes</div>';
-    const showClasses = Math.min(result.classes.length, 20);
-    for (let i = 0; i < showClasses; i++) {
-      const cls = result.classes[i];
-      html += `<div class="class-box">` +
-              `<span class="class-label">class ${i + 1} (${cls.length} terms)</span>` +
-              `<div class="class-terms">`;
-      const showTerms = Math.min(cls.length, 15);
-      for (let j = 0; j < showTerms; j++) {
-        html += `<span class="class-term">${hlTerm(cls[j])}</span>`;
-      }
-      if (cls.length > showTerms) {
-        html += `<span class="class-term" style="color:var(--text-dim)">+${cls.length - showTerms} more</span>`;
-      }
-      html += '</div></div>';
-    }
-    if (result.classes.length > showClasses) {
-      html += `<div class="more-hint">... and ${result.classes.length - showClasses} more classes</div>`;
-    }
-  } else {
-    html += '<div class="result-empty">No non-trivial equivalence classes.</div>';
-  }
-
-  // Categories
-  if (result.categories.length > 0) {
-    html += '<div class="section-title">Derived Equations by Category</div>';
-    for (let ci = 0; ci < result.categories.length; ci++) {
-      const cat = result.categories[ci];
-      const maxPerCat = 8;
-      const show = Math.min(cat.equations.length, maxPerCat);
-      html += `<div class="cat-block">` +
-              `<div class="cat-header" onclick="toggleCat(this)">` +
-              `<span><span class="cat-rule">${esc(cat.rule)}</span></span>` +
-              `<span><span class="cat-count">${cat.equations.length} equations</span> <span class="chevron open">\u25B6</span></span>` +
-              `</div>` +
-              `<div class="cat-desc">${esc(cat.description)}</div>` +
-              `<div class="cat-body">`;
-      for (let i = 0; i < show; i++) {
-        const d = cat.equations[i];
-        html += `<div class="derived-row">${hlTerm(d.lhs)}<span class="eq-equals">=</span>${hlTerm(d.rhs)}</div>`;
-      }
-      if (cat.equations.length > show) {
-        html += `<div class="more-hint">... +${cat.equations.length - show} more</div>`;
-      }
-      html += '</div></div>';
-    }
-  }
-
-  resultBody.innerHTML = html;
-  resultPanel.style.display = '';
-  resultPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function toggleCat(header) {
-  const body = header.parentElement.querySelector('.cat-body');
-  const chevron = header.querySelector('.chevron');
-  body.classList.toggle('collapsed');
-  chevron.classList.toggle('open');
-}
-
-// Enter key to add fact
-factInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') addFact();
-});
-
-// Enter key to add operation
-document.getElementById('op-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') addOperation();
-});
-
-// Escape key closes dropdown
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    document.getElementById('preset-dropdown').classList.remove('open');
-  }
-});
-
-// ===============================================================
-//  Preset Formulas
-// ===============================================================
-
-// Returns context-sensitive presets namespaced per structure
-function getPresets() {
-  if (structures.size === 0) return [];
-  const presets = [];
-
-  // Always available: seed facts (variables are global, no namespace needed)
-  presets.push({
-    label: 'Seed elements',
-    items: [
-      { formula: 'a = a', desc: 'Introduce element a into the universe for axiom instantiation' },
-      { formula: 'b = b', desc: 'Introduce element b (useful for multi-variable axioms like associativity)' },
-      { formula: 'c = c', desc: 'Introduce element c (third ground element)' },
-    ]
-  });
-
-  // Per-structure presets
-  for (const entry of structures.values()) {
-    const s = entry.structure;
-    if (!s) continue;
-    const p = s.name; // namespace prefix
-    // Collect this structure's base op names
-    const baseOps = new Set();
-    for (const op of registry.operations()) {
-      if (op.name.startsWith(p + ':')) baseOps.add(op.name.slice(p.length + 1));
-    }
-
-    // Multiplicative (mul, e, inv)
-    if (baseOps.has('mul')) {
-      const mul = p+':mul';
-      const items = [
-        { formula: `${mul}(a, b) = ${mul}(b, a)`, desc: 'Commutativity: a * b = b * a' },
-      ];
-      if (baseOps.has('e')) {
-        const e = p+':e';
-        items.push(
-          { formula: `${mul}(a, ${e}) = a`, desc: 'Right identity: a * e = a' },
-          { formula: `${mul}(${e}, a) = a`, desc: 'Left identity: e * a = a' },
-        );
-      }
-      if (baseOps.has('inv')) {
-        const inv = p+':inv', e = p+':e';
-        items.push(
-          { formula: `${mul}(a, ${inv}(a)) = ${e}`, desc: 'Right inverse: a * a\u207B\u00B9 = e' },
-          { formula: `${mul}(${inv}(a), a) = ${e}`, desc: 'Left inverse: a\u207B\u00B9 * a = e' },
-          { formula: `${inv}(${inv}(a)) = a`, desc: 'Double inverse: (a\u207B\u00B9)\u207B\u00B9 = a' },
-        );
-      }
-      items.push(
-        { formula: `${mul}(a, a) = a`, desc: 'Idempotency: a * a = a' },
-        { formula: `${mul}(${mul}(a, b), c) = ${mul}(a, ${mul}(b, c))`, desc: 'Associativity instance' },
-      );
-      presets.push({ label: `${p} \u2014 Multiplicative`, items });
-    }
-
-    // Additive (add, zero, neg)
-    if (baseOps.has('add')) {
-      const add = p+':add';
-      const items = [
-        { formula: `${add}(a, b) = ${add}(b, a)`, desc: 'Commutativity: a + b = b + a' },
-      ];
-      if (baseOps.has('zero')) {
-        const zero = p+':zero';
-        items.push(
-          { formula: `${add}(a, ${zero}) = a`, desc: 'Right identity: a + 0 = a' },
-          { formula: `${add}(${zero}, a) = a`, desc: 'Left identity: 0 + a = a' },
-        );
-      }
-      if (baseOps.has('neg')) {
-        const neg = p+':neg', zero = p+':zero';
-        items.push(
-          { formula: `${add}(a, ${neg}(a)) = ${zero}`, desc: 'Right inverse: a + (-a) = 0' },
-          { formula: `${neg}(${neg}(a)) = a`, desc: 'Double negation' },
-          { formula: `${neg}(${zero}) = ${zero}`, desc: 'Negation of zero: -0 = 0' },
-        );
-      }
-      if (baseOps.has('mul')) {
-        const mul = p+':mul', zero = p+':zero';
-        items.push(
-          { formula: `${mul}(a, ${zero}) = ${zero}`, desc: 'Absorption: a * 0 = 0' },
-          { formula: `${mul}(a, ${add}(b, c)) = ${add}(${mul}(a, b), ${mul}(a, c))`, desc: 'Left distributivity instance' },
-        );
-      }
-      presets.push({ label: `${p} \u2014 Additive`, items });
-    }
-  }
-
-  // Generic (always available, no namespace — auto-registers)
-  presets.push({
-    label: 'Generic / Custom',
-    items: [
-      { formula: 'f(a) = a', desc: 'f is identity on a (auto-registers f/1 if not defined)' },
-      { formula: 'f(a, b) = f(b, a)', desc: 'f is commutative (auto-registers f/2 if not defined)' },
-      { formula: 'f(f(a)) = a', desc: 'f is an involution' },
-    ]
-  });
-
-  return presets;
-}
-
-const presetBtn = document.getElementById('preset-btn');
-const presetDropdown = document.getElementById('preset-dropdown');
-
-function togglePresets() {
-  const isOpen = presetDropdown.classList.contains('open');
-  if (isOpen) {
-    presetDropdown.classList.remove('open');
+  const program = parse(source);
+  const errors = validate(program);
+  if (errors.length > 0) {
+    renderOutput({ errors, declarations: [], autoRules: [], userRules: [], initialFacts: [], derivedFacts: [], proofs: [], stats: null });
+    document.getElementById('run-time').textContent = '';
     return;
   }
-  // Build dropdown content
-  const groups = getPresets();
-  let html = '';
-  for (const group of groups) {
-    html += `<div class="preset-dropdown-header">${esc(group.label)}</div>`;
-    for (const item of group.items) {
-      html += `<div class="preset-item" onclick="selectPreset('${esc(item.formula.replace(/'/g, "\\'"))}')">` +
-              `<div class="preset-formula">${esc(item.formula)}</div>` +
-              `<div class="preset-desc">${esc(item.desc)}</div>` +
-              `</div>`;
-    }
+  const output = execute(program);
+  const elapsed = (performance.now() - t0).toFixed(1);
+  document.getElementById('run-time').textContent = `${elapsed} ms`;
+  renderOutput(output);
+}
+
+function clearEditor() {
+  editor.value = '';
+  document.getElementById('output').innerHTML =
+    '<div style="color:var(--text-dim);padding:40px 0;text-align:center">Write a program and press <span style="color:var(--accent)">Run</span> to compute closure.</div>';
+  document.getElementById('run-time').textContent = '';
+}
+
+function toggleRef() {
+  document.getElementById('syntax-ref').classList.toggle('visible');
+}
+
+// Ctrl+Enter / Cmd+Enter to run
+editor.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    run();
   }
-  presetDropdown.innerHTML = html;
-  presetDropdown.classList.add('open');
-}
-
-function selectPreset(formula) {
-  factInput.value = formula;
-  presetDropdown.classList.remove('open');
-  factInput.focus();
-}
-
-// Close preset dropdown when clicking outside
-document.addEventListener('click', e => {
-  if (!e.target.closest('.preset-wrapper')) {
-    presetDropdown.classList.remove('open');
+  // Tab inserts two spaces
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = start + 2;
   }
 });
+
+// ===============================================================
+//  Examples
+// ===============================================================
+
+const EXAMPLES = {
+  equiv: `# Equivalence closure
+# "equivalence" = reflexive + symmetric + transitive + congruent
+
+<element> a, b, c, d
+
+rel eq/2 : equivalence
+
+eq(a, b)
+eq(b, c)
+
+# derive computes the full closure:
+#   symmetry  -> eq(b,a), eq(c,b)
+#   transitivity -> eq(a,c), eq(c,a), ...
+#   reflexivity  -> eq(x,x) for all x
+#   congruence   -> substitution in other facts
+derive`,
+
+  order: `# Partial order (reflexive + transitive, NOT symmetric)
+# Models "less-than-or-equal"
+
+<element> x1, x2, x3, x4
+
+rel leq/2 : reflexive, transitive
+
+leq(x1, x2)
+leq(x2, x3)
+leq(x3, x4)
+
+# Transitivity chains: leq(x1,x3), leq(x1,x4), leq(x2,x4)
+# Reflexivity adds: leq(x1,x1), leq(x2,x2), ...
+derive`,
+
+  typed: `# Membership constraints
+# <Container> members... declares membership.
+# Relation signatures restrict which elements are accepted.
+
+<Person> alice, bob, carol
+<City> paris, london
+
+rel lives_in/2 : Person, City
+rel friend/2 : Person, Person, symmetric
+
+lives_in(alice, paris)
+lives_in(bob, paris)
+lives_in(carol, london)
+friend(alice, bob)
+
+# Custom rule: people in the same city become acquaintances
+rel acquainted/2 : Person, Person, symmetric
+rule same_city: lives_in(?x, ?c), lives_in(?y, ?c) |- acquainted(?x, ?y)
+
+# Containers are elements too — use them in untyped relations
+rel category/2
+category(alice, Person)
+category(paris, City)
+
+derive`,
+
+  custom: `# Custom inference rules
+# Chain reasoning through multiple relations
+
+<element> alice, bob, carol, dave
+
+rel trusts/2 : symmetric
+rel heard_of/2
+
+# Trust implies awareness
+rule trust_aware: trusts(?x, ?y) |- heard_of(?x, ?y)
+
+# Awareness spreads transitively
+rule heard_trans: heard_of(?x, ?y), heard_of(?y, ?z) |- heard_of(?x, ?z)
+
+trusts(alice, bob)
+trusts(bob, carol)
+heard_of(carol, dave)
+
+# alice trusts bob -> heard_of bob
+# bob trusts carol -> heard_of carol
+# chain: alice heard_of carol, then alice heard_of dave
+derive
+prove heard_of(alice, dave)`,
+
+  congruence: `# Congruence closure
+# If eq(a, b) and R(...a...), then also R(...b...)
+# eq's "congruent" property propagates equality into other facts
+
+<element> a, b, c, d
+
+rel eq/2 : equivalence
+rel edge/2
+
+eq(a, b)
+edge(a, c)
+edge(d, a)
+
+# congruence derives:  edge(b, c), edge(d, b)
+# because a and b are equivalent, a can be replaced by b everywhere
+derive`,
+
+  identity: `# Proof: the identity element of a group is unique
+#
+# Theorem: if e and f are both identity elements, then e = f.
+#
+# We encode the GROUP AXIOMS as rules, then let the
+# engine derive eq(e, f) automatically.
+
+<element> e, f
+
+rel eq/2 : equivalence
+
+# op(a, b, c) means a * b = c
+rel op/3
+
+# id(x) means x is an identity element
+rel id/1
+
+# G(x) means x is a member of the group
+rel G/1
+
+# ===== Group axioms (as inference rules) =====
+
+# Axiom: op is a function (well-defined)
+#   if a*b = c and a*b = d, then c = d
+rule op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)
+
+# Axiom: identity definition (left)
+#   if e is identity and x is in G, then e * x = x
+rule left_id: id(?e), G(?x) |- op(?e, ?x, ?x)
+
+# Axiom: identity definition (right)
+#   if e is identity and x is in G, then x * e = x
+rule right_id: id(?e), G(?x) |- op(?x, ?e, ?x)
+
+# ===== Setup: assume e and f are both identities =====
+
+G(e)
+G(f)
+id(e)
+id(f)
+
+# ===== Prove that e = f =====
+# The engine will show the full proof tree:
+#   left_id(e, f)  => op(e, f, f)   ... e*f = f
+#   right_id(f, e) => op(e, f, e)   ... e*f = e
+#   op_func        => eq(f, e)      ... f = e   QED
+prove eq(e, f)`,
+
+  errors: `# Error demonstration
+# This program has several deliberate mistakes.
+# Run it to see how the engine reports errors.
+
+<element> alice, bob
+
+rel friend/2 : Person, Person
+
+# "Person" in signature is not a declared element
+
+# Wrong arity: friend expects 2 args
+friend(alice, bob, carol)
+
+# Undeclared element "carol"
+friend(alice, carol)
+
+# Undeclared relation
+likes(alice, bob)
+
+derive`,
+};
+
+function loadExample(name) {
+  if (!name) return;
+  editor.value = EXAMPLES[name] || '';
+  document.getElementById('example-select').value = '';
+  editor.focus();
+}
+
+// Load default example on start
+editor.value = EXAMPLES.equiv;
+run();
 </script>
 </body>
 </html>
