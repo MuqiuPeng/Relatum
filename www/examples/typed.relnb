@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Membership Constraints\n\nContainers restrict which elements each relation argument accepts.\n\n- `<Person>` and `<City>` are named containers\n- `lives_in/2` requires arg1 ∈ Person, arg2 ∈ City\n- `same_city/2` is an equivalence, but only over City members"
+    },
+    {
+      "type": "code",
+      "source": "<Person> alice, bob, carol\n<City> paris, london\n\n<rel> lives_in/2 : Person, City\n<rel> friend/2 : Person, Person, symmetric\n<rel> same_city/2 : City, City, equivalence\n\nlives_in(alice, paris)\nlives_in(bob, paris)\nlives_in(carol, london)\n\n<rule> shared: lives_in(?x, ?c), lives_in(?y, ?c) |- same_city(?c, ?c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## What Happens\n\n- **Membership prevents nonsense:** `lives_in(paris, alice)` would be rejected — `paris` is not in Person\n- **Reflexivity respects membership:** `same_city(t, t)` is only generated for `paris` and `london`, not for `alice`, `bob`, or `carol`\n- **Rules are membership-filtered:** derived facts violating constraints are silently dropped\n- **Container names are elements:** `Person` and `City` are in the universe too"
+    }
+  ]
+}

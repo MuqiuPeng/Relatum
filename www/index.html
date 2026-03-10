@@ -32,201 +32,567 @@ body {
   min-height: 100vh;
 }
 
+/* -- layout ---------------------------------- */
+
 #app {
-  max-width: 1100px;
+  max-width: 860px;
   margin: 0 auto;
-  padding: 20px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr;
-  gap: 16px;
-  min-height: calc(100vh - 40px);
+  padding: 16px 20px 80px;
 }
 
-/* -- header --------------------------------- */
+/* -- header ---------------------------------- */
 
 header {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 16px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0 14px;
   border-bottom: 1px solid var(--border);
-  position: relative;
+  margin-bottom: 16px;
 }
 
 header h1 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
   color: var(--accent);
   letter-spacing: 2px;
 }
 
-header p {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.help-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--accent);
-  text-decoration: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  position: absolute;
-  right: 16px;
-  top: 18px;
-  transition: all 0.15s;
-}
-
-.help-btn:hover {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-/* -- editor panel --------------------------- */
-
-.editor-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--orange);
-  flex-shrink: 0;
-}
-
-.panel-header .controls {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.panel-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* -- code editor ----------------------------- */
-
-#editor {
-  flex: 1;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.7;
-  padding: 12px 14px;
-  border: none;
-  outline: none;
-  resize: none;
-  tab-size: 2;
-  white-space: pre;
-  overflow: auto;
-  min-height: 300px;
-}
-
-#editor::placeholder {
-  color: var(--text-dim);
-}
-
-/* -- toolbar --------------------------------- */
-
-.toolbar {
+.header-controls {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 8px 14px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
+  margin-left: auto;
 }
+
+/* -- tab bar --------------------------------- */
+
+#tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 0 0 8px;
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab:hover { color: var(--text); border-color: var(--accent); }
+
+.tab.active {
+  background: var(--surface2);
+  color: var(--accent);
+  border-color: var(--accent);
+  border-bottom-color: var(--surface2);
+}
+
+.tab-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.tab:hover .tab-close { opacity: 0.6; }
+.tab-close:hover { color: var(--red); opacity: 1 !important; }
+
+.tab-dirty {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.tab-readonly {
+  color: var(--text-dim);
+  font-size: 9px;
+  margin-left: 3px;
+  opacity: 0.7;
+}
+
+/* -- workspace ------------------------------- */
+
+#workspace {
+  padding: 16px 0;
+}
+
+.ws-section {
+  margin-bottom: 24px;
+}
+
+.ws-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+.ws-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
+.ws-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ws-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+  transition: background 0.1s;
+}
+
+.ws-item:hover {
+  background: var(--surface2);
+}
+
+.ws-item-icon {
+  color: var(--text-dim);
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+.ws-item-name {
+  flex: 1;
+}
+
+.ws-item-tag {
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.ws-item-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.ws-item:hover .ws-item-actions {
+  opacity: 1;
+}
+
+.ws-item-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 4px;
+  font-family: var(--mono);
+}
+
+.ws-item-btn:hover {
+  color: var(--red);
+}
+
+.ws-folder-contents {
+  padding-left: 20px;
+}
+
+.ws-item.ws-folder-focused {
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  margin: -1px;
+}
+
+.ws-item.ws-drag-over {
+  border-top: 2px solid var(--accent);
+  padding-top: 4px;
+}
+
+.ws-item.ws-drop-into {
+  background: var(--surface2);
+  outline: 1px dashed var(--accent);
+}
+
+.ws-item[draggable="true"] {
+  cursor: grab;
+}
+
+.ws-item[draggable="true"]:active {
+  cursor: grabbing;
+  opacity: 0.6;
+}
+
+.ws-collapsible .darr {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.ws-collapsible.collapsed .darr {
+  transform: rotate(-90deg);
+}
+
+.ws-collapsible.collapsed .ws-section-body {
+  display: none;
+}
+
+.ws-empty {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-style: italic;
+  padding: 8px 12px;
+}
+
+/* -- buttons --------------------------------- */
 
 .btn {
   background: var(--surface2);
   color: var(--accent);
   border: 1px solid var(--border);
-  padding: 6px 16px;
+  padding: 5px 14px;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
 
-.btn:hover {
-  background: var(--border);
-  border-color: var(--accent);
-}
+.btn:hover { background: var(--border); border-color: var(--accent); }
 
-.btn-primary {
+.btn-run {
   background: var(--accent);
   color: var(--bg);
   border-color: var(--accent);
   font-weight: 600;
 }
 
-.btn-primary:hover {
-  background: var(--cyan);
-  border-color: var(--cyan);
+.btn-run:hover { background: var(--cyan); border-color: var(--cyan); }
+
+.btn-sm {
+  padding: 2px 8px;
+  font-size: 11px;
 }
 
-.toolbar .spacer { flex: 1; }
-.toolbar .label { color: var(--text-dim); font-size: 11px; }
-
-/* -- output panel ---------------------------- */
-
-.output-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+.btn-icon {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  line-height: 1;
 }
 
-#output {
-  flex: 1;
-  overflow: auto;
-  padding: 12px 14px;
+.btn-icon:hover { color: var(--text); background: var(--surface2); }
+
+.help-link {
+  color: var(--accent);
+  text-decoration: none;
   font-size: 13px;
-  min-height: 300px;
+  font-weight: 600;
 }
 
-.out-section {
-  margin-bottom: 14px;
+.help-link:hover { color: var(--cyan); }
+
+/* -- cell ------------------------------------ */
+
+.cell {
+  display: flex;
+  margin-bottom: 4px;
+  margin-top: 10px;
+  position: relative;
 }
+
+.cell-gutter {
+  width: 40px;
+  flex-shrink: 0;
+  padding-top: 8px;
+  text-align: right;
+  padding-right: 10px;
+  user-select: none;
+}
+
+.cell-num {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.cell-main {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.cell:focus-within .cell-main {
+  border-color: var(--accent);
+}
+
+/* code editor overlay container */
+.code-editor-wrap {
+  position: relative;
+  background: var(--surface);
+}
+
+.code-highlight {
+  display: block;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  tab-size: 2;
+  min-height: 36px;
+  color: var(--text);
+  pointer-events: none;
+  overflow: hidden;
+  margin: 0;
+}
+
+.cell-editor {
+  display: block;
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 8px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  min-height: 36px;
+}
+
+/* Code editor textarea in overlay mode */
+.code-editor-wrap .cell-editor {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+}
+
+.cell-editor::placeholder { color: var(--text-dim); }
+
+/* syntax colors */
+.hl-keyword { color: var(--accent2); font-weight: 600; }
+.hl-relname { color: var(--cyan); }
+.hl-element { color: var(--orange); }
+.hl-container { color: var(--orange); font-weight: 600; }
+.hl-variable { color: var(--green); font-style: italic; }
+.hl-comment { color: var(--text-dim); font-style: italic; }
+.hl-number { color: var(--orange); }
+.hl-punct { color: var(--text-dim); }
+.hl-rulename { color: var(--accent); }
+.hl-error-kw { color: var(--red); }
+.hl-prop { color: var(--accent2); }
+
+/* autocomplete dropdown */
+.ac-dropdown {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  min-width: 120px;
+}
+
+.ac-item {
+  padding: 3px 10px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ac-item.selected {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.ac-item:hover {
+  background: var(--border);
+}
+
+.ac-item .ac-kind {
+  color: var(--text-dim);
+  font-size: 10px;
+  margin-left: 8px;
+}
+
+.ac-item.selected .ac-kind {
+  color: var(--bg);
+  opacity: 0.7;
+}
+
+.cell-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 2px 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  align-items: center;
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.cell:hover .cell-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cell-toolbar .spacer { width: 8px; }
+
+.cell-output {
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--bg);
+}
+
+.cell-output:empty { display: none; }
+
+.cell-output-inner {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* -- add cell button ------------------------- */
+
+.add-cell-bar {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.cell:hover + .add-cell-bar,
+.add-cell-bar:hover,
+#add-final:hover {
+  opacity: 1;
+}
+
+#add-final { opacity: 0.5; margin-top: 8px; }
+#add-final:hover { opacity: 1; }
+
+.add-cell-btn {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.add-cell-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -- status bar ------------------------------ */
+
+#status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 6px 20px;
+  font-size: 11px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  z-index: 10;
+}
+
+.status-item {
+  color: var(--text-dim);
+}
+
+.status-item .val {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-item.ok .val { color: var(--green); }
+.status-item.warn .val { color: var(--red); }
+
+#run-time {
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+/* -- output styles (reused from before) ------ */
+
+.out-section { margin-bottom: 10px; }
 
 .out-section-title {
   color: var(--orange);
   font-weight: 600;
-  font-size: 12px;
-  margin-bottom: 6px;
+  font-size: 11px;
+  margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -238,13 +604,12 @@ header p {
 }
 
 .out-decl .hl { color: var(--cyan); }
-.out-decl .kw { color: var(--accent2); }
 
 .out-fact {
-  padding: 2px 0 2px 10px;
+  padding: 1px 0 1px 10px;
   border-left: 2px solid var(--border);
   font-size: 12px;
-  margin: 2px 0;
+  margin: 1px 0;
 }
 
 .out-fact.derived {
@@ -252,46 +617,20 @@ header p {
   color: var(--green);
 }
 
-.out-fact.initial {
-  color: var(--text-dim);
-}
+.out-fact.initial { color: var(--text-dim); }
 
 .out-rule {
-  padding: 2px 0 2px 10px;
+  padding: 1px 0 1px 10px;
   border-left: 2px solid var(--accent2);
   font-size: 12px;
-  margin: 2px 0;
+  margin: 1px 0;
   color: var(--text);
-}
-
-.out-stat {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(122, 162, 247, 0.15);
-  color: var(--accent);
-  border: 1px solid rgba(122, 162, 247, 0.3);
-  margin: 2px 4px 2px 0;
-}
-
-.out-stat.ok {
-  background: rgba(158, 206, 106, 0.15);
-  color: var(--green);
-  border-color: rgba(158, 206, 106, 0.3);
-}
-
-.out-stat.warn {
-  background: rgba(247, 118, 142, 0.15);
-  color: var(--red);
-  border-color: rgba(247, 118, 142, 0.3);
 }
 
 .out-error {
   color: var(--red);
   font-size: 12px;
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .out-error .line-ref {
@@ -299,12 +638,18 @@ header p {
   font-size: 11px;
 }
 
+.out-ok {
+  color: var(--green);
+  font-size: 11px;
+  padding: 4px 0;
+}
+
 /* -- proof tree ------------------------------ */
 
 .proof-goal {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  margin: 8px 0 4px;
+  margin: 4px 0 2px;
   color: var(--text);
 }
 
@@ -312,103 +657,483 @@ header p {
 .proof-goal .fail { color: var(--red); }
 
 .proof-tree {
-  font-size: 12px;
-  margin: 4px 0 12px;
+  font-size: 11px;
+  margin: 2px 0 8px;
   line-height: 1.8;
 }
 
-.proof-node {
-  white-space: pre;
-}
+.proof-node { white-space: pre; }
+.proof-prefix { color: var(--text-dim); }
+.proof-fact { color: var(--cyan); }
+.proof-rule { color: var(--accent2); }
+.proof-given { color: var(--text-dim); font-style: italic; }
 
-.proof-prefix {
-  color: var(--text-dim);
-}
+/* -- expandable facts ------------------------ */
 
-.proof-fact {
-  color: var(--cyan);
-}
-
-.proof-rule {
-  color: var(--accent2);
-}
-
-.proof-given {
-  color: var(--text-dim);
-  font-style: italic;
-}
-
-/* -- syntax reference panel ------------------ */
-
-.ref-toggle {
-  color: var(--text-dim);
-  font-size: 11px;
+.out-fact.expandable {
   cursor: pointer;
-  user-select: none;
-  padding: 6px 14px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
+  transition: background 0.1s;
 }
 
-.ref-toggle:hover { color: var(--text); }
+.out-fact.expandable:hover {
+  background: var(--surface2);
+}
 
-.syntax-ref {
-  display: none;
-  padding: 10px 14px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
+.out-fact .cell-tag {
   color: var(--text-dim);
-  line-height: 1.8;
-  overflow: auto;
-  max-height: 260px;
-  flex-shrink: 0;
+  font-size: 10px;
+  margin-left: 6px;
 }
 
-.syntax-ref.visible { display: block; }
-
-.syntax-ref code {
-  color: var(--cyan);
-  background: var(--bg);
-  padding: 1px 4px;
-  border-radius: 2px;
+.fact-tree {
+  margin: 4px 0 6px 10px;
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
 }
 
-.syntax-ref .kw { color: var(--accent2); }
-.syntax-ref .cm { color: var(--text-dim); }
+.fact-tree .proof-node { font-size: 11px; }
 
-.syntax-ref h4 {
-  color: var(--orange);
-  font-size: 11px;
-  margin: 8px 0 2px;
+/* -- cell states ------------------------------ */
+
+.cell.cell-active .cell-gutter { border-left: 3px solid var(--green); }
+.cell.cell-stale .cell-gutter { border-left: 3px solid var(--orange); }
+.cell.cell-error .cell-gutter { border-left: 3px solid var(--red); }
+
+.cell-run {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  font-family: var(--mono);
+  line-height: 1;
+  margin-top: 4px;
+}
+.cell-run:hover { color: var(--green); }
+.cell.cell-active .cell-run { color: var(--green); }
+
+/* -- markdown cells --------------------------- */
+
+.cell-type-md .cell-main {
+  border-color: var(--border);
+}
+
+.cell-type-md.md-rendered .cell-main {
+  border-color: transparent;
+}
+
+.cell-type-md.md-rendered .cell-gutter .md-label {
+  opacity: 0;
+}
+
+.cell-type-md.md-rendered:hover .cell-main {
+  border-color: var(--border);
+}
+
+.cell-type-md.md-rendered:hover .cell-gutter .md-label {
+  opacity: 1;
+}
+
+.cell-type-md .cell-gutter .md-label {
+  color: var(--accent2);
   font-weight: 600;
 }
 
-.syntax-ref h4:first-child { margin-top: 0; }
+.md-preview {
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  cursor: text;
+  min-height: 32px;
+}
 
-/* -- examples dropdown ----------------------- */
+.md-preview h1 { font-size: 18px; color: var(--accent); margin: 4px 0; }
+.md-preview h2 { font-size: 16px; color: var(--accent); margin: 4px 0; }
+.md-preview h3 { font-size: 14px; color: var(--accent); margin: 3px 0; }
+.md-preview h4 { font-size: 13px; color: var(--accent); margin: 2px 0; }
 
-.example-select {
+.md-preview strong { color: var(--text); font-weight: 700; }
+.md-preview em { color: var(--text); font-style: italic; }
+
+.md-preview .md-code {
   background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.md-preview .md-code-block {
+  background: var(--surface2);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin: 4px 0;
+  overflow-x: auto;
+}
+
+.md-preview ul {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.md-preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+.md-preview p { margin: 2px 0; }
+
+.md-placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 12px;
+}
+
+.md-editor {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* -- knowledge base panel --------------------- */
+
+#panel {
+  position: fixed;
+  bottom: 28px;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 2px solid var(--border);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  transition: height 0.15s ease;
+  overflow: hidden;
+}
+
+#panel.collapsed { height: 0; border-top: none; }
+#panel.collapsed .panel-search-bar { display: none; }
+#panel.expanded { height: 40vh; }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.panel-header:hover { color: var(--text); }
+
+.panel-body {
+  overflow-y: auto;
+  padding: 8px 16px 12px;
+  flex: 1;
+  font-size: 12px;
+}
+
+.panel-section { margin-bottom: 10px; }
+
+.panel-section-title {
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+}
+
+.panel-item {
+  color: var(--text-dim);
+  padding: 1px 0 1px 8px;
+  border-left: 2px solid var(--border);
+  margin: 1px 0;
+}
+
+.panel-item.fact-item {
+  border-left-color: var(--green);
+  color: var(--text);
+}
+
+.panel-item .cell-tag {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.panel-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 11px;
+}
+
+.panel-retract {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 0 2px;
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.panel-item:hover .panel-retract { opacity: 0.6; }
+.panel-retract:hover { color: var(--red); opacity: 1 !important; }
+
+.panel-item.retracted {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+.panel-item.retracted .panel-retract { display: none; }
+
+.panel-restore {
+  background: none;
+  border: none;
+  color: var(--green);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 0 2px;
+  margin-left: 6px;
+  opacity: 0.6;
+}
+.panel-restore:hover { opacity: 1; }
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.panel-clear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 3px;
+}
+.panel-clear-btn:hover { color: var(--red); border-color: var(--red); }
+
+.panel-toggle-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 3px;
+}
+.panel-toggle-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+.panel-search-bar {
+  padding: 4px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.search-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  outline: none;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--text-dim); }
+
+.output-search-bar {
+  padding: 4px 0 6px;
+}
+
+.search-match { background: rgba(122, 162, 247, 0.25); border-radius: 2px; }
+
+/* -- doc panel ------------------------------- */
+
+#doc-panel {
+  position: fixed;
+  top: 0; right: 0;
+  width: 480px;
+  max-width: 90vw;
+  height: 100vh;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.4);
+}
+
+#doc-panel.open { transform: translateX(0); }
+
+.doc-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.doc-header h2 {
+  font-size: 15px;
+  color: var(--accent);
+  margin: 0;
+  flex: 1;
+}
+
+.doc-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  cursor: pointer;
+  font-family: var(--mono);
+  padding: 0 4px;
+  line-height: 1;
+}
+.doc-close-btn:hover { color: var(--text); }
+
+.doc-search-bar {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.doc-search-input {
+  width: 100%;
+  background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 5px 10px;
   border-radius: 4px;
   outline: none;
-  cursor: pointer;
+}
+.doc-search-input:focus { border-color: var(--accent); }
+.doc-search-input::placeholder { color: var(--text-dim); }
+
+.doc-nav {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--surface);
 }
 
-.example-select:focus { border-color: var(--accent); }
+.doc-nav::-webkit-scrollbar { width: 4px; }
+.doc-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.doc-nav-group { margin-bottom: 2px; }
+
+.doc-nav-group-title {
+  padding: 6px 16px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--orange);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.doc-nav-group-title .darr {
+  font-size: 8px;
+  transition: transform 0.15s;
+  color: var(--text-dim);
+}
+
+.doc-nav-group.collapsed .darr { transform: rotate(-90deg); }
+.doc-nav-group.collapsed .doc-nav-items { display: none; }
+
+.doc-nav-item {
+  display: block;
+  padding: 3px 16px 3px 24px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: all 0.1s;
+}
+.doc-nav-item:hover { color: var(--text); background: var(--surface2); }
+.doc-nav-item.active { color: var(--accent); border-left-color: var(--accent); }
+.doc-nav-item.doc-hidden { display: none; }
+.doc-nav-group.doc-hidden { display: none; }
+
+.doc-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 20px 60px;
+}
+
+.doc-body::-webkit-scrollbar { width: 5px; }
+.doc-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.doc-page { display: none; }
+.doc-page.active { display: block; }
+
+.doc-body h1 { color: var(--accent); font-size: 19px; margin-bottom: 4px; }
+.doc-body .page-desc { color: var(--text-dim); font-size: 11px; margin-bottom: 18px; }
+.doc-body h2 { color: var(--orange); font-size: 15px; margin: 24px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.doc-body h3 { color: var(--accent2); font-size: 13px; margin: 16px 0 6px; }
+.doc-body p { margin-bottom: 10px; font-size: 13px; line-height: 1.7; }
+.doc-body ul, .doc-body ol { padding-left: 20px; margin-bottom: 10px; font-size: 13px; }
+.doc-body li { margin-bottom: 3px; line-height: 1.6; }
+.doc-body strong { color: var(--text); }
+.doc-body em { color: var(--accent2); font-style: normal; }
+.doc-body code { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 12px; color: var(--cyan); }
+.doc-body pre { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 10px 14px; margin: 8px 0 12px; overflow-x: auto; font-size: 12px; line-height: 1.6; color: var(--text); }
+.doc-body pre .cm { color: var(--text-dim); }
+.doc-body pre .kw { color: var(--accent2); }
+.doc-body pre .op { color: var(--cyan); }
+.doc-body pre .eq { color: var(--orange); font-weight: 600; }
+.doc-body pre .hl { color: var(--green); }
+.doc-body table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 12px; }
+.doc-body th { text-align: left; color: var(--orange); font-weight: 600; padding: 6px 10px; border-bottom: 2px solid var(--border); }
+.doc-body td { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.doc-body td code { font-size: 11px; }
+.doc-body .callout { background: var(--surface); border-left: 3px solid var(--accent); border-radius: 0 5px 5px 0; padding: 10px 14px; margin: 10px 0; font-size: 12px; }
+.doc-body .callout.warn { border-left-color: var(--orange); }
+.doc-body .callout strong { color: var(--accent); }
+.doc-body .callout.warn strong { color: var(--orange); }
+
+.doc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 299;
+  display: none;
+}
+.doc-overlay.open { display: block; }
 
 /* -- responsive ------------------------------ */
 
-@media (max-width: 768px) {
-  #app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-  }
-  .editor-panel, .output-panel { min-height: 400px; }
+@media (max-width: 600px) {
+  #app { padding: 10px; }
+  .cell-gutter { width: 30px; }
+  #doc-panel { width: 100vw; max-width: 100vw; }
 }
 </style>
 </head>
@@ -416,95 +1141,841 @@ header p {
 <div id="app">
   <header>
     <h1>RELATUM</h1>
-    <p>pure relational closure engine</p>
-    <a href="doc.html" class="help-btn" title="Documentation">?</a>
+    <div class="header-controls">
+      <button class="btn btn-run" onclick="runAll()">Run All</button>
+      <button class="btn" onclick="goWorkspace()">Open</button>
+      <button class="btn" onclick="saveCurrentTab()">Save</button>
+      <button class="btn" onclick="importFile()">Load</button>
+      <button class="btn" onclick="exportFile()">Export</button>
+      <button class="btn" onclick="wsPromptNewFile()">New</button>
+      <button class="btn" onclick="toggleDocPanel()">Doc</button>
+    </div>
   </header>
-
-  <!-- Editor -->
-  <div class="editor-panel">
-    <div class="panel">
-      <div class="panel-header">
-        <span>Source</span>
-        <div class="controls">
-          <select class="example-select" id="example-select" onchange="loadExample(this.value)">
-            <option value="">-- examples --</option>
-            <option value="equiv">Equivalence</option>
-            <option value="order">Partial Order</option>
-            <option value="typed">Membership</option>
-            <option value="custom">Custom Rules</option>
-            <option value="congruence">Congruence</option>
-            <option value="identity">Identity Uniqueness</option>
-            <option value="errors">Errors (demo)</option>
-          </select>
-        </div>
-      </div>
-      <div class="panel-body">
-        <textarea id="editor" spellcheck="false" placeholder="# Write your Relatum program here...
-# See syntax reference below for help.
-
-<element> a, b, c
-rel equiv/2 : equivalence
-
-equiv(a, b)
-equiv(b, c)
-
-derive"></textarea>
-      </div>
-      <div class="toolbar">
-        <button class="btn btn-primary" onclick="run()">Run</button>
-        <span class="label" id="run-time"></span>
-        <span class="spacer"></span>
-        <button class="btn" onclick="clearEditor()">Clear</button>
-      </div>
-      <div class="ref-toggle" onclick="toggleRef()">syntax reference &#9662;</div>
-      <div class="syntax-ref" id="syntax-ref">
-        <h4>Elements</h4>
-        <code>&lt;element&gt;</code> <span class="cm">a, b, c</span> &mdash; declare elements (in the root container)<br>
-        <code>&lt;X&gt;</code> <span class="cm">a, b, c</span> &mdash; declare a, b, c as members of X (X is also an element)<br>
-        Every element is in <code>&lt;element&gt;</code> by default. Any element can be a container.<br>
-
-        <h4>Relations</h4>
-        <code>rel</code> <span class="cm">name/arity</span> &mdash; declare a relation (accepts any element)<br>
-        <code>rel</code> <span class="cm">name/arity</span> <code>:</code> <span class="kw">X</span>, <span class="kw">Y</span> &mdash; arg 1 must be in X, arg 2 in Y<br>
-        <code>rel</code> <span class="cm">name/arity</span> <code>:</code> <span class="kw">equivalence</span> &mdash; + symmetry, transitivity, reflexivity, congruence<br>
-        <code>rel</code> <span class="cm">name/arity</span> <code>:</code> <span class="kw">X</span>, <span class="kw">Y</span>, <span class="kw">transitive</span> &mdash; membership + properties can mix<br>
-
-        <h4>Rules</h4>
-        <code>rule</code> <span class="cm">name</span><code>:</code> <span class="cm">premise1, premise2</span> <code>|-</code> <span class="cm">conclusion1, conclusion2</span><br>
-        Variables are prefixed with <code>?</code> &mdash; e.g. <code>R(?x, ?y) |- R(?y, ?x)</code><br>
-
-        <h4>Facts</h4>
-        <span class="cm">relation(term1, term2, ...)</span> &mdash; ground atoms (all terms must be declared constants)<br>
-
-        <h4>Commands</h4>
-        <code>derive</code> &mdash; compute closure and display all derived facts<br>
-        <code>derive</code> <span class="cm">N</span> &mdash; limit to N rounds (default: 100)<br>
-        <code>prove</code> <span class="cm">R(a, b)</span> &mdash; compute closure and show proof tree for a goal<br>
-
-        <h4>Comments</h4>
-        Lines starting with <code>#</code> are ignored.
-      </div>
-    </div>
-  </div>
-
-  <!-- Output -->
-  <div class="output-panel">
-    <div class="panel">
-      <div class="panel-header">
-        <span>Output</span>
-      </div>
-      <div class="panel-body">
-        <div id="output">
-          <div style="color:var(--text-dim);padding:40px 0;text-align:center">
-            Write a program and press <span style="color:var(--accent)">Run</span> to compute closure.
-          </div>
-        </div>
-      </div>
-    </div>
+  <div id="tab-bar"></div>
+  <div id="workspace"></div>
+  <div id="notebook"></div>
+  <div id="add-final" class="add-cell-bar">
+    <button class="add-cell-btn" onclick="addCell('','code')">+ code</button>
+    <button class="add-cell-btn" onclick="addCell('','md')">+ markdown</button>
   </div>
 </div>
 
+<div id="panel" class="collapsed">
+  <div class="panel-header" onclick="togglePanel()">
+    <span>Knowledge Base</span>
+    <span id="panel-arrow">&#9650;</span>
+  </div>
+  <div class="panel-search-bar">
+    <input type="text" id="panel-search" class="search-input" placeholder="search KB..." oninput="renderPanel()">
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
+
+<div class="doc-overlay" id="doc-overlay" onclick="toggleDocPanel()"></div>
+<div id="doc-panel">
+  <div class="doc-header">
+    <h2>Documentation</h2>
+    <button class="doc-close-btn" onclick="toggleDocPanel()">&times;</button>
+  </div>
+  <div class="doc-search-bar">
+    <input type="text" class="doc-search-input" id="doc-search" placeholder="Search docs..." autocomplete="off" oninput="docSearch()">
+  </div>
+  <nav class="doc-nav" id="doc-nav">
+    <div class="doc-nav-group collapsed">
+      <div class="doc-nav-group-title" onclick="this.parentElement.classList.toggle('collapsed')"><span class="darr">&#9660;</span> Getting Started</div>
+      <div class="doc-nav-items">
+        <a class="doc-nav-item active" data-doc="overview">Overview</a>
+        <a class="doc-nav-item" data-doc="quick-start">Quick Start</a>
+      </div>
+    </div>
+    <div class="doc-nav-group collapsed">
+      <div class="doc-nav-group-title" onclick="this.parentElement.classList.toggle('collapsed')"><span class="darr">&#9660;</span> Language</div>
+      <div class="doc-nav-items">
+        <a class="doc-nav-item" data-doc="elements">Elements</a>
+        <a class="doc-nav-item" data-doc="relations">Relations</a>
+        <a class="doc-nav-item" data-doc="facts">Facts</a>
+        <a class="doc-nav-item" data-doc="rules">Rules</a>
+        <a class="doc-nav-item" data-doc="skolem">Compound Terms</a>
+        <a class="doc-nav-item" data-doc="derive">Derive &amp; Prove</a>
+      </div>
+    </div>
+    <div class="doc-nav-group collapsed">
+      <div class="doc-nav-group-title" onclick="this.parentElement.classList.toggle('collapsed')"><span class="darr">&#9660;</span> Closure Engine</div>
+      <div class="doc-nav-items">
+        <a class="doc-nav-item" data-doc="algorithm">Algorithm</a>
+        <a class="doc-nav-item" data-doc="properties">Relation Properties</a>
+        <a class="doc-nav-item" data-doc="safety">Safety &amp; Limits</a>
+      </div>
+    </div>
+    <div class="doc-nav-group collapsed">
+      <div class="doc-nav-group-title" onclick="this.parentElement.classList.toggle('collapsed')"><span class="darr">&#9660;</span> Notebook</div>
+      <div class="doc-nav-items">
+        <a class="doc-nav-item" data-doc="notebook">Cells &amp; Execution</a>
+        <a class="doc-nav-item" data-doc="markdown">Markdown Cells</a>
+        <a class="doc-nav-item" data-doc="kb-panel">Knowledge Base Panel</a>
+        <a class="doc-nav-item" data-doc="tabs">Tabs &amp; Files</a>
+        <a class="doc-nav-item" data-doc="editing">Editor Features</a>
+      </div>
+    </div>
+    <div class="doc-nav-group collapsed">
+      <div class="doc-nav-group-title" onclick="this.parentElement.classList.toggle('collapsed')"><span class="darr">&#9660;</span> Examples</div>
+      <div class="doc-nav-items">
+        <a class="doc-nav-item" data-doc="ex-equiv">Equivalence Closure</a>
+        <a class="doc-nav-item" data-doc="ex-order">Partial Order</a>
+        <a class="doc-nav-item" data-doc="ex-custom">Custom Rules</a>
+        <a class="doc-nav-item" data-doc="ex-congruence">Congruence</a>
+        <a class="doc-nav-item" data-doc="ex-typed">Membership</a>
+      </div>
+    </div>
+    <div class="doc-nav-group collapsed">
+      <div class="doc-nav-group-title" onclick="this.parentElement.classList.toggle('collapsed')"><span class="darr">&#9660;</span> Reference</div>
+      <div class="doc-nav-items">
+        <a class="doc-nav-item" data-doc="grammar">Grammar Reference</a>
+        <a class="doc-nav-item" data-doc="shortcuts">Keyboard Shortcuts</a>
+      </div>
+    </div>
+  </nav>
+  <div class="doc-body" id="doc-body">
+
+<!-- Overview -->
+<div class="doc-page active" id="doc-overview">
+<h1>Relatum</h1>
+<p class="page-desc">Pure relational closure engine.</p>
+<p>Relatum is a forward-chaining inference engine that operates exclusively on <strong>relations</strong>. There are no predefined mathematical semantics &mdash; equality, order, membership, and any other concept you need are expressed as plain relations with configurable properties.</p>
+<h2>Core Ideas</h2>
+<ul>
+  <li><strong>Relations first.</strong> Everything is a named relation between terms: <code>equiv(a, b)</code>, <code>lt(x, y)</code>, <code>knows(alice, bob)</code>.</li>
+  <li><strong>No built-in equality.</strong> Want equivalence? Declare it: <code>&lt;rel&gt; equiv/2 : equivalence</code>.</li>
+  <li><strong>Rules derive facts.</strong> Write inference rules and the engine applies them until saturation.</li>
+  <li><strong>Compound terms.</strong> Skolem witnesses like <code>inv(?x)</code> create structured terms.</li>
+  <li><strong>Membership.</strong> Containers restrict which elements each relation argument accepts.</li>
+  <li><strong>Notebook interface.</strong> Write programs in cells, execute per-cell, explore the knowledge base.</li>
+</ul>
+<h2>What It Looks Like</h2>
+<pre>
+<span class="cm"># A minimal Relatum program</span>
+
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
+
+<span class="op">equiv</span>(a, b)
+<span class="op">equiv</span>(b, c)
+
+<span class="kw">derive</span>
+</pre>
+<p>Output: the engine derives <code>equiv(a, c)</code>, <code>equiv(c, a)</code>, <code>equiv(b, a)</code>, <code>equiv(c, b)</code>, and all reflexive pairs.</p>
+</div>
+
+<!-- Quick Start -->
+<div class="doc-page" id="doc-quick-start">
+<h1>Quick Start</h1>
+<p class="page-desc">Write your first Relatum program in under a minute.</p>
+<h2>1. Create a Cell</h2>
+<p>The app opens with a code cell. Type your program directly, or click <strong>Open</strong> to load a <code>.relnb</code> file.</p>
+<h2>2. Write a Program</h2>
+<pre>
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
+
+<span class="op">equiv</span>(a, b)
+<span class="op">equiv</span>(b, c)
+
+<span class="kw">derive</span>
+</pre>
+<h2>3. Run</h2>
+<p>Click <strong>Run All</strong> or press <code>Ctrl+Enter</code> in a cell. The output appears below each cell showing:</p>
+<ul>
+  <li>Declarations and auto-generated rules</li>
+  <li>Initial facts</li>
+  <li>Derived facts (highlighted in green)</li>
+  <li>Summary: rounds, total facts, saturation status</li>
+</ul>
+<h2>4. Experiment</h2>
+<p>Add more cells, try different properties, write custom rules. Each cell executes independently and contributes to a shared knowledge base.</p>
+</div>
+
+<!-- Elements -->
+<div class="doc-page" id="doc-elements">
+<h1>Elements</h1>
+<p class="page-desc">The atoms of your universe.</p>
+<p>Everything in Relatum is an <strong>element</strong>. Elements are declared by placing them inside a container using angle-bracket syntax.</p>
+<h2>Syntax</h2>
+<pre>
+<span class="cm"># Declare elements in the root container</span>
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+<span class="cm"># Declare elements inside a named container</span>
+<span class="kw">&lt;Person&gt;</span> alice, bob, carol
+<span class="kw">&lt;City&gt;</span> paris, london
+</pre>
+<h2>The Root: &lt;element&gt;</h2>
+<p>Every declared element automatically belongs to <code>element</code>. Writing <code>&lt;element&gt; a, b, c</code> is the simplest way to introduce elements.</p>
+<h2>Any Element Can Be a Container</h2>
+<p>When you write <code>&lt;Person&gt; alice, bob</code>, two things happen:</p>
+<ol>
+  <li><code>Person</code> is declared as an element (in <code>&lt;element&gt;</code>).</li>
+  <li><code>alice</code> and <code>bob</code> are declared as elements <em>in</em> <code>Person</code>.</li>
+</ol>
+<pre>
+<span class="kw">&lt;element&gt;</span> Animal
+<span class="kw">&lt;Animal&gt;</span> Cat, Dog
+<span class="kw">&lt;Cat&gt;</span> whiskers, mittens
+</pre>
+<h2>Membership Constrains Relations</h2>
+<p>When a relation declares a signature like <code>&lt;rel&gt; R/2 : Person, City</code>, only elements in <code>Person</code> can appear in argument 1, and only elements in <code>City</code> in argument 2. This applies to both user-written and derived facts.</p>
+<div class="callout">
+<strong>Reflexivity respects membership.</strong> If <code>&lt;rel&gt; eq/2 : Person, Person, reflexive</code>, then <code>eq(t, t)</code> is only generated for elements in <code>Person</code>.
+</div>
+</div>
+
+<!-- Relations -->
+<div class="doc-page" id="doc-relations">
+<h1>Relations</h1>
+<p class="page-desc">Named connections between terms.</p>
+<p>A relation is a named predicate with a fixed arity. <code>equiv/2</code> is binary; <code>between/3</code> is ternary.</p>
+<h2>Syntax</h2>
+<pre>
+&lt;<span class="kw">rel</span>&gt; <span class="op">equiv</span>/2                          <span class="cm"># plain relation</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>              <span class="cm"># with properties</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">lt</span>/2 : <span class="hl">reflexive</span>, <span class="hl">transitive</span>       <span class="cm"># multiple properties</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">lives_in</span>/2 : <span class="hl">Person</span>, <span class="hl">City</span>         <span class="cm"># membership constraints</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">friend</span>/2 : <span class="hl">Person</span>, <span class="hl">Person</span>, <span class="hl">symmetric</span> <span class="cm"># membership + properties</span>
+</pre>
+<h2>Properties</h2>
+<table>
+  <tr><th>Property</th><th>Meaning</th><th>Auto-generated</th></tr>
+  <tr><td><code>reflexive</code></td><td>R(t, t) for every constant t</td><td>Facts: R(a, a), R(b, b), ...</td></tr>
+  <tr><td><code>symmetric</code></td><td>R(x, y) implies R(y, x)</td><td>Rule: R(?x, ?y) |- R(?y, ?x)</td></tr>
+  <tr><td><code>transitive</code></td><td>R(x, y) and R(y, z) implies R(x, z)</td><td>Rule: R(?x, ?y), R(?y, ?z) |- R(?x, ?z)</td></tr>
+  <tr><td><code>congruent</code></td><td>Substitutes equal terms in all facts</td><td>Substitution in existing facts</td></tr>
+  <tr><td><code>equivalence</code></td><td>All four above</td><td>Everything combined</td></tr>
+</table>
+</div>
+
+<!-- Facts -->
+<div class="doc-page" id="doc-facts">
+<h1>Facts</h1>
+<p class="page-desc">Ground atoms &mdash; the initial knowledge base.</p>
+<p>A fact is a ground instance of a relation. All terms must be declared constants (or compound terms).</p>
+<h2>Syntax</h2>
+<pre>
+<span class="op">equiv</span>(a, b)
+<span class="op">lt</span>(x, y)
+<span class="op">between</span>(a, b, c)
+</pre>
+<h2>Validation</h2>
+<ul>
+  <li>The relation must be declared with <code>&lt;rel&gt;</code>.</li>
+  <li>The number of terms must match the arity.</li>
+  <li>Every term must be a declared constant or compound term.</li>
+  <li>Membership constraints are checked for each argument position.</li>
+</ul>
+</div>
+
+<!-- Rules -->
+<div class="doc-page" id="doc-rules">
+<h1>Rules</h1>
+<p class="page-desc">Inference rules for deriving new facts.</p>
+<p>Rules express: "if these premises hold, derive these conclusions." They drive forward-chaining inference.</p>
+<h2>Syntax</h2>
+<pre>
+&lt;<span class="kw">rule</span>&gt; <span class="hl">name</span>: premises <span class="eq">|-</span> conclusions
+</pre>
+<p>Premises and conclusions are comma-separated atoms. Variables are prefixed with <code>?</code>.</p>
+<h2>Examples</h2>
+<pre>
+<span class="cm"># Symmetry</span>
+&lt;<span class="kw">rule</span>&gt; <span class="hl">sym</span>: R(?x, ?y) <span class="eq">|-</span> R(?y, ?x)
+
+<span class="cm"># Transitivity</span>
+&lt;<span class="kw">rule</span>&gt; <span class="hl">trans</span>: R(?x, ?y), R(?y, ?z) <span class="eq">|-</span> R(?x, ?z)
+
+<span class="cm"># Cross-relation</span>
+&lt;<span class="kw">rule</span>&gt; <span class="hl">f2k</span>: friend(?x, ?y) <span class="eq">|-</span> knows(?x, ?y)
+
+<span class="cm"># Multi-conclusion</span>
+&lt;<span class="kw">rule</span>&gt; <span class="hl">both</span>: eq(?x, ?y) <span class="eq">|-</span> leq(?x, ?y), leq(?y, ?x)
+</pre>
+<h2>How Variables Work</h2>
+<ul>
+  <li>Variables (<code>?x</code>, <code>?y</code>) are pattern wildcards matching any constant.</li>
+  <li>Same variable in multiple positions requires same constant.</li>
+  <li>The engine finds all satisfying substitutions, then instantiates conclusions.</li>
+  <li>Only fully-bound conclusions become new facts.</li>
+</ul>
+<div class="callout warn">
+<strong>Multi-premise rules are expensive.</strong> N premises requires an N-way join. Keep premise counts low.
+</div>
+</div>
+
+<!-- Compound Terms (Skolem) -->
+<div class="doc-page" id="doc-skolem">
+<h1>Compound Terms</h1>
+<p class="page-desc">Structured terms and Skolem witnesses.</p>
+<p>Beyond simple atoms, Relatum supports <strong>compound terms</strong> &mdash; function-like structures that create new terms from existing ones.</p>
+<h2>Syntax</h2>
+<pre>
+<span class="cm"># Compound term in a fact</span>
+<span class="op">group_op</span>(a, inv(a), identity)
+
+<span class="cm"># Compound term in a rule (Skolem witness)</span>
+&lt;<span class="kw">rule</span>&gt; <span class="hl">has_inv</span>: member(?x) <span class="eq">|-</span> group_op(?x, inv(?x), identity)
+</pre>
+<p>A compound term is written as <code>name(arg1, arg2, ...)</code> where each argument can itself be a term (atom, variable, or another compound).</p>
+<h2>Skolem Witnesses</h2>
+<p>When a compound term appears in a rule conclusion with a variable, it creates a <strong>Skolem witness</strong> &mdash; a new structured term that depends on the matched variable. For example, <code>inv(?x)</code> in a conclusion creates a unique inverse for each element.</p>
+<h2>Depth Limit</h2>
+<p>Compound terms can nest: <code>inv(inv(a))</code>, <code>inv(inv(inv(a)))</code>, etc. To prevent infinite nesting, use the <code>depth</code> directive:</p>
+<pre>
+<span class="kw">depth</span> 3    <span class="cm"># max nesting depth for compound terms</span>
+</pre>
+<p>The default depth is 5. Any derived fact containing a term deeper than this limit is silently dropped.</p>
+<h2>Use Cases</h2>
+<ul>
+  <li><strong>Group theory:</strong> <code>inv(?x)</code> as inverse, <code>op(?x, ?y)</code> as multiplication</li>
+  <li><strong>Successor arithmetic:</strong> <code>s(zero)</code>, <code>s(s(zero))</code></li>
+  <li><strong>Structured data:</strong> <code>pair(?x, ?y)</code>, <code>cons(?h, ?t)</code></li>
+</ul>
+</div>
+
+<!-- Derive & Prove -->
+<div class="doc-page" id="doc-derive">
+<h1>Derive &amp; Prove</h1>
+<p class="page-desc">Commands to compute closure and query provenance.</p>
+<h2>derive</h2>
+<p>The <code>derive</code> command triggers the closure engine, applying all rules until saturation or a limit.</p>
+<pre>
+<span class="kw">derive</span>          <span class="cm"># default: up to 100 rounds</span>
+<span class="kw">derive</span> 10       <span class="cm"># limit to 10 rounds</span>
+</pre>
+<h2>What Happens During Derive</h2>
+<p>Each round, the engine:</p>
+<ol>
+  <li>Applies all rules (auto-generated + user-defined) to current facts</li>
+  <li>Generates reflexive facts for reflexive relations</li>
+  <li>Applies congruence for congruent relations</li>
+  <li>Checks for new facts</li>
+</ol>
+<p>Stops when: <strong>saturated</strong> (no new facts), <strong>round limit</strong> reached, or <strong>fact limit</strong> (10,000) exceeded.</p>
+<h2>prove</h2>
+<p>The <code>prove</code> command queries the provenance of a specific fact &mdash; how it was derived.</p>
+<pre>
+<span class="kw">prove</span> <span class="op">equiv</span>(a, c)
+</pre>
+<p>Output shows the derivation tree: which rule fired and which premises were used, recursively back to user-declared facts.</p>
+<h2>depth</h2>
+<p>The <code>depth</code> directive sets the maximum nesting depth for compound terms.</p>
+<pre>
+<span class="kw">depth</span> 3
+</pre>
+<p>Must appear before <code>derive</code>. Default is 5.</p>
+</div>
+
+<!-- Algorithm -->
+<div class="doc-page" id="doc-algorithm">
+<h1>Algorithm</h1>
+<p class="page-desc">How the closure engine works internally.</p>
+<h2>Forward Chaining</h2>
+<p>Relatum uses <strong>semi-naive forward chaining</strong>, similar to Datalog evaluation. Starting from initial facts, it repeatedly applies rules until a fixed point.</p>
+<h2>Round Structure</h2>
+<pre>
+<span class="cm">for each round:</span>
+  <span class="cm">1. Rule application</span>
+     for each rule:
+       find all substitutions matching premises
+       instantiate conclusions
+       add new ground facts
+
+  <span class="cm">2. Reflexivity</span>
+     for each reflexive relation R:
+       for each constant t: add R(t, t)
+
+  <span class="cm">3. Congruence</span>
+     for each congruent relation R:
+       for each R(a, b) where a != b:
+         for each fact S(...a...): add S(...b...)
+
+  <span class="cm">4. Fixed-point check</span>
+     if no new facts: STOP (saturated)
+</pre>
+<h2>Complexity</h2>
+<ul>
+  <li><strong>Single-premise rules:</strong> O(|rules| &times; |facts|) per round</li>
+  <li><strong>Multi-premise rules:</strong> O(|facts|<sup>|premises|</sup>) worst case</li>
+  <li><strong>Congruence:</strong> O(|pairs| &times; |facts|) per round</li>
+</ul>
+<div class="callout warn">
+<strong>Beware combinatorial explosion.</strong> Transitive relations over many constants generate O(n&sup2;) facts. The 10,000-fact safety cap prevents runaway computations.
+</div>
+</div>
+
+<!-- Properties -->
+<div class="doc-page" id="doc-properties">
+<h1>Relation Properties</h1>
+<p class="page-desc">What each property does under the hood.</p>
+<h2>Reflexive</h2>
+<p>For every constant <code>t</code> in the universe, adds <code>R(t, t)</code> before rule application. Respects membership constraints.</p>
+<h2>Symmetric</h2>
+<p>Auto-generates rule <code>R(?x, ?y) |- R(?y, ?x)</code>.</p>
+<h2>Transitive</h2>
+<p>Auto-generates rule <code>R(?x, ?y), R(?y, ?z) |- R(?x, ?z)</code>. Two-premise join on <code>?y</code>.</p>
+<h2>Congruent</h2>
+<p>If <code>R(a, b)</code> holds and <code>S(..., a, ...)</code> exists, derives <code>S(..., b, ...)</code>. Propagates equivalence through the entire fact base.</p>
+<h2>Equivalence = All Four</h2>
+<p><code>: equivalence</code> is shorthand for <code>: reflexive, symmetric, transitive, congruent</code>.</p>
+</div>
+
+<!-- Safety -->
+<div class="doc-page" id="doc-safety">
+<h1>Safety &amp; Limits</h1>
+<p class="page-desc">Guarding against infinite derivation.</p>
+<h2>Built-in Limits</h2>
+<table>
+  <tr><th>Limit</th><th>Default</th><th>Purpose</th></tr>
+  <tr><td>Max rounds</td><td>100</td><td>Prevents infinite loops</td></tr>
+  <tr><td>Max facts</td><td>10,000</td><td>Caps memory usage</td></tr>
+  <tr><td>Max substitutions/rule</td><td>50,000</td><td>Prevents single-rule blowup</td></tr>
+  <tr><td>Max term depth</td><td>5</td><td>Prevents infinite Skolem nesting</td></tr>
+</table>
+<h2>When Limits Are Hit</h2>
+<p>The engine stops and reports the current state. Output shows <strong>capped</strong> instead of <strong>saturated</strong>. Derived facts are valid but incomplete.</p>
+<h2>Tips</h2>
+<ul>
+  <li>Start with few constants and add gradually.</li>
+  <li>Use <code>derive 5</code> to limit rounds while experimenting.</li>
+  <li>Use <code>depth 2</code> to limit Skolem term nesting.</li>
+  <li>Be cautious with transitive + many constants.</li>
+</ul>
+</div>
+
+<!-- Notebook: Cells & Execution -->
+<div class="doc-page" id="doc-notebook">
+<h1>Cells &amp; Execution</h1>
+<p class="page-desc">The notebook execution model.</p>
+<h2>Cell Types</h2>
+<p>The notebook has two cell types:</p>
+<ul>
+  <li><strong>Code cells:</strong> contain Relatum DSL programs. Executed by the closure engine.</li>
+  <li><strong>Markdown cells:</strong> rich text notes using Markdown syntax.</li>
+</ul>
+<h2>Per-Cell Execution</h2>
+<p>Each code cell runs independently. Click the <strong>play</strong> button on a cell or press <code>Ctrl+Enter</code> while editing to execute just that cell. <strong>Run All</strong> executes all code cells in order.</p>
+<h2>Cumulative Knowledge Base</h2>
+<p>All cells share a single knowledge base. When you execute a cell, its declarations and facts are added to the global KB. The status bar shows total facts, derived count, and rounds.</p>
+<h2>Cell Operations</h2>
+<p>Hover over a cell to reveal the floating toolbar:</p>
+<ul>
+  <li><strong>&uarr; / &darr;</strong> &mdash; move cell up/down</li>
+  <li><strong>code / md</strong> &mdash; convert between code and markdown</li>
+  <li><strong>&times;</strong> &mdash; delete cell</li>
+</ul>
+<p>Use <strong>+ code</strong> or <strong>+ markdown</strong> buttons between cells or at the bottom to add new cells.</p>
+<h2>Undo</h2>
+<p>Press <code>Ctrl+Z</code> when not focused in any editor to undo the last cell operation (add, delete, move, convert). Each tab has its own undo stack (up to 30 levels).</p>
+</div>
+
+<!-- Markdown Cells -->
+<div class="doc-page" id="doc-markdown">
+<h1>Markdown Cells</h1>
+<p class="page-desc">Rich text annotations for your notebook.</p>
+<h2>Creating Markdown Cells</h2>
+<p>Click <strong>+ markdown</strong> to add a markdown cell, or use the toolbar to convert an existing code cell.</p>
+<h2>Editing &amp; Preview</h2>
+<p>Click a markdown cell to enter edit mode. Click outside or press <code>Escape</code> to render the preview. Supported syntax:</p>
+<ul>
+  <li><code># Heading</code>, <code>## Subheading</code>, <code>### Sub-subheading</code></li>
+  <li><code>**bold**</code>, <code>*italic*</code>, <code>`inline code`</code></li>
+  <li><code>- unordered list</code>, <code>1. ordered list</code></li>
+  <li><code>```code blocks```</code></li>
+  <li><code>[link text](url)</code></li>
+  <li><code>&gt; blockquote</code></li>
+</ul>
+</div>
+
+<!-- KB Panel -->
+<div class="doc-page" id="doc-kb-panel">
+<h1>Knowledge Base Panel</h1>
+<p class="page-desc">Explore and manage the accumulated knowledge base.</p>
+<h2>Opening the Panel</h2>
+<p>Click the <strong>KB</strong> button in the status bar, or click the panel header at the bottom of the screen.</p>
+<h2>Contents</h2>
+<p>The KB panel shows all accumulated state across all executed cells:</p>
+<ul>
+  <li><strong>Elements:</strong> all declared constants and containers</li>
+  <li><strong>Relations:</strong> declared relation schemas with arities and properties</li>
+  <li><strong>Rules:</strong> both user-defined and auto-generated rules</li>
+  <li><strong>Facts:</strong> initial + derived facts</li>
+</ul>
+<h2>Search</h2>
+<p>Use the search box at the top of the KB panel to filter items. Search matches against element names, relation names, rule names, and fact contents.</p>
+<h2>Retraction</h2>
+<p>Click the <strong>&times;</strong> next to any KB item to retract it. Retracted items appear crossed out and are excluded from future derivations. Click the <strong>+</strong> to restore a retracted item.</p>
+<p>Use <strong>Clear All</strong> to reset the entire knowledge base.</p>
+</div>
+
+<!-- Tabs & Files -->
+<div class="doc-page" id="doc-tabs">
+<h1>Tabs &amp; Files</h1>
+<p class="page-desc">Multi-tab workflow and file management.</p>
+<h2>Multiple Tabs</h2>
+<p>Each tab is an independent notebook with its own cells, knowledge base, undo stack, and execution state. Click a tab to switch; click <strong>&times;</strong> to close it.</p>
+<h2>New Tab</h2>
+<p>Click <strong>New</strong> in the header to create a blank notebook tab.</p>
+<h2>Opening Files</h2>
+<p>Click <strong>Open</strong> to load <code>.relnb</code> files. You can select multiple files &mdash; each opens in its own tab.</p>
+<h2>Saving Files</h2>
+<p>Click <strong>Save</strong> to download the current tab as a <code>.relnb</code> file. The file contains:</p>
+<ul>
+  <li>All cells (code and markdown) with their source text</li>
+  <li>Cell output HTML (for code cells that have been executed)</li>
+</ul>
+<p>The file does <em>not</em> save the knowledge base state, execution order, or retraction state &mdash; these are recomputed by re-running cells.</p>
+<h2>.relnb Format</h2>
+<pre>
+{
+  "version": 1,
+  "cells": [
+    { "type": "code", "source": "..." },
+    { "type": "md", "source": "# Title" },
+    { "type": "code", "source": "...", "output": "&lt;html&gt;" }
+  ]
+}
+</pre>
+</div>
+
+<!-- Editor Features -->
+<div class="doc-page" id="doc-editing">
+<h1>Editor Features</h1>
+<p class="page-desc">Syntax highlighting, autocomplete, and more.</p>
+<h2>Syntax Highlighting</h2>
+<p>Code cells have live syntax highlighting with the following color scheme:</p>
+<table>
+  <tr><th>Element</th><th>Color</th></tr>
+  <tr><td>Keywords (<code>&lt;rel&gt;</code>, <code>&lt;rule&gt;</code>, <code>derive</code>, etc.)</td><td style="color:var(--accent2)">purple</td></tr>
+  <tr><td>Relation names</td><td style="color:var(--cyan)">cyan</td></tr>
+  <tr><td>Elements / constants</td><td style="color:var(--orange)">orange</td></tr>
+  <tr><td>Containers</td><td style="color:var(--orange)">orange bold</td></tr>
+  <tr><td>Variables (<code>?x</code>)</td><td style="color:var(--green)">green italic</td></tr>
+  <tr><td>Comments (<code>#</code>)</td><td style="color:var(--text-dim)">dim italic</td></tr>
+  <tr><td>Rule names</td><td style="color:var(--accent)">blue</td></tr>
+  <tr><td>Properties</td><td style="color:var(--accent2)">purple</td></tr>
+</table>
+<h2>Autocomplete</h2>
+<p>As you type in a code cell, an autocomplete dropdown appears with context-aware suggestions:</p>
+<ul>
+  <li><strong>Keywords:</strong> <code>&lt;element&gt;</code>, <code>&lt;ele&gt;</code>, <code>&lt;rel&gt;</code>, <code>&lt;relation&gt;</code>, <code>&lt;rule&gt;</code>, <code>derive</code>, <code>prove</code>, <code>depth</code></li>
+  <li><strong>Declared elements:</strong> all constants from <code>&lt;element&gt;</code> / <code>&lt;Container&gt;</code></li>
+  <li><strong>Declared relations:</strong> relation names with arity</li>
+  <li><strong>Declared rules:</strong> rule names</li>
+</ul>
+<p>Navigate with <code>&uarr;</code> / <code>&darr;</code> arrow keys, accept with <code>Tab</code> or <code>Enter</code>, dismiss with <code>Escape</code>.</p>
+<h2>Output Search</h2>
+<p>After executing a cell, use the search box in the output area to filter results. Matching text is highlighted.</p>
+</div>
+
+<!-- Example: Equivalence -->
+<div class="doc-page" id="doc-ex-equiv">
+<h1>Example: Equivalence Closure</h1>
+<p class="page-desc">The canonical Relatum example.</p>
+<pre>
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
+
+<span class="op">equiv</span>(a, b)
+<span class="op">equiv</span>(b, c)
+
+<span class="kw">derive</span>
+</pre>
+<h2>What the engine derives</h2>
+<ul>
+  <li><strong>Symmetry:</strong> equiv(b, a), equiv(c, b)</li>
+  <li><strong>Transitivity:</strong> equiv(a, c)</li>
+  <li><strong>Symmetry of derived:</strong> equiv(c, a)</li>
+  <li><strong>Reflexivity:</strong> equiv(a, a), equiv(b, b), equiv(c, c)</li>
+</ul>
+<p>Saturates in 2-3 rounds with 9 total facts (complete 3&times;3 equivalence class).</p>
+</div>
+
+<!-- Example: Order -->
+<div class="doc-page" id="doc-ex-order">
+<h1>Example: Partial Order</h1>
+<p class="page-desc">Reflexive + transitive, but NOT symmetric.</p>
+<pre>
+<span class="kw">&lt;element&gt;</span> a, b, c, d
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">leq</span>/2 : <span class="hl">reflexive</span>, <span class="hl">transitive</span>
+
+<span class="op">leq</span>(a, b)
+<span class="op">leq</span>(b, c)
+<span class="op">leq</span>(c, d)
+
+<span class="kw">derive</span>
+</pre>
+<h2>What the engine derives</h2>
+<ul>
+  <li><strong>Reflexivity:</strong> leq(a, a), leq(b, b), leq(c, c), leq(d, d)</li>
+  <li><strong>Transitivity:</strong> leq(a, c), leq(a, d), leq(b, d)</li>
+</ul>
+<p><code>leq(b, a)</code> is <em>not</em> derived because the relation is not symmetric.</p>
+</div>
+
+<!-- Example: Custom Rules -->
+<div class="doc-page" id="doc-ex-custom">
+<h1>Example: Custom Rules</h1>
+<p class="page-desc">User-defined inference beyond built-in properties.</p>
+<pre>
+<span class="kw">&lt;element&gt;</span> alice, bob, carol
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">friend</span>/2 : <span class="hl">symmetric</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">knows</span>/2
+
+&lt;<span class="kw">rule</span>&gt; <span class="hl">f2k</span>: friend(?x, ?y) <span class="eq">|-</span> knows(?x, ?y)
+&lt;<span class="kw">rule</span>&gt; <span class="hl">knows_trans</span>: knows(?x, ?y), knows(?y, ?z) <span class="eq">|-</span> knows(?x, ?z)
+
+<span class="op">friend</span>(alice, bob)
+<span class="op">friend</span>(bob, carol)
+
+<span class="kw">derive</span>
+</pre>
+<h2>Derivation chain</h2>
+<ol>
+  <li><strong>Symmetry:</strong> friend(bob, alice), friend(carol, bob)</li>
+  <li><strong>f2k:</strong> knows(alice, bob), knows(bob, carol), ...</li>
+  <li><strong>knows_trans:</strong> knows(alice, carol), knows(carol, alice), ...</li>
+</ol>
+<p>Everyone ends up knowing everyone.</p>
+</div>
+
+<!-- Example: Congruence -->
+<div class="doc-page" id="doc-ex-congruence">
+<h1>Example: Congruence</h1>
+<p class="page-desc">How congruence propagates equivalence through other relations.</p>
+<pre>
+<span class="kw">&lt;element&gt;</span> a, b, c
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">equiv</span>/2 : <span class="hl">equivalence</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">R</span>/2
+
+<span class="op">equiv</span>(a, b)
+<span class="op">R</span>(a, c)
+
+<span class="kw">derive</span>
+</pre>
+<h2>What congruence does</h2>
+<p>Because <code>equiv</code> is congruent and <code>equiv(a, b)</code> holds, the engine sees <code>R(a, c)</code> and substitutes <code>a &rarr; b</code>, deriving <code>R(b, c)</code>.</p>
+</div>
+
+<!-- Example: Membership -->
+<div class="doc-page" id="doc-ex-typed">
+<h1>Example: Membership</h1>
+<p class="page-desc">Restricting which elements each relation argument accepts.</p>
+<pre>
+<span class="kw">&lt;Person&gt;</span> alice, bob, carol
+<span class="kw">&lt;City&gt;</span> paris, london
+
+&lt;<span class="kw">rel</span>&gt; <span class="op">lives_in</span>/2 : <span class="hl">Person</span>, <span class="hl">City</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">friend</span>/2 : <span class="hl">Person</span>, <span class="hl">Person</span>, <span class="hl">symmetric</span>
+&lt;<span class="kw">rel</span>&gt; <span class="op">same_city</span>/2 : <span class="hl">City</span>, <span class="hl">City</span>, <span class="hl">equivalence</span>
+
+<span class="op">lives_in</span>(alice, paris)
+<span class="op">lives_in</span>(bob, paris)
+<span class="op">lives_in</span>(carol, london)
+
+&lt;<span class="kw">rule</span>&gt; <span class="hl">shared</span>: lives_in(?x, ?c), lives_in(?y, ?c) <span class="eq">|-</span> same_city(?c, ?c)
+
+<span class="kw">derive</span>
+</pre>
+<h2>What happens</h2>
+<ul>
+  <li><strong>Membership prevents nonsense:</strong> <code>lives_in(paris, alice)</code> would be rejected.</li>
+  <li><strong>Reflexivity respects membership:</strong> <code>same_city(t, t)</code> only for cities.</li>
+  <li><strong>Rules are membership-filtered:</strong> derived facts violating constraints are dropped.</li>
+</ul>
+</div>
+
+<!-- Grammar Reference -->
+<div class="doc-page" id="doc-grammar">
+<h1>Grammar Reference</h1>
+<p class="page-desc">Complete syntax of the Relatum DSL.</p>
+<h2>Lexical Elements</h2>
+<table>
+  <tr><th>Element</th><th>Pattern</th><th>Examples</th></tr>
+  <tr><td>Identifier</td><td><code>[a-zA-Z_][a-zA-Z0-9_]*</code></td><td><code>a</code>, <code>equiv</code>, <code>my_rel</code></td></tr>
+  <tr><td>Variable</td><td><code>?</code> + identifier</td><td><code>?x</code>, <code>?name</code></td></tr>
+  <tr><td>Number</td><td><code>[0-9]+</code></td><td><code>2</code>, <code>100</code></td></tr>
+  <tr><td>Comment</td><td><code>#</code> to end of line</td><td><code># this is ignored</code></td></tr>
+</table>
+<h2>Statements</h2>
+<pre>
+<span class="cm"># Element declaration (root container)</span>
+<span class="kw">&lt;element&gt;</span> name1, name2, ...
+<span class="kw">&lt;ele&gt;</span> name1, name2, ...          <span class="cm"># shorthand</span>
+
+<span class="cm"># Relation declaration (container for relation names)</span>
+<span class="kw">&lt;relation&gt;</span> name1, name2, ...
+<span class="kw">&lt;rel&gt;</span> name1, name2, ...           <span class="cm"># shorthand</span>
+
+<span class="cm"># Element declaration (named container)</span>
+<span class="kw">&lt;Container&gt;</span> member1, member2, ...
+
+<span class="cm"># Relation schema declaration</span>
+<span class="kw">&lt;rel&gt;</span> name/arity
+<span class="kw">&lt;rel&gt;</span> name/arity : property1, property2, ...
+<span class="kw">&lt;rel&gt;</span> name/arity : Container1, Container2, ...
+<span class="kw">&lt;relation&gt;</span> name/arity : Container1, Container2, property, ...
+
+<span class="cm"># Rule declaration</span>
+<span class="kw">&lt;rule&gt;</span> name: atom1, atom2, ... <span class="eq">|-</span> atom3, atom4, ...
+
+<span class="cm"># Fact (ground atom)</span>
+name(term1, term2, ...)
+
+<span class="cm"># Commands</span>
+<span class="kw">derive</span>
+<span class="kw">derive</span> N
+<span class="kw">prove</span> name(term1, term2, ...)
+<span class="kw">depth</span> N
+</pre>
+<h2>Properties</h2>
+<table>
+  <tr><th>Keyword</th><th>Expands to</th></tr>
+  <tr><td><code>equivalence</code></td><td><code>reflexive, symmetric, transitive, congruent</code></td></tr>
+  <tr><td><code>reflexive</code></td><td>R(t, t) for all t</td></tr>
+  <tr><td><code>symmetric</code></td><td>R(?x, ?y) |- R(?y, ?x)</td></tr>
+  <tr><td><code>transitive</code></td><td>R(?x, ?y), R(?y, ?z) |- R(?x, ?z)</td></tr>
+  <tr><td><code>congruent</code></td><td>substitute equal terms in all facts</td></tr>
+</table>
+<h2>Terms</h2>
+<p>A term is one of:</p>
+<ul>
+  <li>A constant identifier: <code>a</code>, <code>alice</code>, <code>zero</code></li>
+  <li>A variable: <code>?x</code>, <code>?name</code> (in rules only)</li>
+  <li>A compound: <code>f(term, ...)</code>, e.g. <code>inv(?x)</code>, <code>s(zero)</code></li>
+</ul>
+</div>
+
+<!-- Keyboard Shortcuts -->
+<div class="doc-page" id="doc-shortcuts">
+<h1>Keyboard Shortcuts</h1>
+<p class="page-desc">Quick keys for the notebook interface.</p>
+<table>
+  <tr><th>Key</th><th>Context</th><th>Action</th></tr>
+  <tr><td><code>Ctrl+Enter</code></td><td>Code cell editor</td><td>Run the current cell</td></tr>
+  <tr><td><code>Tab</code></td><td>Code cell editor</td><td>Insert two spaces / accept autocomplete</td></tr>
+  <tr><td><code>&uarr; / &darr;</code></td><td>Autocomplete open</td><td>Navigate suggestions</td></tr>
+  <tr><td><code>Enter</code></td><td>Autocomplete open</td><td>Accept suggestion</td></tr>
+  <tr><td><code>Escape</code></td><td>Autocomplete open</td><td>Dismiss autocomplete</td></tr>
+  <tr><td><code>Escape</code></td><td>Markdown cell edit</td><td>Exit edit mode, show preview</td></tr>
+  <tr><td><code>Ctrl+Z</code></td><td>Not in any editor</td><td>Undo last cell operation</td></tr>
+</table>
+</div>
+
+  </div><!-- /doc-body -->
+</div><!-- /doc-panel -->
+
+<div id="status-bar">
+  <button class="panel-toggle-btn" onclick="togglePanel()">KB</button>
+  <span class="status-item" id="st-facts">facts <span class="val">0</span></span>
+  <span class="status-item" id="st-derived">derived <span class="val">0</span></span>
+  <span class="status-item" id="st-rounds">rounds <span class="val">0</span></span>
+  <span class="status-item" id="st-state"><span class="val">idle</span></span>
+  <span id="run-time"></span>
+</div>
+
 <script>
+// ===============================================================
+//  Term Model
+// ===============================================================
+//
+// Term types:
+//   { atom: 'a' }                    — atomic constant
+//   { fn: 'inv', args: [term...] }   — compound (Skolem witness)
+//   { var: 'x' }                     — pattern variable (rules only)
+
+function termStr(t) {
+  if (t.atom !== undefined) return t.atom;
+  if (t.var !== undefined) return '?' + t.var;
+  return t.fn + '(' + t.args.map(termStr).join(',') + ')';
+}
+
+function termPretty(t) {
+  if (t.atom !== undefined) return t.atom;
+  if (t.var !== undefined) return '?' + t.var;
+  return t.fn + '(' + t.args.map(termPretty).join(', ') + ')';
+}
+
+function termEquals(a, b) {
+  if (a.atom !== undefined) return b.atom !== undefined && a.atom === b.atom;
+  if (a.var !== undefined) return b.var !== undefined && a.var === b.var;
+  if (a.fn !== undefined) return b.fn !== undefined && a.fn === b.fn &&
+    a.args.length === b.args.length &&
+    a.args.every((arg, i) => termEquals(arg, b.args[i]));
+  return false;
+}
+
+function termMatch(pattern, ground, sub) {
+  if (pattern.var !== undefined) {
+    const name = pattern.var;
+    if (name in sub) return termEquals(sub[name], ground);
+    sub[name] = ground;
+    return true;
+  }
+  if (pattern.atom !== undefined) return ground.atom !== undefined && ground.atom === pattern.atom;
+  if (pattern.fn !== undefined) {
+    return ground.fn !== undefined && ground.fn === pattern.fn &&
+      pattern.args.length === ground.args.length &&
+      pattern.args.every((p, i) => termMatch(p, ground.args[i], sub));
+  }
+  return false;
+}
+
+function termSubstitute(term, sub) {
+  if (term.var !== undefined) return sub[term.var] || null;
+  if (term.atom !== undefined) return term;
+  if (term.fn !== undefined) {
+    const newArgs = [];
+    for (const arg of term.args) {
+      const r = termSubstitute(arg, sub);
+      if (!r) return null;
+      newArgs.push(r);
+    }
+    return { fn: term.fn, args: newArgs };
+  }
+  return null;
+}
+
+function termDepth(t) {
+  if (t.atom !== undefined || t.var !== undefined) return 0;
+  if (t.args.length === 0) return 1;
+  return 1 + Math.max(...t.args.map(termDepth));
+}
+
+function termIsGround(t) {
+  if (t.atom !== undefined) return true;
+  if (t.var !== undefined) return false;
+  return t.args.every(termIsGround);
+}
+
+function termCollectAtoms(t, set) {
+  if (t.atom !== undefined) { set.add(t.atom); return; }
+  if (t.fn !== undefined) t.args.forEach(a => termCollectAtoms(a, set));
+}
+
+function termContains(t, target) {
+  if (termEquals(t, target)) return true;
+  if (t.fn !== undefined) return t.args.some(a => termContains(a, target));
+  return false;
+}
+
+function termReplaceAll(t, from, to) {
+  if (termEquals(t, from)) return to;
+  if (t.fn !== undefined) return { fn: t.fn, args: t.args.map(a => termReplaceAll(a, from, to)) };
+  return t;
+}
+
 // ===============================================================
 //  Relatum DSL — Parser
 // ===============================================================
@@ -512,17 +1983,17 @@ derive"></textarea>
 function parse(source) {
   const lines = source.split('\n');
   const program = {
-    elements: new Set(),       // all declared element names (constants + containers)
-    membership: new Map(),     // element -> Set of containers it belongs to
-    relations: new Map(),      // name -> { arity, props: Set, sig: string[]|null }
+    elements: new Set(),
+    membership: new Map(),
+    relations: new Map(),
     rules: [],
     facts: [],
-    derives: [],               // [{ maxRounds }]
-    proves: [],                // [{ name, terms, line }]
+    derives: [],
+    proves: [],
     errors: [],
+    maxDepth: 10,
   };
 
-  // The intrinsic root: every declared element is in 'element'
   program.elements.add('element');
   program.membership.set('element', new Set(['element']));
 
@@ -543,7 +2014,6 @@ function parse(source) {
 
 const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
-// Register an element, ensuring it exists in the membership map
 function ensureElement(program, name) {
   if (!program.elements.has(name)) {
     program.elements.add(name);
@@ -551,26 +2021,136 @@ function ensureElement(program, name) {
   }
 }
 
-// Record: `child` is in `container`
 function addMembership(program, child, container) {
   ensureElement(program, child);
   ensureElement(program, container);
   program.membership.get(child).add(container);
 }
 
+function splitArgs(str) {
+  const parts = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i <= str.length; i++) {
+    if (i === str.length || (str[i] === ',' && depth === 0)) {
+      const part = str.slice(start, i).trim();
+      if (part) parts.push(part);
+      start = i + 1;
+    } else if (str[i] === '(') depth++;
+    else if (str[i] === ')') depth--;
+  }
+  return parts;
+}
+
+function parseTerm(str) {
+  str = str.trim();
+  if (!str) throw new Error('Empty term');
+  if (str.startsWith('?')) {
+    const name = str.slice(1);
+    if (!IDENT_RE.test(name)) throw new Error(`Invalid variable: '${str}'`);
+    return { var: name };
+  }
+  const paren = str.indexOf('(');
+  if (paren < 0) {
+    if (!IDENT_RE.test(str)) throw new Error(`Invalid term: '${str}'`);
+    return { atom: str };
+  }
+  const name = str.slice(0, paren);
+  if (!IDENT_RE.test(name)) throw new Error(`Invalid function: '${name}'`);
+  if (str[str.length - 1] !== ')') throw new Error(`Unbalanced parens: '${str}'`);
+  const argsStr = str.slice(paren + 1, str.length - 1);
+  const args = splitArgs(argsStr).map(parseTerm);
+  if (args.length === 0) throw new Error(`Function '${name}' must have arguments`);
+  return { fn: name, args };
+}
+
+// Resolve element container aliases: ele -> element
+function resolveContainerAlias(name) {
+  const lower = name.toLowerCase();
+  if (lower === 'ele') return 'element';
+  return name;
+}
+
+function parseRelDecl(rest, program) {
+  const colonIdx = rest.indexOf(':');
+  const schemaStr = colonIdx >= 0 ? rest.slice(0, colonIdx).trim() : rest;
+  const propsStr = colonIdx >= 0 ? rest.slice(colonIdx + 1).trim() : '';
+
+  const m = schemaStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\/(\d+)$/);
+  if (!m) throw new Error(`Expected name/arity, got '${schemaStr}'`);
+  const name = m[1], arity = parseInt(m[2]);
+
+  const KNOWN_PROPS = ['reflexive', 'symmetric', 'transitive', 'congruent', 'equivalence'];
+  const props = new Set();
+  const sig = [];
+  if (propsStr) {
+    for (const p of propsStr.split(/[,\s]+/).filter(s => s)) {
+      const pl = p.toLowerCase();
+      if (pl === 'equivalence') {
+        props.add('reflexive'); props.add('symmetric');
+        props.add('transitive'); props.add('congruent');
+      } else if (KNOWN_PROPS.includes(pl)) {
+        props.add(pl);
+      } else if (IDENT_RE.test(p)) {
+        sig.push(p);
+      } else {
+        throw new Error(`Unknown property or element: '${p}'`);
+      }
+    }
+  }
+  if (sig.length > 0 && sig.length !== arity) {
+    throw new Error(`Signature for '${name}' has ${sig.length} elements but arity is ${arity}`);
+  }
+  program.relations.set(name, { arity, props, sig: sig.length > 0 ? sig : null });
+}
+
+function parseRuleDecl(rest, program, lineNum) {
+  const colonIdx = rest.indexOf(':');
+  if (colonIdx < 0) throw new Error("Expected 'name: premises |- conclusions'");
+  const name = rest.slice(0, colonIdx).trim();
+  const body = rest.slice(colonIdx + 1).trim();
+
+  const turnstile = body.indexOf('|-');
+  if (turnstile < 0) throw new Error("Expected '|-' in rule body");
+  const premStr = body.slice(0, turnstile).trim();
+  const concStr = body.slice(turnstile + 2).trim();
+
+  const premises = parseAtomList(premStr);
+  const conclusions = parseAtomList(concStr);
+  if (premises.length === 0) throw new Error("Rule must have at least one premise");
+  if (conclusions.length === 0) throw new Error("Rule must have at least one conclusion");
+
+  program.rules.push({ name, premises, conclusions, line: lineNum });
+}
+
 function parseLine(line, program, lineNum) {
-  // Element declaration: <Container> name1, name2, ...
-  // or <Container> ?var1, ?var2, ...  (variables scoped to container)
+  // All declarations start with <keyword>
   if (line.startsWith('<')) {
     const close = line.indexOf('>');
-    if (close < 0) throw new Error("Expected '>' to close container name");
-    const container = line.slice(1, close).trim();
-    if (!IDENT_RE.test(container)) throw new Error(`Invalid container name: '${container}'`);
+    if (close < 0) throw new Error("Expected '>' to close declaration keyword");
+    const keyword = line.slice(1, close).trim();
+    if (!IDENT_RE.test(keyword)) throw new Error(`Invalid keyword: '${keyword}'`);
     const rest = line.slice(close + 1).trim();
-    if (!rest) throw new Error("Expected element names after <" + container + ">");
+    const kw = keyword.toLowerCase();
+
+    // <rel> or <relation>: relation schema declaration
+    if (kw === 'rel' || kw === 'relation') {
+      if (!rest) throw new Error("Expected name/arity after <" + keyword + ">");
+      parseRelDecl(rest, program);
+      return;
+    }
+
+    // <rule>: rule declaration
+    if (kw === 'rule') {
+      if (!rest) throw new Error("Expected rule definition after <rule>");
+      parseRuleDecl(rest, program, lineNum);
+      return;
+    }
+
+    // Element / container declaration
+    const container = resolveContainerAlias(keyword);
+    if (!rest) throw new Error("Expected names after <" + keyword + ">");
     const names = rest.split(/[,\s]+/).filter(s => s);
     for (const name of names) {
-      // ?name = variable declaration (ignored for now — variables are inline in rules)
       if (name.startsWith('?')) continue;
       if (!IDENT_RE.test(name)) throw new Error(`Invalid element name: '${name}'`);
       addMembership(program, name, container);
@@ -578,69 +2158,14 @@ function parseLine(line, program, lineNum) {
     return;
   }
 
-  // rel declaration
-  if (line.startsWith('rel ')) {
-    const rest = line.slice(4).trim();
-    const colonIdx = rest.indexOf(':');
-    const schemaStr = colonIdx >= 0 ? rest.slice(0, colonIdx).trim() : rest;
-    const propsStr = colonIdx >= 0 ? rest.slice(colonIdx + 1).trim() : '';
-
-    const m = schemaStr.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\/(\d+)$/);
-    if (!m) throw new Error(`Expected rel name/arity, got '${schemaStr}'`);
-    const name = m[1], arity = parseInt(m[2]);
-
-    // After the colon: a mix of property keywords and element names (type signature).
-    // Keywords go to props; identifiers that aren't keywords go to sig (in order).
-    const KNOWN_PROPS = ['reflexive', 'symmetric', 'transitive', 'congruent', 'equivalence'];
-    const props = new Set();
-    const sig = [];
-    if (propsStr) {
-      for (const p of propsStr.split(/[,\s]+/).filter(s => s)) {
-        const pl = p.toLowerCase();
-        if (pl === 'equivalence') {
-          props.add('reflexive');
-          props.add('symmetric');
-          props.add('transitive');
-          props.add('congruent');
-        } else if (KNOWN_PROPS.includes(pl)) {
-          props.add(pl);
-        } else if (IDENT_RE.test(p)) {
-          sig.push(p);
-        } else {
-          throw new Error(`Unknown property or element: '${p}'`);
-        }
-      }
-    }
-    if (sig.length > 0 && sig.length !== arity) {
-      throw new Error(`Signature for '${name}' has ${sig.length} elements but arity is ${arity}`);
-    }
-    program.relations.set(name, { arity, props, sig: sig.length > 0 ? sig : null });
+  if (line.startsWith('depth ')) {
+    const rest = line.slice(6).trim();
+    const n = parseInt(rest);
+    if (isNaN(n) || n < 1) throw new Error("Expected 'depth N' where N > 0");
+    program.maxDepth = n;
     return;
   }
 
-  // rule declaration
-  if (line.startsWith('rule ')) {
-    const rest = line.slice(5).trim();
-    const colonIdx = rest.indexOf(':');
-    if (colonIdx < 0) throw new Error("Expected 'rule name: premises |- conclusions'");
-    const name = rest.slice(0, colonIdx).trim();
-    const body = rest.slice(colonIdx + 1).trim();
-
-    const turnstile = body.indexOf('|-');
-    if (turnstile < 0) throw new Error("Expected '|-' in rule body");
-    const premStr = body.slice(0, turnstile).trim();
-    const concStr = body.slice(turnstile + 2).trim();
-
-    const premises = parseAtomList(premStr);
-    const conclusions = parseAtomList(concStr);
-    if (premises.length === 0) throw new Error("Rule must have at least one premise");
-    if (conclusions.length === 0) throw new Error("Rule must have at least one conclusion");
-
-    program.rules.push({ name, premises, conclusions, line: lineNum });
-    return;
-  }
-
-  // derive command
   if (line === 'derive' || line.startsWith('derive ')) {
     const rest = line.slice(6).trim();
     const maxRounds = rest ? parseInt(rest) : 100;
@@ -649,31 +2174,28 @@ function parseLine(line, program, lineNum) {
     return;
   }
 
-  // prove command
   if (line.startsWith('prove ')) {
     const rest = line.slice(6).trim();
-    const m = rest.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\)$/);
-    if (!m) throw new Error("Expected 'prove R(a, b, ...)'");
-    const name = m[1];
-    const terms = m[2].split(',').map(s => s.trim()).filter(s => s);
-    program.proves.push({ name, terms, line: lineNum });
+    const atom = parseAtom(rest);
+    program.proves.push({ name: atom.name, terms: atom.terms, line: lineNum });
     return;
   }
 
-  // Otherwise: try to parse as a ground fact — name(t1, t2, ...)
-  const factMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\)$/);
-  if (factMatch) {
-    const name = factMatch[1];
-    const terms = factMatch[2].split(',').map(s => s.trim()).filter(s => s);
-    program.facts.push({ name, terms, line: lineNum });
-    return;
+  // Try as fact: name(terms...)
+  const paren = line.indexOf('(');
+  if (paren > 0 && line[line.length - 1] === ')') {
+    const name = line.slice(0, paren);
+    if (IDENT_RE.test(name)) {
+      const atom = parseAtom(line);
+      program.facts.push({ name: atom.name, terms: atom.terms, line: lineNum });
+      return;
+    }
   }
 
   throw new Error(`Unrecognized statement: '${line}'`);
 }
 
 function parseAtomList(str) {
-  // Split on commas that are NOT inside parentheses
   const atoms = [];
   let depth = 0, start = 0;
   for (let i = 0; i <= str.length; i++) {
@@ -688,10 +2210,20 @@ function parseAtomList(str) {
 }
 
 function parseAtom(str) {
-  const m = str.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\(([^)]*)\)$/);
-  if (!m) throw new Error(`Invalid atom: '${str}'`);
-  const name = m[1];
-  const terms = m[2].split(',').map(s => s.trim()).filter(s => s);
+  str = str.trim();
+  const paren = str.indexOf('(');
+  if (paren < 0) throw new Error(`Invalid atom: '${str}'`);
+  const name = str.slice(0, paren).trim();
+  if (!IDENT_RE.test(name)) throw new Error(`Invalid relation name: '${name}'`);
+  // Find matching close paren
+  let depth = 0, end = -1;
+  for (let i = paren; i < str.length; i++) {
+    if (str[i] === '(') depth++;
+    else if (str[i] === ')') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end !== str.length - 1) throw new Error(`Invalid atom: '${str}'`);
+  const argsStr = str.slice(paren + 1, end);
+  const terms = splitArgs(argsStr).map(parseTerm);
   return { name, terms };
 }
 
@@ -702,7 +2234,6 @@ function parseAtom(str) {
 function validate(program) {
   const errors = [...program.errors];
 
-  // Check relation references in facts
   for (const fact of program.facts) {
     const def = program.relations.get(fact.name);
     if (!def) {
@@ -715,19 +2246,27 @@ function validate(program) {
     }
     for (let ti = 0; ti < fact.terms.length; ti++) {
       const t = fact.terms[ti];
-      if (!program.elements.has(t)) {
-        errors.push({ line: fact.line, message: `Undeclared element: '${t}'` });
-      } else if (def.sig) {
+      if (!termIsGround(t)) {
+        errors.push({ line: fact.line, message: `Variables not allowed in facts: '${termPretty(t)}'` });
+        continue;
+      }
+      const atoms = new Set();
+      termCollectAtoms(t, atoms);
+      for (const a of atoms) {
+        if (!program.elements.has(a)) {
+          errors.push({ line: fact.line, message: `Undeclared element: '${a}'` });
+        }
+      }
+      if (t.atom !== undefined && def.sig) {
         const required = def.sig[ti];
-        const containers = program.membership.get(t);
+        const containers = program.membership.get(t.atom);
         if (!containers || !containers.has(required)) {
-          errors.push({ line: fact.line, message: `'${t}' is not in <${required}> (required by ${fact.name} argument ${ti + 1})` });
+          errors.push({ line: fact.line, message: `'${t.atom}' is not in <${required}> (required by ${fact.name} argument ${ti + 1})` });
         }
       }
     }
   }
 
-  // Check that signatures reference declared elements
   for (const [relName, def] of program.relations) {
     if (def.sig) {
       for (const eName of def.sig) {
@@ -738,7 +2277,6 @@ function validate(program) {
     }
   }
 
-  // Check relation references in rules
   for (const rule of program.rules) {
     for (const atom of [...rule.premises, ...rule.conclusions]) {
       const def = program.relations.get(atom.name);
@@ -752,7 +2290,6 @@ function validate(program) {
     }
   }
 
-  // Check prove goals
   for (const goal of program.proves) {
     const def = program.relations.get(goal.name);
     if (!def) {
@@ -763,14 +2300,21 @@ function validate(program) {
       errors.push({ line: goal.line, message: `${goal.name} expects ${def.arity} terms, got ${goal.terms.length}` });
       continue;
     }
+    if (!goal.terms.every(termIsGround)) {
+      errors.push({ line: goal.line, message: `Variables not allowed in prove goals` });
+      continue;
+    }
     for (const t of goal.terms) {
-      if (!program.elements.has(t)) {
-        errors.push({ line: goal.line, message: `Undeclared element in prove: '${t}'` });
+      const atoms = new Set();
+      termCollectAtoms(t, atoms);
+      for (const a of atoms) {
+        if (!program.elements.has(a)) {
+          errors.push({ line: goal.line, message: `Undeclared element in prove: '${a}'` });
+        }
       }
     }
   }
 
-  // Check derive/prove presence
   if (program.derives.length === 0 && program.proves.length === 0 && errors.length === 0) {
     errors.push({ line: null, message: "No 'derive' or 'prove' command — add 'derive' or 'prove R(a, b)'" });
   }
@@ -796,18 +2340,20 @@ function execute(program) {
     errors: [],
   };
 
-  // Runtime type-check: does each term belong to the relation's required container?
+  const maxDepth = program.maxDepth;
+
   function typeCheck(relName, terms) {
     const def = program.relations.get(relName);
     if (!def || !def.sig) return true;
     for (let i = 0; i < terms.length; i++) {
-      const containers = program.membership.get(terms[i]);
+      if (terms[i].atom === undefined) continue; // compound terms bypass type check
+      const containers = program.membership.get(terms[i].atom);
       if (!containers || !containers.has(def.sig[i])) return false;
     }
     return true;
   }
 
-  // Log declarations: group by container
+  // Log declarations
   const containerMembers = new Map();
   for (const [elem, containers] of program.membership) {
     if (elem === 'element') continue;
@@ -823,12 +2369,10 @@ function execute(program) {
     const nonRoot = [...containers].filter(c => c !== 'element');
     if (nonRoot.length === 0) rootOnly.push(elem);
   }
-  if (rootOnly.length > 0) {
+  if (rootOnly.length > 0)
     output.declarations.push({ type: 'elem', text: `<element> ${rootOnly.join(', ')}` });
-  }
-  for (const [container, members] of containerMembers) {
+  for (const [container, members] of containerMembers)
     output.declarations.push({ type: 'elem', text: `<${container}> ${members.join(', ')}` });
-  }
   for (const [name, def] of program.relations) {
     const parts = [];
     if (def.sig) parts.push(def.sig.join(', '));
@@ -837,94 +2381,93 @@ function execute(program) {
     const suffix = parts.length > 0 ? ' : ' + parts.join(', ') : '';
     output.declarations.push({ type: 'rel', text: `${name}/${def.arity}${suffix}` });
   }
+  if (maxDepth !== 10) {
+    output.declarations.push({ type: 'depth', text: `depth ${maxDepth}` });
+  }
 
-  // Build initial fact set
+  // Fact storage with provenance
   const allElements = program.elements;
   const factSet = new Set();
   const factObjs = [];
-  const provenance = new Map(); // factKey -> { rule, premises: [factKey, ...] }
+  const provenance = new Map();
 
-  function fkey(name, terms) {
-    return `${name}(${terms.join(',')})`;
-  }
+  function fkey(name, terms) { return `${name}(${terms.map(termStr).join(',')})`; }
 
-  function addFact(name, terms, rule, premises) {
+  function addFact(name, terms, rule, premises, cellId) {
     const key = fkey(name, terms);
-    if (factSet.has(key)) return false;
+    const rec = { rule: rule || 'given', premises: premises || [], cellId: cellId || null };
+    if (factSet.has(key)) {
+      const arr = provenance.get(key);
+      if (arr.length < 10) arr.push(rec);
+      return false;
+    }
     if (factSet.size >= MAX_FACTS) return false;
     factSet.add(key);
     factObjs.push({ name, terms: [...terms] });
-    provenance.set(key, { rule: rule || 'given', premises: premises || [] });
+    provenance.set(key, [rec]);
     return true;
   }
 
   for (const fact of program.facts) {
-    addFact(fact.name, fact.terms, 'given', []);
-    output.initialFacts.push(`${fact.name}(${fact.terms.join(', ')})`);
+    addFact(fact.name, fact.terms, 'given', [], fact.cellId);
+    output.initialFacts.push({ display: `${fact.name}(${fact.terms.map(termPretty).join(', ')})`, key: fkey(fact.name, fact.terms), cellId: fact.cellId });
   }
 
-  // Build rules (auto-generated from relation properties + user rules)
+  // Build rules — auto rules use term objects
   const rules = [];
-
   for (const [name, def] of program.relations) {
     if (def.props.has('symmetric')) {
-      const r = {
-        name: `${name}_symmetry`,
-        premises: [{ name, terms: ['?x', '?y'] }],
-        conclusions: [{ name, terms: ['?y', '?x'] }],
-        auto: true,
-      };
-      rules.push(r);
-      output.autoRules.push(r);
+      const r = { name: `${name}_symmetry`,
+        premises: [{ name, terms: [{var:'x'}, {var:'y'}] }],
+        conclusions: [{ name, terms: [{var:'y'}, {var:'x'}] }], auto: true };
+      rules.push(r); output.autoRules.push(r);
     }
     if (def.props.has('transitive')) {
-      const r = {
-        name: `${name}_transitivity`,
-        premises: [{ name, terms: ['?x', '?y'] }, { name, terms: ['?y', '?z'] }],
-        conclusions: [{ name, terms: ['?x', '?z'] }],
-        auto: true,
-      };
-      rules.push(r);
-      output.autoRules.push(r);
+      const r = { name: `${name}_transitivity`,
+        premises: [{ name, terms: [{var:'x'}, {var:'y'}] }, { name, terms: [{var:'y'}, {var:'z'}] }],
+        conclusions: [{ name, terms: [{var:'x'}, {var:'z'}] }], auto: true };
+      rules.push(r); output.autoRules.push(r);
     }
   }
-
   for (const rule of program.rules) {
     const r = { ...rule, auto: false };
-    rules.push(r);
-    output.userRules.push(r);
+    rules.push(r); output.userRules.push(r);
   }
 
-  // Compute closure (triggered by derive or prove)
+  // Compute closure
   const needsClosure = program.derives.length > 0 || program.proves.length > 0;
   if (needsClosure) {
     const maxRounds = program.derives.length > 0 ? program.derives[0].maxRounds : 100;
     const initialCount = factSet.size;
 
-    // Reflexivity: R(t, t) for each reflexive relation
+    // Reflexivity: only for declared atoms
     for (const [rname, rdef] of program.relations) {
       if (!rdef.props.has('reflexive') || rdef.arity !== 2) continue;
       for (const c of allElements) {
-        if (typeCheck(rname, [c, c])) {
-          addFact(rname, [c, c], `${rname}_reflexivity`, []);
-        }
+        if (c === 'element') continue;
+        const t = { atom: c };
+        if (typeCheck(rname, [t, t])) addFact(rname, [t, t], `${rname}_reflexivity`, []);
       }
     }
 
-    let rounds = 0;
-    let saturated = false;
-
+    let rounds = 0, saturated = false;
     for (let round = 0; round < maxRounds; round++) {
       rounds++;
       let changed = false;
 
-      // Apply rules
       for (const rule of rules) {
         const matches = matchPremises(rule.premises, 0, {}, [], factObjs);
         for (const match of matches) {
           for (const conc of rule.conclusions) {
-            const terms = conc.terms.map(t => t.startsWith('?') ? (match.sub[t] || t) : t);
-            if (terms.every(t => allElements.has(t)) && typeCheck(conc.name, terms)) {
+            const terms = [];
+            let valid = true;
+            for (const t of conc.terms) {
+              const result = termSubstitute(t, match.sub);
+              if (!result || !termIsGround(result)) { valid = false; break; }
+              if (termDepth(result) > maxDepth) { valid = false; break; }
+              terms.push(result);
+            }
+            if (valid && typeCheck(conc.name, terms)) {
               if (addFact(conc.name, terms, rule.name, match.keys)) changed = true;
             }
           }
@@ -933,14 +2476,13 @@ function execute(program) {
         if (factSet.size >= MAX_FACTS) break;
       }
 
-      // Congruence
+      // Congruence: structural replacement
       for (const [rname, rdef] of program.relations) {
         if (!rdef.props.has('congruent') || rdef.arity !== 2) continue;
         const pairs = [];
         for (const f of factObjs) {
-          if (f.name === rname && f.terms.length === 2 && f.terms[0] !== f.terms[1]) {
+          if (f.name === rname && f.terms.length === 2 && !termEquals(f.terms[0], f.terms[1]))
             pairs.push([f.terms[0], f.terms[1]]);
-          }
         }
         const snapshot = factObjs.length;
         for (const [a, b] of pairs) {
@@ -948,15 +2490,19 @@ function execute(program) {
           for (let fi = 0; fi < snapshot; fi++) {
             const fact = factObjs[fi];
             if (fact.terms.length < 2) continue;
-            if (fact.terms.includes(a)) {
-              const newTerms = fact.terms.map(t => t === a ? b : t);
-              const srcKey = fkey(fact.name, fact.terms);
-              if (typeCheck(fact.name, newTerms) && addFact(fact.name, newTerms, `${rname}_congruence`, [eqKey, srcKey])) changed = true;
+            if (fact.terms.some(t => termContains(t, a))) {
+              const nt = fact.terms.map(t => termReplaceAll(t, a, b));
+              if (nt.every(t => termDepth(t) <= maxDepth)) {
+                const sk = fkey(fact.name, fact.terms);
+                if (typeCheck(fact.name, nt) && addFact(fact.name, nt, `${rname}_congruence`, [eqKey, sk])) changed = true;
+              }
             }
-            if (fact.terms.includes(b)) {
-              const newTerms = fact.terms.map(t => t === b ? a : t);
-              const srcKey = fkey(fact.name, fact.terms);
-              if (typeCheck(fact.name, newTerms) && addFact(fact.name, newTerms, `${rname}_congruence`, [eqKey, srcKey])) changed = true;
+            if (fact.terms.some(t => termContains(t, b))) {
+              const nt = fact.terms.map(t => termReplaceAll(t, b, a));
+              if (nt.every(t => termDepth(t) <= maxDepth)) {
+                const sk = fkey(fact.name, fact.terms);
+                if (typeCheck(fact.name, nt) && addFact(fact.name, nt, `${rname}_congruence`, [eqKey, sk])) changed = true;
+              }
             }
           }
           if (factSet.size >= MAX_FACTS) break;
@@ -971,34 +2517,25 @@ function execute(program) {
     }
 
     const derived = factObjs.slice(initialCount);
-
-    // Only show derived facts list when derive is explicit
     if (program.derives.length > 0) {
-      for (const d of derived) {
-        output.derivedFacts.push(`${d.name}(${d.terms.join(', ')})`);
-      }
+      for (const d of derived) output.derivedFacts.push({ display: `${d.name}(${d.terms.map(termPretty).join(', ')})`, key: fkey(d.name, d.terms) });
     }
-
-    output.stats = {
-      rounds,
-      totalFacts: factSet.size,
-      derived: derived.length,
-      saturated,
-      capped: factSet.size >= MAX_FACTS,
-    };
+    output.stats = { rounds, totalFacts: factSet.size, derived: derived.length, saturated, capped: factSet.size >= MAX_FACTS };
   }
 
-  // Process prove goals — build proof trees
   for (const goal of program.proves) {
     const key = fkey(goal.name, goal.terms);
     const found = factSet.has(key);
-    const proof = {
-      goal: `${goal.name}(${goal.terms.join(', ')})`,
+    output.proofs.push({
+      goal: `${goal.name}(${goal.terms.map(termPretty).join(', ')})`,
       found,
       tree: found ? buildProofTree(key, provenance) : null,
-    };
-    output.proofs.push(proof);
+      line: goal.line,
+    });
   }
+
+  output.deriveLines = program.derives.map(d => d.line);
+  output.provenance = provenance;
 
   return output;
 }
@@ -1008,26 +2545,16 @@ function matchPremises(premises, idx, sub, keys, factObjs) {
   const prem = premises[idx];
   const results = [];
   for (const fact of factObjs) {
-    if (fact.name !== prem.name) continue;
-    if (fact.terms.length !== prem.terms.length) continue;
+    if (fact.name !== prem.name || fact.terms.length !== prem.terms.length) continue;
     const newSub = { ...sub };
     let ok = true;
     for (let i = 0; i < prem.terms.length; i++) {
-      const pt = prem.terms[i];
-      if (pt.startsWith('?')) {
-        if (pt in newSub) {
-          if (newSub[pt] !== fact.terms[i]) { ok = false; break; }
-        } else {
-          newSub[pt] = fact.terms[i];
-        }
-      } else {
-        if (pt !== fact.terms[i]) { ok = false; break; }
-      }
+      if (!termMatch(prem.terms[i], fact.terms[i], newSub)) { ok = false; break; }
     }
     if (ok) {
-      const fk = `${fact.name}(${fact.terms.join(',')})`;
-      const sub_results = matchPremises(premises, idx + 1, newSub, [...keys, fk], factObjs);
-      for (const r of sub_results) results.push(r);
+      const fk = `${fact.name}(${fact.terms.map(termStr).join(',')})`;
+      const r = matchPremises(premises, idx + 1, newSub, [...keys, fk], factObjs);
+      for (const x of r) results.push(x);
       if (results.length > 50000) break;
     }
   }
@@ -1038,101 +2565,947 @@ function buildProofTree(key, provenance, visited) {
   if (!visited) visited = new Set();
   if (visited.has(key)) return { fact: key, rule: 'circular', children: [] };
   visited.add(key);
-  const prov = provenance.get(key);
-  if (!prov) return { fact: key, rule: '?', children: [] };
-  if (prov.rule === 'given') return { fact: key, rule: 'given', children: [] };
-  const children = prov.premises.map(pk =>
-    buildProofTree(pk, provenance, new Set(visited))
-  );
-  return { fact: key, rule: prov.rule, children };
+  const arr = provenance.get(key);
+  if (!arr || arr.length === 0) return { fact: key, rule: '?', children: [] };
+  const prov = arr[0]; // use primary (first) derivation
+  if (prov.rule === 'given') {
+    return { fact: key, rule: 'given', children: [], cellId: prov.cellId, altCount: arr.length - 1 };
+  }
+  return { fact: key, rule: prov.rule, altCount: arr.length - 1,
+    children: prov.premises.map(pk => buildProofTree(pk, provenance, new Set(visited))) };
 }
 
 // ===============================================================
-//  Rendering
+//  Rendering helpers
 // ===============================================================
 
 function esc(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 }
 
-function renderOutput(output) {
-  const el = document.getElementById('output');
-  let html = '';
+function highlightMatch(text, query) {
+  if (!query) return esc(text);
+  const escaped = esc(text);
+  const qi = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp(`(${qi})`, 'gi'), '<span class="search-match">$1</span>');
+}
 
-  // Errors
-  if (output.errors.length > 0) {
-    html += '<div class="out-section">';
-    for (const err of output.errors) {
-      const lineRef = err.line ? `<span class="line-ref">line ${err.line}:</span> ` : '';
-      html += `<div class="out-error">${lineRef}${esc(err.message)}</div>`;
+function renderProofTree(node, linePrefix, contPrefix) {
+  const pretty = node.fact.replace(/,/g, ', ');
+  let ruleLabel;
+  if (node.rule === 'given') {
+    const cellIdx = node.cellId ? (cellIndexMap[node.cellId] || '?') : null;
+    const cellTag = cellIdx ? ` <span class="cell-tag">[${cellIdx}]</span>` : '';
+    ruleLabel = `<span class="proof-given">given${cellTag}</span>`;
+  } else {
+    ruleLabel = `<span class="proof-rule">${esc(node.rule)}</span>`;
+  }
+  const alt = node.altCount > 0 ? ` <span class="cell-tag">+${node.altCount}</span>` : '';
+  let html = `<div class="proof-node"><span class="proof-prefix">${esc(linePrefix)}</span><span class="proof-fact">${esc(pretty)}</span> \u2190 ${ruleLabel}${alt}</div>`;
+  for (let i = 0; i < node.children.length; i++) {
+    const isLast = i === node.children.length - 1;
+    html += renderProofTree(node.children[i],
+      contPrefix + (isLast ? '\u2514\u2500\u2500 ' : '\u251C\u2500\u2500 '),
+      contPrefix + (isLast ? '    ' : '\u2502   '));
+  }
+  return html;
+}
+
+// ===============================================================
+//  Syntax Highlighting
+// ===============================================================
+
+const DSL_KEYWORDS = ['derive', 'prove', 'depth'];
+const DSL_PROPS = ['reflexive', 'symmetric', 'transitive', 'congruent', 'equivalence'];
+
+function highlightSyntax(source) {
+  const lines = source.split('\n');
+  return lines.map(line => highlightLine(line)).join('\n');
+}
+
+function highlightLine(line) {
+  // Comment
+  const commentIdx = line.indexOf('#');
+  let code = line, commentHtml = '';
+  if (commentIdx >= 0) {
+    code = line.slice(0, commentIdx);
+    commentHtml = '<span class="hl-comment">' + esc(line.slice(commentIdx)) + '</span>';
+  }
+
+  if (!code.trim()) return esc(code) + commentHtml;
+
+  const trimmed = code.trim();
+  const leadingSpace = code.slice(0, code.length - code.trimStart().length);
+
+  // All declarations: <keyword> ...
+  if (trimmed.startsWith('<')) {
+    const close = trimmed.indexOf('>');
+    if (close > 0) {
+      const keyword = trimmed.slice(1, close);
+      const rest = trimmed.slice(close + 1);
+      const kw = keyword.toLowerCase();
+      const prefix = esc(leadingSpace) + '&lt;<span class="hl-keyword">' + esc(keyword) + '</span>&gt;';
+
+      // <rel> / <relation>: relation schema
+      if (kw === 'rel' || kw === 'relation') {
+        const colonIdx = rest.indexOf(':');
+        const schema = colonIdx >= 0 ? rest.slice(0, colonIdx) : rest;
+        const propsStr = colonIdx >= 0 ? rest.slice(colonIdx + 1) : '';
+        let html = prefix;
+        const sm = schema.trim().match(/^([a-zA-Z_]\w*)(\/\d+)$/);
+        if (sm) {
+          html += ' <span class="hl-relname">' + esc(sm[1]) + '</span><span class="hl-punct">' + esc(sm[2]) + '</span>';
+        } else {
+          html += esc(schema);
+        }
+        if (colonIdx >= 0) {
+          html += '<span class="hl-punct"> : </span>';
+          html += propsStr.split(/([,\s]+)/).map(s => {
+            const t = s.trim().toLowerCase();
+            if (DSL_PROPS.includes(t)) return '<span class="hl-prop">' + esc(s) + '</span>';
+            if (s.trim() && /^[a-zA-Z_]\w*$/.test(s.trim())) return '<span class="hl-container">' + esc(s) + '</span>';
+            return esc(s);
+          }).join('');
+        }
+        return html + commentHtml;
+      }
+
+      // <rule>: rule declaration
+      if (kw === 'rule') {
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx >= 0) {
+          const rname = rest.slice(0, colonIdx).trim();
+          const body = rest.slice(colonIdx + 1);
+          const turnstile = body.indexOf('|-');
+          let html = prefix + ' <span class="hl-rulename">' + esc(rname) + '</span><span class="hl-punct">:</span>';
+          if (turnstile >= 0) {
+            html += highlightAtoms(body.slice(0, turnstile));
+            html += ' <span class="hl-punct">|-</span>';
+            html += highlightAtoms(body.slice(turnstile + 2));
+          } else {
+            html += highlightAtoms(body);
+          }
+          return html + commentHtml;
+        }
+        return prefix + esc(rest) + commentHtml;
+      }
+
+      // <element> / <ele> / <Container>: element declaration
+      const elems = rest.split(/([,\s]+)/).map(s =>
+        s.trim() && /^[a-zA-Z_]\w*$/.test(s.trim())
+          ? '<span class="hl-element">' + esc(s) + '</span>'
+          : esc(s)
+      ).join('');
+      return prefix + elems + commentHtml;
     }
-    html += '</div>';
-    el.innerHTML = html;
+  }
+
+  // derive / derive N
+  if (trimmed === 'derive' || trimmed.startsWith('derive ')) {
+    const rest = trimmed.slice(6).trim();
+    let html = esc(leadingSpace) + '<span class="hl-keyword">derive</span>';
+    if (rest) html += ' <span class="hl-number">' + esc(rest) + '</span>';
+    return html + commentHtml;
+  }
+
+  // depth N
+  if (trimmed.startsWith('depth ')) {
+    const rest = trimmed.slice(6).trim();
+    return esc(leadingSpace) + '<span class="hl-keyword">depth</span> <span class="hl-number">' + esc(rest) + '</span>' + commentHtml;
+  }
+
+  // prove rel(...)
+  if (trimmed.startsWith('prove ')) {
+    return esc(leadingSpace) + '<span class="hl-keyword">prove</span>' + highlightAtoms(trimmed.slice(5)) + commentHtml;
+  }
+
+  // Bare fact: name(terms...)
+  const paren = trimmed.indexOf('(');
+  if (paren > 0 && trimmed.endsWith(')')) {
+    return esc(leadingSpace) + highlightAtoms(trimmed) + commentHtml;
+  }
+
+  return esc(code) + commentHtml;
+}
+
+function highlightAtoms(str) {
+  // Highlight relation names, variables, elements, punctuation
+  let result = '';
+  let i = 0;
+  while (i < str.length) {
+    if (str[i] === '?' && i + 1 < str.length && /[a-zA-Z_]/.test(str[i + 1])) {
+      let j = i + 1;
+      while (j < str.length && /\w/.test(str[j])) j++;
+      result += '<span class="hl-variable">' + esc(str.slice(i, j)) + '</span>';
+      i = j;
+    } else if (/[a-zA-Z_]/.test(str[i])) {
+      let j = i;
+      while (j < str.length && /\w/.test(str[j])) j++;
+      const word = str.slice(i, j);
+      // If followed by '(', it's a relation/function name
+      if (j < str.length && str[j] === '(') {
+        result += '<span class="hl-relname">' + esc(word) + '</span>';
+      } else {
+        result += '<span class="hl-element">' + esc(word) + '</span>';
+      }
+      i = j;
+    } else if ('(),'.includes(str[i])) {
+      result += '<span class="hl-punct">' + esc(str[i]) + '</span>';
+      i++;
+    } else if (str[i] === '|' && i + 1 < str.length && str[i + 1] === '-') {
+      result += '<span class="hl-punct">|-</span>';
+      i += 2;
+    } else {
+      result += esc(str[i]);
+      i++;
+    }
+  }
+  return result;
+}
+
+// ===============================================================
+//  Autocomplete
+// ===============================================================
+
+let acState = null; // { cellId, dropdown, items, selectedIdx }
+
+function getACContext(editor) {
+  const pos = editor.selectionStart;
+  const text = editor.value;
+  // Find the current line
+  const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+  const lineText = text.slice(lineStart, pos);
+  const fullLine = text.slice(lineStart, text.indexOf('\n', pos) < 0 ? text.length : text.indexOf('\n', pos));
+
+  // Check if we're inside a <...> bracket context
+  const angleBracket = lineText.match(/<([a-zA-Z_]\w*)?$/);
+  if (angleBracket) {
+    const prefix = angleBracket[1] || '';
+    const wordStart = pos - prefix.length;
+    return { lineText, fullLine, prefix, wordStart, pos, inAngleBracket: true };
+  }
+
+  // Find current word (token being typed)
+  const wordMatch = lineText.match(/([a-zA-Z_?]\w*)$/);
+  const prefix = wordMatch ? wordMatch[1] : '';
+  const wordStart = wordMatch ? pos - prefix.length : pos;
+
+  return { lineText, fullLine, prefix, wordStart, pos, inAngleBracket: false };
+}
+
+function collectCompletions(cellId, inAngleBracket) {
+  const items = [];
+  const seen = new Set();
+
+  function addItem(label, kind) {
+    if (!seen.has(label)) { seen.add(label); items.push({ label, kind }); }
+  }
+
+  if (inAngleBracket) {
+    // Inside <...>: suggest declaration keywords and declared containers
+    addItem('element', 'keyword');
+    addItem('ele', 'keyword');
+    addItem('rel', 'keyword');
+    addItem('relation', 'keyword');
+    addItem('rule', 'keyword');
+    // Also suggest user-declared containers
+    for (const cell of cells) {
+      if (cell.type !== 'code') continue;
+      const src = cell.source || '';
+      for (const m of src.matchAll(/<([a-zA-Z_]\w*)>\s*(.+)/g)) {
+        const kw = m[1].toLowerCase();
+        if (!['element','ele','rel','relation','rule'].includes(kw)) {
+          addItem(m[1], 'container');
+        }
+      }
+    }
+    return items;
+  }
+
+  // Normal mode: DSL keywords + declared names
+  for (const kw of DSL_KEYWORDS) addItem(kw, 'keyword');
+  for (const p of DSL_PROPS) addItem(p, 'property');
+
+  for (const cell of cells) {
+    if (cell.type !== 'code') continue;
+    const src = cell.source || '';
+    // Scan for declared elements
+    for (const m of src.matchAll(/<([a-zA-Z_]\w*)>\s*(.+)/g)) {
+      addItem(resolveContainerAlias(m[1]), 'container');
+      for (const e of m[2].split(/[,\s]+/).filter(s => s && /^[a-zA-Z_]\w*$/.test(s))) {
+        addItem(e, 'element');
+      }
+    }
+    // Scan for declared relations: <rel> name/arity or <relation> name/arity
+    for (const m of src.matchAll(/<(?:rel|relation)>\s*([a-zA-Z_]\w*)\/(\d+)/gi)) {
+      addItem(m[1], 'relation');
+    }
+    // Scan for rule names: <rule> name: ...
+    for (const m of src.matchAll(/<rule>\s*([a-zA-Z_]\w*)\s*:/gi)) {
+      addItem(m[1], 'rule');
+    }
+  }
+
+  return items;
+}
+
+function showAutocomplete(editor, cellId) {
+  const ctx = getACContext(editor);
+  // In angle bracket mode, allow empty prefix (just typed '<')
+  if (!ctx.inAngleBracket && (!ctx.prefix || ctx.prefix.length < 1)) { hideAutocomplete(); return; }
+
+  // Don't show in comments
+  const commentIdx = ctx.lineText.indexOf('#');
+  if (commentIdx >= 0 && ctx.pos - (ctx.pos - ctx.lineText.length) >= commentIdx) { hideAutocomplete(); return; }
+
+  const all = collectCompletions(cellId, ctx.inAngleBracket);
+  const pfx = ctx.prefix.toLowerCase();
+
+  // Don't autocomplete if prefix starts with ? (variables)
+  if (pfx.startsWith('?')) { hideAutocomplete(); return; }
+
+  const filtered = pfx.length === 0
+    ? all  // Show all items when prefix is empty (angle bracket mode)
+    : all.filter(item => item.label.toLowerCase().startsWith(pfx) && item.label !== ctx.prefix);
+  if (filtered.length === 0) { hideAutocomplete(); return; }
+
+  // Position dropdown
+  let dropdown;
+  if (acState && acState.cellId === cellId) {
+    dropdown = acState.dropdown;
+  } else {
+    hideAutocomplete();
+    dropdown = document.createElement('div');
+    dropdown.className = 'ac-dropdown';
+    document.body.appendChild(dropdown);
+  }
+
+  acState = { cellId, dropdown, items: filtered, selectedIdx: 0, wordStart: ctx.wordStart, prefix: ctx.prefix, editor };
+
+  renderDropdown();
+}
+
+function renderDropdown() {
+  if (!acState) return;
+  const { dropdown, items, selectedIdx } = acState;
+  dropdown.innerHTML = items.slice(0, 12).map((item, i) => {
+    const cls = i === selectedIdx ? 'ac-item selected' : 'ac-item';
+    const kindLabel = item.kind === 'keyword' ? 'kw' : item.kind === 'property' ? 'prop' : item.kind;
+    return `<div class="${cls}" data-idx="${i}">${esc(item.label)}<span class="ac-kind">${kindLabel}</span></div>`;
+  }).join('');
+
+  // Position based on cursor
+  const editor = acState.editor;
+  const coords = getCaretCoordinates(editor);
+  dropdown.style.left = coords.left;
+  dropdown.style.top = coords.top;
+
+  // Click handlers
+  dropdown.querySelectorAll('.ac-item').forEach(el => {
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      acState.selectedIdx = parseInt(el.dataset.idx);
+      acceptAutocomplete();
+    });
+  });
+}
+
+function getCaretCoordinates(editor) {
+  const rect = editor.getBoundingClientRect();
+  const text = editor.value.slice(0, editor.selectionStart);
+  const lines = text.split('\n');
+  const lineIdx = lines.length - 1;
+  const colIdx = lines[lineIdx].length;
+  const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 22;
+  const charWidth = 7.8; // approximate for monospace 13px
+  const padTop = parseFloat(getComputedStyle(editor).paddingTop) || 8;
+  const padLeft = parseFloat(getComputedStyle(editor).paddingLeft) || 12;
+  return {
+    top: rect.top + padTop + (lineIdx + 1) * lineHeight + 2 + 'px',
+    left: rect.left + padLeft + colIdx * charWidth + 'px',
+  };
+}
+
+function hideAutocomplete() {
+  if (acState) {
+    if (acState.dropdown.parentNode) acState.dropdown.remove();
+    acState = null;
+  }
+}
+
+function acceptAutocomplete() {
+  if (!acState) return;
+  const item = acState.items[acState.selectedIdx];
+  if (!item) return;
+  const editor = acState.editor;
+  const cell = cells.find(c => c.id === acState.cellId);
+  const before = editor.value.slice(0, acState.wordStart);
+  const after = editor.value.slice(editor.selectionStart);
+  let insert = item.label;
+  // Add suffix for certain types
+  if (item.kind === 'keyword') insert = item.label + ' ';
+  else if (item.kind === 'relation') insert = item.label + '(';
+
+  editor.value = before + insert + after;
+  const newPos = before.length + insert.length;
+  editor.selectionStart = editor.selectionEnd = newPos;
+  if (cell) cell.source = editor.value;
+  const cid = acState.cellId;
+  hideAutocomplete();
+  updateHighlight(editor, cid);
+  autoResize(editor);
+}
+
+function handleACKeydown(e) {
+  if (!acState) return false;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    acState.selectedIdx = Math.min(acState.selectedIdx + 1, Math.min(acState.items.length, 12) - 1);
+    renderDropdown();
+    return true;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    acState.selectedIdx = Math.max(acState.selectedIdx - 1, 0);
+    renderDropdown();
+    return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    if (acState.items.length > 0) {
+      e.preventDefault();
+      acceptAutocomplete();
+      return true;
+    }
+  }
+  if (e.key === 'Escape') {
+    hideAutocomplete();
+    return true;
+  }
+  return false;
+}
+
+// ===============================================================
+//  Highlight Sync
+// ===============================================================
+
+function updateHighlight(editor, cellId) {
+  const pre = document.getElementById(`cell-hl-${cellId}`);
+  if (!pre) return;
+  // Add trailing newline so pre height matches textarea
+  pre.innerHTML = highlightSyntax(editor.value) + '\n';
+}
+
+// ===============================================================
+//  Notebook State — Multi-tab
+// ===============================================================
+
+let tabs = [];       // array of tab objects
+let currentTab = -1; // index into tabs
+
+// Active tab state (loaded from current tab)
+let cells = [];
+let nextCellId = 1;
+let globalProvenance = null;
+let cellIndexMap = {};
+let panelOpen = false;
+let lastClosureStats = null;
+let retractions = new Set();
+
+function makeTab(name) {
+  return {
+    name: name || 'untitled',
+    cells: [],
+    nextCellId: 1,
+    retractions: new Set(),
+    undoStack: [],
+    globalProvenance: null,
+    lastClosureStats: null,
+    dirty: false,
+    readOnly: false,
+    wsPath: null,   // workspace path for saving back to localStorage
+  };
+}
+
+function markDirty() {
+  if (currentTab >= 0 && currentTab < tabs.length && !tabs[currentTab].readOnly) {
+    tabs[currentTab].dirty = true;
+    renderTabBar();
+  }
+}
+
+function saveTabState() {
+  if (currentTab < 0 || currentTab >= tabs.length) return;
+  const tab = tabs[currentTab];
+  // Save output HTML onto cells before storing
+  for (const cell of cells) {
+    const outEl = document.getElementById(`cell-output-${cell.id}`);
+    if (outEl) cell._savedOutput = outEl.innerHTML;
+  }
+  tab.cells = cells;
+  tab.nextCellId = nextCellId;
+  tab.retractions = retractions;
+  tab.globalProvenance = globalProvenance;
+  tab.lastClosureStats = lastClosureStats;
+}
+
+function loadTabState(idx) {
+  const tab = tabs[idx];
+  currentTab = idx;
+  cells = tab.cells;
+  nextCellId = tab.nextCellId;
+  retractions = tab.retractions;
+  globalProvenance = tab.globalProvenance;
+  lastClosureStats = tab.lastClosureStats;
+  hideWorkspace();
+  renderNotebook();
+  updateStatus(lastClosureStats);
+  renderPanel();
+  document.getElementById('run-time').textContent = '';
+  // Hide add-final bar for read-only tabs
+  const addFinal = document.getElementById('add-final');
+  if (addFinal) addFinal.style.display = tab.readOnly ? 'none' : '';
+}
+
+function switchTab(idx) {
+  if (idx === currentTab) return;
+  if (currentTab >= 0) saveTabState();
+  loadTabState(idx);
+  renderTabBar();
+}
+
+function newTab(name) {
+  saveTabState();
+  const tab = makeTab(name);
+  tab.cells = [createCellRaw('')];
+  tab.nextCellId = 2;
+  tabs.push(tab);
+  loadTabState(tabs.length - 1);
+  renderTabBar();
+}
+
+async function newWorkspaceTab(name, folder) {
+  const fullName = name.endsWith('.relnb') ? name : name + '.relnb';
+  const fullPath = folder ? folder + '/' + fullName : fullName;
+  saveTabState();
+  const tab = makeTab(fullName.replace(/\.relnb$/i, ''));
+  tab.cells = [createCellRaw('')];
+  tab.nextCellId = 2;
+  tab.wsPath = fullPath;
+  tabs.push(tab);
+  await wsWrite(fullPath, { version: 1, cells: [{ type: 'code', source: '' }] });
+  loadTabState(tabs.length - 1);
+  renderTabBar();
+}
+
+async function closeTab(idx) {
+  saveTabState();
+  const tab = tabs[idx];
+  if (tab.dirty) {
+    const choice = confirm(`"${tab.name}" has unsaved changes.\n\nPress OK to save before closing, or Cancel to discard.`);
+    if (choice) {
+      if (idx !== currentTab) {
+        loadTabState(idx);
+        renderTabBar();
+      }
+      await saveToWorkspace();
+      tab.dirty = false;
+    }
+  }
+  tabs.splice(idx, 1);
+  if (tabs.length === 0) {
+    currentTab = -1;
+    cells = [];
+    nextCellId = 1;
+    retractions = new Set();
+    globalProvenance = null;
+    lastClosureStats = null;
+    await showWorkspace();
+    renderTabBar();
+    return;
+  }
+  if (idx === currentTab) {
+    // Closed the active tab — pick neighbor or workspace
+    if (idx < tabs.length) { loadTabState(idx); }
+    else { loadTabState(tabs.length - 1); }
+  } else if (idx < currentTab) {
+    currentTab--;
+  }
+  renderTabBar();
+}
+
+// Create cell without using global nextCellId (for tab init)
+function createCellRaw(source, type) {
+  return {
+    id: 1,
+    type: type || 'code',
+    source: source || '',
+    state: 'idle',
+    parsed: null,
+    lastSource: '',
+  };
+}
+
+function renderTabBar() {
+  const bar = document.getElementById('tab-bar');
+  if (!bar) return;
+  // Workspace tab (always first, not closable)
+  const wsActive = currentTab === -1 ? ' active' : '';
+  let html = `<div class="tab${wsActive}" onclick="switchToWorkspace()"><span>Workspace</span></div>`;
+  html += tabs.map((tab, i) => {
+    const active = i === currentTab ? ' active' : '';
+    const name = esc(tab.name);
+    const dot = tab.dirty ? '<span class="tab-dirty">\u00b7</span>' : '';
+    const ro = tab.readOnly ? '<span class="tab-readonly">[RO]</span>' : '';
+    const closeBtn = `<button class="tab-close" onclick="event.stopPropagation();closeTab(${i})">&times;</button>`;
+    return `<div class="tab${active}" onclick="switchTab(${i})" title="${name}"><span>${name}</span>${ro}${dot}${closeBtn}</div>`;
+  }).join('');
+  bar.innerHTML = html;
+}
+
+// ── Cell-level undo stack ────────────────────────────────────
+const MAX_UNDO = 30;
+
+function currentUndoStack() {
+  if (currentTab >= 0 && currentTab < tabs.length) return tabs[currentTab].undoStack;
+  return [];
+}
+
+function snapshotCells() {
+  return JSON.stringify(cells.map(c => ({
+    id: c.id, type: c.type, source: c.source,
+    state: c.state, lastSource: c.lastSource,
+  })));
+}
+
+function pushUndo() {
+  const stack = currentUndoStack();
+  stack.push({ cells: snapshotCells(), nextCellId });
+  if (stack.length > MAX_UNDO) stack.shift();
+}
+
+function popUndo() {
+  const stack = currentUndoStack();
+  if (stack.length === 0) return false;
+  const snap = stack.pop();
+  const restored = JSON.parse(snap.cells);
+  cells = restored.map(c => ({
+    id: c.id, type: c.type, source: c.source,
+    state: c.state === 'active' ? 'idle' : c.state,
+    parsed: null, lastSource: c.lastSource,
+  }));
+  nextCellId = snap.nextCellId;
+  lastClosureStats = null;
+  updateStatus(null);
+  renderNotebook();
+  if (panelOpen) renderPanel();
+  return true;
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) return;
+    if (popUndo()) e.preventDefault();
+  }
+});
+
+function createCell(source, type) {
+  return {
+    id: nextCellId++,
+    type: type || 'code', // 'code' | 'md'
+    source: source || '',
+    state: 'idle',       // 'idle' | 'active' | 'stale' | 'error'
+    parsed: null,        // parsed program (when active)
+    lastSource: '',      // source at time of last activation
+  };
+}
+
+function togglePanel() {
+  panelOpen = !panelOpen;
+  const panel = document.getElementById('panel');
+  panel.className = panelOpen ? 'expanded' : 'collapsed';
+  document.getElementById('panel-arrow').innerHTML = panelOpen ? '&#9660;' : '&#9650;';
+  document.getElementById('app').style.paddingBottom = panelOpen ? 'calc(40vh + 40px)' : '';
+  if (panelOpen) renderPanel();
+}
+
+function toggleFactTree(el, factKey) {
+  const existing = el.querySelector('.fact-tree');
+  if (existing) { existing.remove(); return; }
+  if (!globalProvenance) return;
+  const tree = buildProofTree(factKey, globalProvenance);
+  const div = document.createElement('div');
+  div.className = 'fact-tree';
+  div.innerHTML = renderProofTree(tree, '', '');
+  div.onclick = e => e.stopPropagation();
+  el.appendChild(div);
+}
+
+function isRetracted(type, key) {
+  return retractions.has(`${type}:${key}`);
+}
+
+function retractFromKB(type, key) {
+  retractions.add(`${type}:${key}`);
+  lastClosureStats = null;
+  updateStatus(null);
+  if (panelOpen) renderPanel();
+}
+
+function restoreToKB(type, key) {
+  retractions.delete(`${type}:${key}`);
+  lastClosureStats = null;
+  updateStatus(null);
+  if (panelOpen) renderPanel();
+}
+
+function clearRetractions() {
+  if (retractions.size === 0) return;
+  retractions.clear();
+  lastClosureStats = null;
+  updateStatus(null);
+  if (panelOpen) renderPanel();
+}
+
+// ===============================================================
+//  Knowledge Base — merge active cells
+// ===============================================================
+
+function buildMergedProgram(activatingCellId, { applyRetractions: doRetract = true } = {}) {
+  const program = {
+    elements: new Set(['element']),
+    membership: new Map([['element', new Set(['element'])]]),
+    relations: new Map(),
+    rules: [],
+    facts: [],
+    derives: [],
+    proves: [],
+    errors: [],
+    maxDepth: 10,
+  };
+
+  for (const cell of cells) {
+    if (cell.type !== 'code') continue;
+    let parsed;
+    if (cell.id === activatingCellId) {
+      parsed = cell._pending;
+    } else if (cell.state === 'active' && cell.parsed) {
+      parsed = cell.parsed;
+    } else {
+      continue;
+    }
+
+    // Merge elements & membership
+    for (const e of parsed.elements) {
+      if (e === 'element') continue;
+      if (!program.elements.has(e)) {
+        program.elements.add(e);
+        program.membership.set(e, new Set(['element']));
+      }
+    }
+    for (const [child, containers] of parsed.membership) {
+      if (child === 'element') continue;
+      if (!program.membership.has(child)) {
+        program.membership.set(child, new Set(['element']));
+      }
+      for (const c of containers) {
+        program.membership.get(child).add(c);
+      }
+    }
+
+    for (const [name, def] of parsed.relations) {
+      if (doRetract && isRetracted('rel', name)) continue;
+      program.relations.set(name, def);
+    }
+
+    for (const rule of parsed.rules) {
+      if (doRetract && isRetracted('rule', rule.name)) continue;
+      program.rules.push({ ...rule, cellId: cell.id });
+    }
+
+    for (const fact of parsed.facts) {
+      const fk = `${fact.name}(${fact.terms.map(termStr).join(',')})`;
+      if (doRetract && isRetracted('fact', fk)) continue;
+      program.facts.push({ ...fact, cellId: cell.id });
+    }
+
+    // Only include queries from the activating cell
+    if (cell.id === activatingCellId) {
+      program.derives.push(...parsed.derives);
+      program.proves.push(...parsed.proves);
+    }
+
+    if (parsed.maxDepth !== 10) {
+      program.maxDepth = parsed.maxDepth;
+    }
+  }
+
+  return program;
+}
+
+// ===============================================================
+//  Cell Activation
+// ===============================================================
+
+function activateCell(cellId) {
+  const cell = cells.find(c => c.id === cellId);
+  if (!cell || cell.type !== 'code') return;
+
+  const t0 = performance.now();
+
+  // Parse this cell
+  const parsed = parse(cell.source);
+  if (parsed.errors.length > 0) {
+    cell.state = 'error';
+    cell.parsed = null;
+    showCellErrors(cell.id, parsed.errors);
+    updateCellVisual(cell.id);
     return;
   }
 
-  // Declarations
-  if (output.declarations.length > 0) {
-    html += '<div class="out-section"><div class="out-section-title">Declarations</div>';
-    for (const d of output.declarations) {
-      html += `<div class="out-decl"><span class="hl">${esc(d.text)}</span></div>`;
-    }
-    html += '</div>';
+  // Store pending parse for buildMergedProgram
+  cell._pending = parsed;
+
+  // Build merged program from all active cells + this cell
+  const merged = buildMergedProgram(cell.id);
+
+  // Build cellId → display index map
+  cellIndexMap = {};
+  cells.forEach((c, i) => { cellIndexMap[c.id] = i + 1; });
+
+  // Validate (filter out "no derive/prove" — OK for declaration cells)
+  const errors = validate(merged);
+  const realErrors = errors.filter(e => !e.message.startsWith("No 'derive'"));
+
+  if (realErrors.length > 0) {
+    cell.state = 'error';
+    cell.parsed = null;
+    delete cell._pending;
+    showCellErrors(cell.id, realErrors);
+    updateCellVisual(cell.id);
+    return;
   }
 
-  // Auto-generated rules
-  if (output.autoRules.length > 0) {
-    html += '<div class="out-section"><div class="out-section-title">Auto Rules</div>';
-    for (const r of output.autoRules) {
-      const prem = r.premises.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
-      const conc = r.conclusions.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
-      html += `<div class="out-rule">${esc(r.name)}: ${esc(prem)} |- ${esc(conc)}</div>`;
-    }
-    html += '</div>';
+  // Commit: mark cell as active
+  cell.state = 'active';
+  cell.parsed = parsed;
+  cell.lastSource = cell.source;
+  delete cell._pending;
+
+  const hasQueries = parsed.derives.length > 0 || parsed.proves.length > 0;
+
+  if (hasQueries) {
+    const output = execute(merged);
+    globalProvenance = output.provenance;
+    lastClosureStats = output.stats;
+    const elapsed = (performance.now() - t0).toFixed(1);
+    document.getElementById('run-time').textContent = `${elapsed} ms`;
+    showCellQueryOutput(cell.id, output);
+    updateStatus(output.stats);
+  } else {
+    showCellActivation(cell.id, parsed);
   }
 
-  // User rules
-  if (output.userRules.length > 0) {
-    html += '<div class="out-section"><div class="out-section-title">User Rules</div>';
-    for (const r of output.userRules) {
-      const prem = r.premises.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
-      const conc = r.conclusions.map(p => `${p.name}(${p.terms.join(', ')})`).join(', ');
-      html += `<div class="out-rule">${esc(r.name)}: ${esc(prem)} |- ${esc(conc)}</div>`;
-    }
-    html += '</div>';
-  }
+  updateCellVisual(cell.id);
+  if (panelOpen) renderPanel();
+  markDirty();
+}
 
-  // Initial facts
-  if (output.initialFacts.length > 0) {
-    html += '<div class="out-section"><div class="out-section-title">Initial Facts</div>';
-    for (const f of output.initialFacts) {
-      html += `<div class="out-fact initial">${esc(f)}</div>`;
-    }
-    html += '</div>';
+function deactivateCell(cellId) {
+  const cell = cells.find(c => c.id === cellId);
+  if (!cell || cell.state === 'idle') return;
+  cell.state = 'idle';
+  cell.parsed = null;
+  const el = document.getElementById(`cell-output-${cellId}`);
+  if (el) el.innerHTML = '';
+  updateCellVisual(cellId);
+  lastClosureStats = null;
+  updateStatus(null);
+  if (panelOpen) renderPanel();
+}
+
+// ===============================================================
+//  Cell Output Rendering
+// ===============================================================
+
+function showCellErrors(cellId, errors) {
+  const el = document.getElementById(`cell-output-${cellId}`);
+  if (!el) return;
+  let html = '<div class="cell-output-inner">';
+  for (const err of errors) {
+    html += `<div class="out-error">${esc(err.message)}</div>`;
   }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function showCellActivation(cellId, parsed) {
+  const el = document.getElementById(`cell-output-${cellId}`);
+  if (!el) return;
+  const parts = [];
+  const elemCount = parsed.elements.size - 1; // minus 'element'
+  if (elemCount > 0) parts.push(`${elemCount} element${elemCount > 1 ? 's' : ''}`);
+  if (parsed.relations.size > 0) parts.push(`${parsed.relations.size} rel`);
+  if (parsed.rules.length > 0) parts.push(`${parsed.rules.length} rule${parsed.rules.length > 1 ? 's' : ''}`);
+  if (parsed.facts.length > 0) parts.push(`${parsed.facts.length} fact${parsed.facts.length > 1 ? 's' : ''}`);
+  const summary = parts.length > 0 ? parts.join(', ') : 'empty';
+  el.innerHTML = `<div class="cell-output-inner"><div class="out-ok">\u2713 ${summary}</div></div>`;
+}
+
+function showCellQueryOutput(cellId, output) {
+  const cell = cells.find(c => c.id === cellId);
+  if (cell) cell._lastOutput = output;
+  renderCellQueryOutput(cellId, output, '');
+}
+
+function filterDeriveOutput(cellId) {
+  const cell = cells.find(c => c.id === cellId);
+  if (!cell || !cell._lastOutput) return;
+  const input = document.getElementById(`derive-search-${cellId}`);
+  const q = input ? input.value.trim().toLowerCase() : '';
+  renderCellQueryOutput(cellId, cell._lastOutput, q);
+  // Restore search value since innerHTML was replaced
+  const newInput = document.getElementById(`derive-search-${cellId}`);
+  if (newInput) { newInput.value = input.value; newInput.focus(); }
+}
+
+function renderCellQueryOutput(cellId, output, query) {
+  const el = document.getElementById(`cell-output-${cellId}`);
+  if (!el) return;
+
+  let html = '<div class="cell-output-inner">';
 
   // Derived facts
   if (output.derivedFacts.length > 0) {
-    html += `<div class="out-section"><div class="out-section-title">Derived Facts (${output.derivedFacts.length})</div>`;
-    const show = Math.min(output.derivedFacts.length, 200);
+    html += '<div class="out-section">';
+    html += `<div class="out-section-title">Derived Facts (${output.derivedFacts.length})</div>`;
+    html += `<div class="output-search-bar"><input type="text" id="derive-search-${cellId}" class="search-input" placeholder="search derived facts..." oninput="filterDeriveOutput(${cellId})"></div>`;
+    const filtered = query
+      ? output.derivedFacts.filter(f => f.display.toLowerCase().includes(query))
+      : output.derivedFacts;
+    const show = Math.min(filtered.length, 200);
     for (let i = 0; i < show; i++) {
-      html += `<div class="out-fact derived">${esc(output.derivedFacts[i])}</div>`;
+      const f = filtered[i];
+      html += `<div class="out-fact derived expandable" onclick="toggleFactTree(this,'${esc(f.key)}')">${highlightMatch(f.display, query)}</div>`;
     }
-    if (output.derivedFacts.length > show) {
-      html += `<div style="color:var(--text-dim);font-size:11px;padding-left:12px">... +${output.derivedFacts.length - show} more</div>`;
-    }
+    if (filtered.length > show)
+      html += `<div style="color:var(--text-dim);font-size:11px;padding-left:12px">... +${filtered.length - show} more</div>`;
+    if (query && filtered.length === 0)
+      html += `<div style="color:var(--text-dim);font-size:11px;padding-left:12px">no matches</div>`;
+    if (query && filtered.length < output.derivedFacts.length)
+      html += `<div style="color:var(--text-dim);font-size:11px;padding-left:12px">${filtered.length}/${output.derivedFacts.length} shown</div>`;
     html += '</div>';
+  } else if (output.stats && output.derivedFacts.length === 0) {
+    html += `<div class="out-ok">\u2713 saturated, no new facts</div>`;
   }
 
-  // Proof trees
-  if (output.proofs && output.proofs.length > 0) {
+  // Proofs
+  if (output.proofs.length > 0) {
     html += '<div class="out-section"><div class="out-section-title">Proofs</div>';
     for (const proof of output.proofs) {
       if (proof.found) {
         html += `<div class="proof-goal">${esc(proof.goal)} <span class="ok">proved</span></div>`;
-        html += '<div class="proof-tree">';
-        html += renderProofTree(proof.tree, '', '');
-        html += '</div>';
+        html += '<div class="proof-tree">' + renderProofTree(proof.tree, '', '') + '</div>';
       } else {
         html += `<div class="proof-goal">${esc(proof.goal)} <span class="fail">not derivable</span></div>`;
       }
@@ -1140,280 +3513,1270 @@ function renderOutput(output) {
     html += '</div>';
   }
 
-  // Stats
+  // Stats line
   if (output.stats) {
     const s = output.stats;
-    html += '<div class="out-section"><div class="out-section-title">Summary</div>';
-    html += `<span class="out-stat">${s.rounds} rounds</span>`;
-    html += `<span class="out-stat">${s.totalFacts} facts</span>`;
-    html += `<span class="out-stat">${s.derived} derived</span>`;
-    if (s.saturated) html += '<span class="out-stat ok">saturated</span>';
-    if (s.capped) html += `<span class="out-stat warn">capped at ${MAX_FACTS}</span>`;
-    html += '</div>';
+    const cap = s.capped ? ` (capped at ${MAX_FACTS})` : '';
+    html += `<div class="out-ok">${s.totalFacts} facts, ${s.derived} derived, ${s.rounds} round${s.rounds !== 1 ? 's' : ''}, ${s.saturated ? 'saturated' : 'not saturated'}${cap}</div>`;
   }
 
-  if (!html) {
-    html = '<div style="color:var(--text-dim);padding:20px 0;text-align:center">No output.</div>';
-  }
-
+  html += '</div>';
   el.innerHTML = html;
 }
 
-function renderProofTree(node, linePrefix, contPrefix) {
-  const pretty = node.fact.replace(/,/g, ', ');
-  const ruleLabel = node.rule === 'given'
-    ? '<span class="proof-given">given</span>'
-    : `<span class="proof-rule">${esc(node.rule)}</span>`;
-
-  let html = `<div class="proof-node">`
-    + `<span class="proof-prefix">${esc(linePrefix)}</span>`
-    + `<span class="proof-fact">${esc(pretty)}</span>`
-    + ` &larr; ${ruleLabel}</div>`;
-
-  for (let i = 0; i < node.children.length; i++) {
-    const isLast = i === node.children.length - 1;
-    html += renderProofTree(
-      node.children[i],
-      contPrefix + (isLast ? '\u2514\u2500\u2500 ' : '\u251C\u2500\u2500 '),
-      contPrefix + (isLast ? '    ' : '\u2502   ')
-    );
-  }
-  return html;
+function updateCellVisual(cellId) {
+  const cell = cells.find(c => c.id === cellId);
+  if (!cell) return;
+  const div = document.getElementById(`cell-${cellId}`);
+  if (!div) return;
+  div.className = 'cell' + (cell.state !== 'idle' ? ` cell-${cell.state}` : '');
 }
 
 // ===============================================================
-//  UI Actions
+//  Notebook UI
 // ===============================================================
 
-const editor = document.getElementById('editor');
+function isTabReadOnly() {
+  return currentTab >= 0 && tabs[currentTab] && tabs[currentTab].readOnly;
+}
 
-function run() {
-  const source = editor.value;
-  const t0 = performance.now();
-  const program = parse(source);
-  const errors = validate(program);
-  if (errors.length > 0) {
-    renderOutput({ errors, declarations: [], autoRules: [], userRules: [], initialFacts: [], derivedFacts: [], proofs: [], stats: null });
-    document.getElementById('run-time').textContent = '';
+function renderNotebook() {
+  const nb = document.getElementById('notebook');
+  const ro = isTabReadOnly();
+  // Save existing output HTML before clearing DOM
+  for (const cell of cells) {
+    const outEl = document.getElementById(`cell-output-${cell.id}`);
+    if (outEl) cell._savedOutput = outEl.innerHTML;
+  }
+  nb.innerHTML = '';
+  cells.forEach((cell, idx) => {
+    const div = document.createElement('div');
+    const stateClass = cell.type === 'code' && cell.state !== 'idle' ? ` cell-${cell.state}` : '';
+    const mdRendered = cell.type === 'md' && cell.source ? ' md-rendered' : '';
+    div.className = `cell cell-type-${cell.type}${stateClass}${mdRendered}`;
+    div.id = `cell-${cell.id}`;
+
+    // Gutter
+    const gutter = document.createElement('div');
+    gutter.className = 'cell-gutter';
+    if (cell.type === 'code') {
+      gutter.innerHTML = `
+        <span class="cell-num">[${idx + 1}]</span>
+        <button class="cell-run" title="Run cell (Shift+Enter)" onclick="activateCell(${cell.id})">\u25B6</button>
+      `;
+    } else {
+      gutter.innerHTML = `<span class="cell-num md-label">M</span>`;
+    }
+    div.appendChild(gutter);
+
+    // Main
+    const main = document.createElement('div');
+    main.className = 'cell-main';
+
+    if (cell.type === 'md') {
+      // Markdown preview
+      const preview = document.createElement('div');
+      preview.className = 'md-preview';
+      preview.id = `cell-preview-${cell.id}`;
+      if (cell.source) {
+        preview.innerHTML = renderMarkdown(cell.source);
+      } else {
+        preview.innerHTML = '<p class="md-placeholder">Double-click to edit markdown...</p>';
+      }
+      if (!ro) {
+        preview.addEventListener('dblclick', () => {
+          preview.style.display = 'none';
+          editor.style.display = 'block';
+          const cellEl = document.getElementById(`cell-${cell.id}`);
+          if (cellEl) cellEl.classList.remove('md-rendered');
+          autoResize(editor);
+          editor.focus();
+        });
+      }
+      main.appendChild(preview);
+
+      // Markdown editor (hidden by default)
+      const editor = document.createElement('textarea');
+      editor.className = 'cell-editor md-editor';
+      editor.spellcheck = false;
+      editor.value = cell.source;
+      editor.placeholder = 'Markdown...';
+      editor.style.display = cell.source ? 'none' : 'block';
+      if (!cell.source) preview.style.display = 'none';
+      editor.setAttribute('data-cell-id', cell.id);
+
+      editor.addEventListener('input', () => {
+        cell.source = editor.value;
+        autoResize(editor);
+        markDirty();
+      });
+      editor.addEventListener('keydown', e => {
+        if (e.shiftKey && e.key === 'Enter') {
+          e.preventDefault();
+          finishMdEdit(cell.id);
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          finishMdEdit(cell.id);
+        }
+      });
+      editor.addEventListener('blur', () => {
+        finishMdEdit(cell.id);
+      });
+      main.appendChild(editor);
+    } else {
+      // Code editor with syntax highlighting overlay
+      const wrap = document.createElement('div');
+      wrap.className = 'code-editor-wrap';
+
+      const highlight = document.createElement('pre');
+      highlight.className = 'code-highlight';
+      highlight.id = `cell-hl-${cell.id}`;
+      highlight.innerHTML = highlightSyntax(cell.source) + '\n';
+      wrap.appendChild(highlight);
+
+      const editor = document.createElement('textarea');
+      editor.className = 'cell-editor';
+      editor.spellcheck = false;
+      editor.value = cell.source;
+      editor.placeholder = idx === 0
+        ? '# Declarations: <ele>, <rel>, <rule>, facts...'
+        : '# More declarations, derive, or prove...';
+      editor.setAttribute('data-cell-id', cell.id);
+      if (ro) editor.readOnly = true;
+
+      editor.addEventListener('input', () => {
+        cell.source = editor.value;
+        updateHighlight(editor, cell.id);
+        autoResize(editor);
+        showAutocomplete(editor, cell.id);
+        markDirty();
+        if (cell.state === 'active' && cell.source !== cell.lastSource) {
+          cell.state = 'stale';
+          updateCellVisual(cell.id);
+        }
+      });
+      editor.addEventListener('keydown', e => {
+        if (handleACKeydown(e)) return;
+        if (e.shiftKey && e.key === 'Enter') {
+          e.preventDefault();
+          hideAutocomplete();
+          activateCell(cell.id);
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          hideAutocomplete();
+          runAll();
+        }
+        if (e.key === 'Tab' && !acState) {
+          e.preventDefault();
+          const s = editor.selectionStart, end = editor.selectionEnd;
+          editor.value = editor.value.substring(0, s) + '  ' + editor.value.substring(end);
+          editor.selectionStart = editor.selectionEnd = s + 2;
+          cell.source = editor.value;
+          updateHighlight(editor, cell.id);
+        }
+      });
+      editor.addEventListener('blur', () => {
+        setTimeout(hideAutocomplete, 150);
+      });
+      wrap.appendChild(editor);
+      main.appendChild(wrap);
+      requestAnimationFrame(() => {
+        autoResizeCode(editor, highlight);
+      });
+    }
+
+    // Output (code cells only)
+    if (cell.type === 'code') {
+      const output = document.createElement('div');
+      output.className = 'cell-output';
+      output.id = `cell-output-${cell.id}`;
+      if (cell._savedOutput) {
+        output.innerHTML = cell._savedOutput;
+        delete cell._savedOutput;
+      }
+      main.appendChild(output);
+    }
+
+    div.appendChild(main);
+
+    // Floating toolbar at top-center of cell (hidden for read-only tabs)
+    if (!ro) {
+      const toolbar = document.createElement('div');
+      toolbar.className = 'cell-toolbar';
+      const typeBtn = cell.type === 'code'
+        ? `<button class="btn-icon" title="Convert to Markdown" onclick="convertCellType(${cell.id},'md')">M\u2193</button>`
+        : `<button class="btn-icon" title="Convert to Code" onclick="convertCellType(${cell.id},'code')">&lt;/&gt;</button>`;
+      toolbar.innerHTML = `
+        <button class="btn-icon" title="Move up" onclick="moveCell(${cell.id}, -1)">\u2191</button>
+        <button class="btn-icon" title="Move down" onclick="moveCell(${cell.id}, 1)">\u2193</button>
+        ${typeBtn}
+        <span class="spacer"></span>
+        <button class="btn-icon" title="Delete cell" onclick="deleteCell(${cell.id})">\u00d7</button>
+      `;
+      div.appendChild(toolbar);
+    }
+
+    nb.appendChild(div);
+
+    if (!ro && idx < cells.length - 1) {
+      const addBar = document.createElement('div');
+      addBar.className = 'add-cell-bar';
+      addBar.innerHTML = `
+        <button class="add-cell-btn" onclick="addCellAfter(${cell.id}, 'code')">+ code</button>
+        <button class="add-cell-btn" onclick="addCellAfter(${cell.id}, 'md')">+ markdown</button>
+      `;
+      nb.appendChild(addBar);
+    }
+  });
+}
+
+function finishMdEdit(cellId) {
+  const cell = cells.find(c => c.id === cellId);
+  if (!cell) return;
+  const preview = document.getElementById(`cell-preview-${cellId}`);
+  const editor = document.querySelector(`#cell-${cellId} .md-editor`);
+  const cellEl = document.getElementById(`cell-${cellId}`);
+  if (!preview || !editor) return;
+  if (cell.source) {
+    preview.innerHTML = renderMarkdown(cell.source);
+    preview.style.display = 'block';
+    editor.style.display = 'none';
+    if (cellEl) cellEl.classList.add('md-rendered');
+  }
+}
+
+function convertCellType(id, newType) {
+  if (isTabReadOnly()) return;
+  const cell = cells.find(c => c.id === id);
+  if (!cell || cell.type === newType) return;
+  pushUndo();
+  if (cell.type === 'code' && cell.state === 'active') {
+    cell.state = 'idle';
+    cell.parsed = null;
+    lastClosureStats = null;
+    updateStatus(null);
+  }
+  cell.type = newType;
+  markDirty();
+  renderNotebook();
+  if (panelOpen) renderPanel();
+}
+
+function autoResize(el) {
+  // For code editors in overlay, delegate to autoResizeCode
+  const wrap = el.closest && el.closest('.code-editor-wrap');
+  if (wrap) {
+    const pre = wrap.querySelector('.code-highlight');
+    if (pre) { autoResizeCode(el, pre); return; }
+  }
+  el.style.height = 'auto';
+  el.style.height = Math.max(36, el.scrollHeight) + 'px';
+}
+
+function autoResizeCode(editor, pre) {
+  // Pre drives the height; textarea overlays it
+  pre.style.height = 'auto';
+  const h = Math.max(36, pre.scrollHeight);
+  const px = h + 'px';
+  pre.style.height = px;
+}
+
+function addCell(source, type) {
+  if (isTabReadOnly()) return;
+  pushUndo();
+  cells.push(createCell(source, type));
+  markDirty();
+  renderNotebook();
+  const last = cells[cells.length - 1];
+  const el = document.querySelector(`#cell-${last.id} .cell-editor`);
+  if (el) { el.style.display = 'block'; el.focus(); }
+}
+
+function addCellAfter(afterId, type) {
+  if (isTabReadOnly()) return;
+  const idx = cells.findIndex(c => c.id === afterId);
+  if (idx < 0) return;
+  pushUndo();
+  cells.splice(idx + 1, 0, createCell('', type));
+  markDirty();
+  renderNotebook();
+  const newCell = cells[idx + 1];
+  const el = document.querySelector(`#cell-${newCell.id} .cell-editor`);
+  if (el) { el.style.display = 'block'; el.focus(); }
+}
+
+function deleteCell(id) {
+  if (isTabReadOnly()) return;
+  if (cells.length <= 1) return;
+  pushUndo();
+  const wasActive = cells.find(c => c.id === id)?.state === 'active';
+  cells = cells.filter(c => c.id !== id);
+  markDirty();
+  if (wasActive) { lastClosureStats = null; updateStatus(null); }
+  renderNotebook();
+  if (panelOpen) renderPanel();
+}
+
+function moveCell(id, dir) {
+  if (isTabReadOnly()) return;
+  const idx = cells.findIndex(c => c.id === id);
+  const target = idx + dir;
+  if (target < 0 || target >= cells.length) return;
+  pushUndo();
+  [cells[idx], cells[target]] = [cells[target], cells[idx]];
+  markDirty();
+  renderNotebook();
+}
+
+// ===============================================================
+//  Run All — activate all cells in order
+// ===============================================================
+
+function runAll() {
+  for (const cell of cells) {
+    activateCell(cell.id);
+  }
+}
+
+// ===============================================================
+//  Knowledge Base Panel
+// ===============================================================
+
+function renderPanel() {
+  const body = document.getElementById('panel-body');
+  if (!body) return;
+
+  cellIndexMap = {};
+  cells.forEach((c, i) => { cellIndexMap[c.id] = i + 1; });
+
+  // Use applyRetractions:false to see ALL items (including retracted ones)
+  const summary = buildMergedProgram(null, { applyRetractions: false });
+  const searchEl = document.getElementById('panel-search');
+  const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  let html = '';
+
+  // Clear retractions button
+  if (retractions.size > 0) {
+    html += '<div class="panel-actions"><button class="panel-clear-btn" onclick="clearRetractions()">clear retractions</button></div>';
+  }
+
+  // Elements
+  const elems = [...summary.elements].filter(e => e !== 'element');
+  if (elems.length > 0) {
+    const containerMembers = new Map();
+    const rootOnly = [];
+    for (const elem of elems) {
+      const containers = summary.membership.get(elem);
+      const nonRoot = containers ? [...containers].filter(c => c !== 'element') : [];
+      if (nonRoot.length === 0) {
+        rootOnly.push(elem);
+      } else {
+        for (const c of nonRoot) {
+          if (!containerMembers.has(c)) containerMembers.set(c, []);
+          containerMembers.get(c).push(elem);
+        }
+      }
+    }
+    let elemHtml = '';
+    const filteredRoot = query ? rootOnly.filter(e => e.toLowerCase().includes(query)) : rootOnly;
+    if (filteredRoot.length > 0)
+      elemHtml += `<div class="panel-item">&lt;element&gt; ${filteredRoot.map(e => highlightMatch(e, query)).join(', ')}</div>`;
+    for (const [c, members] of containerMembers) {
+      const fm = query ? members.filter(e => e.toLowerCase().includes(query) || c.toLowerCase().includes(query)) : members;
+      if (fm.length > 0)
+        elemHtml += `<div class="panel-item">&lt;${highlightMatch(c, query)}&gt; ${fm.map(e => highlightMatch(e, query)).join(', ')}</div>`;
+    }
+    if (elemHtml) {
+      html += '<div class="panel-section"><div class="panel-section-title">Elements</div>' + elemHtml + '</div>';
+    }
+  }
+
+  // Relations
+  if (summary.relations.size > 0) {
+    let relHtml = '';
+    for (const [name, def] of summary.relations) {
+      const parts = [];
+      if (def.sig) parts.push(def.sig.join(', '));
+      const propsArr = [...def.props];
+      if (propsArr.length > 0) parts.push(propsArr.join(', '));
+      const suffix = parts.length > 0 ? ' : ' + parts.join(', ') : '';
+      const text = `${name}/${def.arity}${suffix}`;
+      if (query && !text.toLowerCase().includes(query)) continue;
+      const ret = isRetracted('rel', name);
+      const cls = ret ? 'panel-item retracted' : 'panel-item';
+      const btn = ret
+        ? `<button class="panel-restore" onclick="restoreToKB('rel','${esc(name)}')" title="Restore">+</button>`
+        : `<button class="panel-retract" onclick="retractFromKB('rel','${esc(name)}')" title="Retract">&times;</button>`;
+      relHtml += `<div class="${cls}">${highlightMatch(name, query)}/${def.arity}${highlightMatch(suffix, query)}${btn}</div>`;
+    }
+    if (relHtml)
+      html += '<div class="panel-section"><div class="panel-section-title">Relations</div>' + relHtml + '</div>';
+  }
+
+  // Rules
+  if (summary.rules.length > 0) {
+    let ruleHtml = '';
+    for (const r of summary.rules) {
+      const prem = r.premises.map(p => `${p.name}(${p.terms.map(termPretty).join(', ')})`).join(', ');
+      const conc = r.conclusions.map(p => `${p.name}(${p.terms.map(termPretty).join(', ')})`).join(', ');
+      const text = `${r.name}: ${prem} |- ${conc}`;
+      if (query && !text.toLowerCase().includes(query)) continue;
+      const ret = isRetracted('rule', r.name);
+      const cls = ret ? 'panel-item retracted' : 'panel-item';
+      const cellIdx = r.cellId ? cellIndexMap[r.cellId] : null;
+      const tag = cellIdx ? ` <span class="cell-tag">[${cellIdx}]</span>` : '';
+      const btn = ret
+        ? `<button class="panel-restore" onclick="restoreToKB('rule','${esc(r.name)}')" title="Restore">+</button>`
+        : `<button class="panel-retract" onclick="retractFromKB('rule','${esc(r.name)}')" title="Retract">&times;</button>`;
+      ruleHtml += `<div class="${cls}">${highlightMatch(r.name, query)}: ${highlightMatch(prem, query)} |- ${highlightMatch(conc, query)}${tag}${btn}</div>`;
+    }
+    if (ruleHtml)
+      html += '<div class="panel-section"><div class="panel-section-title">Rules</div>' + ruleHtml + '</div>';
+  }
+
+  // Facts
+  if (summary.facts.length > 0) {
+    let factHtml = '';
+    for (const f of summary.facts) {
+      const display = `${f.name}(${f.terms.map(termPretty).join(', ')})`;
+      if (query && !display.toLowerCase().includes(query)) continue;
+      const fk = `${f.name}(${f.terms.map(termStr).join(',')})`;
+      const ret = isRetracted('fact', fk);
+      const cls = ret ? 'panel-item fact-item retracted' : 'panel-item fact-item';
+      const cellIdx = f.cellId ? cellIndexMap[f.cellId] : null;
+      const tag = cellIdx ? ` <span class="cell-tag">[${cellIdx}]</span>` : '';
+      const safeFk = fk.replace(/'/g, "\\'");
+      const btn = ret
+        ? `<button class="panel-restore" onclick="restoreToKB('fact','${safeFk}')" title="Restore">+</button>`
+        : `<button class="panel-retract" onclick="retractFromKB('fact','${safeFk}')" title="Retract">&times;</button>`;
+      factHtml += `<div class="${cls}">${highlightMatch(display, query)}${tag}${btn}</div>`;
+    }
+    if (factHtml)
+      html += '<div class="panel-section"><div class="panel-section-title">Facts</div>' + factHtml + '</div>';
+  }
+
+  // Depth
+  if (summary.maxDepth !== 10) {
+    html += '<div class="panel-section"><div class="panel-section-title">Settings</div>';
+    html += `<div class="panel-item">depth ${summary.maxDepth}</div></div>`;
+  }
+
+  if (!html) {
+    html = '<div class="panel-empty">No active cells</div>';
+  }
+
+  // Last closure result
+  if (lastClosureStats) {
+    const s = lastClosureStats;
+    html += '<div class="panel-section"><div class="panel-section-title">Last Closure</div>';
+    html += `<div class="panel-item">${s.totalFacts} facts, ${s.derived} derived, ${s.rounds} round${s.rounds !== 1 ? 's' : ''} \u2014 ${s.saturated ? 'saturated' : s.capped ? 'capped' : 'done'}</div>`;
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+function updateStatus(stats) {
+  if (!stats) {
+    document.querySelector('#st-facts .val').textContent = '0';
+    document.querySelector('#st-derived .val').textContent = '0';
+    document.querySelector('#st-rounds .val').textContent = '0';
+    const stState = document.getElementById('st-state');
+    stState.className = 'status-item';
+    stState.querySelector('.val').textContent = 'idle';
     return;
   }
-  const output = execute(program);
-  const elapsed = (performance.now() - t0).toFixed(1);
-  document.getElementById('run-time').textContent = `${elapsed} ms`;
-  renderOutput(output);
-}
-
-function clearEditor() {
-  editor.value = '';
-  document.getElementById('output').innerHTML =
-    '<div style="color:var(--text-dim);padding:40px 0;text-align:center">Write a program and press <span style="color:var(--accent)">Run</span> to compute closure.</div>';
-  document.getElementById('run-time').textContent = '';
-}
-
-function toggleRef() {
-  document.getElementById('syntax-ref').classList.toggle('visible');
-}
-
-// Ctrl+Enter / Cmd+Enter to run
-editor.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-    e.preventDefault();
-    run();
+  document.querySelector('#st-facts .val').textContent = stats.totalFacts;
+  document.querySelector('#st-derived .val').textContent = stats.derived;
+  document.querySelector('#st-rounds .val').textContent = stats.rounds;
+  const stState = document.getElementById('st-state');
+  if (stats.saturated) {
+    stState.className = 'status-item ok';
+    stState.querySelector('.val').textContent = 'saturated';
+  } else if (stats.capped) {
+    stState.className = 'status-item warn';
+    stState.querySelector('.val').textContent = 'capped';
+  } else {
+    stState.className = 'status-item';
+    stState.querySelector('.val').textContent = 'done';
   }
-  // Tab inserts two spaces
-  if (e.key === 'Tab') {
+}
+
+
+// ===============================================================
+//  Markdown Rendering (lightweight)
+// ===============================================================
+
+function renderMarkdown(src) {
+  let html = esc(src);
+  // code blocks ```...```
+  html = html.replace(/```([\s\S]*?)```/g, (_, code) => `<pre class="md-code-block">${code}</pre>`);
+  // inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="md-code">$1</code>');
+  // headings
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  // bold / italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // lists
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+  // horizontal rule
+  html = html.replace(/^---$/gm, '<hr>');
+  // line breaks (double newline = paragraph break)
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br>');
+  return `<p>${html}</p>`;
+}
+
+// ===============================================================
+//  Export / Import (.relnb)
+// ===============================================================
+
+function buildNotebookData() {
+  return {
+    version: 1,
+    cells: cells.map(c => {
+      const entry = { type: c.type, source: c.source };
+      const outEl = document.getElementById(`cell-output-${c.id}`);
+      if (outEl && outEl.innerHTML) {
+        entry.output = outEl.innerHTML;
+      }
+      return entry;
+    }),
+  };
+}
+
+async function saveToWorkspace() {
+  if (currentTab < 0 || !tabs[currentTab]) return;
+  const tab = tabs[currentTab];
+  if (tab.readOnly || !tab.wsPath) return;
+  await wsWrite(tab.wsPath, buildNotebookData());
+  tab.dirty = false;
+  renderTabBar();
+}
+
+function exportFile() {
+  if (currentTab < 0 || !tabs[currentTab]) return;
+  const data = buildNotebookData();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const tabName = tabs[currentTab].name || 'notebook';
+  a.download = tabName.endsWith('.relnb') ? tabName : tabName + '.relnb';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.relnb';
+  input.multiple = true;
+  input.onchange = () => {
+    for (const file of input.files) {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const data = JSON.parse(reader.result);
+          const fname = file.name.endsWith('.relnb') ? file.name : file.name + '.relnb';
+          await wsWrite(fname, data);
+          openNotebookInTab(data, fname, { wsPath: fname });
+        } catch (e) {
+          alert('Invalid .relnb file: ' + e.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+  input.click();
+}
+
+function openNotebookInTab(data, filename, opts) {
+  if (!data.cells || !Array.isArray(data.cells)) {
+    alert('Invalid notebook format');
+    return;
+  }
+  opts = opts || {};
+  // Don't open duplicate tabs for same wsPath
+  if (opts.wsPath) {
+    const existing = tabs.findIndex(t => t.wsPath === opts.wsPath);
+    if (existing >= 0) {
+      switchTab(existing);
+      return;
+    }
+  }
+  saveTabState();
+  const tab = makeTab(filename.replace(/\.relnb$/i, ''));
+  const newCells = data.cells.map((c, i) => ({
+    id: i + 1,
+    type: c.type || 'code',
+    source: c.source || '',
+    state: 'idle',
+    parsed: null,
+    lastSource: '',
+    _savedOutput: c.output || '',
+  }));
+  tab.cells = newCells;
+  tab.nextCellId = newCells.length + 1;
+  if (opts.readOnly) tab.readOnly = true;
+  if (opts.wsPath) tab.wsPath = opts.wsPath;
+  tabs.push(tab);
+  loadTabState(tabs.length - 1);
+  renderTabBar();
+  // Render markdown previews
+  for (const cell of cells) {
+    if (cell.type === 'md' && cell.source) {
+      const preview = document.getElementById(`cell-preview-${cell.id}`);
+      if (preview) {
+        preview.innerHTML = renderMarkdown(cell.source);
+        preview.style.display = 'block';
+        const editor = document.querySelector(`#cell-${cell.id} .cell-editor`);
+        if (editor) editor.style.display = 'none';
+      }
+    }
+  }
+}
+
+// ===============================================================
+//  Doc Panel
+// ===============================================================
+
+function toggleDocPanel() {
+  const panel = document.getElementById('doc-panel');
+  const overlay = document.getElementById('doc-overlay');
+  const isOpen = panel.classList.toggle('open');
+  overlay.classList.toggle('open', isOpen);
+  if (isOpen) {
+    document.getElementById('doc-search').focus();
+  }
+}
+
+// Nav item clicks
+document.querySelectorAll('.doc-nav-item').forEach(item => {
+  item.addEventListener('click', () => docGoPage(item.dataset.doc));
+});
+
+function docGoPage(id) {
+  document.querySelectorAll('.doc-page').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById('doc-' + id);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.doc-nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.doc === id);
+  });
+  // Expand parent group if collapsed
+  const activeNav = document.querySelector('.doc-nav-item[data-doc="' + id + '"]');
+  if (activeNav) {
+    const group = activeNav.closest('.doc-nav-group');
+    if (group && group.classList.contains('collapsed')) {
+      group.classList.remove('collapsed');
+    }
+  }
+  document.getElementById('doc-body').scrollTop = 0;
+}
+
+// Search
+const docSearchIndex = [];
+(function buildDocSearchIndex() {
+  document.querySelectorAll('.doc-page').forEach(page => {
+    const pageId = page.id.replace('doc-', '');
+    const h1 = page.querySelector('h1');
+    const title = h1 ? h1.textContent : pageId;
+    docSearchIndex.push({ pageId, title, text: title, type: 'page' });
+    page.querySelectorAll('h2, h3').forEach(h => {
+      docSearchIndex.push({ pageId, title, text: h.textContent, type: 'heading' });
+    });
+    page.querySelectorAll('p, li, td').forEach(el => {
+      const t = el.textContent.trim();
+      if (t.length > 10) {
+        docSearchIndex.push({ pageId, title, text: t.slice(0, 120), type: 'content' });
+      }
+    });
+    page.querySelectorAll('pre').forEach(pre => {
+      pre.textContent.split('\n').filter(l => l.trim().length > 5).forEach(line => {
+        docSearchIndex.push({ pageId, title, text: line.trim().slice(0, 100), type: 'code' });
+      });
+    });
+  });
+})();
+
+let docSearchTimeout;
+function docSearch() {
+  clearTimeout(docSearchTimeout);
+  docSearchTimeout = setTimeout(doDocSearch, 150);
+}
+
+function doDocSearch() {
+  const q = document.getElementById('doc-search').value.trim().toLowerCase();
+  // Filter nav items
+  document.querySelectorAll('.doc-nav-item').forEach(item => {
+    item.classList.remove('doc-hidden');
+  });
+  document.querySelectorAll('.doc-nav-group').forEach(g => {
+    g.classList.remove('doc-hidden');
+  });
+
+  if (q.length < 2) return;
+
+  const keywords = q.split(/\s+/);
+
+  // Filter nav items by matching against search index
+  const matchingPages = new Set();
+  for (const entry of docSearchIndex) {
+    const lower = entry.text.toLowerCase();
+    if (keywords.every(kw => lower.includes(kw))) {
+      matchingPages.add(entry.pageId);
+    }
+  }
+
+  document.querySelectorAll('.doc-nav-item').forEach(item => {
+    if (!matchingPages.has(item.dataset.doc)) {
+      item.classList.add('doc-hidden');
+    }
+  });
+
+  // Hide groups with no visible items
+  document.querySelectorAll('.doc-nav-group').forEach(group => {
+    const visibleItems = group.querySelectorAll('.doc-nav-item:not(.doc-hidden)');
+    if (visibleItems.length === 0) {
+      group.classList.add('doc-hidden');
+    }
+  });
+
+  // Navigate to first matching page
+  if (matchingPages.size > 0) {
+    const first = [...matchingPages][0];
+    docGoPage(first);
+  }
+}
+
+// Close doc panel with Escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('doc-panel').classList.contains('open')) {
+    toggleDocPanel();
     e.preventDefault();
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-    editor.selectionStart = editor.selectionEnd = start + 2;
   }
 });
 
 // ===============================================================
-//  Examples
+//  Workspace (localStorage virtual filesystem)
 // ===============================================================
 
-const EXAMPLES = {
-  equiv: `# Equivalence closure
-# "equivalence" = reflexive + symmetric + transitive + congruent
+const WS_KEY = 'relatum-workspace';
+const WS_DB_NAME = 'relatum-ws-handle';
+let wsDirHandle = null; // FileSystemDirectoryHandle or null (localStorage mode)
+let wsFocusedFolder = null; // currently focused folder name (or null for root)
+let wsDragPath = null; // path being dragged
+let wsExamplesCollapsed = false;
 
-<element> a, b, c, d
-
-rel eq/2 : equivalence
-
-eq(a, b)
-eq(b, c)
-
-# derive computes the full closure:
-#   symmetry  -> eq(b,a), eq(c,b)
-#   transitivity -> eq(a,c), eq(c,a), ...
-#   reflexivity  -> eq(x,x) for all x
-#   congruence   -> substitution in other facts
-derive`,
-
-  order: `# Partial order (reflexive + transitive, NOT symmetric)
-# Models "less-than-or-equal"
-
-<element> x1, x2, x3, x4
-
-rel leq/2 : reflexive, transitive
-
-leq(x1, x2)
-leq(x2, x3)
-leq(x3, x4)
-
-# Transitivity chains: leq(x1,x3), leq(x1,x4), leq(x2,x4)
-# Reflexivity adds: leq(x1,x1), leq(x2,x2), ...
-derive`,
-
-  typed: `# Membership constraints
-# <Container> members... declares membership.
-# Relation signatures restrict which elements are accepted.
-
-<Person> alice, bob, carol
-<City> paris, london
-
-rel lives_in/2 : Person, City
-rel friend/2 : Person, Person, symmetric
-
-lives_in(alice, paris)
-lives_in(bob, paris)
-lives_in(carol, london)
-friend(alice, bob)
-
-# Custom rule: people in the same city become acquaintances
-rel acquainted/2 : Person, Person, symmetric
-rule same_city: lives_in(?x, ?c), lives_in(?y, ?c) |- acquainted(?x, ?y)
-
-# Containers are elements too — use them in untyped relations
-rel category/2
-category(alice, Person)
-category(paris, City)
-
-derive`,
-
-  custom: `# Custom inference rules
-# Chain reasoning through multiple relations
-
-<element> alice, bob, carol, dave
-
-rel trusts/2 : symmetric
-rel heard_of/2
-
-# Trust implies awareness
-rule trust_aware: trusts(?x, ?y) |- heard_of(?x, ?y)
-
-# Awareness spreads transitively
-rule heard_trans: heard_of(?x, ?y), heard_of(?y, ?z) |- heard_of(?x, ?z)
-
-trusts(alice, bob)
-trusts(bob, carol)
-heard_of(carol, dave)
-
-# alice trusts bob -> heard_of bob
-# bob trusts carol -> heard_of carol
-# chain: alice heard_of carol, then alice heard_of dave
-derive
-prove heard_of(alice, dave)`,
-
-  congruence: `# Congruence closure
-# If eq(a, b) and R(...a...), then also R(...b...)
-# eq's "congruent" property propagates equality into other facts
-
-<element> a, b, c, d
-
-rel eq/2 : equivalence
-rel edge/2
-
-eq(a, b)
-edge(a, c)
-edge(d, a)
-
-# congruence derives:  edge(b, c), edge(d, b)
-# because a and b are equivalent, a can be replaced by b everywhere
-derive`,
-
-  identity: `# Proof: the identity element of a group is unique
-#
-# Theorem: if e and f are both identity elements, then e = f.
-#
-# We encode the GROUP AXIOMS as rules, then let the
-# engine derive eq(e, f) automatically.
-
-<element> e, f
-
-rel eq/2 : equivalence
-
-# op(a, b, c) means a * b = c
-rel op/3
-
-# id(x) means x is an identity element
-rel id/1
-
-# G(x) means x is a member of the group
-rel G/1
-
-# ===== Group axioms (as inference rules) =====
-
-# Axiom: op is a function (well-defined)
-#   if a*b = c and a*b = d, then c = d
-rule op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)
-
-# Axiom: identity definition (left)
-#   if e is identity and x is in G, then e * x = x
-rule left_id: id(?e), G(?x) |- op(?e, ?x, ?x)
-
-# Axiom: identity definition (right)
-#   if e is identity and x is in G, then x * e = x
-rule right_id: id(?e), G(?x) |- op(?x, ?e, ?x)
-
-# ===== Setup: assume e and f are both identities =====
-
-G(e)
-G(f)
-id(e)
-id(f)
-
-# ===== Prove that e = f =====
-# The engine will show the full proof tree:
-#   left_id(e, f)  => op(e, f, f)   ... e*f = f
-#   right_id(f, e) => op(e, f, e)   ... e*f = e
-#   op_func        => eq(f, e)      ... f = e   QED
-prove eq(e, f)`,
-
-  errors: `# Error demonstration
-# This program has several deliberate mistakes.
-# Run it to see how the engine reports errors.
-
-<element> alice, bob
-
-rel friend/2 : Person, Person
-
-# "Person" in signature is not a declared element
-
-# Wrong arity: friend expects 2 args
-friend(alice, bob, carol)
-
-# Undeclared element "carol"
-friend(alice, carol)
-
-# Undeclared relation
-likes(alice, bob)
-
-derive`,
-};
-
-function loadExample(name) {
-  if (!name) return;
-  editor.value = EXAMPLES[name] || '';
-  document.getElementById('example-select').value = '';
-  editor.focus();
+// ── IndexedDB for persisting directory handle ──
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(WS_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSaveHandle(handle) {
+  const db = await idbOpen();
+  const tx = db.transaction('handles', 'readwrite');
+  tx.objectStore('handles').put(handle, 'wsDir');
+  return new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = reject; });
+}
+async function idbLoadHandle() {
+  const db = await idbOpen();
+  const tx = db.transaction('handles', 'readonly');
+  const req = tx.objectStore('handles').get('wsDir');
+  return new Promise((resolve) => { req.onsuccess = () => resolve(req.result || null); req.onerror = () => resolve(null); });
+}
+async function idbClearHandle() {
+  const db = await idbOpen();
+  const tx = db.transaction('handles', 'readwrite');
+  tx.objectStore('handles').delete('wsDir');
+  return new Promise((resolve) => { tx.oncomplete = resolve; tx.onerror = resolve; });
 }
 
-// Load default example on start
-editor.value = EXAMPLES.equiv;
-run();
+// ── File System Access helpers ──
+async function fsGetFileHandle(path, create) {
+  const parts = path.split('/').filter(Boolean);
+  let dir = wsDirHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i], { create: !!create });
+  }
+  return dir.getFileHandle(parts[parts.length - 1], { create: !!create });
+}
+
+async function fsReadJson(path) {
+  const fh = await fsGetFileHandle(path, false);
+  const file = await fh.getFile();
+  return JSON.parse(await file.text());
+}
+
+async function fsWriteJson(path, data) {
+  const fh = await fsGetFileHandle(path, true);
+  const writable = await fh.createWritable();
+  await writable.write(JSON.stringify(data, null, 2));
+  await writable.close();
+}
+
+async function fsDelete(path) {
+  const parts = path.split('/').filter(Boolean);
+  let dir = wsDirHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i]);
+  }
+  await dir.removeEntry(parts[parts.length - 1]);
+}
+
+async function fsListDir(dirHandle, prefix) {
+  const files = [];
+  const folders = [];
+  for await (const [name, handle] of dirHandle.entries()) {
+    if (handle.kind === 'file' && name.endsWith('.relnb')) {
+      files.push(prefix ? prefix + '/' + name : name);
+    } else if (handle.kind === 'directory' && !name.startsWith('.')) {
+      folders.push(prefix ? prefix + '/' + name : name);
+      const sub = await fsListDir(handle, prefix ? prefix + '/' + name : name);
+      files.push(...sub.files);
+      folders.push(...sub.folders);
+    }
+  }
+  return { files, folders };
+}
+
+async function fsCreateFolder(name) {
+  await wsDirHandle.getDirectoryHandle(name, { create: true });
+}
+
+async function fsDeleteFolder(name) {
+  await wsDirHandle.removeEntry(name, { recursive: true });
+}
+
+async function fsRename(oldPath, newPath) {
+  const data = await fsReadJson(oldPath);
+  await fsWriteJson(newPath, data);
+  await fsDelete(oldPath);
+}
+
+const EXAMPLE_DATA = {
+  'equiv.relnb': {"version":1,"cells":[{"type":"md","source":"# Equivalence Closure\n\nThe canonical Relatum example. We declare three elements and an **equivalence** relation, then let the engine derive the full closure.\n\n`equivalence` = `reflexive` + `symmetric` + `transitive` + `congruent`"},{"type":"code","source":"<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n\nequiv(a, b)\nequiv(b, c)\n\nderive"},{"type":"md","source":"## Expected Result\n\nStarting from `equiv(a, b)` and `equiv(b, c)`, the engine derives:\n\n- **Symmetry:** equiv(b, a), equiv(c, b)\n- **Transitivity:** equiv(a, c)\n- **Symmetry of derived:** equiv(c, a)\n- **Reflexivity:** equiv(a, a), equiv(b, b), equiv(c, c)\n\nTotal: 9 facts (the complete 3\u00d73 equivalence class). Saturates in 2\u20133 rounds."}]},
+  'order.relnb': {"version":1,"cells":[{"type":"md","source":"# Partial Order\n\nA partial order is **reflexive** and **transitive**, but **not symmetric**.\n\nThis means `leq(a, b)` does *not* imply `leq(b, a)` \u2014 direction matters."},{"type":"code","source":"<ele> a, b, c, d\n\n<rel> leq/2 : reflexive, transitive\n\nleq(a, b)\nleq(b, c)\nleq(c, d)\n\nderive"},{"type":"md","source":"## Expected Result\n\n- **Reflexivity:** leq(a,a), leq(b,b), leq(c,c), leq(d,d)\n- **Transitivity:** leq(a,c), leq(a,d), leq(b,d)\n\nNote: `leq(b, a)` is *not* derived \u2014 the relation is not symmetric. This is exactly a partial order."}]},
+  'custom.relnb': {"version":1,"cells":[{"type":"md","source":"# Custom Rules\n\nBeyond built-in properties, you can write your own inference rules.\n\nHere we define:\n- `friend` is **symmetric** (if A is B\u2019s friend, B is A\u2019s friend)\n- `knows` is unconstrained\n- Rule `f2k`: friendship implies knowing\n- Rule `knows_trans`: knowing is transitive"},{"type":"code","source":"<ele> alice, bob, carol\n\n<rel> friend/2 : symmetric\n<rel> knows/2\n\n<rule> f2k: friend(?x, ?y) |- knows(?x, ?y)\n<rule> knows_trans: knows(?x, ?y), knows(?y, ?z) |- knows(?x, ?z)\n\nfriend(alice, bob)\nfriend(bob, carol)\n\nderive"},{"type":"md","source":"## Derivation Chain\n\n1. **Symmetry:** friend(bob, alice), friend(carol, bob)\n2. **f2k rule:** knows(alice, bob), knows(bob, alice), knows(bob, carol), knows(carol, bob)\n3. **knows_trans:** knows(alice, carol), knows(carol, alice), ...\n\nResult: everyone knows everyone \u2014 symmetric friendship + transitive knowing collapses the network into full connectivity."}]},
+  'congruence.relnb': {"version":1,"cells":[{"type":"md","source":"# Congruence\n\nCongruence is the key property that makes equivalence relations *useful*.\n\nWhen `equiv` is **congruent** and `equiv(a, b)` holds, the engine substitutes `a` with `b` (and vice versa) in **all** other facts."},{"type":"code","source":"<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n<rel> R/2\n\nequiv(a, b)\nR(a, c)\n\nderive"},{"type":"md","source":"## What Congruence Does\n\nBecause `equiv(a, b)` holds and `equiv` is congruent:\n\n- The engine sees `R(a, c)` and substitutes `a \u2192 b`, deriving **R(b, c)**\n- If `R(c, a)` existed, it would also derive `R(c, b)`\n\nCongruence propagates the \u201csameness\u201d of `a` and `b` through the entire fact base \u2014 any fact mentioning `a` spawns a parallel fact with `b`."}]},
+  'typed.relnb': {"version":1,"cells":[{"type":"md","source":"# Membership Constraints\n\nContainers restrict which elements each relation argument accepts.\n\n- `<Person>` and `<City>` are named containers\n- `lives_in/2` requires arg1 \u2208 Person, arg2 \u2208 City\n- `same_city/2` is an equivalence, but only over City members"},{"type":"code","source":"<Person> alice, bob, carol\n<City> paris, london\n\n<rel> lives_in/2 : Person, City\n<rel> friend/2 : Person, Person, symmetric\n<rel> same_city/2 : City, City, equivalence\n\nlives_in(alice, paris)\nlives_in(bob, paris)\nlives_in(carol, london)\n\n<rule> shared: lives_in(?x, ?c), lives_in(?y, ?c) |- same_city(?c, ?c)\n\nderive"},{"type":"md","source":"## What Happens\n\n- **Membership prevents nonsense:** `lives_in(paris, alice)` would be rejected \u2014 `paris` is not in Person\n- **Reflexivity respects membership:** `same_city(t, t)` is only generated for `paris` and `london`, not for `alice`, `bob`, or `carol`\n- **Rules are membership-filtered:** derived facts violating constraints are silently dropped\n- **Container names are elements:** `Person` and `City` are in the universe too"}]},
+  'skolem.relnb': {"version":1,"cells":[{"type":"md","source":"# Compound Terms & Skolem Witnesses\n\nCompound terms like `inv(?x)` create structured terms from existing ones.\n\nWhen used in rule conclusions, they act as **Skolem witnesses** \u2014 generating new terms that depend on matched variables.\n\nThe `depth` directive limits nesting to prevent infinite generation."},{"type":"code","source":"depth 3\n\n<ele> e, a, b\n\n<rel> group/3\n<rel> member/1\n\nmember(e)\nmember(a)\nmember(b)\n\n# Every member has an inverse\n<rule> has_inv: member(?x) |- group(?x, inv(?x), e)\n\n# The inverse is also a member\n<rule> inv_member: member(?x) |- member(inv(?x))\n\nderive"},{"type":"md","source":"## What Happens\n\n1. `has_inv` fires for each member, creating `group(a, inv(a), e)`, `group(b, inv(b), e)`, etc.\n2. `inv_member` makes `inv(a)`, `inv(b)` into members too\n3. This cascades: `inv(inv(a))`, `inv(inv(inv(a)))` ... up to `depth 3`\n4. Without the depth limit, this would loop forever\n\n## Use Cases\n\n- **Group theory:** `inv(?x)` as inverse, `op(?x, ?y)` as multiplication\n- **Successor arithmetic:** `s(zero)`, `s(s(zero))`\n- **Structured data:** `pair(?x, ?y)`, `cons(?h, ?t)`"}]},
+  'identity.relnb': {"version":1,"cells":[{"type":"md","source":"# Identity & Multiple Relations\n\nDemonstrates how multiple relations interact through custom rules.\n\nWe define `eq` as an equivalence and `lt` as a partial order, then link them: equality implies ordering in both directions."},{"type":"code","source":"<ele> x, y, z\n\n<rel> eq/2 : equivalence\n<rel> lt/2 : reflexive, transitive\n\n# If two things are equal, each is \u2264 the other\n<rule> eq_to_leq: eq(?a, ?b) |- lt(?a, ?b), lt(?b, ?a)\n\neq(x, y)\nlt(y, z)\n\nderive"},{"type":"md","source":"## Expected Result\n\n- `eq(x, y)` derives all symmetry/reflexivity pairs for `eq`\n- `eq_to_leq` derives `lt(x, y)` and `lt(y, x)` from the equality\n- **Congruence** of `eq` propagates into `lt`: since `eq(x, y)` and `lt(y, z)`, derives `lt(x, z)`\n- Transitivity of `lt` fills in the rest\n\nThis shows how equivalence + ordering compose naturally."}]},
+  'errors.relnb': {"version":1,"cells":[{"type":"md","source":"# Error Handling\n\nRelatum validates your program and reports clear error messages.\n\nBelow are common mistakes and how they are caught. Run each cell to see the error output."},{"type":"md","source":"## Undeclared Element\n\nUsing an element that was never declared in any `<ele>` or `<Container>`."},{"type":"code","source":"<rel> R/2\n\nR(a, b)\n\nderive"},{"type":"md","source":"## Arity Mismatch\n\nPassing the wrong number of arguments to a relation."},{"type":"code","source":"<ele> a, b, c\n<rel> R/2\n\nR(a, b, c)\n\nderive"},{"type":"md","source":"## Membership Violation\n\nUsing an element that doesn\u2019t belong to the required container."},{"type":"code","source":"<Person> alice\n<City> paris\n\n<rel> lives_in/2 : Person, City\n\nlives_in(paris, alice)\n\nderive"},{"type":"md","source":"## Fact Limit\n\nThe engine caps at 10,000 facts. Transitive closure over many elements can hit this."},{"type":"code","source":"<ele> a, b, c, d, e, f, g, h, i, j\n<ele> k, l, m, n, o, p, q, r, s, t\n\n<rel> eq/2 : equivalence\n\neq(a, b)\neq(b, c)\neq(c, d)\neq(d, e)\n\nderive"}]},
+};
+const EXAMPLE_FILES = Object.keys(EXAMPLE_DATA).map(name => {
+  const descMap = {
+    'equiv.relnb': 'Equivalence Closure',
+    'order.relnb': 'Partial Order',
+    'custom.relnb': 'Custom Rules',
+    'congruence.relnb': 'Congruence',
+    'typed.relnb': 'Membership Constraints',
+    'skolem.relnb': 'Skolem Witnesses',
+    'identity.relnb': 'Identity & Multi-Relation',
+    'errors.relnb': 'Error Handling',
+  };
+  return { name, desc: descMap[name] || name };
+});
+
+// ── localStorage fallback ──
+function lsLoad() {
+  try {
+    return JSON.parse(localStorage.getItem(WS_KEY)) || { files: {}, folders: [] };
+  } catch { return { files: {}, folders: [] }; }
+}
+function lsSave(ws) { localStorage.setItem(WS_KEY, JSON.stringify(ws)); }
+
+// ── Unified async ws API ──
+async function wsWrite(path, data) {
+  if (wsDirHandle) {
+    await fsWriteJson(path, data);
+  } else {
+    const ws = lsLoad(); ws.files[path] = data; lsSave(ws);
+  }
+}
+
+async function wsRead(path) {
+  if (wsDirHandle) {
+    return await fsReadJson(path);
+  } else {
+    const ws = lsLoad(); return ws.files[path] || null;
+  }
+}
+
+async function wsDelete(path) {
+  if (wsDirHandle) {
+    await fsDelete(path);
+  } else {
+    const ws = lsLoad(); delete ws.files[path]; lsSave(ws);
+  }
+}
+
+async function wsCreateFolder(name) {
+  if (wsDirHandle) {
+    await fsCreateFolder(name);
+  } else {
+    const ws = lsLoad();
+    if (!ws.folders.includes(name)) { ws.folders.push(name); ws.folders.sort(); }
+    lsSave(ws);
+  }
+}
+
+async function wsDeleteFolder(name) {
+  if (wsDirHandle) {
+    await fsDeleteFolder(name);
+  } else {
+    const ws = lsLoad();
+    ws.folders = ws.folders.filter(f => f !== name);
+    for (const key of Object.keys(ws.files)) {
+      if (key.startsWith(name + '/')) delete ws.files[key];
+    }
+    lsSave(ws);
+  }
+}
+
+async function wsRename(oldPath, newPath) {
+  if (wsDirHandle) {
+    await fsRename(oldPath, newPath);
+  } else {
+    const ws = lsLoad();
+    if (ws.files[oldPath]) { ws.files[newPath] = ws.files[oldPath]; delete ws.files[oldPath]; lsSave(ws); }
+  }
+}
+
+async function wsListAll() {
+  if (wsDirHandle) {
+    const listing = await fsListDir(wsDirHandle, '');
+    return { files: listing.files.sort(), folders: listing.folders.filter(f => !f.includes('/')).sort() };
+  } else {
+    const ws = lsLoad();
+    return {
+      files: Object.keys(ws.files).sort(),
+      folders: (ws.folders || []).slice().sort(),
+    };
+  }
+}
+
+function goWorkspace() {
+  switchToWorkspace();
+}
+
+async function switchToWorkspace() {
+  if (currentTab === -1) return;
+  if (currentTab >= 0) saveTabState();
+  currentTab = -1;
+  await showWorkspace();
+  renderTabBar();
+}
+
+async function saveCurrentTab() {
+  if (currentTab < 0 || !tabs[currentTab]) return;
+  if (tabs[currentTab].readOnly) return;
+  await saveToWorkspace();
+}
+
+async function showWorkspace() {
+  document.getElementById('workspace').style.display = '';
+  document.getElementById('notebook').style.display = 'none';
+  document.getElementById('add-final').style.display = 'none';
+  await renderWorkspace();
+}
+
+function hideWorkspace() {
+  document.getElementById('workspace').style.display = 'none';
+  document.getElementById('notebook').style.display = '';
+  document.getElementById('add-final').style.display = '';
+}
+
+async function renderWorkspace() {
+  const { files, folders } = await wsListAll();
+  const el = document.getElementById('workspace');
+
+  let html = '';
+
+  // ── Examples section (collapsible) ──
+  html += `<div class="ws-section ws-collapsible${wsExamplesCollapsed ? ' collapsed' : ''}">`;
+  html += `<div class="ws-section-header" onclick="wsToggleExamples()" style="cursor:pointer"><span class="ws-section-title"><span class="darr">&#9660;</span> EXAMPLES</span></div>`;
+  html += `<div class="ws-section-body">`;
+  for (const ex of EXAMPLE_FILES) {
+    html += `<div class="ws-item" ondblclick="openExample('${esc(ex.name)}')">`;
+    html += `<span class="ws-item-icon">\u{1F4C4}</span>`;
+    html += `<span class="ws-item-name">${esc(ex.name)}</span>`;
+    html += `<span class="ws-item-tag">${esc(ex.desc)}</span>`;
+    html += `</div>`;
+  }
+  html += `</div>`; // ws-section-body
+  html += `</div>`; // ws-section
+
+  // ── Workspace section ──
+  html += `<div class="ws-section">`;
+  html += `<div class="ws-section-header"><span class="ws-section-title">WORKSPACE</span>`;
+  html += `<div class="ws-actions">`;
+  if (wsDirHandle) {
+    html += `<span class="ws-item-tag" style="margin-right:6px">${esc(wsDirHandle.name)}</span>`;
+    html += `<button class="btn btn-sm" onclick="wsUnlinkFolder()">Unlink</button>`;
+  } else {
+    html += `<button class="btn btn-sm" onclick="wsPickFolder()">Set Folder</button>`;
+  }
+  html += `<button class="btn btn-sm" onclick="wsNewFileInFocus()">+ File</button>`;
+  html += `<button class="btn btn-sm" onclick="wsNewFolderInFocus()">+ Folder</button>`;
+  html += `</div></div>`;
+
+  // Root-level files
+  const rootFiles = files.filter(p => !p.includes('/'));
+  // Top-level folders only
+  const topFolders = folders.filter(f => !f.includes('/'));
+
+  if (rootFiles.length === 0 && topFolders.length === 0) {
+    html += `<div class="ws-empty">No files yet. Create a new file to get started.</div>`;
+  }
+
+  for (const folder of topFolders) {
+    const folderFiles = files.filter(p => p.startsWith(folder + '/'));
+    const focused = wsFocusedFolder === folder ? ' ws-folder-focused' : '';
+    html += `<div class="ws-item${focused}" onclick="wsFocusFolder('${esc(folder)}')" data-ws-folder="${esc(folder)}"`;
+    html += ` ondragover="wsDragOverFolder(event,'${esc(folder)}')" ondragleave="wsDragLeaveFolder(event)" ondrop="wsDropIntoFolder(event,'${esc(folder)}')"`;
+    html += `>`;
+    html += `<span class="ws-item-icon">\u{1F4C1}</span>`;
+    html += `<span class="ws-item-name" style="font-weight:600">${esc(folder)}</span>`;
+    html += `<div class="ws-item-actions">`;
+    html += `<button class="ws-item-btn" onclick="event.stopPropagation();wsConfirmDeleteFolder('${esc(folder)}')" title="Delete folder">&times;</button>`;
+    html += `</div>`;
+    html += `</div>`;
+    html += `<div class="ws-folder-contents">`;
+    if (folderFiles.length > 0) {
+      for (const fp of folderFiles) {
+        const fname = fp.slice(folder.length + 1);
+        html += wsFileItem(fp, fname);
+      }
+    }
+    html += `</div>`;
+  }
+
+  // Root drop zone for moving files out of folders
+  html += `<div id="ws-root-drop" style="min-height:8px" ondragover="wsDragOverFolder(event,'')" ondragleave="wsDragLeaveFolder(event)" ondrop="wsDropIntoFolder(event,'')"></div>`;
+
+  for (const fp of rootFiles) {
+    html += wsFileItem(fp, fp);
+  }
+
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+function wsFileItem(path, displayName) {
+  const ep = esc(path);
+  let html = `<div class="ws-item" draggable="true" data-ws-path="${ep}"`;
+  html += ` ondblclick="openWorkspaceFile('${ep}')"`;
+  html += ` ondragstart="wsDragStart(event,'${ep}')" ondragend="wsDragEnd(event)"`;
+  html += `>`;
+  html += `<span class="ws-item-icon">\u{1F4C4}</span>`;
+  html += `<span class="ws-item-name">${esc(displayName)}</span>`;
+  html += `<div class="ws-item-actions">`;
+  html += `<button class="ws-item-btn" onclick="event.stopPropagation();wsPromptRename('${ep}')" title="Rename">\u270E</button>`;
+  html += `<button class="ws-item-btn" onclick="event.stopPropagation();wsConfirmDelete('${ep}')" title="Delete">&times;</button>`;
+  html += `</div>`;
+  html += `</div>`;
+  return html;
+}
+
+function wsToggleExamples() {
+  wsExamplesCollapsed = !wsExamplesCollapsed;
+  const sec = document.querySelector('#workspace .ws-collapsible');
+  if (sec) sec.classList.toggle('collapsed', wsExamplesCollapsed);
+}
+
+// ── Folder focus ──
+function wsFocusFolder(folder) {
+  wsFocusedFolder = wsFocusedFolder === folder ? null : folder;
+  // Update visual without full re-render
+  document.querySelectorAll('#workspace [data-ws-folder]').forEach(el => {
+    el.classList.toggle('ws-folder-focused', el.dataset.wsFolder === wsFocusedFolder);
+  });
+}
+
+async function wsNewFileInFocus() {
+  await wsPromptNewFile(wsFocusedFolder || '');
+}
+
+async function wsNewFolderInFocus() {
+  if (wsFocusedFolder) {
+    // Create subfolder inside focused folder
+    const name = prompt('Folder name:');
+    if (!name || !name.trim()) return;
+    await wsCreateFolder(wsFocusedFolder + '/' + name.trim());
+    await renderWorkspace();
+  } else {
+    await wsPromptNewFolder();
+  }
+}
+
+// ── Drag & drop ──
+function wsDragStart(e, path) {
+  wsDragPath = path;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', path);
+}
+
+function wsDragEnd(e) {
+  wsDragPath = null;
+  document.querySelectorAll('.ws-drop-into').forEach(el => el.classList.remove('ws-drop-into'));
+}
+
+function wsDragOverFolder(e, folder) {
+  if (!wsDragPath) return;
+  // Don't allow dropping into same parent
+  const dragParent = wsDragPath.includes('/') ? wsDragPath.slice(0, wsDragPath.lastIndexOf('/')) : '';
+  if (dragParent === folder) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('ws-drop-into');
+}
+
+function wsDragLeaveFolder(e) {
+  e.currentTarget.classList.remove('ws-drop-into');
+}
+
+async function wsDropIntoFolder(e, targetFolder) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('ws-drop-into');
+  if (!wsDragPath) return;
+  const fileName = wsDragPath.split('/').pop();
+  const newPath = targetFolder ? targetFolder + '/' + fileName : fileName;
+  if (newPath === wsDragPath) return;
+  await wsRename(wsDragPath, newPath);
+  // Update open tab
+  for (const tab of tabs) {
+    if (tab.wsPath === wsDragPath) {
+      tab.wsPath = newPath;
+    }
+  }
+  renderTabBar();
+  wsDragPath = null;
+  await renderWorkspace();
+}
+
+function openExample(name) {
+  const data = EXAMPLE_DATA[name];
+  if (!data) return;
+  // Deep copy so edits never touch the source data
+  openNotebookInTab(JSON.parse(JSON.stringify(data)), name);
+  runAll();
+}
+
+async function openWorkspaceFile(path) {
+  const data = await wsRead(path);
+  if (!data) { alert('File not found'); return; }
+  openNotebookInTab(data, path.split('/').pop(), { wsPath: path });
+}
+
+async function wsPromptNewFile(folder) {
+  const name = prompt('File name:', 'untitled.relnb');
+  if (!name) return;
+  const fname = name.endsWith('.relnb') ? name : name + '.relnb';
+  await newWorkspaceTab(fname, folder || '');
+}
+
+async function wsPromptNewFolder() {
+  const name = prompt('Folder name:');
+  if (!name || !name.trim()) return;
+  await wsCreateFolder(name.trim());
+  await renderWorkspace();
+}
+
+async function wsConfirmDelete(path) {
+  if (!confirm('Delete "' + path + '"?')) return;
+  await wsDelete(path);
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    if (tabs[i].wsPath === path) {
+      tabs[i].dirty = false;
+      closeTab(i);
+    }
+  }
+  await renderWorkspace();
+}
+
+async function wsConfirmDeleteFolder(folder) {
+  if (!confirm('Delete folder "' + folder + '" and all its files?')) return;
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    if (tabs[i].wsPath && tabs[i].wsPath.startsWith(folder + '/')) {
+      tabs[i].dirty = false;
+      closeTab(i);
+    }
+  }
+  await wsDeleteFolder(folder);
+  await renderWorkspace();
+}
+
+async function wsPromptRename(oldPath) {
+  const oldName = oldPath.split('/').pop();
+  const newName = prompt('Rename to:', oldName);
+  if (!newName || newName === oldName) return;
+  const fname = newName.endsWith('.relnb') ? newName : newName + '.relnb';
+  const parts = oldPath.split('/');
+  parts[parts.length - 1] = fname;
+  const newPath = parts.join('/');
+  await wsRename(oldPath, newPath);
+  for (const tab of tabs) {
+    if (tab.wsPath === oldPath) {
+      tab.wsPath = newPath;
+      tab.name = fname.replace(/\.relnb$/i, '');
+    }
+  }
+  renderTabBar();
+  await renderWorkspace();
+}
+
+async function wsPickFolder() {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    wsDirHandle = handle;
+    await idbSaveHandle(handle);
+    await renderWorkspace();
+  } catch (e) {
+    if (e.name !== 'AbortError') console.error(e);
+  }
+}
+
+async function wsUnlinkFolder() {
+  wsDirHandle = null;
+  await idbClearHandle();
+  await renderWorkspace();
+}
+
+// ===============================================================
+//  Init
+// ===============================================================
+
+(async () => {
+  // Restore saved directory handle if any
+  try {
+    const saved = await idbLoadHandle();
+    if (saved) {
+      const perm = await saved.queryPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        wsDirHandle = saved;
+      } else {
+        const req = await saved.requestPermission({ mode: 'readwrite' });
+        if (req === 'granted') wsDirHandle = saved;
+      }
+    }
+  } catch (e) { console.warn('Failed to restore workspace handle:', e); }
+  currentTab = -1;
+  await showWorkspace();
+  renderTabBar();
+})();
 </script>
 </body>
 </html>

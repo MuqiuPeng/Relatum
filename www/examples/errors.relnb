@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Error Handling\n\nRelatum validates your program and reports clear error messages.\n\nBelow are common mistakes and how they are caught. Run each cell to see the error output."
+    },
+    {
+      "type": "md",
+      "source": "## Undeclared Element\n\nUsing an element that was never declared in any `<ele>` or `<Container>`."
+    },
+    {
+      "type": "code",
+      "source": "<rel> R/2\n\nR(a, b)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Arity Mismatch\n\nPassing the wrong number of arguments to a relation."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n<rel> R/2\n\nR(a, b, c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Membership Violation\n\nUsing an element that doesn't belong to the required container."
+    },
+    {
+      "type": "code",
+      "source": "<Person> alice\n<City> paris\n\n<rel> lives_in/2 : Person, City\n\nlives_in(paris, alice)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Fact Limit\n\nThe engine caps at 10,000 facts. Transitive closure over many elements can hit this."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c, d, e, f, g, h, i, j\n<ele> k, l, m, n, o, p, q, r, s, t\n\n<rel> eq/2 : equivalence\n\neq(a, b)\neq(b, c)\neq(c, d)\neq(d, e)\n\nderive"
+    }
+  ]
+}

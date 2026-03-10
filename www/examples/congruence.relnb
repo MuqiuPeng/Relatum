@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Congruence\n\nCongruence is the key property that makes equivalence relations *useful*.\n\nWhen `equiv` is **congruent** and `equiv(a, b)` holds, the engine substitutes `a` with `b` (and vice versa) in **all** other facts."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n<rel> R/2\n\nequiv(a, b)\nR(a, c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## What Congruence Does\n\nBecause `equiv(a, b)` holds and `equiv` is congruent:\n\n- The engine sees `R(a, c)` and substitutes `a → b`, deriving **R(b, c)**\n- If `R(c, a)` existed, it would also derive `R(c, b)`\n\nCongruence propagates the \"sameness\" of `a` and `b` through the entire fact base — any fact mentioning `a` spawns a parallel fact with `b`."
+    }
+  ]
+}

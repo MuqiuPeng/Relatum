@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Compound Terms & Skolem Witnesses\n\nCompound terms like `inv(?x)` create structured terms from existing ones.\n\nWhen used in rule conclusions, they act as **Skolem witnesses** — generating new terms that depend on matched variables.\n\nThe `depth` directive limits nesting to prevent infinite generation."
+    },
+    {
+      "type": "code",
+      "source": "depth 3\n\n<ele> e, a, b\n\n<rel> group/3\n<rel> member/1\n\nmember(e)\nmember(a)\nmember(b)\n\n# Every member has an inverse\n<rule> has_inv: member(?x) |- group(?x, inv(?x), e)\n\n# The inverse is also a member\n<rule> inv_member: member(?x) |- member(inv(?x))\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## What Happens\n\n1. `has_inv` fires for each member, creating `group(a, inv(a), e)`, `group(b, inv(b), e)`, etc.\n2. `inv_member` makes `inv(a)`, `inv(b)` into members too\n3. This cascades: `inv(inv(a))`, `inv(inv(inv(a)))` ... up to `depth 3`\n4. Without the depth limit, this would loop forever\n\n## Use Cases\n\n- **Group theory:** `inv(?x)` as inverse, `op(?x, ?y)` as multiplication\n- **Successor arithmetic:** `s(zero)`, `s(s(zero))`\n- **Structured data:** `pair(?x, ?y)`, `cons(?h, ?t)`"
+    }
+  ]
+}
