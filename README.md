@@ -113,7 +113,7 @@ cargo test
 | Syntax | Meaning |
 |---|---|
 | `<ele> a, b, c` | Declare elements |
-| `<Container> x, y` | Declare typed container with members |
+| `<Container> x, y` | Declare typed members (Container must be declared as element first) |
 | `<rel> R/2` | Declare relation with arity |
 | `<rel> R/2 : props` | Declare relation with algebraic properties |
 | `<rule> name: P(?x) \|- Q(?x)` | Custom inference rule |
