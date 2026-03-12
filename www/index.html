@@ -4916,7 +4916,7 @@ async function renderWorkspace() {
   html += `<div class="ws-section-header" onclick="wsToggleExamples()" style="cursor:pointer"><span class="ws-section-title"><span class="darr">&#9660;</span> EXAMPLES</span></div>`;
   html += `<div class="ws-section-body">`;
   for (const ch of EXAMPLE_CHAPTERS) {
-    html += `<div class="ws-chapter">`;
+    html += `<div class="ws-chapter collapsed">`;
     html += `<div class="ws-item" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer">`;
     html += `<span class="ws-item-icon">\u{1F4C1}</span>`;
     html += `<span class="ws-item-name" style="font-weight:600"><span class="darr">&#9660;</span>${esc(ch.title)}</span>`;
