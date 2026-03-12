@@ -4751,11 +4751,16 @@ async function renderWorkspace() {
   html += `<div class="ws-section">`;
   html += `<div class="ws-section-header"><span class="ws-section-title">WORKSPACE</span>`;
   html += `<div class="ws-actions">`;
-  if (wsDirHandle) {
-    html += `<span class="ws-item-tag" style="margin-right:6px">${esc(wsDirHandle.name)}</span>`;
-    html += `<button class="btn btn-sm" onclick="wsUnlinkFolder()">Unlink</button>`;
-  } else {
-    html += `<button class="btn btn-sm" onclick="wsPickFolder()">Set Folder</button>`;
+  if (!isOnline) {
+    if (wsDirHandle) {
+      html += `<span class="ws-item-tag" style="margin-right:6px">${esc(wsDirHandle.name)}</span>`;
+      html += `<button class="btn btn-sm" onclick="wsUnlinkFolder()">Unlink</button>`;
+    } else {
+      html += `<button class="btn btn-sm" onclick="wsPickFolder()">Set Folder</button>`;
+    }
+  }
+  if (isOnline) {
+    html += `<button class="btn btn-sm" onclick="wsLoadFile()">Load</button>`;
   }
   html += `<button class="btn btn-sm" onclick="wsNewFileInFocus()">+ File</button>`;
   html += `<button class="btn btn-sm" onclick="wsNewFolderInFocus()">+ Folder</button>`;
@@ -4812,6 +4817,9 @@ function wsFileItem(path, displayName) {
   html += `<span class="ws-item-icon">\u{1F4C4}</span>`;
   html += `<span class="ws-item-name">${esc(displayName)}</span>`;
   html += `<div class="ws-item-actions">`;
+  if (isOnline) {
+    html += `<button class="ws-item-btn" onclick="event.stopPropagation();wsExportFile('${ep}')" title="Export">\u2B07</button>`;
+  }
   html += `<button class="ws-item-btn" onclick="event.stopPropagation();wsPromptRename('${ep}')" title="Rename">\u270E</button>`;
   html += `<button class="ws-item-btn" onclick="event.stopPropagation();wsConfirmDelete('${ep}')" title="Delete">&times;</button>`;
   html += `</div>`;
@@ -4964,6 +4972,44 @@ async function wsPromptRename(oldPath) {
   }
   renderTabBar();
   await renderWorkspace();
+}
+
+const isOnline = location.protocol.startsWith('http');
+
+function wsLoadFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.relnb,.json';
+  input.multiple = true;
+  input.onchange = async () => {
+    for (const file of input.files) {
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        const name = file.name.endsWith('.relnb') ? file.name : file.name + '.relnb';
+        const path = wsFocusedFolder ? wsFocusedFolder + '/' + name : name;
+        await wsSave(path, JSON.stringify(data));
+        await renderWorkspace();
+      } catch (e) {
+        alert('Invalid file: ' + file.name);
+      }
+    }
+  };
+  input.click();
+}
+
+async function wsExportFile(path) {
+  const raw = await wsLoad(path);
+  if (!raw) return;
+  const blob = new Blob([raw], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function wsPickFolder() {
