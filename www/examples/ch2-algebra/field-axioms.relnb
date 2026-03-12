@@ -7,7 +7,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/ring-axioms.relnb\n\n<rel> has_mul_inv/2 : Ring, Ring\n\n# Multiplicative inverse: x * y = multiplicative identity → has_mul_inv(x, y)\n<rule> find_mul_inv: is_mul_id(?e), mul(?x, ?y, ?e) |- has_mul_inv(?x, ?y)"
+      "source": "import ch2-algebra/ring-axioms.relnb\n\n<rel> has_mul_inv/2\n\n# Multiplicative inverse: x * y = multiplicative identity → has_mul_inv(x, y)\n<rule> find_mul_inv: is_mul_id(?e), mul(?x, ?y, ?e) |- has_mul_inv(?x, ?y)"
     },
     {
       "type": "md",

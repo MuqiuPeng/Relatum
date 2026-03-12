@@ -7,7 +7,7 @@
     },
     {
       "type": "code",
-      "source": "<ele> Group\n\n<rel> op/3 : Group, Group, Group\n<rel> eq/2 : Group, Group, equivalence\n<rel> is_identity/1 : Group\n<rel> has_inv/2 : Group, Group\n\n# Commutativity check: op(x,y,z) and op(y,x,w) → z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\n# Associativity check: (a*b)*c = a*(b*c)\n<rule> assoc: op(?a, ?b, ?ab), op(?ab, ?c, ?lhs), op(?b, ?c, ?bc), op(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Operation is functional: same inputs → same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\n# Inverse: x * y = identity → has_inv(x, y)\n<rule> find_inv: is_identity(?e), op(?x, ?y, ?e) |- has_inv(?x, ?y)"
+      "source": "<ele> Group\n\n<rel> op/3\n<rel> eq/2 : equivalence\n<rel> is_identity/1\n<rel> has_inv/2\n\n# Commutativity check: op(x,y,z) and op(y,x,w) → z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\n# Associativity check: (a*b)*c = a*(b*c)\n<rule> assoc: op(?a, ?b, ?ab), op(?ab, ?c, ?lhs), op(?b, ?c, ?bc), op(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Operation is functional: same inputs → same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\n# Inverse: x * y = identity → has_inv(x, y)\n<rule> find_inv: is_identity(?e), op(?x, ?y, ?e) |- has_inv(?x, ?y)"
     },
     {
       "type": "md",
