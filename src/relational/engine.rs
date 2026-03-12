@@ -17,6 +17,11 @@ use super::term::Term;
 const DEFAULT_MAX_ROUNDS: usize = 100;
 const DEFAULT_MAX_FACTS: usize = 10_000;
 const MAX_TERM_DEPTH: usize = 8;
+/// Maximum number of ground terms used in axiom substitution pool.
+const MAX_AXIOM_UNIVERSE: usize = 500;
+/// Maximum depth of terms fed into axiom variable substitution.
+/// Kept low to prevent combinatorial explosion with congruence closure.
+const MAX_AXIOM_SUB_DEPTH: usize = 2;
 
 /// Outcome of a closure computation.
 pub struct ClosureResult {
@@ -28,6 +33,48 @@ pub struct ClosureResult {
     pub rounds: usize,
     /// `true` if the engine reached a fixed point (no new facts possible).
     pub saturated: bool,
+    /// Warnings about recursive axioms, depth capping, etc.
+    pub warnings: Vec<String>,
+}
+
+/// A universally quantified equation: for all ground substitutions of the
+/// variables, emit `equiv_relation(subst(lhs), subst(rhs))`.
+#[derive(Debug, Clone)]
+pub struct Axiom {
+    name: String,
+    lhs: Term,
+    rhs: Term,
+    /// The equivalence relation to emit into (e.g. "equiv").
+    equiv_relation: String,
+}
+
+impl Axiom {
+    pub fn new(
+        name: impl Into<String>,
+        lhs: Term,
+        rhs: Term,
+        equiv_relation: impl Into<String>,
+    ) -> Self {
+        Axiom {
+            name: name.into(),
+            lhs,
+            rhs,
+            equiv_relation: equiv_relation.into(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn lhs(&self) -> &Term {
+        &self.lhs
+    }
+    pub fn rhs(&self) -> &Term {
+        &self.rhs
+    }
+    pub fn equiv_relation(&self) -> &str {
+        &self.equiv_relation
+    }
 }
 
 /// Schema for a declared relation.
@@ -58,6 +105,7 @@ pub struct ClosureEngine {
     // ── runtime state ────────────────────────────────────────
     facts: HashSet<Relation>,
     rules: Vec<Rule>,
+    axioms: Vec<Axiom>,
     max_rounds: usize,
     max_facts: usize,
 }
@@ -79,6 +127,7 @@ impl ClosureEngine {
             congruent_relations: BTreeSet::new(),
             facts: HashSet::new(),
             rules: Vec::new(),
+            axioms: Vec::new(),
             max_rounds: DEFAULT_MAX_ROUNDS,
             max_facts: DEFAULT_MAX_FACTS,
         }
@@ -170,6 +219,9 @@ impl ClosureEngine {
     pub fn rules(&self) -> &[Rule] {
         &self.rules
     }
+    pub fn axioms(&self) -> &[Axiom] {
+        &self.axioms
+    }
 
     // ── building ─────────────────────────────────────────────
 
@@ -179,6 +231,13 @@ impl ClosureEngine {
 
     pub fn add_rule(&mut self, rule: Rule) {
         self.rules.push(rule);
+    }
+
+    /// Adds a universally quantified axiom. During closure, the engine
+    /// enumerates all ground substitutions for the axiom's variables and
+    /// emits `equiv_relation(subst(lhs), subst(rhs))` facts.
+    pub fn add_axiom(&mut self, axiom: Axiom) {
+        self.axioms.push(axiom);
     }
 
     pub fn set_max_rounds(&mut self, n: usize) {
@@ -334,6 +393,29 @@ impl ClosureEngine {
         let mut rounds = 0;
         let mut fixed_point = false;
         let mut hit_limit = false;
+        let mut warnings: Vec<String> = Vec::new();
+
+        // Static analysis: detect expanding axioms
+        let mut expanding: HashSet<usize> = HashSet::new();
+        for (i, axiom) in self.axioms.iter().enumerate() {
+            if detect_expanding(axiom) {
+                expanding.insert(i);
+                warnings.push(format!(
+                    "Axiom \"{}\" is recursive (one side embeds in the other); \
+                     instantiation depth is capped at {}",
+                    axiom.name(),
+                    MAX_TERM_DEPTH,
+                ));
+            }
+        }
+
+        let mut depth_grew_rounds = 0usize;
+        let mut prev_max_depth = self
+            .facts
+            .iter()
+            .flat_map(|f| f.terms().iter().map(|t| t.depth()))
+            .max()
+            .unwrap_or(0);
 
         for _ in 0..self.max_rounds {
             rounds += 1;
@@ -370,6 +452,86 @@ impl ClosureEngine {
             // 3. Built-in: congruence
             if !self.congruent_relations.is_empty() {
                 self.apply_congruence(&mut new_facts);
+            }
+
+            // 4. Axiom instantiation
+            if !self.axioms.is_empty() {
+                let universe = self.collect_universe();
+                let mut ground_terms: Vec<Term> =
+                    universe.iter().filter(|t| t.is_ground()).cloned().collect();
+                ground_terms.sort_by_key(|t| t.depth());
+                if ground_terms.len() > MAX_AXIOM_UNIVERSE {
+                    ground_terms.truncate(MAX_AXIOM_UNIVERSE);
+                }
+
+                let mut depth_capped = false;
+                for (i, axiom) in self.axioms.iter().enumerate() {
+                    let vars = axiom_variables(axiom);
+                    let is_expanding = expanding.contains(&i);
+
+                    let depth_limit = if is_expanding {
+                        MAX_TERM_DEPTH - 1
+                    } else {
+                        MAX_AXIOM_SUB_DEPTH
+                    };
+                    let pool: Vec<Term> = ground_terms
+                        .iter()
+                        .filter(|t| t.depth() <= depth_limit)
+                        .cloned()
+                        .collect();
+
+                    for sub in enumerate_substitutions(&vars, &pool) {
+                        let lhs = substitute_total(axiom.lhs(), &sub);
+                        let rhs = substitute_total(axiom.rhs(), &sub);
+
+                        if lhs.depth() > MAX_TERM_DEPTH || rhs.depth() > MAX_TERM_DEPTH {
+                            depth_capped = true;
+                            continue;
+                        }
+
+                        let fact = Relation::binary(
+                            axiom.equiv_relation(),
+                            lhs,
+                            rhs,
+                        );
+                        if !self.facts.contains(&fact) {
+                            new_facts.insert(fact);
+                        }
+                    }
+                }
+
+                // Depth-growth detection for early halt
+                let cur_max_depth = new_facts
+                    .iter()
+                    .flat_map(|f| f.terms().iter().map(|t| t.depth()))
+                    .max()
+                    .unwrap_or(0)
+                    .max(prev_max_depth);
+
+                if cur_max_depth > prev_max_depth {
+                    depth_grew_rounds += 1;
+                } else {
+                    depth_grew_rounds = 0;
+                }
+                prev_max_depth = cur_max_depth;
+
+                if depth_grew_rounds >= 3 && depth_capped {
+                    warnings.push(format!(
+                        "Recursive expansion detected: term depth grew for {} \
+                         consecutive rounds (max depth {}); halting early",
+                        depth_grew_rounds, cur_max_depth,
+                    ));
+                    // Still add what we have this round, then break
+                    new_facts.retain(|f| !self.facts.contains(f));
+                    for fact in new_facts {
+                        self.facts.insert(fact);
+                        if self.facts.len() >= self.max_facts {
+                            hit_limit = true;
+                            break;
+                        }
+                    }
+                    break;
+                }
             }
 
             // Remove anything already known
@@ -409,6 +571,7 @@ impl ClosureEngine {
             derived,
             rounds,
             saturated: fixed_point && !hit_limit,
+            warnings,
         }
     }
 
@@ -468,6 +631,146 @@ impl ClosureEngine {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// ── Axiom helpers ────────────────────────────────────────────
+
+/// Collect all variable names from a term.
+fn collect_var_names(term: &Term, vars: &mut HashSet<String>) {
+    match term {
+        Term::Var(name) => {
+            vars.insert(name.clone());
+        }
+        Term::App { args, .. } => {
+            for arg in args {
+                collect_var_names(arg, vars);
+            }
+        }
+    }
+}
+
+/// Get sorted variable names from an axiom's lhs and rhs.
+fn axiom_variables(axiom: &Axiom) -> Vec<String> {
+    let mut vars = HashSet::new();
+    collect_var_names(axiom.lhs(), &mut vars);
+    collect_var_names(axiom.rhs(), &mut vars);
+    let mut v: Vec<String> = vars.into_iter().collect();
+    v.sort();
+    v
+}
+
+/// Generate all possible substitutions mapping variables to terms.
+fn enumerate_substitutions(
+    vars: &[String],
+    terms: &[Term],
+) -> Vec<HashMap<String, Term>> {
+    if vars.is_empty() {
+        return vec![HashMap::new()];
+    }
+    let rest = enumerate_substitutions(&vars[1..], terms);
+    let mut result = Vec::with_capacity(terms.len() * rest.len());
+    for term in terms {
+        for sub in &rest {
+            let mut new_sub = sub.clone();
+            new_sub.insert(vars[0].clone(), term.clone());
+            result.push(new_sub);
+        }
+    }
+    result
+}
+
+/// Substitute all variables in a term (total: unbound vars remain as-is).
+fn substitute_total(term: &Term, sub: &HashMap<String, Term>) -> Term {
+    match term {
+        Term::Var(name) => sub.get(name).cloned().unwrap_or_else(|| term.clone()),
+        Term::App { symbol, args } => Term::app(
+            symbol.clone(),
+            args.iter().map(|a| substitute_total(a, sub)).collect(),
+        ),
+    }
+}
+
+/// Detect if an axiom is "expanding" — one side embeds structurally in the
+/// other, causing unbounded term growth during instantiation.
+fn detect_expanding(axiom: &Axiom) -> bool {
+    let ld = axiom.lhs().depth();
+    let rd = axiom.rhs().depth();
+    if ld == rd {
+        return false;
+    }
+    let (pattern, host) = if ld < rd {
+        (axiom.lhs(), axiom.rhs())
+    } else {
+        (axiom.rhs(), axiom.lhs())
+    };
+    if matches!(pattern, Term::Var(_)) {
+        return false;
+    }
+    proper_subterms(host)
+        .iter()
+        .any(|sub| structural_matches(pattern, sub))
+}
+
+/// Collect all proper subterms (children and their descendants, not the term itself).
+fn proper_subterms(term: &Term) -> Vec<&Term> {
+    let mut out = Vec::new();
+    if let Term::App { args, .. } = term {
+        for arg in args {
+            collect_all_subterms_ref(arg, &mut out);
+        }
+    }
+    out
+}
+
+fn collect_all_subterms_ref<'a>(term: &'a Term, out: &mut Vec<&'a Term>) {
+    out.push(term);
+    if let Term::App { args, .. } = term {
+        for arg in args {
+            collect_all_subterms_ref(arg, out);
+        }
+    }
+}
+
+/// Check if `pattern` structurally matches `term` (variables match anything).
+fn structural_matches(pattern: &Term, term: &Term) -> bool {
+    let mut bindings: HashMap<&str, &Term> = HashMap::new();
+    structural_matches_inner(pattern, term, &mut bindings)
+}
+
+fn structural_matches_inner<'a>(
+    pattern: &'a Term,
+    term: &'a Term,
+    bindings: &mut HashMap<&'a str, &'a Term>,
+) -> bool {
+    match pattern {
+        Term::Var(name) => {
+            if let Some(&bound) = bindings.get(name.as_str()) {
+                bound == term
+            } else {
+                bindings.insert(name, term);
+                true
+            }
+        }
+        Term::App {
+            symbol: ps,
+            args: pa,
+        } => {
+            if let Term::App {
+                symbol: ts,
+                args: ta,
+            } = term
+            {
+                ps == ts
+                    && pa.len() == ta.len()
+                    && pa
+                        .iter()
+                        .zip(ta.iter())
+                        .all(|(p, t)| structural_matches_inner(p, t, bindings))
+            } else {
+                false
             }
         }
     }
@@ -854,5 +1157,192 @@ mod tests {
         for i in 1..result.facts.len() {
             assert!(result.facts[i - 1].to_string() <= result.facts[i].to_string());
         }
+    }
+
+    // ── Axiom instantiation ─────────────────────────────────
+
+    #[test]
+    fn test_axiom_identity() {
+        // Axiom: mul(x, e) = x  (right identity)
+        // Use a plain relation (no congruence) to test pure axiom instantiation
+        let mut engine = ClosureEngine::new();
+        engine.define_relation("eq", 2);
+        engine.define_constant("a");
+        engine.define_constant("e");
+
+        let x = Term::var("x");
+        engine.add_axiom(Axiom::new(
+            "right_identity",
+            Term::app("mul", vec![x.clone(), Term::constant("e")]),
+            x,
+            "eq",
+        ));
+
+        // Seed facts to get constants into the universe
+        engine.add_fact(Relation::binary("eq", c("a"), c("a")));
+        engine.add_fact(Relation::binary("eq", c("e"), c("e")));
+
+        let result = engine.derive_closure();
+
+        let mul_a_e = Term::app("mul", vec![c("a"), c("e")]);
+        assert!(
+            result.facts.contains(&Relation::binary("eq", mul_a_e, c("a"))),
+            "should derive eq(mul(a, e), a)"
+        );
+    }
+
+    #[test]
+    fn test_axiom_commutativity() {
+        // Axiom: add(x, y) = add(y, x) — no congruence
+        let mut engine = ClosureEngine::new();
+        engine.define_relation("eq", 2);
+        engine.define_constant("a");
+        engine.define_constant("b");
+
+        let (x, y) = (Term::var("x"), Term::var("y"));
+        engine.add_axiom(Axiom::new(
+            "add_comm",
+            Term::app("add", vec![x.clone(), y.clone()]),
+            Term::app("add", vec![y, x]),
+            "eq",
+        ));
+
+        engine.add_fact(Relation::binary("eq", c("a"), c("a")));
+        engine.add_fact(Relation::binary("eq", c("b"), c("b")));
+
+        let result = engine.derive_closure();
+
+        let add_ab = Term::app("add", vec![c("a"), c("b")]);
+        let add_ba = Term::app("add", vec![c("b"), c("a")]);
+        assert!(
+            result
+                .facts
+                .contains(&Relation::binary("eq", add_ab, add_ba)),
+            "should derive eq(add(a,b), add(b,a))"
+        );
+    }
+
+    #[test]
+    fn test_axiom_no_facts_no_expansion() {
+        let mut engine = ClosureEngine::new();
+        let x = Term::var("x");
+        engine.add_axiom(Axiom::new(
+            "id",
+            Term::app("f", vec![x.clone()]),
+            x,
+            "eq",
+        ));
+
+        let result = engine.derive_closure();
+        assert!(result.derived.is_empty());
+        assert!(result.saturated);
+    }
+
+    #[test]
+    fn test_axiom_expanding_detection() {
+        // Axiom: f(x) = f(f(x)) — recursive, should be detected
+        let mut engine = ClosureEngine::new();
+        engine.define_relation("eq", 2);
+        engine.define_constant("a");
+
+        let x = Term::var("x");
+        engine.add_axiom(Axiom::new(
+            "wrap",
+            Term::app("f", vec![x.clone()]),
+            Term::app("f", vec![Term::app("f", vec![x])]),
+            "eq",
+        ));
+
+        engine.add_fact(Relation::binary("eq", c("a"), c("a")));
+        engine.set_max_rounds(20);
+
+        let result = engine.derive_closure();
+
+        assert!(
+            result.warnings.iter().any(|w| w.contains("recursive")),
+            "should warn about recursive axiom, got: {:?}",
+            result.warnings,
+        );
+        // All terms should be within depth limit
+        for fact in &result.facts {
+            for term in fact.terms() {
+                assert!(
+                    term.depth() <= MAX_TERM_DEPTH,
+                    "term {} has depth {} > MAX_TERM_DEPTH {}",
+                    term,
+                    term.depth(),
+                    MAX_TERM_DEPTH,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_axiom_non_expanding_no_warning() {
+        let mut engine = ClosureEngine::new();
+        engine.define_relation("eq", 2);
+        engine.define_constant("a");
+        engine.define_constant("e");
+
+        let x = Term::var("x");
+        engine.add_axiom(Axiom::new(
+            "right_id",
+            Term::app("mul", vec![x.clone(), Term::constant("e")]),
+            x,
+            "eq",
+        ));
+
+        engine.add_fact(Relation::binary("eq", c("a"), c("a")));
+        engine.add_fact(Relation::binary("eq", c("e"), c("e")));
+
+        let result = engine.derive_closure();
+        assert!(
+            result.warnings.is_empty(),
+            "identity axiom should produce no warnings, got: {:?}",
+            result.warnings,
+        );
+    }
+
+    #[test]
+    fn test_axiom_with_equivalence_interaction() {
+        // Axiom: mul(x, e) = x with symmetry+transitivity (but NOT congruence)
+        // If we know eq(a, b), axiom should instantiate for both a and b
+        let mut engine = ClosureEngine::new();
+        engine.define_relation("eq", 2);
+        engine.define_variable("x");
+        engine.define_variable("y");
+        engine.define_variable("z");
+        engine.add_rule(rule::symmetry_for("eq"));
+        engine.add_rule(rule::transitivity_for("eq"));
+        engine.mark_reflexive("eq");
+
+        engine.define_constant("a");
+        engine.define_constant("b");
+        engine.define_constant("e");
+
+        let x = Term::var("x");
+        engine.add_axiom(Axiom::new(
+            "right_id",
+            Term::app("mul", vec![x.clone(), Term::constant("e")]),
+            x,
+            "eq",
+        ));
+
+        engine.add_fact(Relation::binary("eq", c("a"), c("b")));
+
+        let result = engine.derive_closure();
+
+        let mul_a_e = Term::app("mul", vec![c("a"), c("e")]);
+        let mul_b_e = Term::app("mul", vec![c("b"), c("e")]);
+        assert!(result.facts.contains(&Relation::binary("eq", mul_a_e, c("a"))));
+        assert!(result.facts.contains(&Relation::binary("eq", mul_b_e, c("b"))));
+    }
+
+    #[test]
+    fn test_warnings_empty_by_default() {
+        let mut engine = ClosureEngine::with_defaults();
+        engine.add_fact(equiv(c("a"), c("b")));
+        let result = engine.derive_closure();
+        assert!(result.warnings.is_empty());
     }
 }

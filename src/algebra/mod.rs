@@ -66,6 +66,7 @@
 
 pub mod builders;
 pub mod closure;
+pub mod compile;
 pub mod equation;
 pub mod operation;
 pub mod parser;

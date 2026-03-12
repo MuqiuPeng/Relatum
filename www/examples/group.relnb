@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Group: Z\u2083\n\nThe cyclic group of order 3: integers {0, 1, 2} under addition mod 3.\n\nWe encode the operation as a ternary relation `op(a, b, c)` meaning a + b \u2261 c (mod 3), then use rules to verify group axioms and derive properties."
+    },
+    {
+      "type": "code",
+      "source": "<ele> O, A, B\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\n# Cayley table: addition mod 3\n# O = 0, A = 1, B = 2\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Commutativity: if op(x,y,z) and op(y,x,w) then z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Commutativity\n\nThe `comm` rule fires for every pair. For example, `op(A, B, O)` and `op(B, A, O)` derive `eq(O, O)`. All results match \u2014 only reflexive equalities are produced, confirming Z\u2083 is **abelian**."
+    },
+    {
+      "type": "code",
+      "source": "<ele> O, A, B\n\n<rel> op/3\n<rel> has_inv/2\n<rel> is_identity/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Identity: e + x = x for all x\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_identity(?e)\n\n# Inverse: x + y = O implies y is the inverse of x\n<rule> find_inv: op(?x, ?y, O) |- has_inv(?x, ?y)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Identity & Inverses\n\n- **Identity:** `is_identity(O)` \u2014 only O satisfies e + x = x for all x\n- **Inverses:** `has_inv(O, O)`, `has_inv(A, B)`, `has_inv(B, A)` \u2014 every element has a unique inverse\n\nClosure, associativity, identity, and inverses: all four group axioms are satisfied."
+    }
+  ]
+}

@@ -80,7 +80,7 @@ src/
 │   ├── term.rs           #   Term = Atom | Compound(symbol, args) | Var
 │   ├── relation.rs       #   Relation = named tuple of terms
 │   ├── rule.rs           #   Rule = premises |- conclusions; pattern matching
-│   └── engine.rs         #   Semi-naive closure, reflexivity, congruence
+│   └── engine.rs         #   Semi-naive closure, reflexivity, congruence, axiom instantiation
 ├── algebra/              # Theory library (on top of relational core)
 │   ├── operation.rs      #   OperationId, Arity — typed operation declarations
 │   ├── registry.rs       #   OpRegistry — shared signature namespace
@@ -89,11 +89,8 @@ src/
 │   ├── structure.rs      #   Structure = adopted ops + equational axioms
 │   ├── builders.rs       #   Prelude: semigroup, monoid, group, ring
 │   ├── closure.rs        #   Equational closure via union-find + congruence
+│   ├── compile.rs        #   Algebra → relational term/axiom compiler
 │   └── parser.rs         #   Text syntax → AST
-├── node.rs               # Graph primitives (legacy, to be retired)
-├── relation.rs           #   ↑
-├── network.rs            #   ↑
-├── iter.rs               #   ↑
 └── lib.rs                # Crate root
 www/
 ├── index.html            # Single-file web app: DSL parser + closure engine + notebook UI

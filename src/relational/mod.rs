@@ -46,7 +46,7 @@ pub mod relation;
 pub mod rule;
 pub mod term;
 
-pub use engine::{ClosureEngine, ClosureResult, RelationDef};
+pub use engine::{Axiom, ClosureEngine, ClosureResult, RelationDef};
 pub use relation::Relation;
 pub use rule::{RelationPattern, Rule, Substitution};
 pub use term::Term;

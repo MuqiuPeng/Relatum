@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Rule Composition\n\nThe engine can derive new rules by chaining existing ones. If rule A concludes B, and rule C has premise B, then A's premises can directly derive C's conclusions."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> P/1\n<rel> Q/1\n<rel> R/1\n\n<rule> r1: P(?x) |- Q(?x)\n<rule> r2: Q(?x) |- R(?x)\n\nP(a)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## What Happened\n\n- **r1**: P(?x) |- Q(?x)\n- **r2**: Q(?x) |- R(?x)\n- **Derived rule r1+r2**: P(?x) |- R(?x)\n\nFrom just `P(a)`, the engine derives `Q(a)` (via r1), `R(a)` (via r2), and the composed rule `r1+r2` lets it also derive `R(a)` directly from `P(a)`."
+    },
+    {
+      "type": "code",
+      "source": "<ele> x, y, z\n\n<rel> friend/2 : symmetric\n<rel> knows/2\n<rel> trusts/2\n\n<rule> f2k: friend(?a, ?b) |- knows(?a, ?b)\n<rule> k2t: knows(?a, ?b), knows(?b, ?a) |- trusts(?a, ?b)\n\nfriend(x, y)\nfriend(y, z)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Multi-hop Composition\n\nThe engine composes `friend_symmetry` with `f2k` and `k2t` to build longer inference chains. Symmetric friendship + knowing leads to trust."
+    }
+  ]
+}

@@ -28,10 +28,6 @@
 //! ```
 
 pub mod algebra;
-pub mod iter;
-pub mod network;
-pub mod node;
-pub mod relation;
 pub mod relational;
 
 // Primary exports: algebra and closure engine
@@ -39,9 +35,3 @@ pub use algebra::{
     builders, ClosureEngine, ClosureResult, Equation, OpRegistry, Parser, RegistryError, Structure,
     Term,
 };
-
-// Graph layer (secondary)
-pub use iter::{NetworkIterExt, Path};
-pub use network::Network;
-pub use node::Node;
-pub use relation::Relation;

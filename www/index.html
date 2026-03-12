@@ -1143,11 +1143,8 @@ header h1 {
     <h1>RELATUM</h1>
     <div class="header-controls">
       <button class="btn btn-run" onclick="runAll()">Run All</button>
-      <button class="btn" onclick="goWorkspace()">Open</button>
-      <button class="btn" onclick="saveCurrentTab()">Save</button>
-      <button class="btn" onclick="importFile()">Load</button>
-      <button class="btn" onclick="exportFile()">Export</button>
-      <button class="btn" onclick="wsPromptNewFile()">New</button>
+      <button class="btn" id="btn-clear" onclick="clearAll()" style="display:none">Clear All</button>
+      <button class="btn" id="btn-save" onclick="saveCurrentTab()" style="display:none">Save</button>
       <button class="btn" onclick="toggleDocPanel()">Doc</button>
     </div>
   </header>
@@ -1272,7 +1269,7 @@ header h1 {
 <h1>Quick Start</h1>
 <p class="page-desc">Write your first Relatum program in under a minute.</p>
 <h2>1. Create a Cell</h2>
-<p>The app opens with a code cell. Type your program directly, or click <strong>Open</strong> to load a <code>.relnb</code> file.</p>
+<p>The app opens with the Workspace tab. Double-click an example or workspace file to open it, or create a new file with <strong>+ File</strong>.</p>
 <h2>2. Write a Program</h2>
 <pre>
 <span class="kw">&lt;element&gt;</span> a, b, c
@@ -1621,12 +1618,12 @@ header h1 {
 <p class="page-desc">Multi-tab workflow and file management.</p>
 <h2>Multiple Tabs</h2>
 <p>Each tab is an independent notebook with its own cells, knowledge base, undo stack, and execution state. Click a tab to switch; click <strong>&times;</strong> to close it.</p>
-<h2>New Tab</h2>
-<p>Click <strong>New</strong> in the header to create a blank notebook tab.</p>
+<h2>Creating Files</h2>
+<p>In the Workspace tab, click <strong>+ File</strong> to create a new notebook. Focus a folder first to create inside it.</p>
 <h2>Opening Files</h2>
-<p>Click <strong>Open</strong> to load <code>.relnb</code> files. You can select multiple files &mdash; each opens in its own tab.</p>
+<p>Double-click any file in the Workspace or Examples section to open it in a new tab.</p>
 <h2>Saving Files</h2>
-<p>Click <strong>Save</strong> to download the current tab as a <code>.relnb</code> file. The file contains:</p>
+<p>Click <strong>Save</strong> in the header to save the current tab to the workspace. The file contains:</p>
 <ul>
   <li>All cells (code and markdown) with their source text</li>
   <li>Cell output HTML (for code cells that have been executed)</li>
@@ -1974,6 +1971,196 @@ function termReplaceAll(t, from, to) {
   if (termEquals(t, from)) return to;
   if (t.fn !== undefined) return { fn: t.fn, args: t.args.map(a => termReplaceAll(a, from, to)) };
   return t;
+}
+
+// ===============================================================
+//  Rule Composition — unification + rule chaining
+// ===============================================================
+
+// Apply substitution to a term, leaving unbound vars as-is
+function termApplySub(t, sub) {
+  if (t.atom !== undefined) return t;
+  if (t.var !== undefined) {
+    if (t.var in sub) {
+      const resolved = termApplySub(sub[t.var], sub);
+      return resolved;
+    }
+    return t;
+  }
+  if (t.fn !== undefined) {
+    return { fn: t.fn, args: t.args.map(a => termApplySub(a, sub)) };
+  }
+  return t;
+}
+
+// Check if variable v occurs in term t (under substitution sub)
+function occursIn(v, t, sub) {
+  if (t.var !== undefined) {
+    if (t.var === v) return true;
+    if (t.var in sub) return occursIn(v, sub[t.var], sub);
+    return false;
+  }
+  if (t.fn !== undefined) return t.args.some(a => occursIn(v, a, sub));
+  return false;
+}
+
+// Full two-way unification. Returns new sub (shallow copy) or null on failure.
+function termUnify(t1, t2, sub) {
+  const s = { ...sub };
+  if (!_unify(t1, t2, s)) return null;
+  return s;
+}
+
+function _unify(t1, t2, sub) {
+  // Resolve vars
+  if (t1.var !== undefined && t1.var in sub) return _unify(sub[t1.var], t2, sub);
+  if (t2.var !== undefined && t2.var in sub) return _unify(t1, sub[t2.var], sub);
+  // Var-anything
+  if (t1.var !== undefined) {
+    if (t2.var !== undefined && t1.var === t2.var) return true;
+    if (occursIn(t1.var, t2, sub)) return false;
+    sub[t1.var] = t2;
+    return true;
+  }
+  if (t2.var !== undefined) {
+    if (occursIn(t2.var, t1, sub)) return false;
+    sub[t2.var] = t1;
+    return true;
+  }
+  // Atom-atom
+  if (t1.atom !== undefined && t2.atom !== undefined) return t1.atom === t2.atom;
+  // Compound-compound
+  if (t1.fn !== undefined && t2.fn !== undefined) {
+    if (t1.fn !== t2.fn || t1.args.length !== t2.args.length) return false;
+    return t1.args.every((a, i) => _unify(a, t2.args[i], sub));
+  }
+  return false;
+}
+
+// Rename all variables in a rule by appending a suffix
+function renameRuleVars(rule, suffix) {
+  function renTerm(t) {
+    if (t.atom !== undefined) return t;
+    if (t.var !== undefined) return { var: t.var + suffix };
+    if (t.fn !== undefined) return { fn: t.fn, args: t.args.map(renTerm) };
+    return t;
+  }
+  function renAtom(a) { return { name: a.name, terms: a.terms.map(renTerm) }; }
+  return {
+    name: rule.name,
+    premises: rule.premises.map(renAtom),
+    conclusions: rule.conclusions.map(renAtom),
+    auto: rule.auto,
+  };
+}
+
+// Collect all variable names from a rule
+function ruleVarNames(rule) {
+  const vars = new Set();
+  function collect(t) {
+    if (t.var !== undefined) vars.add(t.var);
+    if (t.fn !== undefined) t.args.forEach(collect);
+  }
+  for (const p of rule.premises) p.terms.forEach(collect);
+  for (const c of rule.conclusions) c.terms.forEach(collect);
+  return vars;
+}
+
+// Atom equality (relation name + terms)
+function atomEquals(a, b) {
+  return a.name === b.name && a.terms.length === b.terms.length &&
+    a.terms.every((t, i) => termEquals(t, b.terms[i]));
+}
+
+// Derive new rules by composing pairs: if r1 concludes B and r2 has premise B,
+// unify them and produce r1's premises |- r2's remaining conclusions (with residual r2 premises).
+function deriveRules(rules) {
+  const derived = [];
+  const seen = new Set();
+  const MAX_DERIVED_RULES = 50;
+
+  for (let i = 0; i < rules.length; i++) {
+    for (let j = 0; j < rules.length; j++) {
+      if (i === j) continue;
+      const r1 = renameRuleVars(rules[i], '_L');
+      const r2 = renameRuleVars(rules[j], '_R');
+
+      // Try unifying each conclusion of r1 with each premise of r2
+      for (let ci = 0; ci < r1.conclusions.length; ci++) {
+        const conc = r1.conclusions[ci];
+        for (let pi = 0; pi < r2.premises.length; pi++) {
+          const prem = r2.premises[pi];
+          if (conc.name !== prem.name || conc.terms.length !== prem.terms.length) continue;
+
+          let sub = {};
+          let ok = true;
+          for (let ti = 0; ti < conc.terms.length; ti++) {
+            sub = termUnify(conc.terms[ti], prem.terms[ti], sub);
+            if (!sub) { ok = false; break; }
+          }
+          if (!ok) continue;
+
+          // Build new rule: r1 premises + remaining r2 premises |- remaining r1 conclusions + r2 conclusions
+          const newPremises = [
+            ...r1.premises,
+            ...r2.premises.filter((_, idx) => idx !== pi),
+          ].map(a => ({ name: a.name, terms: a.terms.map(t => termApplySub(t, sub)) }));
+          const newConclusions = [
+            ...r1.conclusions.filter((_, idx) => idx !== ci),
+            ...r2.conclusions,
+          ].map(a => ({ name: a.name, terms: a.terms.map(t => termApplySub(t, sub)) }));
+
+          if (newConclusions.length === 0) continue;
+
+          // Deduplicate: remove premises that are already conclusions
+          const filteredPremises = newPremises.filter(
+            p => !newConclusions.some(c => atomEquals(p, c))
+          );
+          // Skip if no premises (tautological) or identical to existing
+          if (filteredPremises.length === 0 && newConclusions.every(c => c.terms.every(t => t.var !== undefined))) continue;
+
+          // Normalize variable names for readability
+          const varMap = new Map();
+          let varCount = 0;
+          function normTerm(t) {
+            if (t.atom !== undefined) return t;
+            if (t.var !== undefined) {
+              if (!varMap.has(t.var)) varMap.set(t.var, String.fromCharCode(97 + (varCount++ % 26)));
+              return { var: varMap.get(t.var) };
+            }
+            if (t.fn !== undefined) return { fn: t.fn, args: t.args.map(normTerm) };
+            return t;
+          }
+          function normAtom(a) { return { name: a.name, terms: a.terms.map(normTerm) }; }
+
+          const normP = filteredPremises.map(normAtom);
+          const normC = newConclusions.map(normAtom);
+          const name = `${rules[i].name}+${rules[j].name}`;
+
+          // Deduplicate by string key
+          const key = normP.map(a => `${a.name}(${a.terms.map(termStr).join(',')})`).join(',') +
+            '|-' + normC.map(a => `${a.name}(${a.terms.map(termStr).join(',')})`).join(',');
+          if (seen.has(key)) continue;
+
+          // Skip if derived rule is identical to any existing rule
+          const isDuplicate = rules.some(r =>
+            r.premises.length === normP.length && r.conclusions.length === normC.length &&
+            r.premises.every((p, idx) => atomEquals(p, normP[idx])) &&
+            r.conclusions.every((c, idx) => atomEquals(c, normC[idx]))
+          );
+          if (isDuplicate) continue;
+
+          seen.add(key);
+          // Trivial: auto+auto, or user+auto (user conclusion fed into auto rule — just a property consequence)
+          const trivial = rules[j].auto;
+          derived.push({ name, premises: normP, conclusions: normC, auto: true, composed: true, trivial });
+          if (derived.length >= MAX_DERIVED_RULES) return derived;
+        }
+      }
+    }
+  }
+
+  return derived;
 }
 
 // ===============================================================
@@ -2335,6 +2522,7 @@ function execute(program) {
     autoRules: [],
     userRules: [],
     derivedFacts: [],
+    derivedRules: [],
     proofs: [],
     stats: null,
     errors: [],
@@ -2432,6 +2620,15 @@ function execute(program) {
   for (const rule of program.rules) {
     const r = { ...rule, auto: false };
     rules.push(r); output.userRules.push(r);
+  }
+
+  // Rule composition: derive new rules by chaining existing ones
+  if (rules.length >= 2) {
+    const composed = deriveRules(rules);
+    for (const cr of composed) {
+      rules.push(cr);
+      output.derivedRules.push(cr);
+    }
   }
 
   // Compute closure
@@ -3160,6 +3357,16 @@ function renderTabBar() {
     return `<div class="tab${active}" onclick="switchTab(${i})" title="${name}"><span>${name}</span>${ro}${dot}${closeBtn}</div>`;
   }).join('');
   bar.innerHTML = html;
+  // Show Save / Clear All buttons only when a notebook tab is active
+  const isNotebook = currentTab >= 0 && tabs[currentTab];
+  const saveBtn = document.getElementById('btn-save');
+  if (saveBtn) {
+    saveBtn.style.display = (isNotebook && !tabs[currentTab].readOnly) ? '' : 'none';
+  }
+  const clearBtn = document.getElementById('btn-clear');
+  if (clearBtn) {
+    clearBtn.style.display = isNotebook ? '' : 'none';
+  }
 }
 
 // ── Cell-level undo stack ────────────────────────────────────
@@ -3424,6 +3631,18 @@ function deactivateCell(cellId) {
   if (panelOpen) renderPanel();
 }
 
+function clearAll() {
+  for (const cell of cells) {
+    if (cell.state === 'idle') continue;
+    cell.state = 'idle';
+    cell.parsed = null;
+  }
+  lastClosureStats = null;
+  updateStatus(null);
+  renderNotebook();
+  if (panelOpen) renderPanel();
+}
+
 // ===============================================================
 //  Cell Output Rendering
 // ===============================================================
@@ -3474,6 +3693,31 @@ function renderCellQueryOutput(cellId, output, query) {
   if (!el) return;
 
   let html = '<div class="cell-output-inner">';
+
+  // Derived rules (from rule composition)
+  if (output.derivedRules && output.derivedRules.length > 0) {
+    const mainRules = output.derivedRules.filter(r => !r.trivial);
+    const trivialRules = output.derivedRules.filter(r => r.trivial);
+    if (mainRules.length > 0 || trivialRules.length > 0) {
+      html += '<div class="out-section">';
+      html += `<div class="out-section-title">Derived Rules (${output.derivedRules.length})</div>`;
+      for (const r of mainRules) {
+        const premStr = r.premises.map(a => `${a.name}(${a.terms.map(termPretty).join(', ')})`).join(', ');
+        const concStr = r.conclusions.map(a => `${a.name}(${a.terms.map(termPretty).join(', ')})`).join(', ');
+        html += `<div class="out-fact" style="color:var(--accent)">${esc(r.name)}: ${esc(premStr)} |- ${esc(concStr)}</div>`;
+      }
+      if (trivialRules.length > 0) {
+        html += `<details class="trivial-rules"><summary style="cursor:pointer;color:var(--text-dim);font-size:11px;padding:2px 0 2px 12px;user-select:none">${trivialRules.length} trivial (auto+auto)</summary>`;
+        for (const r of trivialRules) {
+          const premStr = r.premises.map(a => `${a.name}(${a.terms.map(termPretty).join(', ')})`).join(', ');
+          const concStr = r.conclusions.map(a => `${a.name}(${a.terms.map(termPretty).join(', ')})`).join(', ');
+          html += `<div class="out-fact" style="color:var(--text-dim);font-size:11px">${esc(r.name)}: ${esc(premStr)} |- ${esc(concStr)}</div>`;
+        }
+        html += '</details>';
+      }
+      html += '</div>';
+    }
+  }
 
   // Derived facts
   if (output.derivedFacts.length > 0) {
@@ -3662,6 +3906,7 @@ function renderNotebook() {
           e.preventDefault();
           hideAutocomplete();
           activateCell(cell.id);
+          jumpToNextCodeCell(cell.id);
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
@@ -3805,6 +4050,21 @@ function addCellAfter(afterId, type) {
   const newCell = cells[idx + 1];
   const el = document.querySelector(`#cell-${newCell.id} .cell-editor`);
   if (el) { el.style.display = 'block'; el.focus(); }
+}
+
+function jumpToNextCodeCell(afterId) {
+  const idx = cells.findIndex(c => c.id === afterId);
+  if (idx < 0) return;
+  // Find next code cell after current
+  for (let i = idx + 1; i < cells.length; i++) {
+    if (cells[i].type === 'code') {
+      const el = document.querySelector(`#cell-${cells[i].id} .cell-editor`);
+      if (el) { el.focus(); el.scrollIntoView({ block: 'nearest' }); }
+      return;
+    }
+  }
+  // No next code cell — create one at the end
+  addCell('', 'code');
 }
 
 function deleteCell(id) {
@@ -4059,44 +4319,6 @@ async function saveToWorkspace() {
   await wsWrite(tab.wsPath, buildNotebookData());
   tab.dirty = false;
   renderTabBar();
-}
-
-function exportFile() {
-  if (currentTab < 0 || !tabs[currentTab]) return;
-  const data = buildNotebookData();
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const tabName = tabs[currentTab].name || 'notebook';
-  a.download = tabName.endsWith('.relnb') ? tabName : tabName + '.relnb';
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function importFile() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.relnb';
-  input.multiple = true;
-  input.onchange = () => {
-    for (const file of input.files) {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const data = JSON.parse(reader.result);
-          const fname = file.name.endsWith('.relnb') ? file.name : file.name + '.relnb';
-          await wsWrite(fname, data);
-          openNotebookInTab(data, fname, { wsPath: fname });
-        } catch (e) {
-          alert('Invalid .relnb file: ' + e.message);
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-  input.click();
 }
 
 function openNotebookInTab(data, filename, opts) {
@@ -4375,6 +4597,11 @@ const EXAMPLE_DATA = {
   'skolem.relnb': {"version":1,"cells":[{"type":"md","source":"# Compound Terms & Skolem Witnesses\n\nCompound terms like `inv(?x)` create structured terms from existing ones.\n\nWhen used in rule conclusions, they act as **Skolem witnesses** \u2014 generating new terms that depend on matched variables.\n\nThe `depth` directive limits nesting to prevent infinite generation."},{"type":"code","source":"depth 3\n\n<ele> e, a, b\n\n<rel> group/3\n<rel> member/1\n\nmember(e)\nmember(a)\nmember(b)\n\n# Every member has an inverse\n<rule> has_inv: member(?x) |- group(?x, inv(?x), e)\n\n# The inverse is also a member\n<rule> inv_member: member(?x) |- member(inv(?x))\n\nderive"},{"type":"md","source":"## What Happens\n\n1. `has_inv` fires for each member, creating `group(a, inv(a), e)`, `group(b, inv(b), e)`, etc.\n2. `inv_member` makes `inv(a)`, `inv(b)` into members too\n3. This cascades: `inv(inv(a))`, `inv(inv(inv(a)))` ... up to `depth 3`\n4. Without the depth limit, this would loop forever\n\n## Use Cases\n\n- **Group theory:** `inv(?x)` as inverse, `op(?x, ?y)` as multiplication\n- **Successor arithmetic:** `s(zero)`, `s(s(zero))`\n- **Structured data:** `pair(?x, ?y)`, `cons(?h, ?t)`"}]},
   'identity.relnb': {"version":1,"cells":[{"type":"md","source":"# Identity & Multiple Relations\n\nDemonstrates how multiple relations interact through custom rules.\n\nWe define `eq` as an equivalence and `lt` as a partial order, then link them: equality implies ordering in both directions."},{"type":"code","source":"<ele> x, y, z\n\n<rel> eq/2 : equivalence\n<rel> lt/2 : reflexive, transitive\n\n# If two things are equal, each is \u2264 the other\n<rule> eq_to_leq: eq(?a, ?b) |- lt(?a, ?b), lt(?b, ?a)\n\neq(x, y)\nlt(y, z)\n\nderive"},{"type":"md","source":"## Expected Result\n\n- `eq(x, y)` derives all symmetry/reflexivity pairs for `eq`\n- `eq_to_leq` derives `lt(x, y)` and `lt(y, x)` from the equality\n- **Congruence** of `eq` propagates into `lt`: since `eq(x, y)` and `lt(y, z)`, derives `lt(x, z)`\n- Transitivity of `lt` fills in the rest\n\nThis shows how equivalence + ordering compose naturally."}]},
   'errors.relnb': {"version":1,"cells":[{"type":"md","source":"# Error Handling\n\nRelatum validates your program and reports clear error messages.\n\nBelow are common mistakes and how they are caught. Run each cell to see the error output."},{"type":"md","source":"## Undeclared Element\n\nUsing an element that was never declared in any `<ele>` or `<Container>`."},{"type":"code","source":"<rel> R/2\n\nR(a, b)\n\nderive"},{"type":"md","source":"## Arity Mismatch\n\nPassing the wrong number of arguments to a relation."},{"type":"code","source":"<ele> a, b, c\n<rel> R/2\n\nR(a, b, c)\n\nderive"},{"type":"md","source":"## Membership Violation\n\nUsing an element that doesn\u2019t belong to the required container."},{"type":"code","source":"<Person> alice\n<City> paris\n\n<rel> lives_in/2 : Person, City\n\nlives_in(paris, alice)\n\nderive"},{"type":"md","source":"## Fact Limit\n\nThe engine caps at 10,000 facts. Transitive closure over many elements can hit this."},{"type":"code","source":"<ele> a, b, c, d, e, f, g, h, i, j\n<ele> k, l, m, n, o, p, q, r, s, t\n\n<rel> eq/2 : equivalence\n\neq(a, b)\neq(b, c)\neq(c, d)\neq(d, e)\n\nderive"}]},
+  'group.relnb': {"version":1,"cells":[{"type":"md","source":"# Group: Z\u2083\n\nThe cyclic group of order 3: integers {0, 1, 2} under addition mod 3.\n\nWe encode the operation as a ternary relation `op(a, b, c)` meaning a + b \u2261 c (mod 3), then use rules to verify group axioms and derive properties."},{"type":"code","source":"<ele> O, A, B\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\n# Cayley table: addition mod 3\n# O = 0, A = 1, B = 2\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Commutativity: if op(x,y,z) and op(y,x,w) then z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\nderive"},{"type":"md","source":"## Commutativity\n\nThe `comm` rule fires for every pair. For example, `op(A, B, O)` and `op(B, A, O)` derive `eq(O, O)`. All results match \u2014 only reflexive equalities are produced, confirming Z\u2083 is **abelian**."},{"type":"code","source":"<ele> O, A, B\n\n<rel> op/3\n<rel> has_inv/2\n<rel> is_identity/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Identity: e + x = x for all x\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_identity(?e)\n\n# Inverse: x + y = O implies y is the inverse of x\n<rule> find_inv: op(?x, ?y, O) |- has_inv(?x, ?y)\n\nderive"},{"type":"md","source":"## Identity & Inverses\n\n- **Identity:** `is_identity(O)` \u2014 only O satisfies e + x = x for all x\n- **Inverses:** `has_inv(O, O)`, `has_inv(A, B)`, `has_inv(B, A)` \u2014 every element has a unique inverse\n\nClosure, associativity, identity, and inverses: all four group axioms are satisfied."}]},
+  'ring.relnb': {"version":1,"cells":[{"type":"md","source":"# Ring: Z\u2082\n\nThe simplest non-trivial ring: {0, 1} with addition and multiplication mod 2.\n\n- **(Z\u2082, +)** is an abelian group (identity: 0, every element is its own inverse)\n- **(Z\u2082, \u00d7)** is a commutative monoid (identity: 1)\n- Multiplication distributes over addition"},{"type":"code","source":"<ele> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Left distributivity: a*(b+c) = a*b + a*c\n<rule> dist_l: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\n# Right distributivity: (b+c)*a = b*a + c*a\n<rule> dist_r: add(?b, ?c, ?s), mul(?s, ?a, ?lhs), mul(?b, ?a, ?p), mul(?c, ?a, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\nderive"},{"type":"md","source":"## Distributivity Verified\n\nBoth `dist_l` and `dist_r` produce only reflexive equalities `eq(x, x)`, confirming distributivity.\n\nExample: `1 \u00d7 (1 + 1) = 1 \u00d7 0 = 0` and `1\u00d71 + 1\u00d71 = 1 + 1 = 0` \u2014 both sides equal O."},{"type":"code","source":"<ele> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> has_add_inv/2\n<rel> is_add_id/1\n<rel> is_mul_id/1\n\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Additive identity: add(e, x, x) for all x\n<rule> add_id: add(?e, O, O), add(?e, I, I) |- is_add_id(?e)\n\n# Multiplicative identity: mul(e, x, x) for all x\n<rule> mul_id: mul(?e, O, O), mul(?e, I, I) |- is_mul_id(?e)\n\n# Additive inverse: x + y = O\n<rule> add_inv: add(?x, ?y, O) |- has_add_inv(?x, ?y)\n\nderive"},{"type":"md","source":"## Ring Structure\n\n- **Additive identity:** `is_add_id(O)` \u2014 0 is the unique additive identity\n- **Multiplicative identity:** `is_mul_id(I)` \u2014 1 is the unique multiplicative identity\n- **Additive inverses:** `has_add_inv(O, O)` and `has_add_inv(I, I)` \u2014 in Z\u2082, every element is its own inverse (1 + 1 = 0)"}]},
+  'field.relnb': {"version":1,"cells":[{"type":"md","source":"# Field: Z\u2083\n\nZ\u2083 = {0, 1, 2} is the smallest non-trivial field. It has:\n- Addition mod 3 (abelian group)\n- Multiplication mod 3 (commutative, with identity)\n- **Every non-zero element has a multiplicative inverse** \u2014 this is what distinguishes a field from a ring"},{"type":"code","source":"<ele> O, A, B\n\n<rel> add/3\n<rel> mul/3\n<rel> has_add_inv/2\n<rel> has_mul_inv/2\n\n# Addition mod 3\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\n# Multiplication mod 3\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\n# Additive inverse: x + y = O\n<rule> add_inv: add(?x, ?y, O) |- has_add_inv(?x, ?y)\n\n# Multiplicative inverse: x * y = A (i.e. = 1)\n<rule> mul_inv: mul(?x, ?y, A) |- has_mul_inv(?x, ?y)\n\nderive"},{"type":"md","source":"## Inverses\n\n**Additive** (every element has one):\n- inv(0) = 0, inv(1) = 2, inv(2) = 1\n\n**Multiplicative** (every *non-zero* element has one):\n- inv(1) = 1 (since 1\u00d71 = 1)\n- inv(2) = 2 (since 2\u00d72 = 4 \u2261 1 mod 3)\n\n0 has no multiplicative inverse \u2014 no x satisfies 0\u00d7x = 1. This is the field axiom."},{"type":"code","source":"<ele> O, A, B\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\n# Verify distributivity: a*(b+c) = a*b + a*c\n<rule> dist: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\nderive"},{"type":"md","source":"## Distributivity\n\nThe `dist` rule checks all 27 instances of a\u00d7(b+c) = a\u00d7b + a\u00d7c. Every derived equality is reflexive, confirming distributivity.\n\nWith commutativity, associativity, inverses, and distributivity all verified: Z\u2083 is a **field**."}]},
+  'rule_composition.relnb': {"version":1,"cells":[{"type":"md","source":"# Rule Composition\n\nThe engine can derive new rules by chaining existing ones. If rule A concludes B, and rule C has premise B, then A's premises can directly derive C's conclusions."},{"type":"code","source":"<ele> a, b, c\n\n<rel> P/1\n<rel> Q/1\n<rel> R/1\n\n<rule> r1: P(?x) |- Q(?x)\n<rule> r2: Q(?x) |- R(?x)\n\nP(a)\n\nderive"},{"type":"md","source":"## What Happened\n\n- **r1**: P(?x) |- Q(?x)\n- **r2**: Q(?x) |- R(?x)\n- **Derived rule r1+r2**: P(?x) |- R(?x)\n\nFrom just `P(a)`, the engine derives `Q(a)` (via r1), `R(a)` (via r2), and the composed rule `r1+r2` lets it also derive `R(a)` directly from `P(a)`."},{"type":"code","source":"<ele> x, y, z\n\n<rel> friend/2 : symmetric\n<rel> knows/2\n<rel> trusts/2\n\n<rule> f2k: friend(?a, ?b) |- knows(?a, ?b)\n<rule> k2t: knows(?a, ?b), knows(?b, ?a) |- trusts(?a, ?b)\n\nfriend(x, y)\nfriend(y, z)\n\nderive"},{"type":"md","source":"## Multi-hop Composition\n\nThe engine composes `friend_symmetry` with `f2k` and `k2t` to build longer inference chains. Symmetric friendship + knowing leads to trust."}]},
+  'unique_identity.relnb': {"version":1,"cells":[{"type":"md","source":"# Unique Identity\n\n**Theorem:** A group has at most one identity element.\n\n**Proof sketch:** Suppose e\u2081 and e\u2082 are both identity elements. Then:\n- e\u2081 \u00d7 e\u2082 = e\u2082 \u2003(because e\u2081 is a left identity)\n- e\u2081 \u00d7 e\u2082 = e\u2081 \u2003(because e\u2082 is a right identity)\n- Therefore e\u2081 = e\u2082 \u2003(by functionality of the operation)"},{"type":"code","source":"<ele> e1, e2\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\n# e1 is identity: e1*x = x and x*e1 = x for all x\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\n\n# e2 is identity: e2*x = x and x*e2 = x for all x\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\n# Operation is functional: same inputs => same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\nderive"},{"type":"md","source":"## Result\n\nThe engine derives `eq(e1, e2)` \u2014 the two supposed identity elements must be equal.\n\nThe key step: `op(e1, e2, e2)` and `op(e1, e2, e1)` together trigger `op_func`, yielding `eq(e2, e1)`. Symmetry then gives `eq(e1, e2)`.\n\nYou can click on `eq(e1, e2)` above to see the full proof tree."},{"type":"code","source":"<ele> e1, e2\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\nprove eq(e1, e2)"},{"type":"md","source":"## Proof Tree\n\nThe `prove` command shows the full derivation chain:\n\n```\neq(e1, e2)\n  \u2190 eq_symmetry from eq(e2, e1)\n    \u2190 op_func from op(e1, e2, e2), op(e1, e2, e1)\n      \u2190 given, given\n```"},{"type":"code","source":"<ele> O, A, B\n\n<rel> op/3\n<rel> is_identity/1\n\n# Z\u2083 Cayley table\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Check: e is identity iff e*x = x for all x\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_identity(?e)\n\nderive"},{"type":"md","source":"## Concrete Verification\n\nIn Z\u2083, only `is_identity(O)` is derived. A and B fail because `A*A = B \u2260 A` and `B*B = A \u2260 B`.\n\nThe abstract proof above shows this isn't a coincidence \u2014 *any* group must have exactly one identity."}]},
 };
 const EXAMPLE_FILES = Object.keys(EXAMPLE_DATA).map(name => {
   const descMap = {
@@ -4386,6 +4613,11 @@ const EXAMPLE_FILES = Object.keys(EXAMPLE_DATA).map(name => {
     'skolem.relnb': 'Skolem Witnesses',
     'identity.relnb': 'Identity & Multi-Relation',
     'errors.relnb': 'Error Handling',
+    'group.relnb': 'Group Z\u2083',
+    'ring.relnb': 'Ring Z\u2082',
+    'field.relnb': 'Field Z\u2083',
+    'rule_composition.relnb': 'Rule Composition',
+    'unique_identity.relnb': 'Unique Identity',
   };
   return { name, desc: descMap[name] || name };
 });
@@ -4466,10 +4698,6 @@ async function wsListAll() {
       folders: (ws.folders || []).slice().sort(),
     };
   }
-}
-
-function goWorkspace() {
-  switchToWorkspace();
 }
 
 async function switchToWorkspace() {
