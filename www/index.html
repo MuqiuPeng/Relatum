@@ -200,13 +200,9 @@ header h1 {
   border-radius: 3px;
 }
 
-.ws-chapter-title {
-  font-size: 11px;
-  color: var(--accent);
-  padding: 6px 10px 2px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
+.ws-chapter.collapsed .ws-folder-contents { display: none; }
+.ws-chapter .darr { display: inline-block; font-size: 8px; margin-right: 4px; transition: transform 0.15s; }
+.ws-chapter.collapsed .darr { transform: rotate(-90deg); }
 
 .ws-item-actions {
   display: flex;
@@ -4920,7 +4916,12 @@ async function renderWorkspace() {
   html += `<div class="ws-section-header" onclick="wsToggleExamples()" style="cursor:pointer"><span class="ws-section-title"><span class="darr">&#9660;</span> EXAMPLES</span></div>`;
   html += `<div class="ws-section-body">`;
   for (const ch of EXAMPLE_CHAPTERS) {
-    html += `<div class="ws-chapter-title">${esc(ch.title)}</div>`;
+    html += `<div class="ws-chapter">`;
+    html += `<div class="ws-item" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer">`;
+    html += `<span class="ws-item-icon">\u{1F4C1}</span>`;
+    html += `<span class="ws-item-name" style="font-weight:600"><span class="darr">&#9660;</span>${esc(ch.title)}</span>`;
+    html += `</div>`;
+    html += `<div class="ws-folder-contents">`;
     for (const ex of ch.items) {
       const shortName = ex.name.split('/').pop();
       html += `<div class="ws-item" ondblclick="openExample('${esc(ex.name)}')">`;
@@ -4929,6 +4930,8 @@ async function renderWorkspace() {
       html += `<span class="ws-item-tag">${esc(ex.desc)}</span>`;
       html += `</div>`;
     }
+    html += `</div>`; // ws-folder-contents
+    html += `</div>`; // ws-chapter
   }
   html += `</div>`; // ws-section-body
   html += `</div>`; // ws-section
