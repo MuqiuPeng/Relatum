@@ -7,7 +7,7 @@
     },
     {
       "type": "code",
-      "source": "<ele> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Left distributivity: a*(b+c) = a*b + a*c\n<rule> dist_l: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\n# Right distributivity: (b+c)*a = b*a + c*a\n<rule> dist_r: add(?b, ?c, ?s), mul(?s, ?a, ?lhs), mul(?b, ?a, ?p), mul(?c, ?a, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\nderive"
+      "source": "<ele> Ring\n<Ring> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Left distributivity: a*(b+c) = a*b + a*c\n<rule> dist_l: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\n# Right distributivity: (b+c)*a = b*a + c*a\n<rule> dist_r: add(?b, ?c, ?s), mul(?s, ?a, ?lhs), mul(?b, ?a, ?p), mul(?c, ?a, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\nderive"
     },
     {
       "type": "md",
@@ -15,7 +15,7 @@
     },
     {
       "type": "code",
-      "source": "<ele> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> has_add_inv/2\n<rel> is_add_id/1\n<rel> is_mul_id/1\n\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Additive identity: add(e, x, x) for all x\n<rule> add_id: add(?e, O, O), add(?e, I, I) |- is_add_id(?e)\n\n# Multiplicative identity: mul(e, x, x) for all x\n<rule> mul_id: mul(?e, O, O), mul(?e, I, I) |- is_mul_id(?e)\n\n# Additive inverse: x + y = O\n<rule> add_inv: add(?x, ?y, O) |- has_add_inv(?x, ?y)\n\nderive"
+      "source": "<ele> Ring\n<Ring> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> has_add_inv/2\n<rel> is_add_id/1\n<rel> is_mul_id/1\n\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Additive identity: add(e, x, x) for all x\n<rule> add_id: add(?e, O, O), add(?e, I, I) |- is_add_id(?e)\n\n# Multiplicative identity: mul(e, x, x) for all x\n<rule> mul_id: mul(?e, O, O), mul(?e, I, I) |- is_mul_id(?e)\n\n# Additive inverse: x + y = O\n<rule> add_inv: add(?x, ?y, O) |- has_add_inv(?x, ?y)\n\nderive"
     },
     {
       "type": "md",
