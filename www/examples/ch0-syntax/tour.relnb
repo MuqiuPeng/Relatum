@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Syntax Tour\n\nA complete walkthrough of every Relatum DSL feature. Run each code cell with **Shift+Enter**."
+    },
+    {
+      "type": "md",
+      "source": "## Elements\n\nElements are the atoms of your universe. Declare with `<ele>` or `<element>`."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Types\n\nA type name must first be declared as an element, then used as a container for its members."
+    },
+    {
+      "type": "code",
+      "source": "<ele> Color\n<Color> red, green, blue\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Relations\n\nRelations connect elements. Declare with `<rel>` and an arity. Then assert facts as ground atoms."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> R/2\n\nR(a, b)\nR(b, c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Relation Properties\n\nBuilt-in properties auto-generate inference rules:\n\n| Property | Effect |\n|---|---|\n| `reflexive` | R(x, x) for all x |\n| `symmetric` | R(x, y) → R(y, x) |\n| `transitive` | R(x, y) ∧ R(y, z) → R(x, z) |\n| `congruent` | substitute equal terms |\n| `equivalence` | all four combined |"
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> eq/2 : equivalence\n\neq(a, b)\neq(b, c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "From 2 seed facts, the engine derives the full 3×3 equivalence class (9 facts).\n\n## Membership Constraints\n\nRestrict relation arguments to specific types."
+    },
+    {
+      "type": "code",
+      "source": "<ele> Person, City\n<Person> alice, bob\n<City> paris, london\n\n<rel> lives_in/2 : Person, City\n\nlives_in(alice, paris)\nlives_in(bob, london)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "`lives_in(paris, alice)` would be rejected — `paris` is not a Person.\n\n## Custom Rules\n\nDefine inference rules with `<rule>`. Premises left of `|-`, conclusions right."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> parent/2\n<rel> grandparent/2\n\n<rule> gp: parent(?x, ?y), parent(?y, ?z) |- grandparent(?x, ?z)\n\nparent(a, b)\nparent(b, c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Prove\n\nThe `prove` command shows the full derivation chain for a fact."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> parent/2\n<rel> grandparent/2\n\n<rule> gp: parent(?x, ?y), parent(?y, ?z) |- grandparent(?x, ?z)\n\nparent(a, b)\nparent(b, c)\n\nprove grandparent(a, c)"
+    },
+    {
+      "type": "md",
+      "source": "## Compound Terms & Depth\n\nTerms can be nested: `f(x)`, `pair(a, b)`. Use `depth N` to limit nesting depth."
+    },
+    {
+      "type": "code",
+      "source": "depth 3\n\n<ele> zero\n<rel> nat/1\n\nnat(zero)\n<rule> succ: nat(?n) |- nat(s(?n))\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "`s(s(s(zero)))` is not generated — it exceeds depth 3.\n\n## Import\n\nImport declarations from another notebook. This brings in elements, relations, rules, and facts.\n\n```\nimport ch2-algebra/group-axioms.relnb\n```\n\nImported definitions are available as if declared in the current cell."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Partial Order\n\nA partial order is **reflexive** and **transitive**, but **not symmetric**.\n\n`leq(a, b)` does *not* imply `leq(b, a)` — direction matters."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c, d\n\n<rel> leq/2 : reflexive, transitive\n\nleq(a, b)\nleq(b, c)\nleq(c, d)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Result\n\n- **Reflexivity:** leq(a,a), leq(b,b), leq(c,c), leq(d,d)\n- **Transitivity:** leq(a,c), leq(a,d), leq(b,d)\n\n`leq(b, a)` is *not* derived — no symmetry. This is exactly what distinguishes an order from an equivalence."
+    }
+  ]
+}

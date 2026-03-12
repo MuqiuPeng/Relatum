@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Field Axioms\n\nA **field** is a ring where every non-zero element has a multiplicative inverse.\n\nThis notebook imports the ring axioms and adds the multiplicative inverse relation."
+    },
+    {
+      "type": "code",
+      "source": "import ch2-algebra/ring-axioms.relnb\n\n<rel> has_mul_inv/2\n\n# Multiplicative inverse: x * y = multiplicative identity → has_mul_inv(x, y)\n<rule> find_mul_inv: is_mul_id(?e), mul(?x, ?y, ?e) |- has_mul_inv(?x, ?y)"
+    },
+    {
+      "type": "md",
+      "source": "## What makes a field special\n\nIn a ring, not every element needs a multiplicative inverse (e.g. 0 never does).\n\nA field requires: **every non-zero element has a multiplicative inverse**. The `find_mul_inv` rule discovers which elements have one — a structure is a field if every non-zero element appears."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Z₃ — Field of Integers mod 3\n\nZ₃ = {0, 1, 2} is the smallest non-trivial field.\n\n- Addition mod 3 (abelian group)\n- Multiplication mod 3 (commutative monoid)\n- **Every non-zero element has a multiplicative inverse**"
+    },
+    {
+      "type": "code",
+      "source": "import ch2-algebra/field-axioms.relnb\n\n<Ring> O, A, B\nis_add_id(O)\nis_mul_id(A)\n\n# Addition mod 3\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\n# Multiplication mod 3\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Results\n\n**Additive inverses** (every element has one):\n- inv(0) = 0, inv(1) = 2, inv(2) = 1\n\n**Multiplicative inverses** (every *non-zero* element has one):\n- inv(1) = 1 (since 1×1 = 1)\n- inv(2) = 2 (since 2×2 = 4 ≡ 1 mod 3)\n\n0 has no multiplicative inverse — no x satisfies 0×x = 1. This is the field axiom: the `has_mul_inv` relation covers A and B but not O."
+    }
+  ]
+}

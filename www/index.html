@@ -200,6 +200,14 @@ header h1 {
   border-radius: 3px;
 }
 
+.ws-chapter-title {
+  font-size: 11px;
+  color: var(--accent);
+  padding: 6px 10px 2px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
 .ws-item-actions {
   display: flex;
   gap: 2px;
@@ -1719,7 +1727,7 @@ header h1 {
 <h2>Autocomplete</h2>
 <p>As you type in a code cell, an autocomplete dropdown appears with context-aware suggestions:</p>
 <ul>
-  <li><strong>Keywords:</strong> <code>&lt;element&gt;</code>, <code>&lt;ele&gt;</code>, <code>&lt;rel&gt;</code>, <code>&lt;relation&gt;</code>, <code>&lt;rule&gt;</code>, <code>derive</code>, <code>prove</code>, <code>depth</code></li>
+  <li><strong>Keywords:</strong> <code>&lt;element&gt;</code>, <code>&lt;ele&gt;</code>, <code>&lt;rel&gt;</code>, <code>&lt;relation&gt;</code>, <code>&lt;rule&gt;</code>, <code>derive</code>, <code>prove</code>, <code>depth</code>, <code>import</code></li>
   <li><strong>Declared elements:</strong> all constants from <code>&lt;element&gt;</code> / <code>&lt;Container&gt;</code></li>
   <li><strong>Declared relations:</strong> relation names with arity</li>
   <li><strong>Declared rules:</strong> rule names</li>
@@ -1887,6 +1895,9 @@ header h1 {
 
 <span class="cm"># Fact (ground atom)</span>
 name(term1, term2, ...)
+
+<span class="cm"># Import declarations from another notebook</span>
+<span class="kw">import</span> filename.relnb
 
 <span class="cm"># Commands</span>
 <span class="kw">derive</span>
@@ -2233,6 +2244,7 @@ function parse(source) {
     relations: new Map(),
     rules: [],
     facts: [],
+    imports: [],
     derives: [],
     proves: [],
     errors: [],
@@ -2404,6 +2416,13 @@ function parseLine(line, program, lineNum) {
       if (!IDENT_RE.test(name)) throw new Error(`Invalid element name: '${name}'`);
       addMembership(program, name, container);
     }
+    return;
+  }
+
+  if (line.startsWith('import ')) {
+    const file = line.slice(7).trim();
+    if (!file) throw new Error("Expected filename after 'import'");
+    program.imports.push({ file, line: lineNum });
     return;
   }
 
@@ -2874,7 +2893,7 @@ function renderProofTree(node, linePrefix, contPrefix) {
 //  Syntax Highlighting
 // ===============================================================
 
-const DSL_KEYWORDS = ['derive', 'prove', 'depth'];
+const DSL_KEYWORDS = ['derive', 'prove', 'depth', 'import'];
 const DSL_PROPS = ['reflexive', 'symmetric', 'transitive', 'congruent', 'equivalence'];
 
 function highlightSyntax(source) {
@@ -2971,6 +2990,12 @@ function highlightLine(line) {
   if (trimmed.startsWith('depth ')) {
     const rest = trimmed.slice(6).trim();
     return esc(leadingSpace) + '<span class="hl-keyword">depth</span> <span class="hl-number">' + esc(rest) + '</span>' + commentHtml;
+  }
+
+  // import filename
+  if (trimmed.startsWith('import ')) {
+    const file = trimmed.slice(7).trim();
+    return esc(leadingSpace) + '<span class="hl-keyword">import</span> <span class="hl-element">' + esc(file) + '</span>' + commentHtml;
   }
 
   // prove rel(...)
@@ -3540,7 +3565,79 @@ function clearRetractions() {
 //  Knowledge Base — merge active cells
 // ===============================================================
 
-function buildMergedProgram(activatingCellId, { applyRetractions: doRetract = true } = {}) {
+// Resolve an import: load a .relnb file, parse all code cells, return merged declarations.
+// Returns { elements, membership, relations, rules, facts } or null on failure.
+async function resolveImport(filename, resolved) {
+  if (!resolved) resolved = new Set();
+  if (resolved.has(filename)) return null; // circular
+  resolved.add(filename);
+
+  // Try EXAMPLE_DATA first, then workspace
+  let notebook = null;
+  if (EXAMPLE_DATA[filename]) {
+    notebook = EXAMPLE_DATA[filename];
+  } else {
+    const raw = await wsRead(filename);
+    if (raw) {
+      try { notebook = JSON.parse(raw); } catch { return null; }
+    }
+  }
+  if (!notebook || !notebook.cells) return null;
+
+  const result = {
+    elements: new Set(['element']),
+    membership: new Map([['element', new Set(['element'])]]),
+    relations: new Map(),
+    rules: [],
+    facts: [],
+  };
+
+  for (const cell of notebook.cells) {
+    if (cell.type !== 'code') continue;
+    const parsed = parse(cell.source || '');
+    if (parsed.errors.length > 0) continue;
+
+    // Recursively resolve nested imports
+    for (const imp of parsed.imports) {
+      const sub = await resolveImport(imp.file, resolved);
+      if (sub) mergeInto(result, sub);
+    }
+
+    mergeInto(result, parsed);
+  }
+
+  return result;
+}
+
+function mergeInto(target, source) {
+  for (const e of source.elements) {
+    if (e === 'element') continue;
+    target.elements.add(e);
+    if (!target.membership.has(e)) {
+      target.membership.set(e, new Set(['element']));
+    }
+  }
+  for (const [child, containers] of (source.membership || new Map())) {
+    if (child === 'element') continue;
+    if (!target.membership.has(child)) {
+      target.membership.set(child, new Set(['element']));
+    }
+    for (const c of containers) {
+      target.membership.get(child).add(c);
+    }
+  }
+  for (const [name, def] of (source.relations || new Map())) {
+    target.relations.set(name, def);
+  }
+  for (const rule of (source.rules || [])) {
+    target.rules.push(rule);
+  }
+  for (const fact of (source.facts || [])) {
+    target.facts.push(fact);
+  }
+}
+
+async function buildMergedProgram(activatingCellId, { applyRetractions: doRetract = true } = {}) {
   const program = {
     elements: new Set(['element']),
     membership: new Map([['element', new Set(['element'])]]),
@@ -3562,6 +3659,18 @@ function buildMergedProgram(activatingCellId, { applyRetractions: doRetract = tr
       parsed = cell.parsed;
     } else {
       continue;
+    }
+
+    // Resolve imports
+    if (parsed.imports && parsed.imports.length > 0) {
+      for (const imp of parsed.imports) {
+        const imported = await resolveImport(imp.file);
+        if (imported) {
+          mergeInto(program, imported);
+        } else {
+          program.errors.push({ message: `Import failed: '${imp.file}' not found` });
+        }
+      }
     }
 
     // Merge elements & membership
@@ -3616,7 +3725,7 @@ function buildMergedProgram(activatingCellId, { applyRetractions: doRetract = tr
 //  Cell Activation
 // ===============================================================
 
-function activateCell(cellId) {
+async function activateCell(cellId) {
   const cell = cells.find(c => c.id === cellId);
   if (!cell || cell.type !== 'code') return;
 
@@ -3636,14 +3745,14 @@ function activateCell(cellId) {
   cell._pending = parsed;
 
   // Build merged program from all active cells + this cell
-  const merged = buildMergedProgram(cell.id);
+  const merged = await buildMergedProgram(cell.id);
 
   // Build cellId → display index map
   cellIndexMap = {};
   cells.forEach((c, i) => { cellIndexMap[c.id] = i + 1; });
 
   // Validate (filter out "no derive/prove" — OK for declaration cells)
-  const errors = validate(merged);
+  const errors = [...(merged.errors || []), ...validate(merged)];
   const realErrors = errors.filter(e => !e.message.startsWith("No 'derive'"));
 
   if (realErrors.length > 0) {
@@ -3724,6 +3833,9 @@ function showCellActivation(cellId, parsed) {
   const el = document.getElementById(`cell-output-${cellId}`);
   if (!el) return;
   const parts = [];
+  if (parsed.imports && parsed.imports.length > 0) {
+    parts.push(`imported ${parsed.imports.map(i => i.file).join(', ')}`);
+  }
   const elemCount = parsed.elements.size - 1; // minus 'element'
   if (elemCount > 0) parts.push(`${elemCount} element${elemCount > 1 ? 's' : ''}`);
   if (parsed.relations.size > 0) parts.push(`${parsed.relations.size} rel`);
@@ -4156,9 +4268,9 @@ function moveCell(id, dir) {
 //  Run All — activate all cells in order
 // ===============================================================
 
-function runAll() {
+async function runAll() {
   for (const cell of cells) {
-    activateCell(cell.id);
+    await activateCell(cell.id);
   }
 }
 
@@ -4166,7 +4278,7 @@ function runAll() {
 //  Knowledge Base Panel
 // ===============================================================
 
-function renderPanel() {
+async function renderPanel() {
   const body = document.getElementById('panel-body');
   if (!body) return;
 
@@ -4174,7 +4286,7 @@ function renderPanel() {
   cells.forEach((c, i) => { cellIndexMap[c.id] = i + 1; });
 
   // Use applyRetractions:false to see ALL items (including retracted ones)
-  const summary = buildMergedProgram(null, { applyRetractions: false });
+  const summary = await buildMergedProgram(null, { applyRetractions: false });
   const searchEl = document.getElementById('panel-search');
   const query = searchEl ? searchEl.value.trim().toLowerCase() : '';
   let html = '';
@@ -4651,38 +4763,46 @@ async function fsRename(oldPath, newPath) {
 }
 
 const EXAMPLE_DATA = {
-  'equiv.relnb': {"version":1,"cells":[{"type":"md","source":"# Equivalence Closure\n\nThe canonical Relatum example. We declare three elements and an **equivalence** relation, then let the engine derive the full closure.\n\n`equivalence` = `reflexive` + `symmetric` + `transitive` + `congruent`"},{"type":"code","source":"<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n\nequiv(a, b)\nequiv(b, c)\n\nderive"},{"type":"md","source":"## Expected Result\n\nStarting from `equiv(a, b)` and `equiv(b, c)`, the engine derives:\n\n- **Symmetry:** equiv(b, a), equiv(c, b)\n- **Transitivity:** equiv(a, c)\n- **Symmetry of derived:** equiv(c, a)\n- **Reflexivity:** equiv(a, a), equiv(b, b), equiv(c, c)\n\nTotal: 9 facts (the complete 3\u00d73 equivalence class). Saturates in 2\u20133 rounds."}]},
-  'order.relnb': {"version":1,"cells":[{"type":"md","source":"# Partial Order\n\nA partial order is **reflexive** and **transitive**, but **not symmetric**.\n\nThis means `leq(a, b)` does *not* imply `leq(b, a)` \u2014 direction matters."},{"type":"code","source":"<ele> a, b, c, d\n\n<rel> leq/2 : reflexive, transitive\n\nleq(a, b)\nleq(b, c)\nleq(c, d)\n\nderive"},{"type":"md","source":"## Expected Result\n\n- **Reflexivity:** leq(a,a), leq(b,b), leq(c,c), leq(d,d)\n- **Transitivity:** leq(a,c), leq(a,d), leq(b,d)\n\nNote: `leq(b, a)` is *not* derived \u2014 the relation is not symmetric. This is exactly a partial order."}]},
-  'custom.relnb': {"version":1,"cells":[{"type":"md","source":"# Custom Rules\n\nBeyond built-in properties, you can write your own inference rules.\n\nHere we define:\n- `friend` is **symmetric** (if A is B\u2019s friend, B is A\u2019s friend)\n- `knows` is unconstrained\n- Rule `f2k`: friendship implies knowing\n- Rule `knows_trans`: knowing is transitive"},{"type":"code","source":"<ele> alice, bob, carol\n\n<rel> friend/2 : symmetric\n<rel> knows/2\n\n<rule> f2k: friend(?x, ?y) |- knows(?x, ?y)\n<rule> knows_trans: knows(?x, ?y), knows(?y, ?z) |- knows(?x, ?z)\n\nfriend(alice, bob)\nfriend(bob, carol)\n\nderive"},{"type":"md","source":"## Derivation Chain\n\n1. **Symmetry:** friend(bob, alice), friend(carol, bob)\n2. **f2k rule:** knows(alice, bob), knows(bob, alice), knows(bob, carol), knows(carol, bob)\n3. **knows_trans:** knows(alice, carol), knows(carol, alice), ...\n\nResult: everyone knows everyone \u2014 symmetric friendship + transitive knowing collapses the network into full connectivity."}]},
-  'congruence.relnb': {"version":1,"cells":[{"type":"md","source":"# Congruence\n\nCongruence is the key property that makes equivalence relations *useful*.\n\nWhen `equiv` is **congruent** and `equiv(a, b)` holds, the engine substitutes `a` with `b` (and vice versa) in **all** other facts."},{"type":"code","source":"<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n<rel> R/2\n\nequiv(a, b)\nR(a, c)\n\nderive"},{"type":"md","source":"## What Congruence Does\n\nBecause `equiv(a, b)` holds and `equiv` is congruent:\n\n- The engine sees `R(a, c)` and substitutes `a \u2192 b`, deriving **R(b, c)**\n- If `R(c, a)` existed, it would also derive `R(c, b)`\n\nCongruence propagates the \u201csameness\u201d of `a` and `b` through the entire fact base \u2014 any fact mentioning `a` spawns a parallel fact with `b`."}]},
-  'typed.relnb': {"version":1,"cells":[{"type":"md","source":"# Membership Constraints\n\nContainers restrict which elements each relation argument accepts.\n\n- `Person` and `City` are declared as elements first, then used as types\n- `lives_in/2` requires arg1 \u2208 Person, arg2 \u2208 City\n- `same_city/2` is an equivalence, but only over City members"},{"type":"code","source":"<ele> Person, City\n<Person> alice, bob, carol\n<City> paris, london\n\n<rel> lives_in/2 : Person, City\n<rel> friend/2 : Person, Person, symmetric\n<rel> same_city/2 : City, City, equivalence\n\nlives_in(alice, paris)\nlives_in(bob, paris)\nlives_in(carol, london)\n\n<rule> shared: lives_in(?x, ?c), lives_in(?y, ?c) |- same_city(?c, ?c)\n\nderive"},{"type":"md","source":"## What Happens\n\n- **Type names are elements:** `Person` and `City` must be declared as elements before they can be used as types\n- **Membership prevents nonsense:** `lives_in(paris, alice)` would be rejected \u2014 `paris` is not in Person\n- **Reflexivity respects membership:** `same_city(t, t)` is only generated for `paris` and `london`, not for `alice`, `bob`, or `carol`\n- **Rules are membership-filtered:** derived facts violating constraints are silently dropped"}]},
-  'skolem.relnb': {"version":1,"cells":[{"type":"md","source":"# Compound Terms & Skolem Witnesses\n\nCompound terms like `inv(?x)` create structured terms from existing ones.\n\nWhen used in rule conclusions, they act as **Skolem witnesses** \u2014 generating new terms that depend on matched variables.\n\nThe `depth` directive limits nesting to prevent infinite generation."},{"type":"code","source":"depth 3\n\n<ele> e, a, b\n\n<rel> group/3\n<rel> member/1\n\nmember(e)\nmember(a)\nmember(b)\n\n# Every member has an inverse\n<rule> has_inv: member(?x) |- group(?x, inv(?x), e)\n\n# The inverse is also a member\n<rule> inv_member: member(?x) |- member(inv(?x))\n\nderive"},{"type":"md","source":"## What Happens\n\n1. `has_inv` fires for each member, creating `group(a, inv(a), e)`, `group(b, inv(b), e)`, etc.\n2. `inv_member` makes `inv(a)`, `inv(b)` into members too\n3. This cascades: `inv(inv(a))`, `inv(inv(inv(a)))` ... up to `depth 3`\n4. Without the depth limit, this would loop forever\n\n## Use Cases\n\n- **Group theory:** `inv(?x)` as inverse, `op(?x, ?y)` as multiplication\n- **Successor arithmetic:** `s(zero)`, `s(s(zero))`\n- **Structured data:** `pair(?x, ?y)`, `cons(?h, ?t)`"}]},
-  'identity.relnb': {"version":1,"cells":[{"type":"md","source":"# Identity & Multiple Relations\n\nDemonstrates how multiple relations interact through custom rules.\n\nWe define `eq` as an equivalence and `lt` as a partial order, then link them: equality implies ordering in both directions."},{"type":"code","source":"<ele> x, y, z\n\n<rel> eq/2 : equivalence\n<rel> lt/2 : reflexive, transitive\n\n# If two things are equal, each is \u2264 the other\n<rule> eq_to_leq: eq(?a, ?b) |- lt(?a, ?b), lt(?b, ?a)\n\neq(x, y)\nlt(y, z)\n\nderive"},{"type":"md","source":"## Expected Result\n\n- `eq(x, y)` derives all symmetry/reflexivity pairs for `eq`\n- `eq_to_leq` derives `lt(x, y)` and `lt(y, x)` from the equality\n- **Congruence** of `eq` propagates into `lt`: since `eq(x, y)` and `lt(y, z)`, derives `lt(x, z)`\n- Transitivity of `lt` fills in the rest\n\nThis shows how equivalence + ordering compose naturally."}]},
-  'errors.relnb': {"version":1,"cells":[{"type":"md","source":"# Error Handling\n\nRelatum validates your program and reports clear error messages.\n\nBelow are common mistakes and how they are caught. Run each cell to see the error output."},{"type":"md","source":"## Undeclared Element\n\nUsing an element that was never declared in any `<ele>` or `<Container>`."},{"type":"code","source":"<rel> R/2\n\nR(a, b)\n\nderive"},{"type":"md","source":"## Arity Mismatch\n\nPassing the wrong number of arguments to a relation."},{"type":"code","source":"<ele> a, b, c\n<rel> R/2\n\nR(a, b, c)\n\nderive"},{"type":"md","source":"## Membership Violation\n\nUsing an element that doesn\u2019t belong to the required container."},{"type":"code","source":"<ele> Person, City\n<Person> alice\n<City> paris\n\n<rel> lives_in/2 : Person, City\n\nlives_in(paris, alice)\n\nderive"},{"type":"md","source":"## Fact Limit\n\nThe engine caps at 10,000 facts. Transitive closure over many elements can hit this."},{"type":"code","source":"<ele> a, b, c, d, e, f, g, h, i, j\n<ele> k, l, m, n, o, p, q, r, s, t\n\n<rel> eq/2 : equivalence\n\neq(a, b)\neq(b, c)\neq(c, d)\neq(d, e)\n\nderive"}]},
-  'group.relnb': {"version":1,"cells":[{"type":"md","source":"# Group: Z\u2083\n\nThe cyclic group of order 3: integers {0, 1, 2} under addition mod 3.\n\nWe first declare `Group` as a type, then its elements {O, A, B}, then define the operation as a ternary relation and verify group axioms."},{"type":"code","source":"<ele> Group\n<Group> O, A, B\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\n# Cayley table: addition mod 3\n# O = 0, A = 1, B = 2\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Commutativity: if op(x,y,z) and op(y,x,w) then z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\nderive"},{"type":"md","source":"## Commutativity\n\nThe `comm` rule fires for every pair. For example, `op(A, B, O)` and `op(B, A, O)` derive `eq(O, O)`. All results match \u2014 only reflexive equalities are produced, confirming Z\u2083 is **abelian**."},{"type":"code","source":"<ele> Group\n<Group> O, A, B\n\n<rel> op/3\n<rel> has_inv/2\n<rel> is_identity/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Identity: e + x = x for all x\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_identity(?e)\n\n# Inverse: x + y = O implies y is the inverse of x\n<rule> find_inv: op(?x, ?y, O) |- has_inv(?x, ?y)\n\nderive"},{"type":"md","source":"## Identity & Inverses\n\n- **Identity:** `is_identity(O)` \u2014 only O satisfies e + x = x for all x\n- **Inverses:** `has_inv(O, O)`, `has_inv(A, B)`, `has_inv(B, A)` \u2014 every element has a unique inverse\n\nClosure, associativity, identity, and inverses: all four group axioms are satisfied."}]},
-  'ring.relnb': {"version":1,"cells":[{"type":"md","source":"# Ring: Z\u2082\n\nThe simplest non-trivial ring: {0, 1} with addition and multiplication mod 2.\n\n- **(Z\u2082, +)** is an abelian group (identity: 0, every element is its own inverse)\n- **(Z\u2082, \u00d7)** is a commutative monoid (identity: 1)\n- Multiplication distributes over addition"},{"type":"code","source":"<ele> Ring\n<Ring> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Left distributivity: a*(b+c) = a*b + a*c\n<rule> dist_l: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\n# Right distributivity: (b+c)*a = b*a + c*a\n<rule> dist_r: add(?b, ?c, ?s), mul(?s, ?a, ?lhs), mul(?b, ?a, ?p), mul(?c, ?a, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\nderive"},{"type":"md","source":"## Distributivity Verified\n\nBoth `dist_l` and `dist_r` produce only reflexive equalities `eq(x, x)`, confirming distributivity.\n\nExample: `1 \u00d7 (1 + 1) = 1 \u00d7 0 = 0` and `1\u00d71 + 1\u00d71 = 1 + 1 = 0` \u2014 both sides equal O."},{"type":"code","source":"<ele> Ring\n<Ring> O, I\n\n<rel> add/3\n<rel> mul/3\n<rel> has_add_inv/2\n<rel> is_add_id/1\n<rel> is_mul_id/1\n\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\n# Additive identity: add(e, x, x) for all x\n<rule> add_id: add(?e, O, O), add(?e, I, I) |- is_add_id(?e)\n\n# Multiplicative identity: mul(e, x, x) for all x\n<rule> mul_id: mul(?e, O, O), mul(?e, I, I) |- is_mul_id(?e)\n\n# Additive inverse: x + y = O\n<rule> add_inv: add(?x, ?y, O) |- has_add_inv(?x, ?y)\n\nderive"},{"type":"md","source":"## Ring Structure\n\n- **Additive identity:** `is_add_id(O)` \u2014 0 is the unique additive identity\n- **Multiplicative identity:** `is_mul_id(I)` \u2014 1 is the unique multiplicative identity\n- **Additive inverses:** `has_add_inv(O, O)` and `has_add_inv(I, I)` \u2014 in Z\u2082, every element is its own inverse (1 + 1 = 0)"}]},
-  'field.relnb': {"version":1,"cells":[{"type":"md","source":"# Field: Z\u2083\n\nZ\u2083 = {0, 1, 2} is the smallest non-trivial field. It has:\n- Addition mod 3 (abelian group)\n- Multiplication mod 3 (commutative, with identity)\n- **Every non-zero element has a multiplicative inverse** \u2014 this is what distinguishes a field from a ring"},{"type":"code","source":"<ele> Field\n<Field> O, A, B\n\n<rel> add/3\n<rel> mul/3\n<rel> has_add_inv/2\n<rel> has_mul_inv/2\n\n# Addition mod 3\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\n# Multiplication mod 3\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\n# Additive inverse: x + y = O\n<rule> add_inv: add(?x, ?y, O) |- has_add_inv(?x, ?y)\n\n# Multiplicative inverse: x * y = A (i.e. = 1)\n<rule> mul_inv: mul(?x, ?y, A) |- has_mul_inv(?x, ?y)\n\nderive"},{"type":"md","source":"## Inverses\n\n**Additive** (every element has one):\n- inv(0) = 0, inv(1) = 2, inv(2) = 1\n\n**Multiplicative** (every *non-zero* element has one):\n- inv(1) = 1 (since 1\u00d71 = 1)\n- inv(2) = 2 (since 2\u00d72 = 4 \u2261 1 mod 3)\n\n0 has no multiplicative inverse \u2014 no x satisfies 0\u00d7x = 1. This is the field axiom."},{"type":"code","source":"<ele> Field\n<Field> O, A, B\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\n# Verify distributivity: a*(b+c) = a*b + a*c\n<rule> dist: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\nderive"},{"type":"md","source":"## Distributivity\n\nThe `dist` rule checks all 27 instances of a\u00d7(b+c) = a\u00d7b + a\u00d7c. Every derived equality is reflexive, confirming distributivity.\n\nWith commutativity, associativity, inverses, and distributivity all verified: Z\u2083 is a **field**."}]},
-  'rule_composition.relnb': {"version":1,"cells":[{"type":"md","source":"# Rule Composition\n\nThe engine can derive new rules by chaining existing ones. If rule A concludes B, and rule C has premise B, then A's premises can directly derive C's conclusions."},{"type":"code","source":"<ele> a, b, c\n\n<rel> P/1\n<rel> Q/1\n<rel> R/1\n\n<rule> r1: P(?x) |- Q(?x)\n<rule> r2: Q(?x) |- R(?x)\n\nP(a)\n\nderive"},{"type":"md","source":"## What Happened\n\n- **r1**: P(?x) |- Q(?x)\n- **r2**: Q(?x) |- R(?x)\n- **Derived rule r1+r2**: P(?x) |- R(?x)\n\nFrom just `P(a)`, the engine derives `Q(a)` (via r1), `R(a)` (via r2), and the composed rule `r1+r2` lets it also derive `R(a)` directly from `P(a)`."},{"type":"code","source":"<ele> x, y, z\n\n<rel> friend/2 : symmetric\n<rel> knows/2\n<rel> trusts/2\n\n<rule> f2k: friend(?a, ?b) |- knows(?a, ?b)\n<rule> k2t: knows(?a, ?b), knows(?b, ?a) |- trusts(?a, ?b)\n\nfriend(x, y)\nfriend(y, z)\n\nderive"},{"type":"md","source":"## Multi-hop Composition\n\nThe engine composes `friend_symmetry` with `f2k` and `k2t` to build longer inference chains. Symmetric friendship + knowing leads to trust."}]},
-  'unique_identity.relnb': {"version":1,"cells":[{"type":"md","source":"# Unique Identity\n\n**Theorem:** A group has at most one identity element.\n\n**Proof sketch:** Suppose e\u2081 and e\u2082 are both identity elements. Then:\n- e\u2081 \u00d7 e\u2082 = e\u2082 \u2003(because e\u2081 is a left identity)\n- e\u2081 \u00d7 e\u2082 = e\u2081 \u2003(because e\u2082 is a right identity)\n- Therefore e\u2081 = e\u2082 \u2003(by functionality of the operation)"},{"type":"code","source":"<ele> Group\n<Group> e1, e2\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\n# e1 is identity: e1*x = x and x*e1 = x for all x\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\n\n# e2 is identity: e2*x = x and x*e2 = x for all x\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\n# Operation is functional: same inputs => same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\nderive"},{"type":"md","source":"## Result\n\nThe engine derives `eq(e1, e2)` \u2014 the two supposed identity elements must be equal.\n\nThe key step: `op(e1, e2, e2)` and `op(e1, e2, e1)` together trigger `op_func`, yielding `eq(e2, e1)`. Symmetry then gives `eq(e1, e2)`.\n\nYou can click on `eq(e1, e2)` above to see the full proof tree."},{"type":"code","source":"<ele> Group\n<Group> e1, e2\n\n<rel> op/3\n<rel> eq/2 : equivalence\n\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\nprove eq(e1, e2)"},{"type":"md","source":"## Proof Tree\n\nThe `prove` command shows the full derivation chain:\n\n```\neq(e1, e2)\n  \u2190 eq_symmetry from eq(e2, e1)\n    \u2190 op_func from op(e1, e2, e2), op(e1, e2, e1)\n      \u2190 given, given\n```"},{"type":"code","source":"<ele> Group\n<Group> O, A, B\n\n<rel> op/3\n<rel> is_identity/1\n\n# Z\u2083 Cayley table\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Check: e is identity iff e*x = x for all x\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_identity(?e)\n\nderive"},{"type":"md","source":"## Concrete Verification\n\nIn Z\u2083, only `is_identity(O)` is derived. A and B fail because `A*A = B \u2260 A` and `B*B = A \u2260 B`.\n\nThe abstract proof above shows this isn't a coincidence \u2014 *any* group must have exactly one identity."}]},
+  'ch0-syntax/tour.relnb': {"version":1,"cells":[{"type":"md","source":"# Syntax Tour\n\nA complete walkthrough of every Relatum DSL feature. Run each code cell with **Shift+Enter**."},{"type":"md","source":"## Elements\n\nElements are the atoms of your universe. Declare with `<ele>` or `<element>`."},{"type":"code","source":"<ele> a, b, c\n\nderive"},{"type":"md","source":"## Types\n\nA type name must first be declared as an element, then used as a container for its members."},{"type":"code","source":"<ele> Color\n<Color> red, green, blue\n\nderive"},{"type":"md","source":"## Relations\n\nRelations connect elements. Declare with `<rel>` and an arity. Then assert facts as ground atoms."},{"type":"code","source":"<ele> a, b, c\n\n<rel> R/2\n\nR(a, b)\nR(b, c)\n\nderive"},{"type":"md","source":"## Relation Properties\n\nBuilt-in properties auto-generate inference rules:\n\n| Property | Effect |\n|---|---|\n| `reflexive` | R(x, x) for all x |\n| `symmetric` | R(x, y) \u2192 R(y, x) |\n| `transitive` | R(x, y) \u2227 R(y, z) \u2192 R(x, z) |\n| `congruent` | substitute equal terms |\n| `equivalence` | all four combined |"},{"type":"code","source":"<ele> a, b, c\n\n<rel> eq/2 : equivalence\n\neq(a, b)\neq(b, c)\n\nderive"},{"type":"md","source":"From 2 seed facts, the engine derives the full 3\u00d73 equivalence class (9 facts).\n\n## Membership Constraints\n\nRestrict relation arguments to specific types."},{"type":"code","source":"<ele> Person, City\n<Person> alice, bob\n<City> paris, london\n\n<rel> lives_in/2 : Person, City\n\nlives_in(alice, paris)\nlives_in(bob, london)\n\nderive"},{"type":"md","source":"`lives_in(paris, alice)` would be rejected \u2014 `paris` is not a Person.\n\n## Custom Rules\n\nDefine inference rules with `<rule>`. Premises left of `|-`, conclusions right."},{"type":"code","source":"<ele> a, b, c\n\n<rel> parent/2\n<rel> grandparent/2\n\n<rule> gp: parent(?x, ?y), parent(?y, ?z) |- grandparent(?x, ?z)\n\nparent(a, b)\nparent(b, c)\n\nderive"},{"type":"md","source":"## Prove\n\nThe `prove` command shows the full derivation chain for a fact."},{"type":"code","source":"<ele> a, b, c\n\n<rel> parent/2\n<rel> grandparent/2\n\n<rule> gp: parent(?x, ?y), parent(?y, ?z) |- grandparent(?x, ?z)\n\nparent(a, b)\nparent(b, c)\n\nprove grandparent(a, c)"},{"type":"md","source":"## Compound Terms & Depth\n\nTerms can be nested: `f(x)`, `pair(a, b)`. Use `depth N` to limit nesting depth."},{"type":"code","source":"depth 3\n\n<ele> zero\n<rel> nat/1\n\nnat(zero)\n<rule> succ: nat(?n) |- nat(s(?n))\n\nderive"},{"type":"md","source":"`s(s(s(zero)))` is not generated \u2014 it exceeds depth 3.\n\n## Import\n\nImport declarations from another notebook. This brings in elements, relations, rules, and facts.\n\n```\nimport ch2-algebra/group-axioms.relnb\n```\n\nImported definitions are available as if declared in the current cell."}]},
+  'ch1-relations/equivalence.relnb': {"version":1,"cells":[{"type":"md","source":"# Equivalence Closure\n\nThe canonical Relatum demo. An **equivalence** relation is `reflexive` + `symmetric` + `transitive` + `congruent`.\n\nFrom just two seed facts, the engine derives the complete equivalence class."},{"type":"code","source":"<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n\nequiv(a, b)\nequiv(b, c)\n\nderive"},{"type":"md","source":"## Derivation\n\n- **Symmetry:** equiv(b, a), equiv(c, b)\n- **Transitivity:** equiv(a, c)\n- **Symmetry of derived:** equiv(c, a)\n- **Reflexivity:** equiv(a, a), equiv(b, b), equiv(c, c)\n\nTotal: 9 facts \u2014 the complete 3\u00d73 equivalence class. Saturates in 2\u20133 rounds."}]},
+  'ch1-relations/order.relnb': {"version":1,"cells":[{"type":"md","source":"# Partial Order\n\nA partial order is **reflexive** and **transitive**, but **not symmetric**.\n\n`leq(a, b)` does *not* imply `leq(b, a)` \u2014 direction matters."},{"type":"code","source":"<ele> a, b, c, d\n\n<rel> leq/2 : reflexive, transitive\n\nleq(a, b)\nleq(b, c)\nleq(c, d)\n\nderive"},{"type":"md","source":"## Result\n\n- **Reflexivity:** leq(a,a), leq(b,b), leq(c,c), leq(d,d)\n- **Transitivity:** leq(a,c), leq(a,d), leq(b,d)\n\n`leq(b, a)` is *not* derived \u2014 no symmetry. This is exactly what distinguishes an order from an equivalence."}]},
+  'ch1-relations/congruence.relnb': {"version":1,"cells":[{"type":"md","source":"# Congruence\n\nCongruence makes equivalence relations *useful*.\n\nWhen `equiv` is **congruent** and `equiv(a, b)` holds, the engine substitutes `a` with `b` (and vice versa) in **all** other facts."},{"type":"code","source":"<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n<rel> R/2\n\nequiv(a, b)\nR(a, c)\n\nderive"},{"type":"md","source":"## What Happened\n\nBecause `equiv(a, b)` holds and `equiv` is congruent:\n\n- The engine sees `R(a, c)` and substitutes `a \u2192 b`, deriving **R(b, c)**\n\nCongruence propagates \"sameness\" through the entire fact base \u2014 any fact mentioning `a` spawns a parallel fact with `b`."}]},
+  'ch2-algebra/group-axioms.relnb': {"version":1,"cells":[{"type":"md","source":"# Group Axioms\n\nA **group** (G, \u2217) satisfies: closure, associativity, identity, and inverses.\n\nThis notebook defines the type, relations, and generic verification rules. **Import it** to use these axioms on a concrete group.\n\n### Conventions\n- `op(a, b, c)` means a \u2217 b = c\n- Declare identity via `is_identity(e)` as a fact\n- The engine checks commutativity, associativity, functionality, and finds inverses automatically"},{"type":"code","source":"<ele> Group\n\n<rel> op/3\n<rel> eq/2 : equivalence\n<rel> is_identity/1\n<rel> has_inv/2\n\n# Commutativity check: op(x,y,z) and op(y,x,w) \u2192 z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\n# Associativity check: (a*b)*c = a*(b*c)\n<rule> assoc: op(?a, ?b, ?ab), op(?ab, ?c, ?lhs), op(?b, ?c, ?bc), op(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Operation is functional: same inputs \u2192 same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\n# Inverse: x * y = identity \u2192 has_inv(x, y)\n<rule> find_inv: is_identity(?e), op(?x, ?y, ?e) |- has_inv(?x, ?y)"},{"type":"md","source":"## Usage\n\n```\nimport ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\nis_identity(O)\n\nop(O, O, O)\nop(O, A, A)\n...\n\nderive\n```\n\nThe engine will verify commutativity, associativity, and automatically discover inverses."}]},
+  'ch2-algebra/z3-group.relnb': {"version":1,"cells":[{"type":"md","source":"# Z₃ — Cyclic Group of Order 3\n\nIntegers {0, 1, 2} under addition mod 3.\n\nImports the group axiom framework, then defines the Cayley table and lets the engine verify all group properties."},{"type":"code","source":"import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\nis_identity(O)\n\n# Cayley table: addition mod 3\n# O=0, A=1, B=2\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\nderive"},{"type":"md","source":"## Results\n\n- **Commutativity (comm):** all eq results are reflexive — Z₃ is **abelian**\n- **Associativity (assoc):** all eq results are reflexive — operation is associative\n- **Inverses (find_inv):** has_inv(O,O), has_inv(A,B), has_inv(B,A) — every element has an inverse\n- **Functionality (op_func):** all eq results are reflexive — operation is well-defined"},{"type":"md","source":"## Proof: A's inverse is B\n\nClick `has_inv(A, B)` above to see the proof tree, or run:"},{"type":"code","source":"import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\nis_identity(O)\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\nprove has_inv(A, B)"}]},
+  'ch2-algebra/ring-axioms.relnb': {"version":1,"cells":[{"type":"md","source":"# Ring Axioms\n\nA **ring** (R, +, ×) has:\n- (R, +) is an abelian group\n- (R, ×) is a monoid\n- × distributes over +\n\nThis notebook defines the type, two operations, and all verification rules. **Import it** to verify a concrete ring."},{"type":"code","source":"<ele> Ring\n\n<rel> add/3\n<rel> mul/3\n<rel> eq/2 : equivalence\n<rel> is_add_id/1\n<rel> is_mul_id/1\n<rel> has_add_inv/2\n\n# Additive commutativity\n<rule> add_comm: add(?x, ?y, ?z), add(?y, ?x, ?w) |- eq(?z, ?w)\n\n# Additive associativity\n<rule> add_assoc: add(?a, ?b, ?ab), add(?ab, ?c, ?lhs), add(?b, ?c, ?bc), add(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Multiplicative associativity\n<rule> mul_assoc: mul(?a, ?b, ?ab), mul(?ab, ?c, ?lhs), mul(?b, ?c, ?bc), mul(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Operation functionality\n<rule> add_func: add(?a, ?b, ?c), add(?a, ?b, ?d) |- eq(?c, ?d)\n<rule> mul_func: mul(?a, ?b, ?c), mul(?a, ?b, ?d) |- eq(?c, ?d)\n\n# Left distributivity: a*(b+c) = a*b + a*c\n<rule> dist_l: add(?b, ?c, ?s), mul(?a, ?s, ?lhs), mul(?a, ?b, ?p), mul(?a, ?c, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\n# Right distributivity: (b+c)*a = b*a + c*a\n<rule> dist_r: add(?b, ?c, ?s), mul(?s, ?a, ?lhs), mul(?b, ?a, ?p), mul(?c, ?a, ?q), add(?p, ?q, ?rhs) |- eq(?lhs, ?rhs)\n\n# Additive inverse: x + y = additive identity → has_add_inv(x, y)\n<rule> find_add_inv: is_add_id(?e), add(?x, ?y, ?e) |- has_add_inv(?x, ?y)"},{"type":"md","source":"## Usage\n\n```\nimport ch2-algebra/ring-axioms.relnb\n\n<Ring> O, I\nis_add_id(O)\nis_mul_id(I)\n\nadd(O, O, O)\nadd(O, I, I)\n...\n\nderive\n```"}]},
+  'ch2-algebra/z2-ring.relnb': {"version":1,"cells":[{"type":"md","source":"# Z₂ — Ring of Integers mod 2\n\nThe simplest non-trivial ring: {0, 1} with addition and multiplication mod 2.\n\n- (Z₂, +) is an abelian group — identity: 0, every element is its own inverse (1+1=0)\n- (Z₂, ×) is a commutative monoid — identity: 1\n- Multiplication distributes over addition"},{"type":"code","source":"import ch2-algebra/ring-axioms.relnb\n\n<Ring> O, I\nis_add_id(O)\nis_mul_id(I)\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\nderive"},{"type":"md","source":"## Verification\n\n- **Distributivity (dist_l, dist_r):** all equalities are reflexive ✓\n- **Associativity (add_assoc, mul_assoc):** reflexive ✓\n- **Commutativity (add_comm):** reflexive ✓\n- **Inverses (find_add_inv):** has_add_inv(O,O) and has_add_inv(I,I) — in Z₂, every element is its own inverse\n\nExample: `1 × (1 + 1) = 1 × 0 = 0` and `1×1 + 1×1 = 1 + 1 = 0` — both sides equal O."}]},
+  'ch2-algebra/field-axioms.relnb': {"version":1,"cells":[{"type":"md","source":"# Field Axioms\n\nA **field** is a ring where every non-zero element has a multiplicative inverse.\n\nThis notebook imports the ring axioms and adds the multiplicative inverse relation."},{"type":"code","source":"import ch2-algebra/ring-axioms.relnb\n\n<rel> has_mul_inv/2\n\n# Multiplicative inverse: x * y = multiplicative identity → has_mul_inv(x, y)\n<rule> find_mul_inv: is_mul_id(?e), mul(?x, ?y, ?e) |- has_mul_inv(?x, ?y)"},{"type":"md","source":"## What makes a field special\n\nIn a ring, not every element needs a multiplicative inverse (e.g. 0 never does).\n\nA field requires: **every non-zero element has a multiplicative inverse**. The `find_mul_inv` rule discovers which elements have one — a structure is a field if every non-zero element appears."}]},
+  'ch2-algebra/z3-field.relnb': {"version":1,"cells":[{"type":"md","source":"# Z₃ — Field of Integers mod 3\n\nZ₃ = {0, 1, 2} is the smallest non-trivial field.\n\n- Addition mod 3 (abelian group)\n- Multiplication mod 3 (commutative monoid)\n- **Every non-zero element has a multiplicative inverse**"},{"type":"code","source":"import ch2-algebra/field-axioms.relnb\n\n<Ring> O, A, B\nis_add_id(O)\nis_mul_id(A)\n\n# Addition mod 3\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\n# Multiplication mod 3\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\nderive"},{"type":"md","source":"## Results\n\n**Additive inverses** (every element has one):\n- inv(0) = 0, inv(1) = 2, inv(2) = 1\n\n**Multiplicative inverses** (every *non-zero* element has one):\n- inv(1) = 1 (since 1×1 = 1)\n- inv(2) = 2 (since 2×2 = 4 ≡ 1 mod 3)\n\n0 has no multiplicative inverse — no x satisfies 0×x = 1. This is the field axiom: the `has_mul_inv` relation covers A and B but not O."}]},
+  'ch3-theorems/unique-identity.relnb': {"version":1,"cells":[{"type":"md","source":"# Unique Identity Theorem\n\n**Theorem:** A group has at most one identity element.\n\n**Proof sketch:** Suppose e₁ and e₂ are both identity elements. Then:\n- e₁ × e₂ = e₂  (because e₁ is a left identity)\n- e₁ × e₂ = e₁  (because e₂ is a right identity)\n- Therefore e₁ = e₂  (by functionality of the operation)"},{"type":"code","source":"import ch2-algebra/group-axioms.relnb\n\n<Group> e1, e2\n\n# e1 is identity: e1*x = x and x*e1 = x for all x\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\n\n# e2 is identity: e2*x = x and x*e2 = x for all x\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nderive"},{"type":"md","source":"## Result\n\nThe engine derives `eq(e1, e2)` — the two supposed identity elements must be equal.\n\nThe key step: `op(e1, e2, e2)` and `op(e1, e2, e1)` together trigger `op_func`, yielding `eq(e2, e1)`. Symmetry then gives `eq(e1, e2)`.\n\nClick on `eq(e1, e2)` above to see the full proof tree."},{"type":"md","source":"## Proof Tree"},{"type":"code","source":"import ch2-algebra/group-axioms.relnb\n\n<Group> e1, e2\n\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nprove eq(e1, e2)"},{"type":"md","source":"```\neq(e1, e2)\n  ← eq_symmetry from eq(e2, e1)\n    ← op_func from op(e1, e2, e2), op(e1, e2, e1)\n      ← given, given\n```"},{"type":"md","source":"## Concrete Verification\n\nIn Z₃, only O is an identity. We can verify with an element-specific check rule:"},{"type":"code","source":"import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\n<rel> is_id/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Check: e is identity iff e*x = x for all x in {O, A, B}\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_id(?e)\n\nderive"},{"type":"md","source":"Only `is_id(O)` is derived. A fails because A*A = B ≠ A. B fails because B*B = A ≠ B.\n\nThe abstract proof above shows this isn't a coincidence — *any* group must have exactly one identity."}]},
+  'ch4-advanced/compound-terms.relnb': {"version":1,"cells":[{"type":"md","source":"# Compound Terms & Skolem Witnesses\n\nCompound terms like `inv(?x)` create structured terms from existing ones.\n\nWhen used in rule conclusions, they act as **Skolem witnesses** — generating new terms that depend on matched variables.\n\nThe `depth` directive limits nesting to prevent infinite generation."},{"type":"code","source":"depth 3\n\n<ele> e, a, b\n\n<rel> group/3\n<rel> member/1\n\nmember(e)\nmember(a)\nmember(b)\n\n# Every member has an inverse\n<rule> has_inv: member(?x) |- group(?x, inv(?x), e)\n\n# The inverse is also a member\n<rule> inv_member: member(?x) |- member(inv(?x))\n\nderive"},{"type":"md","source":"## What Happens\n\n1. `has_inv` fires for each member, creating `group(a, inv(a), e)`, `group(b, inv(b), e)`, etc.\n2. `inv_member` makes `inv(a)`, `inv(b)` into members too\n3. This cascades: `inv(inv(a))`, `inv(inv(inv(a)))` ... up to `depth 3`\n4. Without the depth limit, this would loop forever"},{"type":"md","source":"## Successor Arithmetic\n\nAnother classic: building natural numbers from zero."},{"type":"code","source":"depth 4\n\n<ele> zero\n<rel> nat/1\n<rel> plus/3\n\nnat(zero)\n<rule> succ: nat(?n) |- nat(s(?n))\n\n# 0 + n = n\n<rule> add_zero: nat(?n) |- plus(zero, ?n, ?n)\n\n# s(a) + b = s(a + b)\n<rule> add_succ: plus(?a, ?b, ?c) |- plus(s(?a), ?b, s(?c))\n\nderive"},{"type":"md","source":"The engine builds `s(zero)`, `s(s(zero))`, `s(s(s(zero)))` and computes their sums."}]},
+  'ch4-advanced/rule-composition.relnb': {"version":1,"cells":[{"type":"md","source":"# Rule Composition\n\nThe engine derives new rules by chaining existing ones. If rule A concludes B, and rule C has premise B, then A's premises can directly derive C's conclusions."},{"type":"code","source":"<ele> a, b, c\n\n<rel> P/1\n<rel> Q/1\n<rel> R/1\n\n<rule> r1: P(?x) |- Q(?x)\n<rule> r2: Q(?x) |- R(?x)\n\nP(a)\n\nderive"},{"type":"md","source":"## Chain\n\n- **r1**: P(?x) |- Q(?x)\n- **r2**: Q(?x) |- R(?x)\n- **Composed (r1+r2)**: P(?x) |- R(?x)\n\nFrom just `P(a)`, the engine derives both `Q(a)` and `R(a)`."},{"type":"md","source":"## Multi-hop with Symmetry\n\nCombining symmetric relations with custom rules creates longer inference chains."},{"type":"code","source":"<ele> x, y, z\n\n<rel> friend/2 : symmetric\n<rel> knows/2\n<rel> trusts/2\n\n<rule> f2k: friend(?a, ?b) |- knows(?a, ?b)\n<rule> k2t: knows(?a, ?b), knows(?b, ?a) |- trusts(?a, ?b)\n\nfriend(x, y)\nfriend(y, z)\n\nderive"},{"type":"md","source":"The engine composes `friend_symmetry` with `f2k` and `k2t` to build longer inference chains. Symmetric friendship + mutual knowing leads to trust."}]},
 };
-const EXAMPLE_FILES = Object.keys(EXAMPLE_DATA).map(name => {
-  const descMap = {
-    'equiv.relnb': 'Equivalence Closure',
-    'order.relnb': 'Partial Order',
-    'custom.relnb': 'Custom Rules',
-    'congruence.relnb': 'Congruence',
-    'typed.relnb': 'Membership Constraints',
-    'skolem.relnb': 'Skolem Witnesses',
-    'identity.relnb': 'Identity & Multi-Relation',
-    'errors.relnb': 'Error Handling',
-    'group.relnb': 'Group Z\u2083',
-    'ring.relnb': 'Ring Z\u2082',
-    'field.relnb': 'Field Z\u2083',
-    'rule_composition.relnb': 'Rule Composition',
-    'unique_identity.relnb': 'Unique Identity',
-  };
-  return { name, desc: descMap[name] || name };
-});
+
+const EXAMPLE_CHAPTERS = [
+  { title: 'Ch 0 — Syntax', items: [
+    { name: 'ch0-syntax/tour.relnb', desc: 'Complete Syntax Tour' },
+  ]},
+  { title: 'Ch 1 — Relations', items: [
+    { name: 'ch1-relations/equivalence.relnb', desc: 'Equivalence Closure' },
+    { name: 'ch1-relations/order.relnb', desc: 'Partial Order' },
+    { name: 'ch1-relations/congruence.relnb', desc: 'Congruence' },
+  ]},
+  { title: 'Ch 2 — Algebra', items: [
+    { name: 'ch2-algebra/group-axioms.relnb', desc: 'Group Axioms (importable)' },
+    { name: 'ch2-algebra/z3-group.relnb', desc: 'Z₃ Group' },
+    { name: 'ch2-algebra/ring-axioms.relnb', desc: 'Ring Axioms (importable)' },
+    { name: 'ch2-algebra/z2-ring.relnb', desc: 'Z₂ Ring' },
+    { name: 'ch2-algebra/field-axioms.relnb', desc: 'Field Axioms (importable)' },
+    { name: 'ch2-algebra/z3-field.relnb', desc: 'Z₃ Field' },
+  ]},
+  { title: 'Ch 3 — Theorems', items: [
+    { name: 'ch3-theorems/unique-identity.relnb', desc: 'Unique Identity' },
+  ]},
+  { title: 'Ch 4 — Advanced', items: [
+    { name: 'ch4-advanced/compound-terms.relnb', desc: 'Compound Terms & Skolem' },
+    { name: 'ch4-advanced/rule-composition.relnb', desc: 'Rule Composition' },
+  ]},
+];
 
 // ── localStorage fallback ──
 function lsLoad() {
@@ -4795,16 +4915,20 @@ async function renderWorkspace() {
 
   let html = '';
 
-  // ── Examples section (collapsible) ──
+  // ── Examples section (collapsible, grouped by chapter) ──
   html += `<div class="ws-section ws-collapsible${wsExamplesCollapsed ? ' collapsed' : ''}">`;
   html += `<div class="ws-section-header" onclick="wsToggleExamples()" style="cursor:pointer"><span class="ws-section-title"><span class="darr">&#9660;</span> EXAMPLES</span></div>`;
   html += `<div class="ws-section-body">`;
-  for (const ex of EXAMPLE_FILES) {
-    html += `<div class="ws-item" ondblclick="openExample('${esc(ex.name)}')">`;
-    html += `<span class="ws-item-icon">\u{1F4C4}</span>`;
-    html += `<span class="ws-item-name">${esc(ex.name)}</span>`;
-    html += `<span class="ws-item-tag">${esc(ex.desc)}</span>`;
-    html += `</div>`;
+  for (const ch of EXAMPLE_CHAPTERS) {
+    html += `<div class="ws-chapter-title">${esc(ch.title)}</div>`;
+    for (const ex of ch.items) {
+      const shortName = ex.name.split('/').pop();
+      html += `<div class="ws-item" ondblclick="openExample('${esc(ex.name)}')">`;
+      html += `<span class="ws-item-icon">\u{1F4C4}</span>`;
+      html += `<span class="ws-item-name">${esc(shortName)}</span>`;
+      html += `<span class="ws-item-tag">${esc(ex.desc)}</span>`;
+      html += `</div>`;
+    }
   }
   html += `</div>`; // ws-section-body
   html += `</div>`; // ws-section
@@ -4969,7 +5093,8 @@ function openExample(name) {
   const data = EXAMPLE_DATA[name];
   if (!data) return;
   // Deep copy so edits never touch the source data
-  openNotebookInTab(JSON.parse(JSON.stringify(data)), name);
+  const displayName = name.split('/').pop();
+  openNotebookInTab(JSON.parse(JSON.stringify(data)), displayName);
   runAll();
 }
 
@@ -5050,7 +5175,7 @@ function wsLoadFile() {
         const data = JSON.parse(text);
         const name = file.name.endsWith('.relnb') ? file.name : file.name + '.relnb';
         const path = wsFocusedFolder ? wsFocusedFolder + '/' + name : name;
-        await wsSave(path, JSON.stringify(data));
+        await wsWrite(path, JSON.stringify(data));
         await renderWorkspace();
       } catch (e) {
         alert('Invalid file: ' + file.name);
@@ -5061,7 +5186,7 @@ function wsLoadFile() {
 }
 
 async function wsExportFile(path) {
-  const raw = await wsLoad(path);
+  const raw = await wsRead(path);
   if (!raw) return;
   const blob = new Blob([raw], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

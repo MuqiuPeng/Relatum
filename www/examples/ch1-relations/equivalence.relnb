@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Equivalence Closure\n\nThe canonical Relatum demo. An **equivalence** relation is `reflexive` + `symmetric` + `transitive` + `congruent`.\n\nFrom just two seed facts, the engine derives the complete equivalence class."
+    },
+    {
+      "type": "code",
+      "source": "<ele> a, b, c\n\n<rel> equiv/2 : equivalence\n\nequiv(a, b)\nequiv(b, c)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Derivation\n\n- **Symmetry:** equiv(b, a), equiv(c, b)\n- **Transitivity:** equiv(a, c)\n- **Symmetry of derived:** equiv(c, a)\n- **Reflexivity:** equiv(a, a), equiv(b, b), equiv(c, c)\n\nTotal: 9 facts — the complete 3×3 equivalence class. Saturates in 2–3 rounds."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Z₂ — Ring of Integers mod 2\n\nThe simplest non-trivial ring: {0, 1} with addition and multiplication mod 2.\n\n- (Z₂, +) is an abelian group — identity: 0, every element is its own inverse (1+1=0)\n- (Z₂, ×) is a commutative monoid — identity: 1\n- Multiplication distributes over addition"
+    },
+    {
+      "type": "code",
+      "source": "import ch2-algebra/ring-axioms.relnb\n\n<Ring> O, I\nis_add_id(O)\nis_mul_id(I)\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Verification\n\n- **Distributivity (dist_l, dist_r):** all equalities are reflexive ✓\n- **Associativity (add_assoc, mul_assoc):** reflexive ✓\n- **Commutativity (add_comm):** reflexive ✓\n- **Inverses (find_add_inv):** has_add_inv(O,O) and has_add_inv(I,I) — in Z₂, every element is its own inverse\n\nExample: `1 × (1 + 1) = 1 × 0 = 0` and `1×1 + 1×1 = 1 + 1 = 0` — both sides equal O."
+    }
+  ]
+}

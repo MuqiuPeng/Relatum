@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Unique Identity Theorem\n\n**Theorem:** A group has at most one identity element.\n\n**Proof sketch:** Suppose e₁ and e₂ are both identity elements. Then:\n- e₁ × e₂ = e₂  (because e₁ is a left identity)\n- e₁ × e₂ = e₁  (because e₂ is a right identity)\n- Therefore e₁ = e₂  (by functionality of the operation)"
+    },
+    {
+      "type": "code",
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> e1, e2\n\n# e1 is identity: e1*x = x and x*e1 = x for all x\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\n\n# e2 is identity: e2*x = x and x*e2 = x for all x\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## Result\n\nThe engine derives `eq(e1, e2)` — the two supposed identity elements must be equal.\n\nThe key step: `op(e1, e2, e2)` and `op(e1, e2, e1)` together trigger `op_func`, yielding `eq(e2, e1)`. Symmetry then gives `eq(e1, e2)`.\n\nClick on `eq(e1, e2)` above to see the full proof tree."
+    },
+    {
+      "type": "md",
+      "source": "## Proof Tree"
+    },
+    {
+      "type": "code",
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> e1, e2\n\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nprove eq(e1, e2)"
+    },
+    {
+      "type": "md",
+      "source": "```\neq(e1, e2)\n  ← eq_symmetry from eq(e2, e1)\n    ← op_func from op(e1, e2, e2), op(e1, e2, e1)\n      ← given, given\n```"
+    },
+    {
+      "type": "md",
+      "source": "## Concrete Verification\n\nIn Z₃, only O is an identity. We can verify with an element-specific check rule:"
+    },
+    {
+      "type": "code",
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\n<rel> is_id/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Check: e is identity iff e*x = x for all x in {O, A, B}\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_id(?e)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "Only `is_id(O)` is derived. A fails because A*A = B ≠ A. B fails because B*B = A ≠ B.\n\nThe abstract proof above shows this isn't a coincidence — *any* group must have exactly one identity."
+    }
+  ]
+}
