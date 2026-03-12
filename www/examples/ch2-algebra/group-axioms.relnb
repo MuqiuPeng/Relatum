@@ -3,15 +3,15 @@
   "cells": [
     {
       "type": "md",
-      "source": "# Group Axioms\n\nA **group** (G, ∗) satisfies: closure, associativity, identity, and inverses.\n\nThis notebook defines the type, relations, and generic verification rules. **Import it** to use these axioms on a concrete group.\n\n### Conventions\n- `op(a, b, c)` means a ∗ b = c\n- Declare identity via `is_identity(e)` as a fact\n- The engine checks commutativity, associativity, functionality, and finds inverses automatically"
+      "source": "# Group Axioms\n\nA **group** (G, ∗) satisfies: closure, associativity, identity, and inverses.\n\nThis notebook defines the type, relations, and generic verification rules. **Import it** to use these axioms on a concrete group.\n\n### Conventions\n- `op(a, b, c)` means a ∗ b = c\n- Declare identity via `is_identity(e)` as a fact\n- Relations are constrained to Group members via transitive membership\n- The engine checks commutativity, associativity, functionality, and finds inverses automatically"
     },
     {
       "type": "code",
-      "source": "<ele> Group\n\n<rel> op/3\n<rel> eq/2 : equivalence\n<rel> is_identity/1\n<rel> has_inv/2\n\n# Commutativity check: op(x,y,z) and op(y,x,w) → z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\n# Associativity check: (a*b)*c = a*(b*c)\n<rule> assoc: op(?a, ?b, ?ab), op(?ab, ?c, ?lhs), op(?b, ?c, ?bc), op(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Operation is functional: same inputs → same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\n# Inverse: x * y = identity → has_inv(x, y)\n<rule> find_inv: is_identity(?e), op(?x, ?y, ?e) |- has_inv(?x, ?y)"
+      "source": "<ele> Group\n\n<rel> op/3 : Group, Group, Group\n<rel> eq/2 : Group, Group, equivalence\n<rel> is_identity/1 : Group\n<rel> has_inv/2 : Group, Group\n\n# Commutativity check: op(x,y,z) and op(y,x,w) → z = w\n<rule> comm: op(?x, ?y, ?z), op(?y, ?x, ?w) |- eq(?z, ?w)\n\n# Associativity check: (a*b)*c = a*(b*c)\n<rule> assoc: op(?a, ?b, ?ab), op(?ab, ?c, ?lhs), op(?b, ?c, ?bc), op(?a, ?bc, ?rhs) |- eq(?lhs, ?rhs)\n\n# Operation is functional: same inputs → same output\n<rule> op_func: op(?a, ?b, ?c), op(?a, ?b, ?d) |- eq(?c, ?d)\n\n# Inverse: x * y = identity → has_inv(x, y)\n<rule> find_inv: is_identity(?e), op(?x, ?y, ?e) |- has_inv(?x, ?y)"
     },
     {
       "type": "md",
-      "source": "## Usage\n\n```\nimport ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\nis_identity(O)\n\nop(O, O, O)\nop(O, A, A)\n...\n\nderive\n```\n\nThe engine will verify commutativity, associativity, and automatically discover inverses."
+      "source": "## Usage\n\nDeclare a concrete group instance with `<Group>`, then its elements:\n\n```\nimport ch2-algebra/group-axioms.relnb\n\n<Group> Z3\n<Z3> O, A, B\nis_identity(O)\n\nop(O, O, O)\nop(O, A, A)\n...\n\nderive\n```\n\nTransitive membership: O ∈ Z3 ∈ Group → O ∈ Group, so `op/3 : Group, Group, Group` accepts O, A, B."
     }
   ]
 }

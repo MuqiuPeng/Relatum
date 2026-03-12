@@ -7,7 +7,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> e1, e2\n\n# e1 is identity: e1*x = x and x*e1 = x for all x\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\n\n# e2 is identity: e2*x = x and x*e2 = x for all x\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nderive"
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> G\n<G> e1, e2\n\n# e1 is identity: e1*x = x and x*e1 = x for all x\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\n\n# e2 is identity: e2*x = x and x*e2 = x for all x\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nderive"
     },
     {
       "type": "md",
@@ -19,7 +19,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> e1, e2\n\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nprove eq(e1, e2)"
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> G\n<G> e1, e2\n\nop(e1, e1, e1)\nop(e1, e2, e2)\nop(e2, e1, e2)\nop(e2, e1, e1)\nop(e2, e2, e2)\nop(e1, e2, e1)\n\nprove eq(e1, e2)"
     },
     {
       "type": "md",
@@ -31,7 +31,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\n<rel> is_id/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Check: e is identity iff e*x = x for all x in {O, A, B}\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_id(?e)\n\nderive"
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> Z3\n<Z3> O, A, B\n<rel> is_id/1\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\n# Check: e is identity iff e*x = x for all x in {O, A, B}\n<rule> check_id: op(?e, O, O), op(?e, A, A), op(?e, B, B) |- is_id(?e)\n\nderive"
     },
     {
       "type": "md",

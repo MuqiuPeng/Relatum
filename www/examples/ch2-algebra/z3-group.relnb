@@ -3,11 +3,11 @@
   "cells": [
     {
       "type": "md",
-      "source": "# Z₃ — Cyclic Group of Order 3\n\nIntegers {0, 1, 2} under addition mod 3.\n\nImports the group axiom framework, then defines the Cayley table and lets the engine verify all group properties."
+      "source": "# Z₃ — Cyclic Group of Order 3\n\nIntegers {0, 1, 2} under addition mod 3.\n\nImports the group axiom framework, then defines the Cayley table and lets the engine verify all group properties.\n\n- `<Group> Z3` — Z3 is an instance of Group\n- `<Z3> O, A, B` — O, A, B are elements of Z3\n- Transitive membership: O ∈ Z3 ∈ Group → O ∈ Group"
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\nis_identity(O)\n\n# Cayley table: addition mod 3\n# O=0, A=1, B=2\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\nderive"
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> Z3\n<Z3> O, A, B\nis_identity(O)\n\n# Cayley table: addition mod 3\n# O=0, A=1, B=2\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\nderive"
     },
     {
       "type": "md",
@@ -19,7 +19,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> O, A, B\nis_identity(O)\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\nprove has_inv(A, B)"
+      "source": "import ch2-algebra/group-axioms.relnb\n\n<Group> Z3\n<Z3> O, A, B\nis_identity(O)\n\nop(O, O, O)\nop(O, A, A)\nop(O, B, B)\nop(A, O, A)\nop(A, A, B)\nop(A, B, O)\nop(B, O, B)\nop(B, A, O)\nop(B, B, A)\n\nprove has_inv(A, B)"
     }
   ]
 }

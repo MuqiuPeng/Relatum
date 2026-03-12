@@ -7,7 +7,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/field-axioms.relnb\n\n<Ring> O, A, B\nis_add_id(O)\nis_mul_id(A)\n\n# Addition mod 3\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\n# Multiplication mod 3\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\nderive"
+      "source": "import ch2-algebra/field-axioms.relnb\n\n<Ring> Z3\n<Z3> O, A, B\nis_add_id(O)\nis_mul_id(A)\n\n# Addition mod 3\nadd(O, O, O)\nadd(O, A, A)\nadd(O, B, B)\nadd(A, O, A)\nadd(A, A, B)\nadd(A, B, O)\nadd(B, O, B)\nadd(B, A, O)\nadd(B, B, A)\n\n# Multiplication mod 3\nmul(O, O, O)\nmul(O, A, O)\nmul(O, B, O)\nmul(A, O, O)\nmul(A, A, A)\nmul(A, B, B)\nmul(B, O, O)\nmul(B, A, B)\nmul(B, B, A)\n\nderive"
     },
     {
       "type": "md",

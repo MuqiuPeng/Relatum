@@ -7,7 +7,7 @@
     },
     {
       "type": "code",
-      "source": "import ch2-algebra/ring-axioms.relnb\n\n<Ring> O, I\nis_add_id(O)\nis_mul_id(I)\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\nderive"
+      "source": "import ch2-algebra/ring-axioms.relnb\n\n<Ring> Z2\n<Z2> O, I\nis_add_id(O)\nis_mul_id(I)\n\n# Addition mod 2\nadd(O, O, O)\nadd(O, I, I)\nadd(I, O, I)\nadd(I, I, O)\n\n# Multiplication mod 2\nmul(O, O, O)\nmul(O, I, O)\nmul(I, O, O)\nmul(I, I, I)\n\nderive"
     },
     {
       "type": "md",
