@@ -2403,7 +2403,8 @@ function parseLine(line, program, lineNum) {
     const container = resolveContainerAlias(keyword);
     if (!rest) throw new Error("Expected names after <" + keyword + ">");
     // Container must already be a known element (unless it is 'element' itself)
-    if (container !== 'element' && !program.elements.has(container)) {
+    // Skip check if program has imports — the type may come from an imported notebook
+    if (container !== 'element' && !program.elements.has(container) && program.imports.length === 0) {
       throw new Error(`Unknown type '${keyword}': declare it as an element first (e.g. <ele> ${keyword})`);
     }
     const names = rest.split(/[,\s]+/).filter(s => s);
