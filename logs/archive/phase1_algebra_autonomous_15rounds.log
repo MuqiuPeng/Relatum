@@ -1,0 +1,243 @@
+═══════════════════════════════════════════════════════
+AUTONOMOUS REASONING LOG
+Carrier size: 3
+═══════════════════════════════════════════════════════
+
+── ROUND 0 : enumerate model space ──
+  enumerated 19683 operations → 11 axiom classes
+         3 models : assoc+comm+id+inv
+         6 models : assoc+id
+        18 models : id+inv
+        24 models : comm+id
+        24 models : assoc+comm+id
+        30 models : comm+id+inv
+        36 models : assoc+comm
+        44 models : assoc
+       138 models : id
+       612 models : comm
+     18748 models : none
+
+── ROUND 1 : discover assoc+comm+id+inv ──
+  axiom class: assoc+comm+id+inv  (3 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?t0, ?v0) -> /1 = {e0, e1, e2}
+    auto_1 : op(?v0, ?t1, ?t1) -> /1 = {e1} ← selective
+    auto_2 : op(?t0, ?v0, ?t0) -> /1 = {e1} ← selective
+  verification rules: 4
+    verify_auto_1_op_0_1_2
+    verify_auto_1_op_1_0_2
+    verify_auto_2_op_0_1_2
+    verify_auto_2_op_1_0_2
+  universal (transferable) rules: 4
+    auto_1(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_1(?e), element(?x) |- op(?x, ?e, ?x)
+    auto_2(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_2(?e), element(?x) |- op(?x, ?e, ?x)
+  chain identities (associativity-like): 11
+    (a*b)*c = c*(a*b)
+    (a*b)*c = (a*c)*b
+    (a*b)*c = b*(a*c)
+    (a*b)*c = (b*a)*c
+    (a*b)*c = c*(b*a)
+    (a*b)*c = (b*c)*a
+    (a*b)*c = a*(b*c)
+    (a*b)*c = (c*a)*b
+    (a*b)*c = b*(c*a)
+    (a*b)*c = (c*b)*a
+    (a*b)*c = a*(c*b)
+
+── ROUND 2 : discover assoc+id ──
+  axiom class: assoc+id  (6 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?v0, ?t1, ?t1) -> /1 = {e0, e1, e2}
+    auto_1 : op(?t0, ?v0, ?t0) -> /1 = {e0, e1, e2}
+    auto_2 : op(?t0, ?t0, ?v0) -> /1 = {e0, e1, e2}
+  chain identities (associativity-like): 1
+    (a*b)*c = a*(b*c)
+
+── ROUND 3 : discover id+inv ──
+  axiom class: id+inv  (18 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?v0, ?t0) -> /1 = {e0, e2}
+    auto_1 : op(?t0, ?t0, ?v0) -> /1 = {e0} ← selective
+    auto_2 : op(?v0, ?t1, ?t1) -> /1 = {e0} ← selective
+  verification rules: 4
+    verify_auto_1_op_0_1_2
+    verify_auto_1_op_1_0_2
+    verify_auto_2_op_0_1_2
+    verify_auto_2_op_1_0_2
+  universal (transferable) rules: 4
+    auto_1(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_1(?e), element(?x) |- op(?x, ?e, ?x)
+    auto_2(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_2(?e), element(?x) |- op(?x, ?e, ?x)
+
+── ROUND 4 : discover comm+id ──
+  axiom class: comm+id  (24 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?v0, ?t1, ?t1) -> /1 = {e0, e2}
+    auto_1 : op(?t0, ?v0, ?t0) -> /1 = {e0, e2}
+    auto_2 : op(?t0, ?t0, ?v0) -> /1 = {e0, e2}
+  chain identities (associativity-like): 3
+    (a*b)*c = c*(a*b)
+    (a*b)*c = (b*a)*c
+    (a*b)*c = c*(b*a)
+
+── ROUND 5 : discover assoc+comm+id ──
+  axiom class: assoc+comm+id  (24 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?v0, ?t0) -> /1 = {e0, e1, e2}
+    auto_1 : op(?v0, ?t1, ?t1) -> /1 = {e0, e1, e2}
+    auto_2 : op(?t0, ?t0, ?v0) -> /1 = {e0, e1}
+  chain identities (associativity-like): 11
+    (a*b)*c = c*(a*b)
+    (a*b)*c = (a*c)*b
+    (a*b)*c = b*(a*c)
+    (a*b)*c = (b*a)*c
+    (a*b)*c = c*(b*a)
+    (a*b)*c = (b*c)*a
+    (a*b)*c = a*(b*c)
+    (a*b)*c = (c*a)*b
+    (a*b)*c = b*(c*a)
+    (a*b)*c = (c*b)*a
+    (a*b)*c = a*(c*b)
+
+── ROUND 6 : discover comm+id+inv ──
+  axiom class: comm+id+inv  (30 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?t0, ?v0) -> /1 = {e0} ← selective
+    auto_1 : op(?t0, ?v0, ?t0) -> /1 = {e0} ← selective
+    auto_2 : op(?v0, ?t1, ?t1) -> /1 = {e0} ← selective
+  verification rules: 6
+    verify_auto_0_op_0_1_2
+    verify_auto_0_op_1_0_2
+    verify_auto_1_op_0_1_2
+    verify_auto_1_op_1_0_2
+    verify_auto_2_op_0_1_2
+    verify_auto_2_op_1_0_2
+  universal (transferable) rules: 6
+    auto_0(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_0(?e), element(?x) |- op(?x, ?e, ?x)
+    auto_1(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_1(?e), element(?x) |- op(?x, ?e, ?x)
+    auto_2(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_2(?e), element(?x) |- op(?x, ?e, ?x)
+  chain identities (associativity-like): 3
+    (a*b)*c = c*(a*b)
+    (a*b)*c = (b*a)*c
+    (a*b)*c = c*(b*a)
+
+── ROUND 7 : discover assoc+comm ──
+  axiom class: assoc+comm  (36 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?v0, ?t0) -> /1 = {e0, e1, e2}
+    auto_1 : op(?v0, ?t1, ?t1) -> /1 = {e0, e1, e2}
+    auto_2 : op(?t0, ?t0, ?v0) -> /1 = {e0} ← selective
+  chain identities (associativity-like): 11
+    (a*b)*c = c*(a*b)
+    (a*b)*c = (a*c)*b
+    (a*b)*c = b*(a*c)
+    (a*b)*c = (b*a)*c
+    (a*b)*c = c*(b*a)
+    (a*b)*c = (b*c)*a
+    (a*b)*c = a*(b*c)
+    (a*b)*c = (c*a)*b
+    (a*b)*c = b*(c*a)
+    (a*b)*c = (c*b)*a
+    (a*b)*c = a*(c*b)
+
+── ROUND 8 : discover assoc ──
+  axiom class: assoc  (44 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?v0, ?t0) -> /1 = {e0, e1, e2}
+    auto_1 : op(?t0, ?t0, ?v0) -> /1 = {e0, e1}
+    auto_2 : op(?v0, ?t1, ?t1) -> /1 = {e0, e1, e2}
+  chain identities (associativity-like): 3
+    (a*b)*c = (a*c)*b
+    (a*b)*c = a*(b*c)
+    (a*b)*c = a*(c*b)
+
+── ROUND 9 : discover id ──
+  axiom class: id  (138 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?v0, ?t0) -> /1 = {e0, e1, e2}
+    auto_1 : op(?v0, ?t1, ?t1) -> /1 = {e0, e1}
+    auto_2 : op(?t0, ?t0, ?v0) -> /1 = {e0, e1}
+  no structural rules discovered
+
+── ROUND 10 : discover comm ──
+  axiom class: comm  (612 models in carrier)
+  concepts discovered: 3
+    auto_0 : op(?t0, ?t0, ?v0) -> /1 = {e0, e1}
+    auto_1 : op(?v0, ?t1, ?t1) -> /1 = {e1, e2}
+    auto_2 : op(?t0, ?v0, ?t0) -> /1 = {e1, e2}
+  verification rules: 2
+    verify_auto_1_op_2_0_1
+    verify_auto_2_op_2_0_1
+  chain identities (associativity-like): 3
+    (a*b)*c = c*(a*b)
+    (a*b)*c = (b*a)*c
+    (a*b)*c = c*(b*a)
+
+── ROUND 11 : cross-structure comparison ──
+  comparing 10 structures
+  abstract concepts (shared across structures): 3
+    pattern: op(?t0, ?v0, ?t0) -> /1
+      assoc+comm+id+inv = {e1}
+      assoc+id = {e0, e1, e2}
+      id+inv = {e0, e2}
+      comm+id = {e0, e2}
+      assoc+comm+id = {e0, e1, e2}
+      comm+id+inv = {e0}
+      assoc+comm = {e0, e1, e2}
+      assoc = {e0, e1, e2}
+      id = {e0, e1, e2}
+      comm = {e1, e2}
+    pattern: op(?t0, ?t0, ?v0) -> /1
+      assoc+comm+id+inv = {e0, e1, e2}
+      assoc+id = {e0, e1, e2}
+      id+inv = {e0}
+      comm+id = {e0, e2}
+      assoc+comm+id = {e0, e1}
+      comm+id+inv = {e0}
+      assoc+comm = {e0}
+      assoc = {e0, e1}
+      id = {e0, e1}
+      comm = {e0, e1}
+    pattern: op(?v0, ?t1, ?t1) -> /1
+      assoc+comm+id+inv = {e1}
+      assoc+id = {e0, e1, e2}
+      id+inv = {e0}
+      comm+id = {e0, e2}
+      assoc+comm+id = {e0, e1, e2}
+      comm+id+inv = {e0}
+      assoc+comm = {e0, e1, e2}
+      assoc = {e0, e1, e2}
+      id = {e0, e1}
+      comm = {e1, e2}
+  theorems discovered: 1
+    ∀x. [op(?v0, ?t1, ?t1) -> /1](x) → [op(?t0, ?v0, ?t0) -> /1](x)  | evidence: 10 structures | verified: 0 | refuted: 0
+
+── ROUND 12 : transfer to n=4 + verify ──
+  axiom class: Z4 (constructed cyclic group)  (1 models in carrier)
+  concepts discovered: 2
+    auto_1 : selective = {t0} ← selective
+    auto_2 : selective = {t0} ← selective
+  verification rules: 1
+    predictions: 6/6 correct
+  universal (transferable) rules: 4
+    auto_1(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_1(?e), element(?x) |- op(?x, ?e, ?x)
+    auto_2(?e), element(?x) |- op(?e, ?x, ?x)
+    auto_2(?e), element(?x) |- op(?x, ?e, ?x)
+
+── ROUND 13 : scale to carrier size 4 ──
+  enumerated 4294967296 operations → 1 axiom classes
+         0 models : (exhaustive enumeration infeasible: 4294967296 > 500000 ops)
+
+── ROUND 14 : converge ──
+  explored 10 classes at n=3, transferred and verified at n=4
+
+═══════════════════════════════════════════════════════
+END (15 rounds)
+═══════════════════════════════════════════════════════

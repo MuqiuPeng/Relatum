@@ -55,6 +55,9 @@ pub struct Rule {
     name: String,
     premises: Vec<RelationPattern>,
     conclusions: Vec<RelationPattern>,
+    /// Variables that must resolve to ground terms for the rule to fire.
+    /// Empty means no constraint (all substitutions accepted).
+    ground_required: Vec<String>,
 }
 
 impl Rule {
@@ -67,7 +70,14 @@ impl Rule {
             name: name.into(),
             premises,
             conclusions,
+            ground_required: Vec::new(),
         }
+    }
+
+    /// Mark variables that must resolve to ground terms for this rule to fire.
+    pub fn with_ground_required(mut self, vars: Vec<String>) -> Self {
+        self.ground_required = vars;
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -80,6 +90,10 @@ impl Rule {
 
     pub fn conclusions(&self) -> &[RelationPattern] {
         &self.conclusions
+    }
+
+    pub fn ground_required(&self) -> &[String] {
+        &self.ground_required
     }
 }
 
@@ -201,6 +215,112 @@ pub fn instantiate(pattern: &RelationPattern, sub: &Substitution) -> Option<Rela
     terms.map(|ts| Relation::new(pattern.name(), ts))
 }
 
+// ── Bidirectional unification (for pattern facts) ───────────
+
+/// Resolve a variable through the substitution chain.
+fn resolve(term: &Term, sub: &Substitution, fuel: usize) -> Term {
+    if fuel == 0 {
+        return term.clone();
+    }
+    match term {
+        Term::Var(name) => match sub.get(name) {
+            Some(bound) if bound != term => resolve(bound, sub, fuel - 1),
+            _ => term.clone(),
+        },
+        _ => term.clone(),
+    }
+}
+
+/// Unify two terms bidirectionally, extending the substitution.
+///
+/// Unlike [`match_term`], both sides can contain variables. Fact variables
+/// should be pre-renamed (see [`Relation::rename_vars_fresh`]) to avoid
+/// collision with pattern variables.
+pub fn unify_term(a: &Term, b: &Term, sub: &mut Substitution) -> bool {
+    let ar = resolve(a, sub, 64);
+    let br = resolve(b, sub, 64);
+    match (&ar, &br) {
+        (Term::Var(name), _) => {
+            if ar == br {
+                return true;
+            }
+            sub.insert(name.clone(), br);
+            true
+        }
+        (_, Term::Var(name)) => {
+            sub.insert(name.clone(), ar);
+            true
+        }
+        (
+            Term::App {
+                symbol: s1,
+                args: a1,
+            },
+            Term::App {
+                symbol: s2,
+                args: a2,
+            },
+        ) => {
+            s1 == s2
+                && a1.len() == a2.len()
+                && a1
+                    .iter()
+                    .zip(a2.iter())
+                    .all(|(x, y)| unify_term(x, y, sub))
+        }
+    }
+}
+
+/// Unify a relation pattern against a (possibly non-ground) fact.
+pub fn unify_relation(
+    pattern: &RelationPattern,
+    fact: &Relation,
+    sub: &mut Substitution,
+) -> bool {
+    pattern.name() == fact.name()
+        && pattern.terms().len() == fact.terms().len()
+        && pattern
+            .terms()
+            .iter()
+            .zip(fact.terms())
+            .all(|(p, g)| unify_term(p, g, sub))
+}
+
+/// Apply substitution partially: substitute bound variables, leave unbound
+/// variables as-is. Follows variable chains transitively.
+pub fn substitute_partial(term: &Term, sub: &Substitution) -> Term {
+    _substitute_partial(term, sub, 64)
+}
+
+fn _substitute_partial(term: &Term, sub: &Substitution, fuel: usize) -> Term {
+    if fuel == 0 {
+        return term.clone();
+    }
+    match term {
+        Term::Var(name) => match sub.get(name) {
+            Some(bound) if bound != term => _substitute_partial(bound, sub, fuel - 1),
+            _ => term.clone(),
+        },
+        Term::App { symbol, args } => Term::app(
+            symbol.clone(),
+            args.iter()
+                .map(|a| _substitute_partial(a, sub, fuel))
+                .collect(),
+        ),
+    }
+}
+
+/// Instantiate a relation pattern with partial substitution.
+/// Unlike [`instantiate`], never fails — unbound variables remain in the result.
+pub fn instantiate_partial(pattern: &RelationPattern, sub: &Substitution) -> Relation {
+    let terms: Vec<Term> = pattern
+        .terms()
+        .iter()
+        .map(|t| substitute_partial(t, sub))
+        .collect();
+    Relation::new(pattern.name(), terms)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,5 +417,87 @@ mod tests {
         let rule = transitivity();
         assert_eq!(rule.premises().len(), 2);
         assert_eq!(rule.conclusions().len(), 1);
+    }
+
+    // ── Unification tests ──────────────────────────────────
+
+    #[test]
+    fn test_unify_var_ground() {
+        let mut sub = Substitution::new();
+        assert!(unify_term(&v("x"), &c("a"), &mut sub));
+        assert_eq!(sub["x"], c("a"));
+    }
+
+    #[test]
+    fn test_unify_ground_var() {
+        // fact-side variable binds to pattern structure
+        let mut sub = Substitution::new();
+        assert!(unify_term(&c("a"), &v("X"), &mut sub));
+        assert_eq!(sub["X"], c("a"));
+    }
+
+    #[test]
+    fn test_unify_var_var() {
+        let mut sub = Substitution::new();
+        assert!(unify_term(&v("x"), &v("Y"), &mut sub));
+        assert_eq!(sub["x"], v("Y"));
+    }
+
+    #[test]
+    fn test_unify_app_with_fact_var() {
+        // pattern App vs fact Var — the fact var should bind
+        let pattern = Term::app("f", vec![c("a")]);
+        let mut sub = Substitution::new();
+        assert!(unify_term(&pattern, &v("X"), &mut sub));
+        assert_eq!(sub["X"], Term::app("f", vec![c("a")]));
+    }
+
+    #[test]
+    fn test_unify_consistency() {
+        let mut sub = Substitution::new();
+        sub.insert("x".into(), c("a"));
+        assert!(unify_term(&v("x"), &c("a"), &mut sub));
+        assert!(!unify_term(&v("x"), &c("b"), &mut sub));
+    }
+
+    #[test]
+    fn test_unify_transitive_chain() {
+        let mut sub = Substitution::new();
+        // x -> Y, then Y -> a
+        assert!(unify_term(&v("x"), &v("Y"), &mut sub));
+        assert!(unify_term(&v("Y"), &c("a"), &mut sub));
+        // x should resolve to a
+        let resolved = substitute_partial(&v("x"), &sub);
+        assert_eq!(resolved, c("a"));
+    }
+
+    #[test]
+    fn test_substitute_partial_unbound() {
+        let sub = Substitution::new();
+        // unbound var stays as-is
+        assert_eq!(substitute_partial(&v("x"), &sub), v("x"));
+    }
+
+    #[test]
+    fn test_substitute_partial_nested() {
+        let mut sub = Substitution::new();
+        sub.insert("x".into(), c("a"));
+        // y stays unbound
+        let term = Term::app("f", vec![v("x"), v("y")]);
+        let result = substitute_partial(&term, &sub);
+        assert_eq!(result, Term::app("f", vec![c("a"), v("y")]));
+    }
+
+    #[test]
+    fn test_instantiate_partial_with_free_vars() {
+        let pattern = RelationPattern::new("member", vec![v("s"), Term::app("power", vec![v("a")])]);
+        let mut sub = Substitution::new();
+        sub.insert("s".into(), c("empty"));
+        // a is unbound — stays as variable
+        let fact = instantiate_partial(&pattern, &sub);
+        assert_eq!(fact.name(), "member");
+        assert_eq!(fact.terms()[0], c("empty"));
+        assert_eq!(fact.terms()[1], Term::app("power", vec![v("a")]));
+        assert!(!fact.is_ground());
     }
 }

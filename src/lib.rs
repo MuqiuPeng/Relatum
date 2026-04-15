@@ -29,6 +29,7 @@
 
 pub mod algebra;
 pub mod relational;
+pub mod wasm;
 
 // Primary exports: algebra and closure engine
 pub use algebra::{

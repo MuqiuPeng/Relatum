@@ -44,11 +44,14 @@
 pub mod engine;
 pub mod relation;
 pub mod rule;
+pub mod score;
+pub mod search;
 pub mod term;
 
 pub use engine::{Axiom, ClosureEngine, ClosureResult, RelationDef};
 pub use relation::Relation;
 pub use rule::{RelationPattern, Rule, Substitution};
+pub use score::{ClosureProfile, RuleEvaluation, ScoreWeights};
 pub use term::Term;
 
 // ── Future extension interfaces (not yet implemented) ────────

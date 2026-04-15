@@ -1,0 +1,16 @@
+=== ZFC-5 FULL PATTERN ===
+Facts: 2000 (1996 ground, 4 pattern), Rounds: 4
+
+P1 ✓ member(empty, power(empty))
+P1 ✓ subset(empty, empty)
+P1 ✓ subset(empty, power(empty))
+P2 ✓ member(empty, pair(empty, empty))
+P2 ✓ subset(empty, pair(empty, empty))
+P2 ✓ member(empty, power(pair(empty, empty)))
+P2 ✓ member(pair(empty, empty), power(pair(empty, empty)))
+
+Pattern facts:
+  member(_0, pair(_0, _1))
+  member(_0, pair(_1, _0))
+  member(empty, power(_0))
+  subset(empty, _0)

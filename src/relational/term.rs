@@ -3,7 +3,7 @@
 //! A [`Term`] is either a variable (pattern placeholder) or a function application
 //! with a named symbol and zero or more arguments.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// A symbolic expression: variable or function application.
@@ -57,6 +57,35 @@ impl Term {
             for arg in args {
                 arg.collect_subterms(set);
             }
+        }
+    }
+
+    /// Rename all variables using a mapping.
+    /// Variables encountered for the first time get a fresh name `{prefix}{counter}`.
+    pub fn rename_vars(
+        &self,
+        mapping: &mut HashMap<String, String>,
+        prefix: &str,
+        counter: &mut usize,
+    ) -> Term {
+        match self {
+            Term::Var(name) => {
+                let new_name = mapping
+                    .entry(name.clone())
+                    .or_insert_with(|| {
+                        let n = format!("{}{}", prefix, *counter);
+                        *counter += 1;
+                        n
+                    })
+                    .clone();
+                Term::Var(new_name)
+            }
+            Term::App { symbol, args } => Term::app(
+                symbol.clone(),
+                args.iter()
+                    .map(|a| a.rename_vars(mapping, prefix, counter))
+                    .collect(),
+            ),
         }
     }
 }

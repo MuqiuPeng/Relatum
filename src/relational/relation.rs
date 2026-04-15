@@ -42,6 +42,37 @@ impl Relation {
     pub fn is_ground(&self) -> bool {
         self.terms.iter().all(|t| t.is_ground())
     }
+
+    /// Rename all variables with fresh names to avoid collision during unification.
+    /// Each call increments the counter, ensuring unique names across multiple facts.
+    pub fn rename_vars_fresh(&self, counter: &mut usize) -> Relation {
+        if self.is_ground() {
+            return self.clone();
+        }
+        let mut mapping = std::collections::HashMap::new();
+        let terms: Vec<Term> = self
+            .terms
+            .iter()
+            .map(|t| t.rename_vars(&mut mapping, "_f", counter))
+            .collect();
+        Relation::new(&self.name, terms)
+    }
+
+    /// Alpha-normalize: rename variables to `_0`, `_1`, … by order of first appearance.
+    /// Two relations are alpha-equivalent iff their normalized forms are equal.
+    pub fn alpha_normalize(&self) -> Relation {
+        if self.is_ground() {
+            return self.clone();
+        }
+        let mut mapping = std::collections::HashMap::new();
+        let mut counter = 0usize;
+        let terms: Vec<Term> = self
+            .terms
+            .iter()
+            .map(|t| t.rename_vars(&mut mapping, "_", &mut counter))
+            .collect();
+        Relation::new(&self.name, terms)
+    }
 }
 
 impl fmt::Display for Relation {

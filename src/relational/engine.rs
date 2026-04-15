@@ -78,7 +78,7 @@ impl Axiom {
 }
 
 /// Schema for a declared relation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RelationDef {
     arity: usize,
 }
@@ -94,6 +94,7 @@ impl RelationDef {
 /// Operates on arbitrary relations — no predefined mathematical semantics.
 /// Equality is not built-in; declare it with [`define_equivalence`](Self::define_equivalence)
 /// to get symmetry, transitivity, reflexivity, and congruence.
+#[derive(Clone)]
 pub struct ClosureEngine {
     // ── declarations ─────────────────────────────────────────
     constants: BTreeSet<String>,
@@ -226,11 +227,20 @@ impl ClosureEngine {
     // ── building ─────────────────────────────────────────────
 
     pub fn add_fact(&mut self, fact: Relation) {
-        self.facts.insert(fact);
+        if fact.is_ground() {
+            self.facts.insert(fact);
+        } else {
+            self.facts.insert(fact.alpha_normalize());
+        }
     }
 
     pub fn add_rule(&mut self, rule: Rule) {
         self.rules.push(rule);
+    }
+
+    /// Removes a rule by index. Used for ablation analysis.
+    pub fn remove_rule(&mut self, index: usize) -> Rule {
+        self.rules.remove(index)
     }
 
     /// Adds a universally quantified axiom. During closure, the engine
@@ -262,11 +272,13 @@ impl ClosureEngine {
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
-        // Check facts
+        // Check facts (skip ground-term validation for pattern facts)
         for fact in &self.facts {
             self.validate_relation_use(fact.name(), fact.arity(), &mut errors);
-            for term in fact.terms() {
-                self.validate_ground_term(term, &mut errors);
+            if fact.is_ground() {
+                for term in fact.terms() {
+                    self.validate_ground_term(term, &mut errors);
+                }
             }
         }
 
@@ -425,11 +437,30 @@ impl ClosureEngine {
             for rule in &self.rules {
                 let matches = match_premises(rule.premises(), &self.facts);
                 for sub in &matches {
+                    // Check ground-required variable constraints
+                    if !rule.ground_required().is_empty() {
+                        let ok = rule.ground_required().iter().all(|var| {
+                            rule::substitute_partial(&Term::var(var), sub).is_ground()
+                        });
+                        if !ok {
+                            continue;
+                        }
+                    }
                     for conclusion in rule.conclusions() {
-                        if let Some(fact) = rule::instantiate(conclusion, sub) {
-                            if fact.is_ground() && !self.facts.contains(&fact) {
-                                new_facts.insert(fact);
-                            }
+                        let fact = rule::instantiate_partial(conclusion, sub);
+                        let max_d = fact
+                            .terms()
+                            .iter()
+                            .map(|t| t.depth())
+                            .max()
+                            .unwrap_or(0);
+                        if max_d > MAX_TERM_DEPTH {
+                            continue;
+                        }
+                        let key =
+                            if fact.is_ground() { fact } else { fact.alpha_normalize() };
+                        if !self.facts.contains(&key) {
+                            new_facts.insert(key);
                         }
                     }
                 }
@@ -589,6 +620,8 @@ impl ClosureEngine {
         for name in &self.constants {
             terms.insert(Term::constant(name.as_str()));
         }
+        // Filter out non-ground terms (variables from pattern facts)
+        terms.retain(|t| t.is_ground());
         terms
     }
 
@@ -601,7 +634,7 @@ impl ClosureEngine {
             let pairs: Vec<(&Term, &Term)> = self
                 .facts
                 .iter()
-                .filter(|f| f.name() == rel_name && f.arity() == 2)
+                .filter(|f| f.name() == rel_name && f.arity() == 2 && f.is_ground())
                 .map(|f| (&f.terms()[0], &f.terms()[1]))
                 .collect();
 
@@ -782,6 +815,7 @@ fn match_premises(
     facts: &HashSet<Relation>,
 ) -> Vec<Substitution> {
     let mut subs: Vec<Substitution> = vec![HashMap::new()];
+    let mut var_counter: usize = 0;
 
     for premise in premises {
         let mut next = Vec::new();
@@ -791,8 +825,17 @@ fn match_premises(
                     continue;
                 }
                 let mut candidate = sub.clone();
-                if rule::match_relation(premise, fact, &mut candidate) {
-                    next.push(candidate);
+                if fact.is_ground() {
+                    // Ground fact: use unification (equivalent to match_relation)
+                    if rule::unify_relation(premise, fact, &mut candidate) {
+                        next.push(candidate);
+                    }
+                } else {
+                    // Pattern fact: rename variables to avoid collision, then unify
+                    let renamed = fact.rename_vars_fresh(&mut var_counter);
+                    if rule::unify_relation(premise, &renamed, &mut candidate) {
+                        next.push(candidate);
+                    }
                 }
             }
         }
@@ -1344,5 +1387,223 @@ mod tests {
         engine.add_fact(equiv(c("a"), c("b")));
         let result = engine.derive_closure();
         assert!(result.warnings.is_empty());
+    }
+
+    // ── Propositional logic semantics (research step 1) ─────
+
+    /// Build a propositional logic engine with 2 variables (p, q) and 4 valuations.
+    /// Tests that tautologies, contradictions, and contingencies are correctly classified
+    /// using pure relational closure — no built-in negation.
+    #[test]
+    fn test_propositional_logic_tautology_detection() {
+        let mut engine = ClosureEngine::new();
+
+        // Declare relations
+        engine.define_relation("tv_t", 2); // tv_t(v, f): f is true in valuation v
+        engine.define_relation("tv_f", 2); // tv_f(v, f): f is false in valuation v
+        engine.define_relation("declared", 1); // declared(f): f is a formula we evaluate
+        engine.define_relation("tautology", 1);
+        engine.define_relation("contradiction", 1);
+
+        // Declare variables for rules
+        engine.define_variable("v");
+        engine.define_variable("p");
+        engine.define_variable("q");
+        engine.define_variable("r");
+        engine.define_variable("f");
+
+        // Declare constants: valuations
+        let v_tt = engine.define_constant("v_tt");
+        let v_tf = engine.define_constant("v_tf");
+        let v_ft = engine.define_constant("v_ft");
+        let v_ff = engine.define_constant("v_ff");
+        // Atomic propositions
+        let p = engine.define_constant("p");
+        let q = engine.define_constant("q");
+
+        // --- Atomic truth assignments ---
+        // v_tt: p=T, q=T
+        engine.add_fact(Relation::binary("tv_t", v_tt.clone(), p.clone()));
+        engine.add_fact(Relation::binary("tv_t", v_tt.clone(), q.clone()));
+        // v_tf: p=T, q=F
+        engine.add_fact(Relation::binary("tv_t", v_tf.clone(), p.clone()));
+        engine.add_fact(Relation::binary("tv_f", v_tf.clone(), q.clone()));
+        // v_ft: p=F, q=T
+        engine.add_fact(Relation::binary("tv_f", v_ft.clone(), p.clone()));
+        engine.add_fact(Relation::binary("tv_t", v_ft.clone(), q.clone()));
+        // v_ff: p=F, q=F
+        engine.add_fact(Relation::binary("tv_f", v_ff.clone(), p.clone()));
+        engine.add_fact(Relation::binary("tv_f", v_ff.clone(), q.clone()));
+
+        // --- Declared formulas ---
+        let neg_p = Term::app("neg", vec![p.clone()]);
+        let neg_q = Term::app("neg", vec![q.clone()]);
+        let and_pq = Term::app("and", vec![p.clone(), q.clone()]);
+        let or_pq = Term::app("or", vec![p.clone(), q.clone()]);
+        let imp_pq = Term::app("imp", vec![p.clone(), q.clone()]);
+        let imp_pp = Term::app("imp", vec![p.clone(), p.clone()]);
+        let or_p_negp = Term::app("or", vec![p.clone(), neg_p.clone()]);
+        let and_p_negp = Term::app("and", vec![p.clone(), neg_p.clone()]);
+        let imp_andpq_p = Term::app("imp", vec![and_pq.clone(), p.clone()]);
+        let imp_p_orpq = Term::app("imp", vec![p.clone(), or_pq.clone()]);
+        let imp_p_negp = Term::app("imp", vec![p.clone(), neg_p.clone()]);
+
+        // Modus ponens: (p ∧ (p→q)) → q
+        let and_p_imppq = Term::app("and", vec![p.clone(), imp_pq.clone()]);
+        let mp = Term::app("imp", vec![and_p_imppq.clone(), q.clone()]);
+
+        for f in &[
+            &neg_p, &neg_q, &and_pq, &or_pq, &imp_pq, &imp_pp,
+            &or_p_negp, &and_p_negp, &imp_andpq_p, &imp_p_orpq,
+            &imp_p_negp, &and_p_imppq, &mp,
+        ] {
+            engine.add_fact(Relation::new("declared", vec![(*f).clone()]));
+        }
+
+        // --- Rules ---
+        let vv = Term::var("v");
+        let pv = Term::var("p");
+        let qv = Term::var("q");
+        let fv = Term::var("f");
+
+        // Negation
+        engine.add_rule(Rule::new("neg_t",
+            vec![
+                RelationPattern::new("tv_f", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("neg", vec![pv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_t", vec![vv.clone(), Term::app("neg", vec![pv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("neg_f",
+            vec![
+                RelationPattern::new("tv_t", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("neg", vec![pv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_f", vec![vv.clone(), Term::app("neg", vec![pv.clone()])])],
+        ));
+
+        // Conjunction
+        engine.add_rule(Rule::new("and_t",
+            vec![
+                RelationPattern::new("tv_t", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("tv_t", vec![vv.clone(), qv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("and", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_t", vec![vv.clone(), Term::app("and", vec![pv.clone(), qv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("and_f1",
+            vec![
+                RelationPattern::new("tv_f", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("and", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_f", vec![vv.clone(), Term::app("and", vec![pv.clone(), qv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("and_f2",
+            vec![
+                RelationPattern::new("tv_f", vec![vv.clone(), qv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("and", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_f", vec![vv.clone(), Term::app("and", vec![pv.clone(), qv.clone()])])],
+        ));
+
+        // Disjunction
+        engine.add_rule(Rule::new("or_t1",
+            vec![
+                RelationPattern::new("tv_t", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("or", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_t", vec![vv.clone(), Term::app("or", vec![pv.clone(), qv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("or_t2",
+            vec![
+                RelationPattern::new("tv_t", vec![vv.clone(), qv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("or", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_t", vec![vv.clone(), Term::app("or", vec![pv.clone(), qv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("or_f",
+            vec![
+                RelationPattern::new("tv_f", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("tv_f", vec![vv.clone(), qv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("or", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_f", vec![vv.clone(), Term::app("or", vec![pv.clone(), qv.clone()])])],
+        ));
+
+        // Implication
+        engine.add_rule(Rule::new("imp_t1",
+            vec![
+                RelationPattern::new("tv_f", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("imp", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_t", vec![vv.clone(), Term::app("imp", vec![pv.clone(), qv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("imp_t2",
+            vec![
+                RelationPattern::new("tv_t", vec![vv.clone(), qv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("imp", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_t", vec![vv.clone(), Term::app("imp", vec![pv.clone(), qv.clone()])])],
+        ));
+        engine.add_rule(Rule::new("imp_f",
+            vec![
+                RelationPattern::new("tv_t", vec![vv.clone(), pv.clone()]),
+                RelationPattern::new("tv_f", vec![vv.clone(), qv.clone()]),
+                RelationPattern::new("declared", vec![Term::app("imp", vec![pv.clone(), qv.clone()])]),
+            ],
+            vec![RelationPattern::new("tv_f", vec![vv.clone(), Term::app("imp", vec![pv.clone(), qv.clone()])])],
+        ));
+
+        // Tautology: true in all 4 valuations
+        engine.add_rule(Rule::new("taut",
+            vec![
+                RelationPattern::new("tv_t", vec![c("v_tt"), fv.clone()]),
+                RelationPattern::new("tv_t", vec![c("v_tf"), fv.clone()]),
+                RelationPattern::new("tv_t", vec![c("v_ft"), fv.clone()]),
+                RelationPattern::new("tv_t", vec![c("v_ff"), fv.clone()]),
+            ],
+            vec![RelationPattern::new("tautology", vec![fv.clone()])],
+        ));
+
+        // Contradiction: false in all 4 valuations
+        engine.add_rule(Rule::new("contra",
+            vec![
+                RelationPattern::new("tv_f", vec![c("v_tt"), fv.clone()]),
+                RelationPattern::new("tv_f", vec![c("v_tf"), fv.clone()]),
+                RelationPattern::new("tv_f", vec![c("v_ft"), fv.clone()]),
+                RelationPattern::new("tv_f", vec![c("v_ff"), fv.clone()]),
+            ],
+            vec![RelationPattern::new("contradiction", vec![fv.clone()])],
+        ));
+
+        // --- Run closure ---
+        let result = engine.derive_closure();
+        assert!(result.saturated, "closure should saturate");
+
+        // --- Verify tautologies ---
+        let taut = |t: &Term| Relation::new("tautology", vec![t.clone()]);
+        assert!(result.facts.contains(&taut(&imp_pp)),
+            "p → p should be a tautology");
+        assert!(result.facts.contains(&taut(&or_p_negp)),
+            "p ∨ ¬p (excluded middle) should be a tautology");
+        assert!(result.facts.contains(&taut(&imp_andpq_p)),
+            "(p ∧ q) → p (simplification) should be a tautology");
+        assert!(result.facts.contains(&taut(&imp_p_orpq)),
+            "p → (p ∨ q) (addition) should be a tautology");
+        assert!(result.facts.contains(&taut(&mp)),
+            "(p ∧ (p→q)) → q (modus ponens) should be a tautology");
+
+        // --- Verify contradiction ---
+        let contra = |t: &Term| Relation::new("contradiction", vec![t.clone()]);
+        assert!(result.facts.contains(&contra(&and_p_negp)),
+            "p ∧ ¬p should be a contradiction");
+
+        // --- Verify non-tautologies (no false positives) ---
+        assert!(!result.facts.contains(&taut(&imp_pq)),
+            "p → q should NOT be a tautology");
+        assert!(!result.facts.contains(&taut(&and_pq)),
+            "p ∧ q should NOT be a tautology");
+        assert!(!result.facts.contains(&taut(&imp_p_negp)),
+            "p → ¬p should NOT be a tautology");
     }
 }
