@@ -1,0 +1,64 @@
+3028 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3148 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3145 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3159 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+============================================================
+  ω-RULE: Natural Number Induction
+  32 facts, 17 rounds, saturated=true
+============================================================
+  even(succ(succ(succ(succ(succ(succ(succ(zero))))))))
+  even(succ(succ(succ(succ(succ(succ(zero)))))))
+  even(succ(succ(succ(succ(succ(zero))))))
+  even(succ(succ(succ(succ(zero)))))
+  even(succ(succ(succ(zero))))
+  even(succ(succ(zero)))
+  even(succ(zero))
+  even(zero)
+  nat(_0)
+  nat(succ(_0))
+  nat(succ(succ(_0)))
+  nat(succ(succ(succ(_0))))
+  nat(succ(succ(succ(succ(_0)))))
+  nat(succ(succ(succ(succ(succ(_0))))))
+  nat(succ(succ(succ(succ(succ(succ(_0)))))))
+  nat(succ(succ(succ(succ(succ(succ(succ(_0))))))))
+  nat(succ(succ(succ(succ(succ(succ(succ(zero))))))))
+  nat(succ(succ(succ(succ(succ(succ(zero)))))))
+  nat(succ(succ(succ(succ(succ(zero))))))
+  nat(succ(succ(succ(succ(zero)))))
+  nat(succ(succ(succ(zero))))
+  nat(succ(succ(zero)))
+  nat(succ(zero))
+  nat(zero)
+  nonneg(succ(succ(succ(succ(succ(succ(succ(zero))))))))
+  nonneg(succ(succ(succ(succ(succ(succ(zero)))))))
+  nonneg(succ(succ(succ(succ(succ(zero))))))
+  nonneg(succ(succ(succ(succ(zero)))))
+  nonneg(succ(succ(succ(zero))))
+  nonneg(succ(succ(zero)))
+  nonneg(succ(zero))
+  nonneg(zero)
+  Warnings:
+    ω-rule: promoted nat/1 to pattern fact nat(_0)
+    ω-defense: blocked pattern facts from pure-transfer rule nat_nonneg
+    ω-defense: blocked pattern facts from pure-transfer rule nat_even_WRONG
+  ω-rule promotion:
+    nat(_0): true ✓
+  Pure-transfer defense (blocks pattern-level):
+    even(_0): false ← blocked (wrong rule)
+    nonneg(_0): false ← blocked (conservative)
+  Ground instances preserved:
+    even(zero): true, nonneg(zero): true
+  Trade-off: nonneg(_0) is mathematically correct but blocked
+  because the engine cannot distinguish correct from incorrect
+  pure-transfer rules. Constructive rules (like set(x)|-subset(empty,x))
+  are allowed because they add term structure to the conclusion.
+test test_omega_rule_nat ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.01s
