@@ -257,6 +257,48 @@ impl ClosureEngine {
         self.max_facts = n;
     }
 
+    // ── hypothetical reasoning (proof by contradiction) ────
+
+    /// Run closure under a hypothetical assumption. Returns `true` if the
+    /// assumption leads to a contradiction (a fact with the given relation
+    /// name is derived).
+    ///
+    /// The original engine is NOT modified. The assumption is tested on a
+    /// clone, and only the contradiction check result is returned.
+    ///
+    /// Usage pattern for proof by contradiction:
+    /// ```ignore
+    /// // Define contradiction trigger:
+    /// //   member(x, y), neg_member(x, y) |- contradiction()
+    /// // Then:
+    /// if engine.is_contradictory(assumption, "contradiction") {
+    ///     // assumption leads to contradiction → its negation holds
+    /// }
+    /// ```
+    pub fn is_contradictory(
+        &self,
+        assumption: Relation,
+        contradiction_rel: &str,
+    ) -> bool {
+        let mut trial = self.clone();
+        trial.add_fact(assumption);
+        let result = trial.derive_closure();
+        result
+            .facts
+            .iter()
+            .any(|f| f.name() == contradiction_rel)
+    }
+
+    /// Run closure under multiple hypothetical assumptions.
+    /// Returns the full closure result for inspection (not just contradiction check).
+    pub fn hypothetical(&self, assumptions: Vec<Relation>) -> ClosureResult {
+        let mut trial = self.clone();
+        for a in assumptions {
+            trial.add_fact(a);
+        }
+        trial.derive_closure()
+    }
+
     // ── validation ───────────────────────────────────────────
 
     /// Validates all facts and rules against declared constants, variables,

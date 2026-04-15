@@ -1376,6 +1376,98 @@ fn test_iterative_chain_construction() {
     println!("    3. Depth-bounded termination");
 }
 
+// ── Proof by contradiction ──────────────────────────────────
+
+/// Prove by contradiction: in a finite strict linear order, assuming
+/// "every element has a successor" leads to a cycle, which contradicts
+/// the irreflexivity of strict ordering.
+///
+/// Poset: a < b < c (finite, 3 elements).
+/// Assume: every element has a strict successor (no maximal element).
+/// Then c must have a successor — but the only elements are {a, b, c},
+/// and c < a would create a cycle. With transitivity, c < a < b < c → c < c.
+/// But lt is irreflexive → contradiction.
+#[test]
+fn test_proof_by_contradiction() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("lt", 2);
+    engine.define_relation("has_successor", 1);
+    engine.define_relation("contradiction", 0);  // 0-ary: flag
+
+    for v in &["x", "y", "z"] {
+        engine.define_variable(*v);
+    }
+
+    for e in &["a", "b", "c"] {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+
+    // Strict linear order: a < b < c
+    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
+    engine.add_fact(Relation::binary("lt", c("b"), c("c")));
+
+    // Transitivity
+    engine.add_rule(Rule::new(
+        "lt_trans",
+        vec![
+            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
+        ],
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
+    ));
+
+    // Contradiction: lt(x, x) is impossible (irreflexivity)
+    engine.add_rule(Rule::new(
+        "irrefl_contradiction",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("x")])],
+        vec![RelationPattern::new("contradiction", vec![])],
+    ));
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(100);
+
+    println!("\n============================================================");
+    println!("  PROOF BY CONTRADICTION: Finite Order Has Maximal Element");
+    println!("============================================================");
+
+    // First: verify the base engine has no contradiction
+    let base_result = engine.derive_closure();
+    let has_base = |s: &str| base_result.facts.iter().any(|f| f.to_string() == s);
+    assert!(!has_base("contradiction()"), "base should have no contradiction");
+    println!("\n  Base: {} facts, no contradiction ✓", base_result.facts.len());
+
+    // Hypothesis: "every element has a successor" → c must go somewhere
+    // The only candidates are a, b, c. Since a < b < c are given, adding
+    // c < a (the only new option) should create a cycle → contradiction.
+    let assumption = Relation::binary("lt", c("c"), c("a"));
+    let contradicts = engine.is_contradictory(assumption.clone(), "contradiction");
+
+    println!("  Assume lt(c, a): contradiction = {}", contradicts);
+    assert!(contradicts, "lt(c, a) + transitivity → lt(c, c) → contradiction");
+
+    // Also test: c < b
+    let contradicts_b = engine.is_contradictory(
+        Relation::binary("lt", c("c"), c("b")), "contradiction");
+    println!("  Assume lt(c, b): contradiction = {}", contradicts_b);
+    assert!(contradicts_b, "lt(c, b) + lt(b, c) → lt(c, c) → contradiction");
+
+    // Also test: c < c directly
+    let contradicts_self = engine.is_contradictory(
+        Relation::binary("lt", c("c"), c("c")), "contradiction");
+    println!("  Assume lt(c, c): contradiction = {}", contradicts_self);
+    assert!(contradicts_self, "lt(c, c) directly contradicts irreflexivity");
+
+    // Conclusion: c cannot have any successor in {a, b, c}
+    // → c is maximal (proven by exhaustive contradiction, not by closed-world negation)
+    println!("\n  All possible successors for c lead to contradiction.");
+    println!("  Therefore c is maximal — proven by contradiction, not by negation.");
+    println!("  This is stronger than closed-world negation: it proves");
+    println!("  non-existence rather than absence-from-derivation.");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
