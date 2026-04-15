@@ -429,6 +429,13 @@ impl ClosureEngine {
             .max()
             .unwrap_or(0);
 
+        // ── Global iteration loop ────────────────────────────
+        // Stratum 0 (positive) runs to fixpoint, then negation strata run.
+        // If negation strata produce new facts (e.g. AC creating Skolem
+        // successors for non-maximal elements), re-run stratum 0 to absorb
+        // the new facts, then re-run negation, and so on until global fixpoint.
+        'global: loop {
+
         for _ in 0..self.max_rounds {
             rounds += 1;
             let mut new_facts: HashSet<Relation> = HashSet::new();
@@ -571,6 +578,7 @@ impl ClosureEngine {
 
         if !negated_rules.is_empty() && !hit_limit {
             let max_strata = negated_rules.iter().map(|r| r.stratum()).max().unwrap_or(1);
+            let pre_neg_count = self.facts.len();
 
             for stratum in 1..=max_strata {
                 let stratum_rules: Vec<&&Rule> = negated_rules
@@ -609,7 +617,16 @@ impl ClosureEngine {
                     }
                 }
             }
+
+            // If negation strata produced new facts, re-run from stratum 0
+            if self.facts.len() > pre_neg_count && !hit_limit {
+                fixed_point = false;
+                continue 'global;
+            }
         }
+
+        break 'global;
+        } // end 'global loop
 
         // ── ω-rule: inductive promotion ─────────────────────
         // After closure saturates, detect inductive chains and promote
