@@ -1244,21 +1244,25 @@ fn test_omega_rule_set_bootstrap() {
     println!("  member(empty, power(_0)): {} (chain)", has("member(empty, power(_0))"));
 }
 
-// ── Zorn's Lemma via iterative stratification ───────────────
+// ── Iterative chain construction with stratified maximality ──
 
-/// Constructive AC → Zorn: iterative chain extension with Skolem witnesses.
+/// Iterative chain construction with Skolem witnesses and stratified
+/// maximality detection.
 ///
-/// Starting from a single element, the AC rule creates Skolem successors
-/// for every non-maximal element. The engine iterates:
-///   stratum 0 → positive closure (lt transitivity)
-///   stratum 1 → maximal (negation on lt)
-///   stratum 2 → AC (create successor for non-maximal)
-///   → new facts → back to stratum 0 → ...
-///   → terminates at depth limit → deepest element is maximal
+/// Demonstrates the global iteration loop: negation-gated rules (stratum 2)
+/// produce new facts (Skolem successors), which feed back into stratum 0
+/// (lt transitivity), which feeds stratum 1 (maximality recomputation).
 ///
-/// This is the constructive proof of Zorn executed as iterative fixpoint.
+/// This is NOT a proof of Zorn's Lemma. The "maximal" elements found here
+/// are artifacts of the depth limit, not genuine mathematical maximality.
+/// Changing the depth limit changes which elements are "maximal."
+///
+/// What this test actually demonstrates:
+/// 1. Iterative stratification (strata cycle until global fixpoint)
+/// 2. Skolem witness generation gated by negation
+/// 3. Depth-bounded chain construction
 #[test]
-fn test_zorn_constructive() {
+fn test_iterative_chain_construction() {
     let mut engine = ClosureEngine::new();
 
     engine.define_relation("element", 1);
@@ -1322,7 +1326,7 @@ fn test_zorn_constructive() {
     let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
 
     println!("\n============================================================");
-    println!("  ZORN'S LEMMA: Constructive AC → Maximal Element");
+    println!("  ITERATIVE CHAIN: Skolem Extension + Stratified Maximality");
     println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
     println!("============================================================");
 
@@ -1357,13 +1361,19 @@ fn test_zorn_constructive() {
     assert!(has("lt(a, sk(a))"), "AC established a < sk(a)");
 
     // At depth limit, the deepest Skolem term and b are maximal
-    assert!(!maximals.is_empty(), "Zorn: at least one maximal element must exist");
+    // Depth-bounded maximality (NOT genuine mathematical maximality —
+    // these elements are "maximal" only because the depth limit prevents
+    // further Skolem extension)
+    assert!(!maximals.is_empty(), "depth-bounded maximal elements should exist");
     assert!(!has("maximal(a)"), "a is not maximal (a < b, a < sk(a))");
 
-    println!("\n  Zorn verified: {} maximal element(s) found at depth boundary",
-        maximals.len());
-    println!("  Iterative stratification: stratum 0 (lt transitivity) ↔");
-    println!("    stratum 1 (maximal) ↔ stratum 2 (AC successor creation)");
+    println!("\n  {} depth-bounded maximal element(s) found", maximals.len());
+    println!("  NOTE: maximality here is an artifact of depth limit {},", 8);
+    println!("  not a mathematical proof of non-extendability.");
+    println!("\n  What this demonstrates:");
+    println!("    1. Iterative stratification (strata cycle to global fixpoint)");
+    println!("    2. Negation-gated Skolem construction");
+    println!("    3. Depth-bounded termination");
 }
 
 /// Simple premise matching against a vec of fact references.
