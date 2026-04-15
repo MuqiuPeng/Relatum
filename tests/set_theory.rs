@@ -851,132 +851,84 @@ fn test_zfc5_pure_symbolic() {
     println!("    → member(empty, power(_0)) ✓");
 }
 
-// ── Stratified negation: maximal element derivation ─────────
+// ── Stratified negation: derived ordering → maximal/minimal ──
 
-/// Finite poset with stratified negation: derive maximal elements.
+/// Graph reachability: derive transitive closure from edges, then use
+/// negation to find sources (no incoming) and sinks (no outgoing).
 ///
-/// Poset: a < b, a < c (diamond without top).
-/// Expected: maximal(b), maximal(c). NOT maximal(a).
+/// The ORDER is not input — it's derived from raw edges via transitive closure.
+/// Negation then operates on the derived relation.
+///
+///   a → b → c → d
+///         ↘ e
+///
+/// Expected: source(a), sink(d), sink(e).
 #[test]
-fn test_negation_maximal_element() {
+fn test_negation_derived_reachability() {
     let mut engine = ClosureEngine::new();
 
-    engine.define_relation("element", 1);
-    engine.define_relation("lt", 2);        // strict less-than
-    engine.define_relation("maximal", 1);
+    engine.define_relation("node", 1);
+    engine.define_relation("edge", 2);
+    engine.define_relation("reachable", 2);  // derived via transitive closure
+    engine.define_relation("source", 1);     // derived via negation
+    engine.define_relation("sink", 1);       // derived via negation
 
-    for v in &["x", "y"] {
+    for v in &["x", "y", "z"] {
         engine.define_variable(*v);
     }
 
-    // Elements
-    for e in &["a", "b", "c"] {
-        engine.define_constant(*e);
-        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    for n in &["a", "b", "c", "d", "e"] {
+        engine.define_constant(*n);
+        engine.add_fact(Relation::new("node", vec![c(*n)]));
     }
 
-    // Partial order: a < b, a < c
-    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
-    engine.add_fact(Relation::binary("lt", c("a"), c("c")));
+    // Raw edges — the ONLY user input
+    engine.add_fact(Relation::binary("edge", c("a"), c("b")));
+    engine.add_fact(Relation::binary("edge", c("b"), c("c")));
+    engine.add_fact(Relation::binary("edge", c("b"), c("e")));
+    engine.add_fact(Relation::binary("edge", c("c"), c("d")));
 
-    // Maximal: element(x), NOT lt(x, ?y) |- maximal(x)
-    // "x is maximal if x is an element and nothing is strictly greater"
+    // Derive reachability (transitive closure of edges)
     engine.add_rule(Rule::new(
-        "maximal_def",
-        vec![RelationPattern::new("element", vec![Term::var("x")])],
-        vec![RelationPattern::new("maximal", vec![Term::var("x")])],
-    ).with_negated(vec![
-        RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
-    ]));
-
-    engine.set_max_rounds(10);
-    engine.set_max_facts(100);
-
-    let result = engine.derive_closure();
-
-    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
-
-    println!("\n============================================================");
-    println!("  STRATIFIED NEGATION: Maximal Elements");
-    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
-    println!("============================================================");
-
-    for f in &result.facts {
-        println!("  {}", f);
-    }
-
-    assert!(has("maximal(b)"), "b should be maximal (nothing > b)");
-    assert!(has("maximal(c)"), "c should be maximal (nothing > c)");
-    assert!(!has("maximal(a)"), "a should NOT be maximal (a < b exists)");
-
-    println!("\n  maximal(a): {} (should be false)", has("maximal(a)"));
-    println!("  maximal(b): {} (should be true)", has("maximal(b)"));
-    println!("  maximal(c): {} (should be true)", has("maximal(c)"));
-}
-
-/// Longer chain with negation: a < b < c < d.
-/// Only d should be maximal.
-#[test]
-fn test_negation_linear_chain() {
-    let mut engine = ClosureEngine::new();
-
-    engine.define_relation("element", 1);
-    engine.define_relation("lt", 2);
-    engine.define_relation("maximal", 1);
-    engine.define_relation("minimal", 1);
-
-    for v in &["x", "y"] {
-        engine.define_variable(*v);
-    }
-
-    for e in &["a", "b", "c", "d"] {
-        engine.define_constant(*e);
-        engine.add_fact(Relation::new("element", vec![c(*e)]));
-    }
-
-    // Linear order: a < b < c < d
-    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
-    engine.add_fact(Relation::binary("lt", c("b"), c("c")));
-    engine.add_fact(Relation::binary("lt", c("c"), c("d")));
-
-    // Transitivity of lt
-    engine.add_rule(Rule::new(
-        "lt_trans",
-        vec![
-            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
-            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
-        ],
-        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
+        "reach_base",
+        vec![RelationPattern::new("edge", vec![Term::var("x"), Term::var("y")])],
+        vec![RelationPattern::new("reachable", vec![Term::var("x"), Term::var("y")])],
     ));
-    engine.define_variable("z");
-
-    // Maximal: element(x), NOT lt(x, ?y)
     engine.add_rule(Rule::new(
-        "maximal_def",
-        vec![RelationPattern::new("element", vec![Term::var("x")])],
-        vec![RelationPattern::new("maximal", vec![Term::var("x")])],
+        "reach_step",
+        vec![
+            RelationPattern::new("reachable", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("edge", vec![Term::var("y"), Term::var("z")]),
+        ],
+        vec![RelationPattern::new("reachable", vec![Term::var("x"), Term::var("z")])],
+    ));
+
+    // Source: node with no incoming reachable edges
+    engine.add_rule(Rule::new(
+        "source_def",
+        vec![RelationPattern::new("node", vec![Term::var("x")])],
+        vec![RelationPattern::new("source", vec![Term::var("x")])],
     ).with_negated(vec![
-        RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+        RelationPattern::new("reachable", vec![Term::var("y"), Term::var("x")]),
     ]));
 
-    // Minimal: element(x), NOT lt(?y, x)
+    // Sink: node with no outgoing reachable edges
     engine.add_rule(Rule::new(
-        "minimal_def",
-        vec![RelationPattern::new("element", vec![Term::var("x")])],
-        vec![RelationPattern::new("minimal", vec![Term::var("x")])],
+        "sink_def",
+        vec![RelationPattern::new("node", vec![Term::var("x")])],
+        vec![RelationPattern::new("sink", vec![Term::var("x")])],
     ).with_negated(vec![
-        RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")]),
+        RelationPattern::new("reachable", vec![Term::var("x"), Term::var("y")]),
     ]));
 
     engine.set_max_rounds(10);
     engine.set_max_facts(100);
 
     let result = engine.derive_closure();
-
     let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
 
     println!("\n============================================================");
-    println!("  STRATIFIED NEGATION: Linear Chain a < b < c < d");
+    println!("  STRATIFIED NEGATION: Derived Reachability");
     println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
     println!("============================================================");
 
@@ -984,18 +936,122 @@ fn test_negation_linear_chain() {
     sorted.sort();
     for f in &sorted { println!("  {}", f); }
 
-    assert!(has("maximal(d)"), "d should be maximal");
-    assert!(!has("maximal(a)"), "a should not be maximal");
-    assert!(!has("maximal(b)"), "b should not be maximal");
-    assert!(!has("maximal(c)"), "c should not be maximal");
+    // Derived reachability
+    assert!(has("reachable(a, d)"), "a can reach d via a→b→c→d");
+    assert!(has("reachable(a, e)"), "a can reach e via a→b→e");
+    assert!(has("reachable(b, d)"), "b can reach d via b→c→d");
+    assert!(!has("reachable(d, a)"), "d cannot reach a");
 
-    assert!(has("minimal(a)"), "a should be minimal");
-    assert!(!has("minimal(d)"), "d should not be minimal");
+    // Negation on derived relation
+    assert!(has("source(a)"), "a is the only source");
+    assert!(!has("source(b)"), "b is reachable from a");
+    assert!(has("sink(d)"), "d is a sink");
+    assert!(has("sink(e)"), "e is a sink");
+    assert!(!has("sink(b)"), "b reaches c, d, e");
 
-    println!("\n  maximal: d={} (others: a={} b={} c={})",
-        has("maximal(d)"), has("maximal(a)"), has("maximal(b)"), has("maximal(c)"));
-    println!("  minimal: a={} (others: b={} c={} d={})",
-        has("minimal(a)"), has("minimal(b)"), has("minimal(c)"), has("minimal(d)"));
+    println!("\n  sources: a={} b={} c={} d={} e={}",
+        has("source(a)"), has("source(b)"), has("source(c)"),
+        has("source(d)"), has("source(e)"));
+    println!("  sinks:   a={} b={} c={} d={} e={}",
+        has("sink(a)"), has("sink(b)"), has("sink(c)"),
+        has("sink(d)"), has("sink(e)"));
+}
+
+/// ZFC subset ordering → minimal set via negation.
+///
+/// All structure is derived from axioms. The subset ordering emerges from
+/// empty_subset + subset_refl. Negation identifies empty as the unique
+/// minimal element (strict subset of everything, nothing is strict subset of it).
+///
+/// Two-stratum negation:
+///   stratum 1: strict_subset(x, y) ← subset(x, y), NOT subset(y, x)
+///   stratum 2: minimal_set(x) ← set(x), NOT strict_subset(_, x)
+#[test]
+fn test_negation_zfc_minimal_set() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("set", 1);
+    engine.define_relation("subset", 2);
+    engine.define_relation("strict_subset", 2);
+    engine.define_relation("minimal_set", 1);
+
+    for v in &["x", "y"] {
+        engine.define_variable(*v);
+    }
+
+    engine.define_constant("empty");
+    engine.add_fact(Relation::new("set", vec![c("empty")]));
+
+    // ZFC rules (no manual ordering input)
+    engine.add_rule(Rule::new(
+        "empty_subset",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])],
+    ));
+    engine.add_rule(Rule::new(
+        "subset_refl",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("x")])],
+    ));
+    engine.add_rule(Rule::new(
+        "powerset_exists",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("set", vec![
+            Term::app("power", vec![Term::var("x")]),
+        ])],
+    ));
+
+    // Stratum 1: strict_subset(x, y) ← subset(x, y), NOT subset(y, x)
+    engine.add_rule(Rule::new(
+        "strict_subset_def",
+        vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("y")])],
+        vec![RelationPattern::new("strict_subset", vec![Term::var("x"), Term::var("y")])],
+    ).with_negated(vec![
+        RelationPattern::new("subset", vec![Term::var("y"), Term::var("x")]),
+    ]));
+
+    // Stratum 2: minimal_set(x) ← set(x), NOT strict_subset(_, x)
+    engine.add_rule(Rule::new(
+        "minimal_set_def",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("minimal_set", vec![Term::var("x")])],
+    ).with_negated(vec![
+        RelationPattern::new("strict_subset", vec![Term::var("y"), Term::var("x")]),
+    ]).with_stratum(2));
+
+    engine.set_max_rounds(20);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  STRATIFIED NEGATION: ZFC Minimal Set (2-stratum)");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    // Show key facts
+    let mut sorted: Vec<String> = result.facts.iter().map(|f| f.to_string()).collect();
+    sorted.sort();
+    for f in &sorted {
+        if f.contains("strict_subset") || f.contains("minimal") {
+            println!("  {}", f);
+        }
+    }
+
+    // Derived strict ordering: empty ⊊ power(empty), empty ⊊ power(power(empty)), etc.
+    assert!(has("strict_subset(empty, power(empty))"),
+        "empty ⊊ power(empty) — derived from subset, not input");
+
+    // empty is the unique minimal set
+    assert!(has("minimal_set(empty)"),
+        "empty should be the minimal set");
+    assert!(!has("minimal_set(power(empty))"),
+        "power(empty) is not minimal (empty ⊊ power(empty))");
+
+    println!("\n  minimal_set(empty): {}", has("minimal_set(empty)"));
+    println!("  minimal_set(power(empty)): {}", has("minimal_set(power(empty))"));
+    println!("\n  Ordering derived from ZFC axioms, not user input.");
 }
 
 // ── ω-rule: inductive promotion ─────────────────────────────
