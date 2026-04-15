@@ -1132,25 +1132,32 @@ fn test_omega_rule_nat() {
     // ω-rule promotion
     assert!(has("nat(_0)"), "ω-rule should promote nat(_0)");
 
-    // Correct downstream: nonneg(_0) — all nats are non-negative ✓
-    assert!(has("nonneg(_0)"), "nonneg(_0) is correct");
+    // Defense: pure-transfer rules are blocked at pattern level.
+    // nat(x)|-nonneg(x) is pure transfer: conclusion is just variable from premise.
+    // nat(x)|-even(x) is also pure transfer.
+    // Both are blocked, even though nonneg(_0) would be correct.
+    // This is a conservative defense: some correct pattern facts are lost
+    // to prevent incorrect ones from propagating.
+    assert!(!has("even(_0)"),
+        "even(_0) should be BLOCKED by pure-transfer defense");
+    assert!(!has("nonneg(_0)"),
+        "nonneg(_0) also blocked (conservative: pure transfer, even though correct)");
 
-    // Over-broad downstream: even(_0) — derived because the RULE is wrong,
-    // not because the ω-rule is wrong. The engine faithfully propagates
-    // nat(_0) through all rules, including imprecise ones.
-    assert!(has("even(_0)"),
-        "even(_0) is derived (wrong rule, correct engine behavior)");
+    // Ground instances still exist (defense only blocks pattern-level)
+    assert!(has("even(zero)"), "ground even(zero) still derived");
+    assert!(has("nonneg(zero)"), "ground nonneg(zero) still derived");
 
     println!("\n  ω-rule promotion:");
     println!("    nat(_0): {} ✓", has("nat(_0)"));
-    println!("\n  Correct downstream (nat → nonneg):");
-    println!("    nonneg(_0): {} ✓", has("nonneg(_0)"));
-    println!("\n  CAPABILITY BOUNDARY — imprecise rule propagation:");
-    println!("    even(_0): {} ← derived from wrong rule nat(x)|-even(x)",
-        has("even(_0)"));
-    println!("    The ω-rule correctly promoted nat(_0).");
-    println!("    The error is in the rule, not the promotion.");
-    println!("    Lesson: ω-rule requires precise rule premises.");
+    println!("\n  Pure-transfer defense (blocks pattern-level):");
+    println!("    even(_0): {} ← blocked (wrong rule)", has("even(_0)"));
+    println!("    nonneg(_0): {} ← blocked (conservative)", has("nonneg(_0)"));
+    println!("\n  Ground instances preserved:");
+    println!("    even(zero): {}, nonneg(zero): {}", has("even(zero)"), has("nonneg(zero)"));
+    println!("\n  Trade-off: nonneg(_0) is mathematically correct but blocked");
+    println!("  because the engine cannot distinguish correct from incorrect");
+    println!("  pure-transfer rules. Constructive rules (like set(x)|-subset(empty,x))");
+    println!("  are allowed because they add term structure to the conclusion.");
 }
 
 /// ω-rule on ZFC: set(empty), set(x) |- set(power(x)) should promote set(_0).

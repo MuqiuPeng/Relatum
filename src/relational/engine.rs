@@ -614,6 +614,12 @@ impl ClosureEngine {
         // ── ω-rule: inductive promotion ─────────────────────
         // After closure saturates, detect inductive chains and promote
         // to pattern facts. Then re-run closure with the new patterns.
+        //
+        // Defense: during post-promotion re-run, reject non-ground facts
+        // from pure-transfer rules. A pure-transfer rule maps R(x)→S(x)
+        // without adding term structure — this would blindly copy a
+        // universal claim across relations. Constructive rules (ones that
+        // add constants or constructors to the conclusion) are allowed.
         if fixed_point && !hit_limit {
             let promotions = self.detect_inductive_promotions();
             if !promotions.is_empty() {
@@ -625,6 +631,15 @@ impl ClosureEngine {
                     ));
                     self.facts.insert(p.clone());
                 }
+
+                // Identify pure-transfer rules (block their pattern-level output)
+                let transfer_rules: HashSet<String> = self
+                    .rules
+                    .iter()
+                    .filter(|r| is_pure_transfer(r))
+                    .map(|r| r.name().to_string())
+                    .collect();
+
                 // Re-run positive closure with new pattern facts
                 for _ in 0..self.max_rounds {
                     rounds += 1;
@@ -633,7 +648,28 @@ impl ClosureEngine {
                         if rule.has_negation() {
                             continue;
                         }
-                        apply_rule(rule, &self.facts, &mut new_facts);
+                        let mut rule_facts: HashSet<Relation> = HashSet::new();
+                        apply_rule(rule, &self.facts, &mut rule_facts);
+                        // Defense: block non-ground facts from pure-transfer rules
+                        if transfer_rules.contains(rule.name()) {
+                            for f in rule_facts {
+                                if f.is_ground() && !self.facts.contains(&f) {
+                                    new_facts.insert(f);
+                                } else if !f.is_ground() {
+                                    warnings.push(format!(
+                                        "ω-defense: blocked {} from pure-transfer rule {}",
+                                        f.alpha_normalize(),
+                                        rule.name(),
+                                    ));
+                                }
+                            }
+                        } else {
+                            for f in rule_facts {
+                                if !self.facts.contains(&f) {
+                                    new_facts.insert(f);
+                                }
+                            }
+                        }
                     }
                     new_facts.retain(|f| !self.facts.contains(f));
                     if new_facts.is_empty() {
@@ -996,6 +1032,42 @@ fn match_premises(
     }
 
     subs
+}
+
+/// Check if a rule is a pure variable transfer: single premise R(?x) → single
+/// conclusion S(?x) where the conclusion's terms are just variables from the
+/// premise without any added constants or constructors.
+///
+/// Pure transfers blindly copy universal claims across relations. At the
+/// pattern level this is dangerous: `nat(_0)` through `nat(x)|-even(x)`
+/// produces `even(_0)` which is wrong.
+///
+/// Constructive rules like `set(x) |- subset(empty, x)` are safe because
+/// the conclusion adds structure (the constant `empty`).
+fn is_pure_transfer(rule: &Rule) -> bool {
+    if rule.premises().len() != 1 || rule.conclusions().len() != 1 {
+        return false;
+    }
+    let prem = &rule.premises()[0];
+    let conc = &rule.conclusions()[0];
+    // Same relation doesn't count (that's the inductive step, not a transfer)
+    if prem.name() == conc.name() {
+        return false;
+    }
+    // Collect premise variable names
+    let prem_vars: HashSet<&str> = prem
+        .terms()
+        .iter()
+        .filter_map(|t| match t {
+            Term::Var(n) => Some(n.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Conclusion terms must ALL be variables from the premise
+    conc.terms().iter().all(|t| match t {
+        Term::Var(n) => prem_vars.contains(n.as_str()),
+        _ => false,
+    })
 }
 
 /// Apply a single rule against the fact set, collecting new facts.
