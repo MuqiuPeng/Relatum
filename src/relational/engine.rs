@@ -611,6 +611,48 @@ impl ClosureEngine {
             }
         }
 
+        // ── ω-rule: inductive promotion ─────────────────────
+        // After closure saturates, detect inductive chains and promote
+        // to pattern facts. Then re-run closure with the new patterns.
+        if fixed_point && !hit_limit {
+            let promotions = self.detect_inductive_promotions();
+            if !promotions.is_empty() {
+                for p in &promotions {
+                    warnings.push(format!(
+                        "ω-rule: promoted {}/1 to pattern fact {}",
+                        p.name(),
+                        p
+                    ));
+                    self.facts.insert(p.clone());
+                }
+                // Re-run positive closure with new pattern facts
+                for _ in 0..self.max_rounds {
+                    rounds += 1;
+                    let mut new_facts: HashSet<Relation> = HashSet::new();
+                    for rule in &self.rules {
+                        if rule.has_negation() {
+                            continue;
+                        }
+                        apply_rule(rule, &self.facts, &mut new_facts);
+                    }
+                    new_facts.retain(|f| !self.facts.contains(f));
+                    if new_facts.is_empty() {
+                        break;
+                    }
+                    for fact in new_facts {
+                        self.facts.insert(fact);
+                        if self.facts.len() >= self.max_facts {
+                            hit_limit = true;
+                            break;
+                        }
+                    }
+                    if hit_limit {
+                        break;
+                    }
+                }
+            }
+        }
+
         let mut all_facts: Vec<Relation> = self.facts.iter().cloned().collect();
         all_facts.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
 
@@ -629,6 +671,89 @@ impl ClosureEngine {
             saturated: fixed_point && !hit_limit,
             warnings,
         }
+    }
+
+    // ── inductive promotion (ω-rule) ──────────────────────
+
+    /// Detect unary relations with inductive rule chains and return
+    /// pattern facts for promotion.
+    ///
+    /// An inductive pattern is:
+    /// - A unary relation R with at least one ground base case `R(base)`
+    /// - A rule with premise `R(?x)` and conclusion `R(f(?x))` for some
+    ///   constructor `f`
+    ///
+    /// If the closure reached fixpoint (all derivable instances exist),
+    /// the relation is promoted to a pattern fact `R(_0)`.
+    fn detect_inductive_promotions(&self) -> Vec<Relation> {
+        let mut promotions = Vec::new();
+        let mut seen_rels: HashSet<&str> = HashSet::new();
+
+        for rule in &self.rules {
+            if rule.has_negation() {
+                continue;
+            }
+            if rule.premises().len() != 1 || rule.conclusions().len() != 1 {
+                continue;
+            }
+
+            let prem = &rule.premises()[0];
+            let conc = &rule.conclusions()[0];
+
+            // Same relation, unary
+            if prem.name() != conc.name() {
+                continue;
+            }
+            if prem.terms().len() != 1 || conc.terms().len() != 1 {
+                continue;
+            }
+
+            let rel_name = prem.name();
+            if seen_rels.contains(rel_name) {
+                continue;
+            }
+
+            // Premise must be a single variable
+            let prem_var = match &prem.terms()[0] {
+                Term::Var(name) => name,
+                _ => continue,
+            };
+
+            // Conclusion must wrap that variable in a constructor
+            match &conc.terms()[0] {
+                Term::App { args, .. } => {
+                    if !args
+                        .iter()
+                        .any(|a| matches!(a, Term::Var(n) if n == prem_var))
+                    {
+                        continue;
+                    }
+                }
+                _ => continue,
+            }
+
+            // Found inductive rule for rel_name.
+            // Check that a ground base case exists.
+            let has_base = self
+                .facts
+                .iter()
+                .any(|f| f.name() == rel_name && f.arity() == 1 && f.is_ground());
+            if !has_base {
+                continue;
+            }
+
+            // Check pattern fact doesn't already exist
+            let pattern =
+                Relation::new(rel_name, vec![Term::var("_0")]).alpha_normalize();
+            if self.facts.contains(&pattern) {
+                continue;
+            }
+
+            seen_rels.insert(rel_name);
+            promotions.push(pattern);
+        }
+
+        promotions
     }
 
     // ── internals ────────────────────────────────────────────

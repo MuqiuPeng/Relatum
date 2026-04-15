@@ -998,6 +998,158 @@ fn test_negation_linear_chain() {
         has("minimal(a)"), has("minimal(b)"), has("minimal(c)"), has("minimal(d)"));
 }
 
+// ── ω-rule: inductive promotion ─────────────────────────────
+
+/// Natural numbers: nat(zero), nat(x) |- nat(succ(x)).
+/// After closure saturates, the ω-rule should promote nat(_0).
+#[test]
+fn test_omega_rule_nat() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("nat", 1);
+    engine.define_relation("even", 1);
+    engine.define_variable("x");
+
+    engine.define_constant("zero");
+    engine.add_fact(Relation::new("nat", vec![c("zero")]));
+
+    // Inductive rule: nat(x) |- nat(succ(x))
+    engine.add_rule(Rule::new(
+        "nat_step",
+        vec![RelationPattern::new("nat", vec![Term::var("x")])],
+        vec![RelationPattern::new("nat", vec![
+            Term::app("succ", vec![Term::var("x")]),
+        ])],
+    ));
+
+    // A rule that consumes nat: nat(x) |- even(x)
+    // (simplified — just to test that nat(_0) triggers downstream rules)
+    engine.add_rule(Rule::new(
+        "nat_is_even_placeholder",
+        vec![RelationPattern::new("nat", vec![Term::var("x")])],
+        vec![RelationPattern::new("even", vec![Term::var("x")])],
+    ));
+
+    engine.set_max_rounds(20);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  ω-RULE: Natural Number Induction");
+    println!("  {} facts, {} rounds, saturated={}",
+        result.facts.len(), result.rounds, result.saturated);
+    println!("============================================================");
+
+    let mut sorted: Vec<String> = result.facts.iter().map(|f| f.to_string()).collect();
+    sorted.sort();
+    for f in &sorted { println!("  {}", f); }
+
+    if !result.warnings.is_empty() {
+        println!("\n  Warnings:");
+        for w in &result.warnings { println!("    {}", w); }
+    }
+
+    // Ground instances exist
+    assert!(has("nat(zero)"), "base case");
+    assert!(has("nat(succ(zero))"), "step 1");
+
+    // ω-rule promoted nat to pattern fact
+    assert!(has("nat(_0)"), "ω-rule should promote nat(_0)");
+
+    // Downstream rule fired on pattern fact
+    assert!(has("even(_0)"), "even(_0) should be derived from nat(_0)");
+
+    println!("\n  nat(_0): {} (ω-rule promotion)", has("nat(_0)"));
+    println!("  even(_0): {} (downstream from nat(_0))", has("even(_0)"));
+}
+
+/// ω-rule on ZFC: set(empty), set(x) |- set(power(x)) should promote set(_0).
+/// Then subset(empty, _0) can be derived from set(_0) + empty_subset rule
+/// WITHOUT manually injecting the pattern axiom.
+#[test]
+fn test_omega_rule_set_bootstrap() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("set", 1);
+    engine.define_relation("subset", 2);
+    engine.define_relation("member", 2);
+    engine.define_variable("x");
+    engine.define_variable("s");
+    engine.define_variable("a");
+
+    engine.define_constant("empty");
+    engine.add_fact(Relation::new("set", vec![c("empty")]));
+
+    // set(x) |- set(power(x))  — inductive
+    engine.add_rule(Rule::new(
+        "powerset_exists",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("set", vec![
+            Term::app("power", vec![Term::var("x")]),
+        ])],
+    ));
+
+    // set(x) |- subset(empty, x)
+    engine.add_rule(Rule::new(
+        "empty_subset",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])],
+    ));
+
+    // subset(s, a), set(s) |- member(s, power(a))
+    engine.add_rule(Rule::new(
+        "powerset_member",
+        vec![
+            RelationPattern::new("subset", vec![Term::var("s"), Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("s")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("s"),
+            Term::app("power", vec![Term::var("a")]),
+        ])],
+    ));
+
+    engine.set_max_rounds(20);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  ω-RULE: ZFC Set Bootstrap");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    let mut sorted: Vec<String> = result.facts.iter().map(|f| f.to_string()).collect();
+    sorted.sort();
+    for f in &sorted { println!("  {}", f); }
+
+    if !result.warnings.is_empty() {
+        println!("\n  Warnings:");
+        for w in &result.warnings { println!("    {}", w); }
+    }
+
+    // ω-rule should promote set(_0)
+    assert!(has("set(_0)"), "ω-rule should promote set(_0)");
+
+    // With set(_0), empty_subset should derive subset(empty, _0)
+    // WITHOUT manually injecting the pattern axiom
+    assert!(has("subset(empty, _0)"),
+        "subset(empty, _0) should be auto-derived from set(_0) + empty_subset");
+
+    // And then powerset_member should derive member(empty, power(_0))
+    assert!(has("member(empty, power(_0))"),
+        "member(empty, power(_0)) should follow from subset(empty, _0)");
+
+    println!("\n  set(_0): {} (ω-rule)", has("set(_0)"));
+    println!("  subset(empty, _0): {} (auto-derived)", has("subset(empty, _0)"));
+    println!("  member(empty, power(_0)): {} (chain)", has("member(empty, power(_0))"));
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
