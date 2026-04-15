@@ -1371,11 +1371,9 @@ fn test_iterative_chain_construction() {
 
     // ── Proof by contradiction exposes the fake maximality ──
     //
-    // CWA says sk^7(a) is maximal because no lt(sk^7(a), ?y) was derived.
-    // But is that genuine? Test: does assuming lt(sk^7(a), sk^8(a)) lead
-    // to contradiction?
+    // CWA says the deepest Skolem term is maximal because no successor was derived.
+    // But is that genuine? Hypothetically extend it and check for contradiction.
 
-    // Add irreflexivity contradiction rule to the engine
     engine.define_relation("contradiction", 0);
     engine.add_rule(Rule::new(
         "irrefl_contradiction",
@@ -1383,27 +1381,27 @@ fn test_iterative_chain_construction() {
         vec![RelationPattern::new("contradiction", vec![])],
     ));
 
-    // Build sk^7(a) and sk^8(a) terms
-    let mut sk7 = c("a");
-    for _ in 0..7 {
-        sk7 = Term::app("sk", vec![sk7]);
-    }
-    let sk8 = Term::app("sk", vec![sk7.clone()]);
+    // Find the deepest maximal element (highest term depth among maximals)
+    let deepest_maximal = result.facts.iter()
+        .filter(|f| f.name() == "maximal")
+        .max_by_key(|f| f.terms()[0].depth())
+        .expect("should have at least one maximal element");
+    let deepest_term = deepest_maximal.terms()[0].clone();
+    let extension = Term::app("sk", vec![deepest_term.clone()]);
 
-    // Hypothetical: can sk^7(a) have a successor without contradiction?
-    let hypothesis = Relation::binary("lt", sk7.clone(), sk8.clone());
-    let genuinely_maximal = engine.is_contradictory(hypothesis.clone(), "contradiction");
+    // Hypothetical: can this element have a successor without contradiction?
+    let hypothesis = Relation::binary("lt", deepest_term.clone(), extension);
+    let genuinely_maximal = engine.is_contradictory(hypothesis, "contradiction");
 
-    println!("\n  Contradiction check on depth-boundary \"maximal\" element:");
-    println!("    Assume lt(sk^7(a), sk^8(a)): contradiction = {}", genuinely_maximal);
+    println!("\n  Contradiction check on deepest CWA-maximal element:");
+    println!("    {} (depth {})", deepest_maximal, deepest_term.depth());
+    println!("    Assume it has a successor: contradiction = {}", genuinely_maximal);
 
-    // sk^7(a) < sk^8(a) does NOT lead to contradiction — the chain CAN continue.
-    // Therefore sk^7(a) is NOT genuinely maximal. CWA was wrong.
+    // Extending the chain does NOT lead to contradiction — the chain CAN continue.
+    // Therefore the CWA-maximal element is NOT genuinely maximal.
     assert!(!genuinely_maximal,
-        "sk^7(a) is NOT genuinely maximal — extending the chain causes no contradiction");
+        "deepest element is NOT genuinely maximal — extending causes no contradiction");
 
-    // Compare with a genuinely maximal element in a finite order.
-    // In {a < b < c}, c IS genuinely maximal: every extension contradicts irreflexivity.
     println!("    → CWA maximality is a depth-limit artifact (confirmed)");
     println!("    → Proof by contradiction distinguishes real from fake maximality");
 }

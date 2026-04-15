@@ -25,8 +25,9 @@
     element(sk(sk(sk(sk(sk(sk(sk(a))))))))
   Maximal elements: ["maximal(b)", "maximal(sk(sk(sk(sk(sk(sk(sk(a))))))))"]
   2 depth-bounded maximal element(s) found
-  Contradiction check on depth-boundary "maximal" element:
-    Assume lt(sk^7(a), sk^8(a)): contradiction = false
+  Contradiction check on deepest CWA-maximal element:
+    maximal(sk(sk(sk(sk(sk(sk(sk(a)))))))) (depth 8)
+    Assume it has a successor: contradiction = false
     → CWA maximality is a depth-limit artifact (confirmed)
     → Proof by contradiction distinguishes real from fake maximality
 test test_iterative_chain_construction ... ok
