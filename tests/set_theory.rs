@@ -1058,12 +1058,20 @@ fn test_negation_zfc_minimal_set() {
 
 /// Natural numbers: nat(zero), nat(x) |- nat(succ(x)).
 /// After closure saturates, the ω-rule should promote nat(_0).
+///
+/// Also demonstrates a known capability boundary: imprecise downstream rules
+/// produce over-broad conclusions when triggered by promoted pattern facts.
+/// `nat(x) |- even(x)` is mathematically wrong (not all nats are even), but
+/// the engine faithfully derives `even(_0)` from `nat(_0)`. This is not a bug
+/// in the ω-rule — it correctly promoted `nat(_0)`. The error is in the rule
+/// itself. The ω-rule requires precise rule premises to produce correct results.
 #[test]
 fn test_omega_rule_nat() {
     let mut engine = ClosureEngine::new();
 
     engine.define_relation("nat", 1);
-    engine.define_relation("even", 1);
+    engine.define_relation("nonneg", 1);  // correct: all nats are non-negative
+    engine.define_relation("even", 1);    // WRONG rule: not all nats are even
     engine.define_variable("x");
 
     engine.define_constant("zero");
@@ -1078,10 +1086,19 @@ fn test_omega_rule_nat() {
         ])],
     ));
 
-    // A rule that consumes nat: nat(x) |- even(x)
-    // (simplified — just to test that nat(_0) triggers downstream rules)
+    // Correct downstream rule: nat(x) |- nonneg(x) — all nats ARE non-negative
     engine.add_rule(Rule::new(
-        "nat_is_even_placeholder",
+        "nat_nonneg",
+        vec![RelationPattern::new("nat", vec![Term::var("x")])],
+        vec![RelationPattern::new("nonneg", vec![Term::var("x")])],
+    ));
+
+    // IMPRECISE downstream rule: nat(x) |- even(x) — NOT all nats are even.
+    // This rule is wrong, but the engine has no way to know that.
+    // When nat(_0) is promoted, this rule fires and produces even(_0) — an
+    // over-broad conclusion caused by the imprecise rule, not by the ω-rule.
+    engine.add_rule(Rule::new(
+        "nat_even_WRONG",
         vec![RelationPattern::new("nat", vec![Term::var("x")])],
         vec![RelationPattern::new("even", vec![Term::var("x")])],
     ));
@@ -1108,18 +1125,32 @@ fn test_omega_rule_nat() {
         for w in &result.warnings { println!("    {}", w); }
     }
 
-    // Ground instances exist
+    // Ground instances
     assert!(has("nat(zero)"), "base case");
     assert!(has("nat(succ(zero))"), "step 1");
 
-    // ω-rule promoted nat to pattern fact
+    // ω-rule promotion
     assert!(has("nat(_0)"), "ω-rule should promote nat(_0)");
 
-    // Downstream rule fired on pattern fact
-    assert!(has("even(_0)"), "even(_0) should be derived from nat(_0)");
+    // Correct downstream: nonneg(_0) — all nats are non-negative ✓
+    assert!(has("nonneg(_0)"), "nonneg(_0) is correct");
 
-    println!("\n  nat(_0): {} (ω-rule promotion)", has("nat(_0)"));
-    println!("  even(_0): {} (downstream from nat(_0))", has("even(_0)"));
+    // Over-broad downstream: even(_0) — derived because the RULE is wrong,
+    // not because the ω-rule is wrong. The engine faithfully propagates
+    // nat(_0) through all rules, including imprecise ones.
+    assert!(has("even(_0)"),
+        "even(_0) is derived (wrong rule, correct engine behavior)");
+
+    println!("\n  ω-rule promotion:");
+    println!("    nat(_0): {} ✓", has("nat(_0)"));
+    println!("\n  Correct downstream (nat → nonneg):");
+    println!("    nonneg(_0): {} ✓", has("nonneg(_0)"));
+    println!("\n  CAPABILITY BOUNDARY — imprecise rule propagation:");
+    println!("    even(_0): {} ← derived from wrong rule nat(x)|-even(x)",
+        has("even(_0)"));
+    println!("    The ω-rule correctly promoted nat(_0).");
+    println!("    The error is in the rule, not the promotion.");
+    println!("    Lesson: ω-rule requires precise rule premises.");
 }
 
 /// ω-rule on ZFC: set(empty), set(x) |- set(power(x)) should promote set(_0).
