@@ -639,6 +639,7 @@ impl ClosureEngine {
                     .filter(|r| is_pure_transfer(r))
                     .map(|r| r.name().to_string())
                     .collect();
+                let mut transfer_warned: HashSet<String> = HashSet::new();
 
                 // Re-run positive closure with new pattern facts
                 for _ in 0..self.max_rounds {
@@ -656,11 +657,13 @@ impl ClosureEngine {
                                 if f.is_ground() && !self.facts.contains(&f) {
                                     new_facts.insert(f);
                                 } else if !f.is_ground() {
-                                    warnings.push(format!(
-                                        "ω-defense: blocked {} from pure-transfer rule {}",
-                                        f.alpha_normalize(),
-                                        rule.name(),
-                                    ));
+                                    if transfer_warned.insert(rule.name().to_string()) {
+                                        warnings.push(format!(
+                                            "ω-defense: blocked pattern facts from \
+                                             pure-transfer rule {}",
+                                            rule.name(),
+                                        ));
+                                    }
                                 }
                             }
                         } else {
