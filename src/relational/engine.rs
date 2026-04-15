@@ -109,6 +109,9 @@ pub struct ClosureEngine {
     axioms: Vec<Axiom>,
     max_rounds: usize,
     max_facts: usize,
+    /// Suppress refutation phase (set to true in hypothetical branches
+    /// to prevent infinite recursion).
+    hypothetical_mode: bool,
 }
 
 impl Default for ClosureEngine {
@@ -131,6 +134,7 @@ impl ClosureEngine {
             axioms: Vec::new(),
             max_rounds: DEFAULT_MAX_ROUNDS,
             max_facts: DEFAULT_MAX_FACTS,
+            hypothetical_mode: false,
         }
     }
 
@@ -281,6 +285,7 @@ impl ClosureEngine {
         contradiction_rel: &str,
     ) -> bool {
         let mut trial = self.clone();
+        trial.hypothetical_mode = true;
         trial.add_fact(assumption);
         let result = trial.derive_closure();
         result
@@ -293,6 +298,7 @@ impl ClosureEngine {
     /// Returns the full closure result for inspection (not just contradiction check).
     pub fn hypothetical(&self, assumptions: Vec<Relation>) -> ClosureResult {
         let mut trial = self.clone();
+        trial.hypothetical_mode = true;
         for a in assumptions {
             trial.add_fact(a);
         }
@@ -484,8 +490,8 @@ impl ClosureEngine {
 
             // 1. Apply user-defined / explicit rules (stratum 0 only)
             for rule in &self.rules {
-                if rule.has_negation() {
-                    continue; // negated rules run in stratum phase
+                if rule.has_negation() || rule.has_refutation() {
+                    continue; // negated/refutation rules run in later phases
                 }
                 apply_rule(rule, &self.facts, &mut new_facts);
             }
@@ -669,6 +675,115 @@ impl ClosureEngine {
 
         break 'global;
         } // end 'global loop
+
+        // ── Refutation phase (proof by contradiction) ───────
+        // For each refutation rule: match positive premises, then for each
+        // binding, scan all instantiations of the hypothesis. If ALL lead
+        // to contradiction in a hypothetical branch, add the conclusion.
+        let refutation_rules: Vec<&Rule> = self
+            .rules
+            .iter()
+            .filter(|r| r.has_refutation())
+            .collect();
+
+        if !refutation_rules.is_empty() && !hit_limit && !self.hypothetical_mode {
+            let mut refutation_derived: Vec<Relation> = Vec::new();
+
+            for rule in &refutation_rules {
+                let prem_matches = match_premises(rule.premises(), &self.facts);
+
+                for prem_sub in &prem_matches {
+                    // Ground-required check
+                    if !rule.ground_required().is_empty() {
+                        let ok = rule.ground_required().iter().all(|var| {
+                            rule::substitute_partial(&Term::var(var), prem_sub).is_ground()
+                        });
+                        if !ok {
+                            continue;
+                        }
+                    }
+
+                    // Scan all bindings from refutation scan premises
+                    let scan_matches =
+                        match_premises(rule.refutation_scan(), &self.facts);
+
+                    if scan_matches.is_empty() {
+                        // No scan bindings → vacuously true → conclusion holds
+                        for conc in rule.conclusions() {
+                            let fact = rule::instantiate_partial(conc, prem_sub);
+                            let key = if fact.is_ground() {
+                                fact
+                            } else {
+                                fact.alpha_normalize()
+                            };
+                            refutation_derived.push(key);
+                        }
+                        continue;
+                    }
+
+                    // For ALL scan bindings, hypothetically add and check contradiction
+                    let contradiction_rel = rule.contradiction_rel().unwrap();
+                    let mut all_contradict = true;
+
+                    for scan_sub in &scan_matches {
+                        // Merge premise + scan substitutions
+                        let mut merged = prem_sub.clone();
+                        for (k, v) in scan_sub {
+                            merged.entry(k.clone()).or_insert_with(|| v.clone());
+                        }
+
+                        // Build hypothetical facts
+                        let hyp_facts: Vec<Relation> = rule
+                            .refutation_hypotheses()
+                            .iter()
+                            .map(|h| {
+                                let f = rule::instantiate_partial(h, &merged);
+                                if f.is_ground() { f } else { f.alpha_normalize() }
+                            })
+                            .collect();
+
+                        // Clone engine and test (suppress refutation in branch)
+                        let mut trial = self.clone();
+                        trial.hypothetical_mode = true;
+                        for h in &hyp_facts {
+                            trial.add_fact(h.clone());
+                        }
+                        let trial_result = trial.derive_closure();
+
+                        let found_contradiction = trial_result
+                            .facts
+                            .iter()
+                            .any(|f| f.name() == contradiction_rel);
+                        if !found_contradiction {
+                            all_contradict = false;
+                            break; // one consistent case → refutation fails
+                        }
+                    }
+
+                    if all_contradict {
+                        for conc in rule.conclusions() {
+                            let fact = rule::instantiate_partial(conc, prem_sub);
+                            let key = if fact.is_ground() {
+                                fact
+                            } else {
+                                fact.alpha_normalize()
+                            };
+                            if !self.facts.contains(&key) {
+                                warnings.push(format!(
+                                    "refutation: {} proven by contradiction via {}",
+                                    key, rule.name(),
+                                ));
+                                refutation_derived.push(key);
+                            }
+                        }
+                    }
+                }
+            }
+
+            for fact in refutation_derived {
+                self.facts.insert(fact);
+            }
+        }
 
         // ── ω-rule: inductive promotion ─────────────────────
         // After closure saturates, detect inductive chains and promote

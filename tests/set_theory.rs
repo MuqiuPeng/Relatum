@@ -1408,44 +1408,41 @@ fn test_iterative_chain_construction() {
 
 // ── Proof by contradiction ──────────────────────────────────
 
-/// Prove by contradiction using AC: in a finite closed universe,
-/// assuming "x is not maximal" forces AC to create a Skolem successor
-/// outside the declared universe → contradiction.
+/// Proof by contradiction as an internal rule — the engine automatically
+/// performs hypothetical reasoning for each element.
 ///
-/// This is NOT instance analysis. The engine takes ONE assumption
-/// (x is not maximal), applies the AC rule automatically, and derives
-/// the contradiction through its own closure.
+/// Rule declaration:
+///   element(x) |- proven_maximal(x)
+///     with_refutation(
+///       scan: element(y),
+///       hypotheses: lt(x, y),
+///       contradiction: "contradiction"
+///     )
 ///
-/// The mechanism:
-///   1. Declare a closed universe: declared(a), declared(b), declared(c)
-///   2. Rule: element(x), NOT declared(x) |- contradiction()
-///   3. AC rule: assume_not_maximal(x) |- element(sk(x)), lt(x, sk(x))
-///   4. Hypothesis: assume_not_maximal(c)
-///   5. Engine derives: element(sk(c)), but declared(sk(c)) is absent
-///      → contradiction()
+/// Semantics: for each element x, test ALL elements y. Hypothetically
+/// add lt(x, y), run closure. If ALL y lead to contradiction → x is
+/// proven maximal. No external code drives the reasoning.
 ///
-/// One assumption → engine derives contradiction automatically.
-/// Pigeonhole principle encoded relationally: a finite universe
-/// cannot accommodate a new successor.
+/// Poset: a < b < c.
+/// - x=c: lt(c,a)→contradiction, lt(c,b)→contradiction, lt(c,c)→contradiction → proven_maximal(c) ✓
+/// - x=b: lt(b,a)→contradiction, lt(b,b)→contradiction, lt(b,c)→NO contradiction → not maximal ✓
+/// - x=a: lt(a,b)→NO contradiction → not maximal ✓
 #[test]
 fn test_proof_by_contradiction() {
     let mut engine = ClosureEngine::new();
 
     engine.define_relation("element", 1);
-    engine.define_relation("declared", 1);
     engine.define_relation("lt", 2);
-    engine.define_relation("assume_not_maximal", 1);
+    engine.define_relation("proven_maximal", 1);
     engine.define_relation("contradiction", 0);
 
     for v in &["x", "y", "z"] {
         engine.define_variable(*v);
     }
 
-    // Closed universe: exactly {a, b, c}
     for e in &["a", "b", "c"] {
         engine.define_constant(*e);
         engine.add_fact(Relation::new("element", vec![c(*e)]));
-        engine.add_fact(Relation::new("declared", vec![c(*e)]));
     }
 
     // Strict linear order: a < b < c
@@ -1462,76 +1459,57 @@ fn test_proof_by_contradiction() {
         vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
     ));
 
-    // AC construction: if x is assumed not maximal, create Skolem successor
+    // Irreflexivity → contradiction
     engine.add_rule(Rule::new(
-        "ac_from_assumption",
-        vec![RelationPattern::new("assume_not_maximal", vec![Term::var("x")])],
-        vec![
-            RelationPattern::new("element", vec![
-                Term::app("sk", vec![Term::var("x")]),
-            ]),
-            RelationPattern::new("lt", vec![
-                Term::var("x"),
-                Term::app("sk", vec![Term::var("x")]),
-            ]),
-        ],
+        "irrefl_contradiction",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("x")])],
+        vec![RelationPattern::new("contradiction", vec![])],
     ));
 
-    // Closed universe violation: element outside declared set → contradiction
+    // Maximal by refutation: for each element x, if assuming lt(x, y)
+    // leads to contradiction for ALL elements y → x is proven maximal.
+    // The engine does the scanning and hypothetical branching internally.
     engine.add_rule(Rule::new(
-        "closed_universe",
+        "maximal_by_refutation",
         vec![RelationPattern::new("element", vec![Term::var("x")])],
-        vec![RelationPattern::new("contradiction", vec![])],
-    ).with_negated(vec![
-        RelationPattern::new("declared", vec![Term::var("x")]),
-    ]));
+        vec![RelationPattern::new("proven_maximal", vec![Term::var("x")])],
+    ).with_refutation(
+        vec![RelationPattern::new("element", vec![Term::var("y")])],
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")])],
+        "contradiction",
+    ));
 
     engine.set_max_rounds(10);
     engine.set_max_facts(100);
 
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
     println!("\n============================================================");
-    println!("  PROOF BY CONTRADICTION: AC + Closed Universe");
+    println!("  PROOF BY CONTRADICTION (engine-internal)");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
     println!("============================================================");
 
-    // Base: no contradiction
-    let base_result = engine.derive_closure();
-    let has_base = |s: &str| base_result.facts.iter().any(|f| f.to_string() == s);
-    assert!(!has_base("contradiction()"), "base should have no contradiction");
-    println!("\n  Base: {} facts, no contradiction ✓", base_result.facts.len());
+    let mut sorted: Vec<String> = result.facts.iter().map(|f| f.to_string()).collect();
+    sorted.sort();
+    for f in &sorted { println!("  {}", f); }
 
-    // Hypothesis: "c is not maximal"
-    // ONE assumption → engine derives sk(c) → element(sk(c)) → not declared → contradiction
-    let contradicts = engine.is_contradictory(
-        Relation::new("assume_not_maximal", vec![c("c")]),
-        "contradiction",
-    );
-    println!("  Assume ¬maximal(c): contradiction = {}", contradicts);
-    assert!(contradicts,
-        "AC creates sk(c) outside closed universe → contradiction");
+    if !result.warnings.is_empty() {
+        println!("\n  Warnings:");
+        for w in &result.warnings { println!("    {}", w); }
+    }
 
-    // Same for b: "b is not maximal" → sk(b) outside universe → contradiction?
-    // Wait — b IS not maximal (b < c exists). So this should NOT contradict...
-    // But AC creates sk(b) regardless, and sk(b) is not declared.
-    // This is actually a valid test: the AC construction creates a NEW element,
-    // even though b already has a successor (c). This is because the AC rule
-    // uses Skolem witnesses, not existing elements.
-    //
-    // This reveals a limitation: our AC rule always creates NEW successors
-    // instead of choosing among existing ones. In a truly closed universe,
-    // the contradiction for b is "false positive" — b genuinely has a successor (c).
-    let contradicts_b = engine.is_contradictory(
-        Relation::new("assume_not_maximal", vec![c("b")]),
-        "contradiction",
-    );
-    println!("  Assume ¬maximal(b): contradiction = {}", contradicts_b);
-    println!("    (expected: true — Skolem AC always creates NEW element)");
-    println!("    (limitation: can't reuse existing successor c)");
+    // Only c should be proven maximal
+    assert!(has("proven_maximal(c)"),
+        "c is proven maximal: all lt(c, y) contradict irreflexivity");
+    assert!(!has("proven_maximal(b)"),
+        "b is NOT maximal: lt(b, c) is consistent");
+    assert!(!has("proven_maximal(a)"),
+        "a is NOT maximal: lt(a, b) is consistent");
 
-    // The clean conclusion: for c (the actual top element)
-    println!("\n  Result: ¬maximal(c) leads to contradiction.");
-    println!("  The engine derived this automatically from ONE assumption,");
-    println!("  using AC (Skolem successor) + closed universe (pigeonhole).");
-    println!("  No manual case analysis needed.");
+    println!("\n  proven_maximal(a): {} (correct: a < b is consistent)", has("proven_maximal(a)"));
+    println!("  proven_maximal(b): {} (correct: b < c is consistent)", has("proven_maximal(b)"));
+    println!("  proven_maximal(c): {} (correct: all successors contradict)", has("proven_maximal(c)"));
 }
 
 /// Simple premise matching against a vec of fact references.

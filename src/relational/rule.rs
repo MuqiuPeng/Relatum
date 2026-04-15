@@ -59,13 +59,17 @@ pub struct Rule {
     /// Empty means no constraint (all substitutions accepted).
     ground_required: Vec<String>,
     /// Negated premises: these patterns must NOT match any fact for the rule to fire.
-    /// Variables are bound by the positive premises first, then the negated patterns
-    /// are instantiated and checked for absence.
     negated_premises: Vec<RelationPattern>,
-    /// Stratum level for stratified negation. Rules with negated premises must
-    /// have a higher stratum than the relations they negate over.
-    /// Stratum 0 = no negation (default). Higher strata run after lower strata saturate.
+    /// Stratum level for stratified evaluation.
+    /// Stratum 0 = positive only. Higher strata run after lower strata saturate.
     stratum: usize,
+    /// Refutation: prove by contradiction. For each binding from positive premises,
+    /// scan all bindings of `refutation_scan` premises. For each scan binding,
+    /// hypothetically add `refutation_hypotheses` and check if `contradiction_rel`
+    /// is derived. If ALL scan bindings lead to contradiction → conclusion holds.
+    refutation_scan: Vec<RelationPattern>,
+    refutation_hypotheses: Vec<RelationPattern>,
+    contradiction_rel: Option<String>,
 }
 
 impl Rule {
@@ -81,6 +85,9 @@ impl Rule {
             ground_required: Vec::new(),
             negated_premises: Vec::new(),
             stratum: 0,
+            refutation_scan: Vec::new(),
+            refutation_hypotheses: Vec::new(),
+            contradiction_rel: None,
         }
     }
 
@@ -132,6 +139,38 @@ impl Rule {
 
     pub fn has_negation(&self) -> bool {
         !self.negated_premises.is_empty()
+    }
+
+    /// Declare proof by contradiction: for each binding from positive premises,
+    /// scan all bindings from `scan` premises. For each, hypothetically add
+    /// `hypotheses` facts and check if `contradiction` relation is derived.
+    /// If ALL scan bindings lead to contradiction, the conclusion holds.
+    pub fn with_refutation(
+        mut self,
+        scan: Vec<RelationPattern>,
+        hypotheses: Vec<RelationPattern>,
+        contradiction: impl Into<String>,
+    ) -> Self {
+        self.refutation_scan = scan;
+        self.refutation_hypotheses = hypotheses;
+        self.contradiction_rel = Some(contradiction.into());
+        self
+    }
+
+    pub fn has_refutation(&self) -> bool {
+        self.contradiction_rel.is_some()
+    }
+
+    pub fn refutation_scan(&self) -> &[RelationPattern] {
+        &self.refutation_scan
+    }
+
+    pub fn refutation_hypotheses(&self) -> &[RelationPattern] {
+        &self.refutation_hypotheses
+    }
+
+    pub fn contradiction_rel(&self) -> Option<&str> {
+        self.contradiction_rel.as_deref()
     }
 }
 
