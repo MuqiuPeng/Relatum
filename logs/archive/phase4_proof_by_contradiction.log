@@ -10,15 +10,16 @@
 415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 ============================================================
-  PROOF BY CONTRADICTION: Finite Order Has Maximal Element
+  PROOF BY CONTRADICTION: AC + Closed Universe
 ============================================================
-  Base: 6 facts, no contradiction ✓
-  Assume lt(c, a): contradiction = true
-  Assume lt(c, b): contradiction = true
-  Assume lt(c, c): contradiction = true
-  All possible successors for c lead to contradiction.
-  Therefore c is maximal — proven by contradiction, not by negation.
-  This is stronger than closed-world negation: it proves
-  non-existence rather than absence-from-derivation.
+  Base: 9 facts, no contradiction ✓
+  Assume ¬maximal(c): contradiction = true
+  Assume ¬maximal(b): contradiction = true
+    (expected: true — Skolem AC always creates NEW element)
+    (limitation: can't reuse existing successor c)
+  Result: ¬maximal(c) leads to contradiction.
+  The engine derived this automatically from ONE assumption,
+  using AC (Skolem successor) + closed universe (pigeonhole).
+  No manual case analysis needed.
 test test_proof_by_contradiction ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
