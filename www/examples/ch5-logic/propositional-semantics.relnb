@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "cells": [
+    {
+      "type": "md",
+      "source": "# Propositional Logic Semantics\n\n**研究方案第一步**：验证命题逻辑的核心概念能否在关系闭包框架内被正确表达和推导。\n\n## 编码策略\n\n- 2 个命题变量 `p`, `q` → 4 个赋值 `v_tt`, `v_tf`, `v_ft`, `v_ff`\n- 真值用两个关系表达：`tv_t(v, f)` = f 在 v 下为真，`tv_f(v, f)` = f 在 v 下为假\n- 复合公式用复合项表达：`neg(p)`, `and(p,q)`, `or(p,q)`, `imp(p,q)`\n- `declared/1` 限制规则作用域，避免组合爆炸\n- **不预设否定**：系统只做正向推导，\"假\"是一个独立的正关系，不是\"真\"的缺失"
+    },
+    {
+      "type": "code",
+      "source": "depth 4\n\n# === 论域 ===\n# 赋值（2个变量的所有真值组合）\n<ele> v_tt, v_tf, v_ft, v_ff\n\n# 命题变量\n<ele> p, q\n\n# === 关系 ===\n<rel> tv_t/2       # tv_t(v, f): 公式 f 在赋值 v 下为真\n<rel> tv_f/2       # tv_f(v, f): 公式 f 在赋值 v 下为假\n<rel> declared/1   # declared(f): f 是我们关心的公式（限制搜索空间）\n<rel> tautology/1  # tautology(f): f 在所有赋值下为真\n<rel> contradiction/1  # contradiction(f): f 在所有赋值下为假"
+    },
+    {
+      "type": "md",
+      "source": "## 原子真值赋值\n\n穷举 2 个变量在 4 个赋值下的真值："
+    },
+    {
+      "type": "code",
+      "source": "# 原子命题声明\ndeclared(p)\ndeclared(q)\n\n# v_tt: p=T, q=T\ntv_t(v_tt, p)\ntv_t(v_tt, q)\n\n# v_tf: p=T, q=F\ntv_t(v_tf, p)\ntv_f(v_tf, q)\n\n# v_ft: p=F, q=T\ntv_f(v_ft, p)\ntv_t(v_ft, q)\n\n# v_ff: p=F, q=F\ntv_f(v_ff, p)\ntv_f(v_ff, q)"
+    },
+    {
+      "type": "md",
+      "source": "## 待测试的复合公式\n\n手动声明，不让系统自动生成（避免指数爆炸）："
+    },
+    {
+      "type": "code",
+      "source": "# 一阶复合公式\ndeclared(neg(p))\ndeclared(neg(q))\ndeclared(and(p, q))\ndeclared(and(q, p))\ndeclared(or(p, q))\ndeclared(or(q, p))\ndeclared(imp(p, q))\ndeclared(imp(q, p))\n\n# 重言式候选\ndeclared(imp(p, p))               # p → p\ndeclared(or(p, neg(p)))            # p ∨ ¬p （排中律）\ndeclared(imp(and(p, q), p))        # (p ∧ q) → p （简化律）\ndeclared(imp(p, or(p, q)))         # p → (p ∨ q) （添加律）\ndeclared(imp(and(p, imp(p, q)), q))  # (p ∧ (p→q)) → q （肯定前件）\n\n# 矛盾式候选\ndeclared(and(p, neg(p)))           # p ∧ ¬p\n\n# 非重言式候选（对照组）\ndeclared(imp(p, neg(p)))           # p → ¬p （非重言式）\ndeclared(and(p, q))                # p ∧ q  （非重言式，已声明）"
+    },
+    {
+      "type": "md",
+      "source": "## 连接词语义规则\n\n每个连接词定义为：何时为真 + 何时为假。\n\n### 否定 ¬"
+    },
+    {
+      "type": "code",
+      "source": "# ¬p 为真 ⟺ p 为假\n<rule> neg_t: tv_f(?v, ?p), declared(neg(?p)) |- tv_t(?v, neg(?p))\n\n# ¬p 为假 ⟺ p 为真\n<rule> neg_f: tv_t(?v, ?p), declared(neg(?p)) |- tv_f(?v, neg(?p))"
+    },
+    {
+      "type": "md",
+      "source": "### 合取 ∧"
+    },
+    {
+      "type": "code",
+      "source": "# p ∧ q 为真 ⟺ p 为真且 q 为真\n<rule> and_t: tv_t(?v, ?p), tv_t(?v, ?q), declared(and(?p, ?q)) |- tv_t(?v, and(?p, ?q))\n\n# p ∧ q 为假 ⟸ p 为假\n<rule> and_f1: tv_f(?v, ?p), declared(and(?p, ?q)) |- tv_f(?v, and(?p, ?q))\n\n# p ∧ q 为假 ⟸ q 为假\n<rule> and_f2: tv_f(?v, ?q), declared(and(?p, ?q)) |- tv_f(?v, and(?p, ?q))"
+    },
+    {
+      "type": "md",
+      "source": "### 析取 ∨"
+    },
+    {
+      "type": "code",
+      "source": "# p ∨ q 为真 ⟸ p 为真\n<rule> or_t1: tv_t(?v, ?p), declared(or(?p, ?q)) |- tv_t(?v, or(?p, ?q))\n\n# p ∨ q 为真 ⟸ q 为真\n<rule> or_t2: tv_t(?v, ?q), declared(or(?p, ?q)) |- tv_t(?v, or(?p, ?q))\n\n# p ∨ q 为假 ⟺ p 为假且 q 为假\n<rule> or_f: tv_f(?v, ?p), tv_f(?v, ?q), declared(or(?p, ?q)) |- tv_f(?v, or(?p, ?q))"
+    },
+    {
+      "type": "md",
+      "source": "### 蕴含 →"
+    },
+    {
+      "type": "code",
+      "source": "# p → q 为真 ⟸ p 为假\n<rule> imp_t1: tv_f(?v, ?p), declared(imp(?p, ?q)) |- tv_t(?v, imp(?p, ?q))\n\n# p → q 为真 ⟸ q 为真\n<rule> imp_t2: tv_t(?v, ?q), declared(imp(?p, ?q)) |- tv_t(?v, imp(?p, ?q))\n\n# p → q 为假 ⟺ p 为真且 q 为假\n<rule> imp_f: tv_t(?v, ?p), tv_f(?v, ?q), declared(imp(?p, ?q)) |- tv_f(?v, imp(?p, ?q))"
+    },
+    {
+      "type": "md",
+      "source": "## 元性质检测\n\n重言式 = 在所有 4 个赋值下都为真\n矛盾式 = 在所有 4 个赋值下都为假"
+    },
+    {
+      "type": "code",
+      "source": "# 重言式检测（穷举 4 个赋值）\n<rule> taut: tv_t(v_tt, ?f), tv_t(v_tf, ?f), tv_t(v_ft, ?f), tv_t(v_ff, ?f) |- tautology(?f)\n\n# 矛盾式检测\n<rule> contra: tv_f(v_tt, ?f), tv_f(v_tf, ?f), tv_f(v_ft, ?f), tv_f(v_ff, ?f) |- contradiction(?f)\n\nderive"
+    },
+    {
+      "type": "md",
+      "source": "## 预期结果\n\n### 应被识别为重言式：\n- `imp(p, p)` — p → p\n- `or(p, neg(p))` — p ∨ ¬p （排中律）\n- `imp(and(p, q), p)` — (p ∧ q) → p （简化律）\n- `imp(p, or(p, q))` — p → (p ∨ q) （添加律）\n- `imp(and(p, imp(p, q)), q)` — (p ∧ (p→q)) → q （肯定前件）\n\n### 应被识别为矛盾式：\n- `and(p, neg(p))` — p ∧ ¬p\n\n### 不应被识别为重言式（对照组）：\n- `imp(p, q)` — p → q\n- `imp(p, neg(p))` — p → ¬p\n- `and(p, q)` — p ∧ q\n\n---\n\n## 验证意义\n\n如果上述结果全部正确，说明：\n1. 纯关系闭包框架**能正确编码命题逻辑的真值语义**\n2. 重言式/矛盾式可通过**有穷赋值枚举 + 闭包推导**被自动识别\n3. 系统不需要内置否定——\"假\"作为独立正关系，与\"真\"对偶运作\n4. 为第二步（自动发现连接词）奠定了表达力基础"
+    }
+  ]
+}
