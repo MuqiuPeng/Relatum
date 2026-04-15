@@ -1,51 +1,41 @@
 # Relatum
 
-Relatum is a relational closure engine. It uses composable algebraic theories, proof-producing closure, and shared signatures to explore the boundary of what can be known from what is declared.
+A relation-first reasoning engine for autonomous mathematical discovery, supporting both **finite-model inductive discovery** and **symbolic axiom-level deductive derivation** within a single relational closure framework.
 
-You declare relations with properties. You write rules. The engine derives everything that follows — and shows you why.
+---
 
-## Why Not Just Another Rule Engine
+## Current Research Results
 
-Most rule engines work with raw if-then rules. Relatum starts from a different premise: **algebraic properties are the natural vocabulary for describing relational structure**.
+**Algebraic Discovery (Inductive Direction)**
 
-When you write `<rel> equiv/2 : equivalence`, you aren't writing three separate rules for reflexivity, symmetry, and transitivity — you're declaring a single structural commitment. The engine knows what equivalence *means*, generates the right inference machinery, and tracks provenance through every derived fact.
+Starting from exhaustive enumeration of all 19,683 binary operations on a 3-element carrier, Relatum autonomously partitions the model space by axiom class, performs closure-based concept extraction, and identifies the abelian group structure as the optimal region through dual-signal alignment of model-space rarity and closure-space richness. A formal equivalence proof establishes that the discovered rule bundle `{D1, D2, D3}` is logically equivalent to the group axiom subset `{G2, G3}`, holding for all groups including infinite ones. Transfer to a held-out Z₄ structure yields 6/6 correct predictions.
 
-This matters because:
-- **Composability** — Properties compose. `equivalence` = `reflexive` + `symmetric` + `transitive` + `congruent`. Structures share operations through a common signature.
-- **Proof traces** — Every derived fact carries its derivation chain. You can ask "why does `equiv(a, c)` hold?" and get a step-by-step proof tree.
-- **Bounded generation** — Compound terms (Skolem witnesses) like `inv(?x)` generate new structure, with depth limits to prevent infinite expansion.
+**Set-Theoretic Derivation (Deductive Direction)**
 
-## Quick Example
+With variable-variable unification at the pattern layer, the engine derives universally quantified relational statements directly from axiomatic input — without finite-model enumeration. From two input propositions, the system produces:
 
 ```
-<ele> a, b, c
-
-<rel> equiv/2 : equivalence
-
-equiv(a, b)
-equiv(b, c)
-
-derive
+member(empty, power(_0))   —  ∀A. ∅ ∈ 𝒫(A)
+subset(empty, _0)          —  ∀A. ∅ ⊆ A
+member(_0, pair(_0, _1))   —  ∀a,b. a ∈ {a,b}
+member(_1, pair(_0, _1))   —  ∀a,b. b ∈ {a,b}
 ```
 
-From 2 seed facts, the engine derives all 9 facts of the complete 3x3 equivalence class, saturating in 2-3 rounds.
+as first-order consequences of ZFC axioms, in 0.00s, with 11 total facts.
 
-```
-<ele> alice, bob, carol
+---
 
-<rel> friend/2 : symmetric
-<rel> knows/2
+## Navigation
 
-<rule> f2k: friend(?x, ?y) |- knows(?x, ?y)
-<rule> k_trans: knows(?x, ?y), knows(?y, ?z) |- knows(?x, ?z)
+| What you want | Where to look |
+|---|---|
+| System architecture | This README (below) |
+| Formal equivalence proof | [`docs/formal-equivalence.md`](docs/formal-equivalence.md) |
+| Dual-signal analysis | [`docs/dual-signal-analysis.md`](docs/dual-signal-analysis.md) |
+| Research conclusions | [`docs/conclusions-2026-04-15.md`](docs/conclusions-2026-04-15.md) |
+| Experiment logs | [`logs/archive/`](logs/archive/) |
 
-friend(alice, bob)
-friend(bob, carol)
-
-derive
-```
-
-Symmetric friendship + transitive knowing collapses the network into full connectivity.
+---
 
 ## Architecture
 
