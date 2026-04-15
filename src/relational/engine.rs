@@ -433,37 +433,12 @@ impl ClosureEngine {
             rounds += 1;
             let mut new_facts: HashSet<Relation> = HashSet::new();
 
-            // 1. Apply user-defined / explicit rules
+            // 1. Apply user-defined / explicit rules (stratum 0 only)
             for rule in &self.rules {
-                let matches = match_premises(rule.premises(), &self.facts);
-                for sub in &matches {
-                    // Check ground-required variable constraints
-                    if !rule.ground_required().is_empty() {
-                        let ok = rule.ground_required().iter().all(|var| {
-                            rule::substitute_partial(&Term::var(var), sub).is_ground()
-                        });
-                        if !ok {
-                            continue;
-                        }
-                    }
-                    for conclusion in rule.conclusions() {
-                        let fact = rule::instantiate_partial(conclusion, sub);
-                        let max_d = fact
-                            .terms()
-                            .iter()
-                            .map(|t| t.depth())
-                            .max()
-                            .unwrap_or(0);
-                        if max_d > MAX_TERM_DEPTH {
-                            continue;
-                        }
-                        let key =
-                            if fact.is_ground() { fact } else { fact.alpha_normalize() };
-                        if !self.facts.contains(&key) {
-                            new_facts.insert(key);
-                        }
-                    }
+                if rule.has_negation() {
+                    continue; // negated rules run in stratum phase
                 }
+                apply_rule(rule, &self.facts, &mut new_facts);
             }
 
             // 2. Built-in: reflexivity — R(t, t) for every reflexive relation
@@ -583,6 +558,56 @@ impl ClosureEngine {
 
             if hit_limit {
                 break;
+            }
+        }
+
+        // ── Stratum 1+: negated rules ──────────────────────────
+        // After stratum 0 reaches fixed point, apply rules with negated premises.
+        let negated_rules: Vec<&Rule> = self
+            .rules
+            .iter()
+            .filter(|r| r.has_negation())
+            .collect();
+
+        if !negated_rules.is_empty() && !hit_limit {
+            let max_strata = negated_rules.iter().map(|r| r.stratum()).max().unwrap_or(1);
+
+            for stratum in 1..=max_strata {
+                let stratum_rules: Vec<&&Rule> = negated_rules
+                    .iter()
+                    .filter(|r| r.stratum() == stratum)
+                    .collect();
+
+                if stratum_rules.is_empty() {
+                    continue;
+                }
+
+                // Run stratum rules to fixed point
+                for _ in 0..self.max_rounds {
+                    rounds += 1;
+                    let mut new_facts: HashSet<Relation> = HashSet::new();
+
+                    for rule in &stratum_rules {
+                        apply_rule(rule, &self.facts, &mut new_facts);
+                    }
+
+                    new_facts.retain(|f| !self.facts.contains(f));
+                    if new_facts.is_empty() {
+                        break;
+                    }
+
+                    for fact in new_facts {
+                        self.facts.insert(fact);
+                        if self.facts.len() >= self.max_facts {
+                            hit_limit = true;
+                            break;
+                        }
+                    }
+
+                    if hit_limit {
+                        break;
+                    }
+                }
             }
         }
 
@@ -846,6 +871,92 @@ fn match_premises(
     }
 
     subs
+}
+
+/// Apply a single rule against the fact set, collecting new facts.
+fn apply_rule(
+    rule: &Rule,
+    facts: &HashSet<Relation>,
+    new_facts: &mut HashSet<Relation>,
+) {
+    let matches = match_premises(rule.premises(), facts);
+    for sub in &matches {
+        // Check ground-required variable constraints
+        if !rule.ground_required().is_empty() {
+            let ok = rule.ground_required().iter().all(|var| {
+                rule::substitute_partial(&Term::var(var), sub).is_ground()
+            });
+            if !ok {
+                continue;
+            }
+        }
+        // Check negated premises: each must NOT match any fact
+        if rule.has_negation() && !check_negated_absent(rule.negated_premises(), sub, facts) {
+            continue;
+        }
+        for conclusion in rule.conclusions() {
+            let fact = rule::instantiate_partial(conclusion, sub);
+            let max_d = fact
+                .terms()
+                .iter()
+                .map(|t| t.depth())
+                .max()
+                .unwrap_or(0);
+            if max_d > MAX_TERM_DEPTH {
+                continue;
+            }
+            let key = if fact.is_ground() {
+                fact
+            } else {
+                fact.alpha_normalize()
+            };
+            if !facts.contains(&key) {
+                new_facts.insert(key);
+            }
+        }
+    }
+}
+
+/// Check that all negated premises are absent from the fact set.
+/// Each negated pattern is instantiated with the current substitution,
+/// then checked for absence.
+fn check_negated_absent(
+    negated: &[RelationPattern],
+    sub: &Substitution,
+    facts: &HashSet<Relation>,
+) -> bool {
+    for neg_pattern in negated {
+        let instantiated = rule::instantiate_partial(neg_pattern, sub);
+        if !instantiated.is_ground() {
+            // Non-ground negation: check if ANY fact matches the pattern
+            // This implements "not exists" semantics
+            let found = facts.iter().any(|fact| {
+                if fact.name() != instantiated.name()
+                    || fact.arity() != instantiated.arity()
+                {
+                    return false;
+                }
+                let mut test_sub = sub.clone();
+                rule::unify_relation(
+                    &RelationPattern::new(
+                        instantiated.name(),
+                        instantiated.terms().to_vec(),
+                    ),
+                    fact,
+                    &mut test_sub,
+                )
+            });
+            if found {
+                return false; // negated premise IS present → rule blocked
+            }
+        } else {
+            // Ground negation: simple membership check
+            if facts.contains(&instantiated) {
+                return false; // negated premise IS present → rule blocked
+            }
+        }
+    }
+    true // all negated premises are absent → rule can fire
 }
 
 #[cfg(test)]

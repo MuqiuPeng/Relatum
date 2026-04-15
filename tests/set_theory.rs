@@ -851,6 +851,153 @@ fn test_zfc5_pure_symbolic() {
     println!("    → member(empty, power(_0)) ✓");
 }
 
+// ── Stratified negation: maximal element derivation ─────────
+
+/// Finite poset with stratified negation: derive maximal elements.
+///
+/// Poset: a < b, a < c (diamond without top).
+/// Expected: maximal(b), maximal(c). NOT maximal(a).
+#[test]
+fn test_negation_maximal_element() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("lt", 2);        // strict less-than
+    engine.define_relation("maximal", 1);
+
+    for v in &["x", "y"] {
+        engine.define_variable(*v);
+    }
+
+    // Elements
+    for e in &["a", "b", "c"] {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+
+    // Partial order: a < b, a < c
+    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
+    engine.add_fact(Relation::binary("lt", c("a"), c("c")));
+
+    // Maximal: element(x), NOT lt(x, ?y) |- maximal(x)
+    // "x is maximal if x is an element and nothing is strictly greater"
+    engine.add_rule(Rule::new(
+        "maximal_def",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("maximal", vec![Term::var("x")])],
+    ).with_negated(vec![
+        RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+    ]));
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(100);
+
+    let result = engine.derive_closure();
+
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  STRATIFIED NEGATION: Maximal Elements");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    for f in &result.facts {
+        println!("  {}", f);
+    }
+
+    assert!(has("maximal(b)"), "b should be maximal (nothing > b)");
+    assert!(has("maximal(c)"), "c should be maximal (nothing > c)");
+    assert!(!has("maximal(a)"), "a should NOT be maximal (a < b exists)");
+
+    println!("\n  maximal(a): {} (should be false)", has("maximal(a)"));
+    println!("  maximal(b): {} (should be true)", has("maximal(b)"));
+    println!("  maximal(c): {} (should be true)", has("maximal(c)"));
+}
+
+/// Longer chain with negation: a < b < c < d.
+/// Only d should be maximal.
+#[test]
+fn test_negation_linear_chain() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("lt", 2);
+    engine.define_relation("maximal", 1);
+    engine.define_relation("minimal", 1);
+
+    for v in &["x", "y"] {
+        engine.define_variable(*v);
+    }
+
+    for e in &["a", "b", "c", "d"] {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+
+    // Linear order: a < b < c < d
+    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
+    engine.add_fact(Relation::binary("lt", c("b"), c("c")));
+    engine.add_fact(Relation::binary("lt", c("c"), c("d")));
+
+    // Transitivity of lt
+    engine.add_rule(Rule::new(
+        "lt_trans",
+        vec![
+            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
+        ],
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
+    ));
+    engine.define_variable("z");
+
+    // Maximal: element(x), NOT lt(x, ?y)
+    engine.add_rule(Rule::new(
+        "maximal_def",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("maximal", vec![Term::var("x")])],
+    ).with_negated(vec![
+        RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+    ]));
+
+    // Minimal: element(x), NOT lt(?y, x)
+    engine.add_rule(Rule::new(
+        "minimal_def",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("minimal", vec![Term::var("x")])],
+    ).with_negated(vec![
+        RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")]),
+    ]));
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(100);
+
+    let result = engine.derive_closure();
+
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  STRATIFIED NEGATION: Linear Chain a < b < c < d");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    let mut sorted: Vec<String> = result.facts.iter().map(|f| f.to_string()).collect();
+    sorted.sort();
+    for f in &sorted { println!("  {}", f); }
+
+    assert!(has("maximal(d)"), "d should be maximal");
+    assert!(!has("maximal(a)"), "a should not be maximal");
+    assert!(!has("maximal(b)"), "b should not be maximal");
+    assert!(!has("maximal(c)"), "c should not be maximal");
+
+    assert!(has("minimal(a)"), "a should be minimal");
+    assert!(!has("minimal(d)"), "d should not be minimal");
+
+    println!("\n  maximal: d={} (others: a={} b={} c={})",
+        has("maximal(d)"), has("maximal(a)"), has("maximal(b)"), has("maximal(c)"));
+    println!("  minimal: a={} (others: b={} c={} d={})",
+        has("minimal(a)"), has("minimal(b)"), has("minimal(c)"), has("minimal(d)"));
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

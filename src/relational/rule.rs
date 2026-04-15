@@ -58,6 +58,14 @@ pub struct Rule {
     /// Variables that must resolve to ground terms for the rule to fire.
     /// Empty means no constraint (all substitutions accepted).
     ground_required: Vec<String>,
+    /// Negated premises: these patterns must NOT match any fact for the rule to fire.
+    /// Variables are bound by the positive premises first, then the negated patterns
+    /// are instantiated and checked for absence.
+    negated_premises: Vec<RelationPattern>,
+    /// Stratum level for stratified negation. Rules with negated premises must
+    /// have a higher stratum than the relations they negate over.
+    /// Stratum 0 = no negation (default). Higher strata run after lower strata saturate.
+    stratum: usize,
 }
 
 impl Rule {
@@ -71,12 +79,30 @@ impl Rule {
             premises,
             conclusions,
             ground_required: Vec::new(),
+            negated_premises: Vec::new(),
+            stratum: 0,
         }
     }
 
     /// Mark variables that must resolve to ground terms for this rule to fire.
     pub fn with_ground_required(mut self, vars: Vec<String>) -> Self {
         self.ground_required = vars;
+        self
+    }
+
+    /// Add negated premises: these patterns must NOT match any fact.
+    /// Automatically sets stratum to 1 if still at 0.
+    pub fn with_negated(mut self, negated: Vec<RelationPattern>) -> Self {
+        self.negated_premises = negated;
+        if self.stratum == 0 {
+            self.stratum = 1;
+        }
+        self
+    }
+
+    /// Set the stratum level explicitly.
+    pub fn with_stratum(mut self, stratum: usize) -> Self {
+        self.stratum = stratum;
         self
     }
 
@@ -94,6 +120,18 @@ impl Rule {
 
     pub fn ground_required(&self) -> &[String] {
         &self.ground_required
+    }
+
+    pub fn negated_premises(&self) -> &[RelationPattern] {
+        &self.negated_premises
+    }
+
+    pub fn stratum(&self) -> usize {
+        self.stratum
+    }
+
+    pub fn has_negation(&self) -> bool {
+        !self.negated_premises.is_empty()
     }
 }
 
