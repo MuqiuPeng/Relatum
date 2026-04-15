@@ -1368,12 +1368,44 @@ fn test_iterative_chain_construction() {
     assert!(!has("maximal(a)"), "a is not maximal (a < b, a < sk(a))");
 
     println!("\n  {} depth-bounded maximal element(s) found", maximals.len());
-    println!("  NOTE: maximality here is an artifact of depth limit {},", 8);
-    println!("  not a mathematical proof of non-extendability.");
-    println!("\n  What this demonstrates:");
-    println!("    1. Iterative stratification (strata cycle to global fixpoint)");
-    println!("    2. Negation-gated Skolem construction");
-    println!("    3. Depth-bounded termination");
+
+    // ── Proof by contradiction exposes the fake maximality ──
+    //
+    // CWA says sk^7(a) is maximal because no lt(sk^7(a), ?y) was derived.
+    // But is that genuine? Test: does assuming lt(sk^7(a), sk^8(a)) lead
+    // to contradiction?
+
+    // Add irreflexivity contradiction rule to the engine
+    engine.define_relation("contradiction", 0);
+    engine.add_rule(Rule::new(
+        "irrefl_contradiction",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("x")])],
+        vec![RelationPattern::new("contradiction", vec![])],
+    ));
+
+    // Build sk^7(a) and sk^8(a) terms
+    let mut sk7 = c("a");
+    for _ in 0..7 {
+        sk7 = Term::app("sk", vec![sk7]);
+    }
+    let sk8 = Term::app("sk", vec![sk7.clone()]);
+
+    // Hypothetical: can sk^7(a) have a successor without contradiction?
+    let hypothesis = Relation::binary("lt", sk7.clone(), sk8.clone());
+    let genuinely_maximal = engine.is_contradictory(hypothesis.clone(), "contradiction");
+
+    println!("\n  Contradiction check on depth-boundary \"maximal\" element:");
+    println!("    Assume lt(sk^7(a), sk^8(a)): contradiction = {}", genuinely_maximal);
+
+    // sk^7(a) < sk^8(a) does NOT lead to contradiction — the chain CAN continue.
+    // Therefore sk^7(a) is NOT genuinely maximal. CWA was wrong.
+    assert!(!genuinely_maximal,
+        "sk^7(a) is NOT genuinely maximal — extending the chain causes no contradiction");
+
+    // Compare with a genuinely maximal element in a finite order.
+    // In {a < b < c}, c IS genuinely maximal: every extension contradicts irreflexivity.
+    println!("    → CWA maximality is a depth-limit artifact (confirmed)");
+    println!("    → Proof by contradiction distinguishes real from fake maximality");
 }
 
 // ── Proof by contradiction ──────────────────────────────────

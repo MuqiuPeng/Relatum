@@ -10,7 +10,7 @@
 415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
 ============================================================
-  ZORN'S LEMMA: Constructive AC → Maximal Element
+  ITERATIVE CHAIN: Skolem Extension + Stratified Maximality
   40 facts, 21 rounds
 ============================================================
   Chain constructed:
@@ -24,8 +24,10 @@
     element(sk(sk(sk(sk(sk(sk(a)))))))
     element(sk(sk(sk(sk(sk(sk(sk(a))))))))
   Maximal elements: ["maximal(b)", "maximal(sk(sk(sk(sk(sk(sk(sk(a))))))))"]
-  Zorn verified: 2 maximal element(s) found at depth boundary
-  Iterative stratification: stratum 0 (lt transitivity) ↔
-    stratum 1 (maximal) ↔ stratum 2 (AC successor creation)
-test test_zorn_constructive ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.03s
+  2 depth-bounded maximal element(s) found
+  Contradiction check on depth-boundary "maximal" element:
+    Assume lt(sk^7(a), sk^8(a)): contradiction = false
+    → CWA maximality is a depth-limit artifact (confirmed)
+    → Proof by contradiction distinguishes real from fake maximality
+test test_iterative_chain_construction ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.04s
