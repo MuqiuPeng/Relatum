@@ -1,0 +1,13 @@
+  STRATIFIED NEGATION: ZFC Minimal Set (2-stratum)
+  55 facts, 22 rounds
+  minimal_set(empty)
+  strict_subset(empty, power(empty))
+  strict_subset(empty, power(power(empty)))
+  strict_subset(empty, power(power(power(empty))))
+  strict_subset(empty, power(power(power(power(empty)))))
+  strict_subset(empty, power(power(power(power(power(empty))))))
+  strict_subset(empty, power(power(power(power(power(power(empty)))))))
+  strict_subset(empty, power(power(power(power(power(power(power(empty))))))))
+  minimal_set(empty): true
+  minimal_set(power(empty)): false
+  Ordering derived from ZFC axioms, not user input.
