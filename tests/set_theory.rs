@@ -3417,6 +3417,164 @@ fn test_zfc_property_with_pairing() {
         "resource boundary: set generation outpaces subset derivation");
 }
 
+/// Temporal observation: track property extension convergence across rounds.
+/// Distinguishes structural failure (stable divergence) from resource failure
+/// (converging divergence).
+#[test]
+fn test_temporal_convergence() {
+    println!("\n============================================================");
+    println!("  TEMPORAL CONVERGENCE ANALYSIS");
+    println!("  Structural vs resource failure detection");
+    println!("============================================================");
+
+    // Helper: build ZFC engine with pairing + properties (same as test_zfc_property_with_pairing)
+    let build_zfc_pairing = || -> ClosureEngine {
+        let mut engine = ClosureEngine::new();
+        engine.define_relation("set", 1);
+        engine.define_relation("member", 2);
+        engine.define_relation("subset", 2);
+        engine.define_equivalence("eq");
+        for v in &["x","y","z","a","b","s","_px"] { engine.define_variable(*v); }
+        engine.define_constant("empty");
+        engine.add_fact(Relation::new("set", vec![c("empty")]));
+        engine.add_rule(Rule::new("empty_subset",
+            vec![RelationPattern::new("set", vec![Term::var("x")])],
+            vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])]));
+        engine.add_rule(Rule::new("subset_refl",
+            vec![RelationPattern::new("set", vec![Term::var("x")])],
+            vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("x")])]));
+        engine.add_rule(Rule::new("powerset_exists",
+            vec![RelationPattern::new("set", vec![Term::var("a")])],
+            vec![RelationPattern::new("set", vec![Term::app("power", vec![Term::var("a")])])]));
+        engine.add_rule(Rule::new("powerset_member",
+            vec![
+                RelationPattern::new("subset", vec![Term::var("s"), Term::var("a")]),
+                RelationPattern::new("set", vec![Term::var("s")]),
+            ],
+            vec![RelationPattern::new("member", vec![
+                Term::var("s"), Term::app("power", vec![Term::var("a")])])]));
+        engine.add_rule(Rule::new("pairing_exists",
+            vec![
+                RelationPattern::new("set", vec![Term::var("a")]),
+                RelationPattern::new("set", vec![Term::var("b")]),
+            ],
+            vec![RelationPattern::new("set", vec![
+                Term::app("pair", vec![Term::var("a"), Term::var("b")])])]));
+        engine.add_rule(Rule::new("pairing_left",
+            vec![
+                RelationPattern::new("set", vec![Term::var("a")]),
+                RelationPattern::new("set", vec![Term::var("b")]),
+            ],
+            vec![RelationPattern::new("member", vec![
+                Term::var("a"),
+                Term::app("pair", vec![Term::var("a"), Term::var("b")])])]));
+        engine.add_rule(Rule::new("pairing_right",
+            vec![
+                RelationPattern::new("set", vec![Term::var("a")]),
+                RelationPattern::new("set", vec![Term::var("b")]),
+            ],
+            vec![RelationPattern::new("member", vec![
+                Term::var("b"),
+                Term::app("pair", vec![Term::var("a"), Term::var("b")])])]));
+        engine.define_property("is_set", &["_px"],
+            vec![RelationPattern::new("set", vec![Term::var("_px")])]);
+        engine.define_property("superset_of_empty", &["_px"],
+            vec![RelationPattern::new("subset", vec![c("empty"), Term::var("_px")])]);
+        engine.define_property("self_subset", &["_px"],
+            vec![RelationPattern::new("subset", vec![Term::var("_px"), Term::var("_px")])]);
+        engine
+    };
+
+    // Helper: build magma engine with properties (structural failure case)
+    let build_magma = || -> ClosureEngine {
+        let table: [[u8; 3]; 3] = [[0,1,2],[1,2,0],[0,0,1]];
+        property_engine_from_table(&table)
+    };
+
+    // Snapshot at different FACT CAPS (not rounds — rounds are
+    // saturated by the cap, so varying rounds doesn't help)
+    let checkpoints = [100, 200, 500];
+
+    println!("\n  ── Resource failure case: ZFC with pairing ──");
+    println!("  (is_set ↔ superset_of_empty is definitionally true)");
+    println!("  {:>6} {:>8} {:>8} {:>8} {:>6}", "cap", "|is_set|", "|sup∅|", "|self⊆|", "gap%");
+
+    let mut zfc_gaps: Vec<(usize, f64)> = Vec::new();
+    for &max_f in &checkpoints {
+        let mut engine = build_zfc_pairing();
+        engine.set_max_rounds(20);
+        engine.set_max_facts(max_f);
+        let result = engine.derive_closure();
+
+        let count_prop = |prop: &str| -> usize {
+            result.facts.iter()
+                .filter(|f| f.name() == "has_property_1"
+                    && f.terms()[1] == Term::constant(prop)
+                    && f.is_ground())
+                .count()
+        };
+
+        let is_set = count_prop("is_set");
+        let sup_empty = count_prop("superset_of_empty");
+        let self_sub = count_prop("self_subset");
+        let gap = if is_set > 0 { (is_set - sup_empty) as f64 / is_set as f64 * 100.0 } else { 0.0 };
+        zfc_gaps.push((max_f, gap));
+
+        println!("  {:>6} {:>8} {:>8} {:>8} {:>5.1}%", max_f, is_set, sup_empty, self_sub, gap);
+    }
+
+    println!("\n  ── Structural failure case: magma (left_id vs right_id) ──");
+    println!("  (left_id ≢ right_id is mathematically true)");
+    println!("  {:>6} {:>8} {:>8} {:>6}", "cap", "|left|", "|right|", "gap");
+
+    let mut magma_gaps: Vec<(usize, usize)> = Vec::new();
+    for &max_f in &checkpoints {
+        let mut engine = build_magma();
+        engine.set_max_rounds(20);
+        engine.set_max_facts(max_f);
+        let result = engine.derive_closure();
+
+        let count_prop = |prop: &str| -> usize {
+            result.facts.iter()
+                .filter(|f| f.name() == "has_property_1"
+                    && f.terms()[1] == Term::constant(prop)
+                    && f.is_ground())
+                .count()
+        };
+
+        let left = count_prop("left_id");
+        let right = count_prop("right_id");
+        let gap = if left > right { left - right } else { right - left };
+        magma_gaps.push((max_f, gap));
+
+        println!("  {:>6} {:>8} {:>8} {:>6}", max_f, left, right, gap);
+    }
+
+    // Diagnosis
+    println!("\n  ── Diagnosis ──");
+
+    // Resource failure: gap oscillates with fact cap (depends on derivation race)
+    let zfc_min_gap = zfc_gaps.iter().map(|g| g.1).fold(f64::MAX, f64::min);
+    let zfc_max_gap = zfc_gaps.iter().map(|g| g.1).fold(f64::MIN, f64::max);
+    let zfc_varies = (zfc_max_gap - zfc_min_gap) > 5.0;
+    print!("  ZFC (resource): gaps");
+    for (cap, gap) in &zfc_gaps { print!(" {}→{:.0}%", cap, gap); }
+    println!(" — {}", if zfc_varies { "VARIES (resource-dependent)" } else { "STABLE" });
+
+    // Structural failure: gap should stay stable
+    let magma_first_gap = magma_gaps.first().map(|g| g.1).unwrap_or(0);
+    let magma_last_gap = magma_gaps.last().map(|g| g.1).unwrap_or(0);
+    let magma_stable = magma_last_gap == magma_first_gap;
+    println!("  Magma (structural): gap {} → {} — {}",
+        magma_first_gap, magma_last_gap,
+        if magma_stable { "STABLE (structural failure)" } else { "CHANGING (unexpected)" });
+
+    println!("\n  Diagnostic criterion:");
+    println!("    Structural failure: gap constant across ALL resource levels");
+    println!("    Resource failure: gap VARIES with resource level (cap-dependent)");
+    println!("    The variation itself is the signal — not convergence direction.");
+}
+
 // ── Cross-domain meta-analysis ───────────────────────────────
 
 /// Aggregate Phase 6 results across three domains.
