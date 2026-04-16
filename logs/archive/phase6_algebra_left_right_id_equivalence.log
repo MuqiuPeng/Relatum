@@ -1,0 +1,48 @@
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3168 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+3288 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3285 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3299 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+============================================================
+  PROPERTY IMPLICATION ON Z₃ GROUP
+  37 facts, 3 rounds
+============================================================
+  Property assignments:
+    has_property_1(e0, has_comm_witness)
+    has_property_1(e0, idempotent)
+    has_property_1(e0, left_id)
+    has_property_1(e0, right_id)
+    has_property_1(e1, has_comm_witness)
+    has_property_1(e2, has_comm_witness)
+  Discovered implications (non-trivial):
+    implies_observed(idempotent, has_comm_witness)
+    implies_observed(idempotent, left_id)
+    implies_observed(idempotent, right_id)
+    implies_observed(left_id, has_comm_witness)
+    implies_observed(left_id, idempotent)
+    implies_observed(left_id, right_id)
+    implies_observed(right_id, has_comm_witness)
+    implies_observed(right_id, idempotent)
+    implies_observed(right_id, left_id)
+  Discovered equivalences (non-trivial):
+    equivalent_observed(idempotent, left_id)
+    equivalent_observed(idempotent, right_id)
+    equivalent_observed(left_id, idempotent)
+    equivalent_observed(left_id, right_id)
+    equivalent_observed(right_id, idempotent)
+    equivalent_observed(right_id, left_id)
+  implies_observed(left_id, idempotent): true
+  implies_observed(idempotent, left_id): true
+  === KEY RESULT ===
+  equivalent_observed(left_id, right_id): true ← discovered, not assumed
+test test_property_implication_algebra ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s

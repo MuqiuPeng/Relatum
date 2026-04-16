@@ -2272,23 +2272,16 @@ fn test_property_first_class() {
     assert!(has("is_property(contains_empty)"));
     assert!(has("is_property(mutual_subset)"));
 
-    // ── Application: has_property → formula (backward) ──
-    // If we add has_property_1(b, contains_empty), it should derive member(empty, b)
-    let hyp_result = engine.hypothetical(vec![
-        Relation::new("has_property_1", vec![c("b"), c("contains_empty")]),
-    ]);
-    let hyp_has = |s: &str| hyp_result.facts.iter().any(|f| f.to_string() == s);
-    assert!(hyp_has("member(empty, b)"),
-        "has_property_1(b, contains_empty) → member(empty, b) via backward rule");
+    // Backward (apply) rules are currently disabled to prevent cascading
+    // pattern facts in algebraic contexts. Detection is one-directional:
+    // formula → has_property (forward only).
 
     println!("\n  Detection (formula → has_property):");
     println!("    has_property_1(a, superset_of_empty): {}", has("has_property_1(a, superset_of_empty)"));
     println!("    has_property_1(b, superset_of_empty): {}", has("has_property_1(b, superset_of_empty)"));
     println!("    has_property_1(a, contains_empty): {}", has("has_property_1(a, contains_empty)"));
 
-    println!("\n  Application (has_property → formula):");
-    println!("    hypothetical has_property_1(b, contains_empty)");
-    println!("    → member(empty, b): {}", hyp_has("member(empty, b)"));
+    println!("\n  Application (backward): currently disabled to prevent cascading.");
 
     println!("\n  Quantification over properties:");
     println!("    has_property_1(a, ?p) matches both superset_of_empty and contains_empty");
@@ -2356,10 +2349,10 @@ fn test_property_implication() {
 
     // Show implications and equivalences
     let impls: Vec<String> = result.facts.iter()
-        .filter(|f| f.name() == "implies")
+        .filter(|f| f.name() == "implies_observed")
         .map(|f| f.to_string()).collect();
     let equivs: Vec<String> = result.facts.iter()
-        .filter(|f| f.name() == "equivalent")
+        .filter(|f| f.name() == "equivalent_observed")
         .map(|f| f.to_string()).collect();
 
     println!("\n  Discovered implications:");
@@ -2368,35 +2361,155 @@ fn test_property_implication() {
     for e in &equivs { println!("    {}", e); }
 
     // superset_of_empty → is_set: all three (a,b,c) are both, so ext ⊆ ext
-    assert!(has("implies(superset_of_empty, is_set)"),
+    assert!(has("implies_observed(superset_of_empty, is_set)"),
         "every superset of empty is a set");
 
     // is_set → superset_of_empty: also true (a,b,c are all both)
-    assert!(has("implies(is_set, superset_of_empty)"),
+    assert!(has("implies_observed(is_set, superset_of_empty)"),
         "every set is a superset of empty");
 
     // Therefore: equivalent
-    assert!(has("equivalent(superset_of_empty, is_set)"),
+    assert!(has("equivalent_observed(superset_of_empty, is_set)"),
         "superset_of_empty ↔ is_set (on this data)");
 
     // contains_empty → superset_of_empty: a,b have contains_empty; a,b,c have superset_of_empty
     // ext(contains_empty) = {a,b} ⊆ {a,b,c} = ext(superset_of_empty) → implies
-    assert!(has("implies(contains_empty, superset_of_empty)"),
+    assert!(has("implies_observed(contains_empty, superset_of_empty)"),
         "contains_empty → superset_of_empty");
 
     // superset_of_empty → contains_empty: NO! c has superset but not contains_empty
-    assert!(!has("implies(superset_of_empty, contains_empty)"),
+    assert!(!has("implies_observed(superset_of_empty, contains_empty)"),
         "NOT superset_of_empty → contains_empty (c is counterexample)");
 
-    // Modus ponens: implies(contains_empty, is_set) should exist (transitive)
-    assert!(has("implies(contains_empty, is_set)"),
-        "contains_empty → is_set (via transitivity)");
+    // Observed implies is transitive via direct computation (both ext ⊆ checks)
+    assert!(has("implies_observed(contains_empty, is_set)"),
+        "contains_empty → is_set (observed)");
 
     println!("\n  Key findings:");
     println!("    superset_of_empty ↔ is_set: {} (equivalent on this data)", has("equivalent(superset_of_empty, is_set)"));
     println!("    contains_empty → superset_of_empty: {} (strict implication)", has("implies(contains_empty, superset_of_empty)"));
     println!("    contains_empty → is_set: {} (transitive)", has("implies(contains_empty, is_set)"));
     println!("    superset_of_empty → contains_empty: {} (false, c is counterexample)", has("implies(superset_of_empty, contains_empty)"));
+}
+
+/// Property implication on algebraic data: Z₃ group.
+/// System should discover equivalent(left_id, right_id).
+#[test]
+fn test_property_implication_algebra() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("op", 3);
+
+    for v in &["x", "y", "z", "e", "a"] { engine.define_variable(*v); }
+
+    // Z₃ = {e0, e1, e2} with addition mod 3
+    for e in &["e0", "e1", "e2"] {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+
+    let table: &[(&str, &str, &str)] = &[
+        ("e0","e0","e0"), ("e0","e1","e1"), ("e0","e2","e2"),
+        ("e1","e0","e1"), ("e1","e1","e2"), ("e1","e2","e0"),
+        ("e2","e0","e2"), ("e2","e1","e0"), ("e2","e2","e1"),
+    ];
+    for (a, b, r) in table {
+        engine.add_fact(Relation::new("op", vec![c(a), c(b), c(r)]));
+    }
+
+    // Properties (existential detection — works correctly on Z₃ because
+    // only the true identity satisfies op(e, x, x) for ANY x)
+    engine.define_property("left_id", &["e"],
+        vec![RelationPattern::new("op", vec![
+            Term::var("e"), Term::var("x"), Term::var("x"),
+        ])]);
+
+    engine.define_property("right_id", &["e"],
+        vec![RelationPattern::new("op", vec![
+            Term::var("x"), Term::var("e"), Term::var("x"),
+        ])]);
+
+    // Idempotent: op(x, x, x) — "x * x = x"
+    engine.define_property("idempotent", &["a"],
+        vec![RelationPattern::new("op", vec![
+            Term::var("a"), Term::var("a"), Term::var("a"),
+        ])]);
+
+    // Self-inverse: op(x, x, identity) — needs to know identity
+    // Simpler: commutative witness — op(a, b, c) and op(b, a, c) for some b, c
+    engine.define_property("has_comm_witness", &["a"],
+        vec![
+            RelationPattern::new("op", vec![Term::var("a"), Term::var("x"), Term::var("y")]),
+            RelationPattern::new("op", vec![Term::var("x"), Term::var("a"), Term::var("y")]),
+        ]);
+
+    engine.enable_property_implication();
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(500);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  PROPERTY IMPLICATION ON Z₃ GROUP");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    // Show property assignments
+    let props: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "has_property_1")
+        .map(|f| f.to_string()).collect();
+    println!("\n  Property assignments:");
+    let mut sorted_props = props.clone();
+    sorted_props.sort();
+    for p in &sorted_props { println!("    {}", p); }
+
+    // Show implications
+    let impls: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "implies_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    let equivs: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "equivalent_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+
+    println!("\n  Discovered implications (non-trivial):");
+    for i in &impls { println!("    {}", i); }
+    println!("\n  Discovered equivalences (non-trivial):");
+    for e in &equivs { println!("    {}", e); }
+
+    // Key assertion: left_id ↔ right_id on Z₃
+    assert!(has("has_property_1(e0, left_id)"), "e0 is left identity");
+    assert!(has("has_property_1(e0, right_id)"), "e0 is right identity");
+    assert!(!has("has_property_1(e1, left_id)"), "e1 is NOT left identity");
+    assert!(!has("has_property_1(e1, right_id)"), "e1 is NOT right identity");
+
+    assert!(has("equivalent_observed(left_id, right_id)"),
+        "KEY: left_id ↔ right_id discovered on Z₃");
+
+    // Idempotent: only e0 (0+0=0)
+    assert!(has("has_property_1(e0, idempotent)"), "e0 is idempotent (0+0=0)");
+    assert!(!has("has_property_1(e1, idempotent)"), "e1 not idempotent (1+1=2≠1)");
+
+    // All elements have commutative witnesses (Z₃ is abelian)
+    assert!(has("has_property_1(e0, has_comm_witness)"), "e0 commutes");
+    assert!(has("has_property_1(e1, has_comm_witness)"), "e1 commutes");
+    assert!(has("has_property_1(e2, has_comm_witness)"), "e2 commutes");
+
+    // Implication: left_id → idempotent (identity is always idempotent)
+    assert!(has("implies_observed(left_id, idempotent)"),
+        "left_id → idempotent (e*e=e when e is identity)");
+
+    // But NOT: idempotent → left_id (idempotent doesn't imply identity)
+    // In Z₃, only e0 is idempotent AND left_id, so ext(idempotent) = ext(left_id) = {e0}
+    // → they're actually equivalent on this data
+    println!("\n  implies_observed(left_id, idempotent): {}", has("implies_observed(left_id, idempotent)"));
+    println!("  implies_observed(idempotent, left_id): {}", has("implies_observed(idempotent, left_id)"));
+
+    println!("\n  === KEY RESULT ===");
+    println!("  equivalent_observed(left_id, right_id): {} ← discovered, not assumed",
+        has("equivalent_observed(left_id, right_id)"));
 }
 
 /// Simple premise matching against a vec of fact references.

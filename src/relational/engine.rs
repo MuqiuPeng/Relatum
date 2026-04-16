@@ -305,19 +305,32 @@ impl ClosureEngine {
         has_terms.push(Term::constant(name));
         let has_pattern = RelationPattern::new(&has_rel, has_terms);
 
+        // Collect ALL variables in the formula (params + free vars like x, y)
+        let mut all_vars: HashSet<String> = HashSet::new();
+        for pat in &formula {
+            for t in pat.terms() {
+                collect_var_names(t, &mut all_vars);
+            }
+        }
+        let all_var_names: Vec<String> = all_vars.into_iter().collect();
+
         // Forward: formula |- has_property_N(args, prop)
+        // Ground-required on ALL variables (params + formula vars) to ensure
+        // only ground instances produce has_property facts.
         self.add_rule(Rule::new(
             format!("{}_detect", name),
             formula.clone(),
             vec![has_pattern.clone()],
-        ));
+        ).with_ground_required(all_var_names.clone()));
 
-        // Backward: has_property_N(args, prop) |- formula
-        self.add_rule(Rule::new(
-            format!("{}_apply", name),
-            vec![has_pattern],
-            formula,
-        ));
+        // Backward rule (apply) temporarily disabled — detect-only mode.
+        // Apply rules cause cascading pattern facts in algebraic contexts.
+        // TODO: re-enable with proper grounding guards.
+        // self.add_rule(Rule::new(
+        //     format!("{}_apply", name),
+        //     vec![has_pattern],
+        //     formula,
+        // ).with_ground_required(param_names));
     }
 
     // ── property implication (Henkin second-order, phase 2) ──
@@ -383,9 +396,14 @@ impl ClosureEngine {
         ));
     }
 
-    /// After closure, scan all unary properties and derive `implies(P, Q)` for
-    /// any pair where every instance of P is also an instance of Q.
+    /// After closure, scan all unary properties and derive `implies_observed(P, Q)`
+    /// for any pair where every instance of P is also an instance of Q.
     /// This is inductive (ω-rule style): based on all known instances.
+    ///
+    /// Observed implications are SEPARATE from logical implications:
+    /// - `implies_observed(P, Q)` = "on current data, ext(P) ⊆ ext(Q)"
+    /// - `implies(P, Q)` = deductive (user-declared or proven)
+    /// Only `implies` triggers modus ponens. `implies_observed` is descriptive.
     pub fn derive_property_implications(&mut self) {
         // Collect all properties
         let properties: Vec<Term> = self
@@ -415,8 +433,17 @@ impl ClosureEngine {
             extensions.push((prop.clone(), ext));
         }
 
-        // Check all pairs: if ext(P) ⊆ ext(Q) and ext(P) is non-empty, derive implies(P, Q)
-        let mut new_implies = Vec::new();
+        // Check all pairs: if ext(P) ⊆ ext(Q) and ext(P) is non-empty,
+        // derive implies_observed(P, Q). NOT implies — observed implications
+        // do not trigger modus ponens (they're inductive, not deductive).
+        if !self.relation_defs.contains_key("implies_observed") {
+            self.define_relation("implies_observed", 2);
+        }
+        if !self.relation_defs.contains_key("equivalent_observed") {
+            self.define_relation("equivalent_observed", 2);
+        }
+
+        let mut new_facts = Vec::new();
         for (p, ext_p) in &extensions {
             if ext_p.is_empty() {
                 continue;
@@ -426,15 +453,24 @@ impl ClosureEngine {
                     continue;
                 }
                 if ext_p.is_subset(ext_q) {
-                    let fact = Relation::binary("implies", p.clone(), q.clone());
-                    if !self.facts.contains(&fact) {
-                        new_implies.push(fact);
+                    let impl_fact =
+                        Relation::binary("implies_observed", p.clone(), q.clone());
+                    if !self.facts.contains(&impl_fact) {
+                        new_facts.push(impl_fact);
+                    }
+                    // Check reverse for equivalence
+                    if ext_q.is_subset(ext_p) {
+                        let equiv_fact =
+                            Relation::binary("equivalent_observed", p.clone(), q.clone());
+                        if !self.facts.contains(&equiv_fact) {
+                            new_facts.push(equiv_fact);
+                        }
                     }
                 }
             }
         }
 
-        for fact in new_implies {
+        for fact in new_facts {
             self.facts.insert(fact);
         }
     }
@@ -1055,7 +1091,7 @@ impl ClosureEngine {
         // After all derivation phases, scan property extensions and derive
         // implies(P, Q) where ext(P) ⊆ ext(Q). Then re-run positive closure
         // to propagate modus ponens and transitivity.
-        if self.relation_defs.contains_key("implies") && !hit_limit {
+        if self.relation_defs.contains_key("is_property") && !hit_limit {
             let pre_impl = self.facts.len();
             self.derive_property_implications();
             if self.facts.len() > pre_impl {
