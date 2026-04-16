@@ -2302,6 +2302,103 @@ fn test_property_first_class() {
     println!("    a has {} properties: {:?}", a_props.len(), a_props);
 }
 
+/// Property implication: the system discovers implies(P, Q) by observing
+/// that every element satisfying P also satisfies Q.
+#[test]
+fn test_property_implication() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("subset", 2);
+    engine.define_relation("set", 1);
+    engine.define_relation("member", 2);
+
+    for v in &["x", "y"] { engine.define_variable(*v); }
+
+    engine.define_constant("empty");
+
+    // Three sets, all supersets of empty
+    for e in &["a", "b", "c"] {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("set", vec![c(*e)]));
+        engine.add_fact(Relation::binary("subset", c("empty"), c(*e)));
+    }
+    // Only a and b contain empty as member
+    engine.add_fact(Relation::binary("member", c("empty"), c("a")));
+    engine.add_fact(Relation::binary("member", c("empty"), c("b")));
+
+    // Define properties
+    engine.define_property(
+        "superset_of_empty", &["x"],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])],
+    );
+    engine.define_property(
+        "is_set", &["x"],
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+    );
+    engine.define_property(
+        "contains_empty", &["x"],
+        vec![RelationPattern::new("member", vec![c("empty"), Term::var("x")])],
+    );
+
+    // Enable implication tracking
+    engine.enable_property_implication();
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(500);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  PROPERTY IMPLICATION DISCOVERY");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    // Show implications and equivalences
+    let impls: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "implies")
+        .map(|f| f.to_string()).collect();
+    let equivs: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "equivalent")
+        .map(|f| f.to_string()).collect();
+
+    println!("\n  Discovered implications:");
+    for i in &impls { println!("    {}", i); }
+    println!("\n  Discovered equivalences:");
+    for e in &equivs { println!("    {}", e); }
+
+    // superset_of_empty → is_set: all three (a,b,c) are both, so ext ⊆ ext
+    assert!(has("implies(superset_of_empty, is_set)"),
+        "every superset of empty is a set");
+
+    // is_set → superset_of_empty: also true (a,b,c are all both)
+    assert!(has("implies(is_set, superset_of_empty)"),
+        "every set is a superset of empty");
+
+    // Therefore: equivalent
+    assert!(has("equivalent(superset_of_empty, is_set)"),
+        "superset_of_empty ↔ is_set (on this data)");
+
+    // contains_empty → superset_of_empty: a,b have contains_empty; a,b,c have superset_of_empty
+    // ext(contains_empty) = {a,b} ⊆ {a,b,c} = ext(superset_of_empty) → implies
+    assert!(has("implies(contains_empty, superset_of_empty)"),
+        "contains_empty → superset_of_empty");
+
+    // superset_of_empty → contains_empty: NO! c has superset but not contains_empty
+    assert!(!has("implies(superset_of_empty, contains_empty)"),
+        "NOT superset_of_empty → contains_empty (c is counterexample)");
+
+    // Modus ponens: implies(contains_empty, is_set) should exist (transitive)
+    assert!(has("implies(contains_empty, is_set)"),
+        "contains_empty → is_set (via transitivity)");
+
+    println!("\n  Key findings:");
+    println!("    superset_of_empty ↔ is_set: {} (equivalent on this data)", has("equivalent(superset_of_empty, is_set)"));
+    println!("    contains_empty → superset_of_empty: {} (strict implication)", has("implies(contains_empty, superset_of_empty)"));
+    println!("    contains_empty → is_set: {} (transitive)", has("implies(contains_empty, is_set)"));
+    println!("    superset_of_empty → contains_empty: {} (false, c is counterexample)", has("implies(superset_of_empty, contains_empty)"));
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

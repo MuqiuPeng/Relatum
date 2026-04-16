@@ -320,6 +320,125 @@ impl ClosureEngine {
         ));
     }
 
+    // ── property implication (Henkin second-order, phase 2) ──
+
+    /// Declare that property implication should be tracked.
+    /// After closure, the engine scans all unary properties: if every element
+    /// satisfying property P also satisfies property Q, derives `implies(P, Q)`.
+    ///
+    /// Also installs:
+    /// - Modus ponens: `implies(p, q), has_property_1(x, p) |- has_property_1(x, q)`
+    /// - Transitivity: `implies(p, q), implies(q, r) |- implies(p, r)`
+    /// - Equivalence: `implies(p, q), implies(q, p) |- equivalent(p, q)`
+    pub fn enable_property_implication(&mut self) {
+        self.define_relation("implies", 2);
+        self.define_relation("equivalent", 2);
+
+        // Ensure has_property_1 and is_property exist
+        if !self.relation_defs.contains_key("has_property_1") {
+            self.define_relation("has_property_1", 2);
+        }
+        if !self.relation_defs.contains_key("is_property") {
+            self.define_relation("is_property", 1);
+        }
+
+        // Modus ponens: implies(p, q), has_property_1(x, p) |- has_property_1(x, q)
+        self.define_variable("_p");
+        self.define_variable("_q");
+        self.define_variable("_r");
+        self.define_variable("_x");
+        self.add_rule(Rule::new(
+            "property_modus_ponens",
+            vec![
+                RelationPattern::new("implies", vec![Term::var("_p"), Term::var("_q")]),
+                RelationPattern::new("has_property_1", vec![Term::var("_x"), Term::var("_p")]),
+            ],
+            vec![
+                RelationPattern::new("has_property_1", vec![Term::var("_x"), Term::var("_q")]),
+            ],
+        ));
+
+        // Transitivity: implies(p, q), implies(q, r) |- implies(p, r)
+        self.add_rule(Rule::new(
+            "implies_transitivity",
+            vec![
+                RelationPattern::new("implies", vec![Term::var("_p"), Term::var("_q")]),
+                RelationPattern::new("implies", vec![Term::var("_q"), Term::var("_r")]),
+            ],
+            vec![
+                RelationPattern::new("implies", vec![Term::var("_p"), Term::var("_r")]),
+            ],
+        ));
+
+        // Equivalence: implies(p, q), implies(q, p) |- equivalent(p, q)
+        self.add_rule(Rule::new(
+            "equivalent_from_implies",
+            vec![
+                RelationPattern::new("implies", vec![Term::var("_p"), Term::var("_q")]),
+                RelationPattern::new("implies", vec![Term::var("_q"), Term::var("_p")]),
+            ],
+            vec![
+                RelationPattern::new("equivalent", vec![Term::var("_p"), Term::var("_q")]),
+            ],
+        ));
+    }
+
+    /// After closure, scan all unary properties and derive `implies(P, Q)` for
+    /// any pair where every instance of P is also an instance of Q.
+    /// This is inductive (ω-rule style): based on all known instances.
+    pub fn derive_property_implications(&mut self) {
+        // Collect all properties
+        let properties: Vec<Term> = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "is_property" && f.arity() == 1)
+            .map(|f| f.terms()[0].clone())
+            .collect();
+
+        if properties.len() < 2 {
+            return;
+        }
+
+        // For each property, collect its extension (set of elements that have it)
+        let mut extensions: Vec<(Term, HashSet<Term>)> = Vec::new();
+        for prop in &properties {
+            let ext: HashSet<Term> = self
+                .facts
+                .iter()
+                .filter(|f| {
+                    f.name() == "has_property_1"
+                        && f.arity() == 2
+                        && &f.terms()[1] == prop
+                })
+                .map(|f| f.terms()[0].clone())
+                .collect();
+            extensions.push((prop.clone(), ext));
+        }
+
+        // Check all pairs: if ext(P) ⊆ ext(Q) and ext(P) is non-empty, derive implies(P, Q)
+        let mut new_implies = Vec::new();
+        for (p, ext_p) in &extensions {
+            if ext_p.is_empty() {
+                continue;
+            }
+            for (q, ext_q) in &extensions {
+                if p == q {
+                    continue;
+                }
+                if ext_p.is_subset(ext_q) {
+                    let fact = Relation::binary("implies", p.clone(), q.clone());
+                    if !self.facts.contains(&fact) {
+                        new_implies.push(fact);
+                    }
+                }
+            }
+        }
+
+        for fact in new_implies {
+            self.facts.insert(fact);
+        }
+    }
+
     pub fn set_max_rounds(&mut self, n: usize) {
         self.max_rounds = n;
     }
@@ -927,6 +1046,38 @@ impl ClosureEngine {
                     }
                     if hit_limit {
                         break;
+                    }
+                }
+            }
+        }
+
+        // ── Property implication (inductive, post-closure) ────
+        // After all derivation phases, scan property extensions and derive
+        // implies(P, Q) where ext(P) ⊆ ext(Q). Then re-run positive closure
+        // to propagate modus ponens and transitivity.
+        if self.relation_defs.contains_key("implies") && !hit_limit {
+            let pre_impl = self.facts.len();
+            self.derive_property_implications();
+            if self.facts.len() > pre_impl {
+                // Re-run positive closure to propagate implications
+                for _ in 0..self.max_rounds {
+                    rounds += 1;
+                    let mut new_facts: HashSet<Relation> = HashSet::new();
+                    for rule in &self.rules {
+                        if rule.has_negation() || rule.has_refutation() {
+                            continue;
+                        }
+                        apply_rule(rule, &self.facts, &mut new_facts);
+                    }
+                    new_facts.retain(|f| !self.facts.contains(f));
+                    if new_facts.is_empty() {
+                        break;
+                    }
+                    for fact in new_facts {
+                        self.facts.insert(fact);
+                        if self.facts.len() >= self.max_facts {
+                            break;
+                        }
                     }
                 }
             }
