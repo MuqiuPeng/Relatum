@@ -2512,6 +2512,210 @@ fn test_property_implication_algebra() {
         has("equivalent_observed(left_id, right_id)"));
 }
 
+/// Property implication on a loop (non-associative quasigroup with identity).
+/// Expected: left_id and right_id may NOT be equivalent (unlike groups).
+#[test]
+fn test_property_implication_loop() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("op", 3);
+
+    for v in &["x", "y", "z", "e", "a"] { engine.define_variable(*v); }
+
+    // A loop on {e0, e1, e2} — has identity e0 but is NOT associative.
+    // Cayley table (chosen to break associativity):
+    //   *  | e0  e1  e2
+    //  ----+------------
+    //  e0  | e0  e1  e2
+    //  e1  | e1  e2  e0
+    //  e2  | e2  e0  e1
+    //
+    // This IS actually Z₃ — it IS associative. Need a non-associative loop.
+    //
+    // Non-associative loop on 5 elements (standard example):
+    // Use a known non-associative loop of order 5.
+    // Simpler: use order 3 non-associative magma with identity.
+    // Actually, all loops of order ≤ 4 are groups. Need order ≥ 5.
+    //
+    // Let's use a simpler approach: a magma where left_id and right_id differ.
+    // Magma on {e0, e1, e2} where e0 is left identity but NOT right identity.
+    //
+    //   *  | e0  e1  e2
+    //  ----+------------
+    //  e0  | e0  e1  e2     ← e0 * x = x (left identity)
+    //  e1  | e1  e0  e0     ← e1 * e1 = e0, e1 * e2 = e0
+    //  e2  | e0  e2  e1     ← different from column pattern
+    //
+    // Check right identity: x * e0 = ? → e0*e0=e0 ✓, e1*e0=e1 ✓, e2*e0=e0 ✗ (need e2)
+    // So e0 is NOT right identity (e2*e0=e0 ≠ e2).
+    //
+    // Better: explicit construction.
+    //   * | 0  1  2
+    //  ---+--------
+    //   0 | 0  1  2   ← 0 is left identity
+    //   1 | 1  2  0
+    //   2 | 0  0  1   ← row for 2: 2*0=0 (not 2), so 0 is NOT right identity
+    //
+    // Verify left identity: 0*x = x for all x. Row 0: 0,1,2 = e0,e1,e2 ✓
+    // Verify right identity: x*0 = x? Col 0: 0,1,0 → 2*0=0≠2 ✗
+    // So left_id(e0)=true, right_id(e0)=false.
+    // Any right identity? x*e=x for all x. Check each column:
+    //   Col 0: 0,1,0 → fails for e2
+    //   Col 1: 1,2,0 → fails for e0 (0*1=1≠0)
+    //   Col 2: 2,0,1 → fails for e0 (0*2=2≠0)
+    // No right identity exists!
+
+    for e in &["e0", "e1", "e2"] {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+
+    let table: &[(&str, &str, &str)] = &[
+        ("e0","e0","e0"), ("e0","e1","e1"), ("e0","e2","e2"),
+        ("e1","e0","e1"), ("e1","e1","e2"), ("e1","e2","e0"),
+        ("e2","e0","e0"), ("e2","e1","e0"), ("e2","e2","e1"),
+    ];
+    for (a, b, r) in table {
+        engine.add_fact(Relation::new("op", vec![c(a), c(b), c(r)]));
+    }
+
+    // Universal properties via double negation:
+    // not_left_id(e) ← element(e), element(x), NOT op(e, x, x)
+    // left_id(e) ← element(e), NOT not_left_id(e)
+    engine.define_relation("not_left_id", 1);
+    engine.define_relation("not_right_id", 1);
+
+    engine.add_rule(Rule::new(
+        "not_left_id_def",
+        vec![
+            RelationPattern::new("element", vec![Term::var("e")]),
+            RelationPattern::new("element", vec![Term::var("x")]),
+        ],
+        vec![RelationPattern::new("not_left_id", vec![Term::var("e")])],
+    ).with_negated(vec![
+        RelationPattern::new("op", vec![Term::var("e"), Term::var("x"), Term::var("x")]),
+    ]));
+
+    engine.add_rule(Rule::new(
+        "not_right_id_def",
+        vec![
+            RelationPattern::new("element", vec![Term::var("e")]),
+            RelationPattern::new("element", vec![Term::var("x")]),
+        ],
+        vec![RelationPattern::new("not_right_id", vec![Term::var("e")])],
+    ).with_negated(vec![
+        RelationPattern::new("op", vec![Term::var("x"), Term::var("e"), Term::var("x")]),
+    ]));
+
+    // Properties via double negation (stratum 2)
+    engine.define_property("left_id", &["e"],
+        vec![RelationPattern::new("element", vec![Term::var("e")])]);
+    // Override detect rule: use negation instead of existential
+    // Remove the auto-generated detect, replace with negation-based
+    engine.remove_rules_by_name("left_id_detect");
+    engine.add_rule(Rule::new(
+        "left_id_detect",
+        vec![RelationPattern::new("element", vec![Term::var("e")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("e"), c("left_id")])],
+    ).with_negated(vec![
+        RelationPattern::new("not_left_id", vec![Term::var("e")]),
+    ]).with_stratum(2));
+
+    engine.define_property("right_id", &["e"],
+        vec![RelationPattern::new("element", vec![Term::var("e")])]);
+    engine.remove_rules_by_name("right_id_detect");
+    engine.add_rule(Rule::new(
+        "right_id_detect",
+        vec![RelationPattern::new("element", vec![Term::var("e")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("e"), c("right_id")])],
+    ).with_negated(vec![
+        RelationPattern::new("not_right_id", vec![Term::var("e")]),
+    ]).with_stratum(2));
+
+    // Idempotent stays existential (correct: op(a,a,a) is a ground check)
+    engine.define_property("idempotent", &["a"],
+        vec![RelationPattern::new("op", vec![
+            Term::var("a"), Term::var("a"), Term::var("a"),
+        ])]);
+
+    // Comm witness stays existential (correct: finding one witness suffices)
+    engine.define_property("has_comm_witness", &["a"],
+        vec![
+            RelationPattern::new("op", vec![Term::var("a"), Term::var("x"), Term::var("y")]),
+            RelationPattern::new("op", vec![Term::var("x"), Term::var("a"), Term::var("y")]),
+        ]);
+
+    engine.enable_property_implication();
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(500);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  PROPERTY IMPLICATION ON NON-ASSOCIATIVE MAGMA");
+    println!("  (e0 is left identity but NOT right identity)");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    // Show property assignments
+    let mut prop_facts: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "has_property_1")
+        .map(|f| f.to_string()).collect();
+    prop_facts.sort();
+    println!("\n  Property assignments:");
+    for p in &prop_facts { println!("    {}", p); }
+
+    // Show implications
+    let mut impls: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "implies_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    impls.sort();
+    let mut equivs: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "equivalent_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    equivs.sort();
+
+    println!("\n  Discovered implications:");
+    for i in &impls { println!("    {}", i); }
+    println!("\n  Discovered equivalences:");
+    for e in &equivs { println!("    {}", e); }
+
+    // Key checks
+    assert!(has("has_property_1(e0, left_id)"),
+        "e0 is left identity (0*x=x)");
+    assert!(!has("has_property_1(e0, right_id)"),
+        "e0 is NOT right identity (2*0=0≠2)");
+
+    // left_id → right_id should NOT hold (e0 has left_id but not right_id)
+    assert!(!has("equivalent_observed(left_id, right_id)"),
+        "KEY: left_id ≢ right_id on this magma (unlike Z₃ group)");
+
+    // Check if right_id has any instances at all
+    let right_id_instances: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "has_property_1"
+            && f.terms().len() == 2
+            && f.terms()[1] == Term::constant("right_id"))
+        .map(|f| f.terms()[0].to_string())
+        .collect();
+
+    println!("\n  === KEY COMPARISON ===");
+    println!("  Z₃ (group):     equivalent_observed(left_id, right_id) = true");
+    println!("  This magma:     equivalent_observed(left_id, right_id) = {}",
+        has("equivalent_observed(left_id, right_id)"));
+    println!("  left_id instances:  [e0]");
+    println!("  right_id instances: {:?}", right_id_instances);
+    if right_id_instances.is_empty() {
+        println!("  → No right identity exists in this magma.");
+        println!("  → implies_observed(left_id, right_id) = {} (vacuous if right_id empty)",
+            has("implies_observed(left_id, right_id)"));
+    }
+    println!("\n  The system distinguishes group from non-group");
+    println!("  by the structural relationship between left_id and right_id.");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

@@ -247,6 +247,11 @@ impl ClosureEngine {
         self.rules.remove(index)
     }
 
+    /// Remove all rules matching a given name.
+    pub fn remove_rules_by_name(&mut self, name: &str) {
+        self.rules.retain(|r| r.name() != name);
+    }
+
     /// Adds a universally quantified axiom. During closure, the engine
     /// enumerates all ground substitutions for the axiom's variables and
     /// emits `equiv_relation(subst(lhs), subst(rhs))` facts.
