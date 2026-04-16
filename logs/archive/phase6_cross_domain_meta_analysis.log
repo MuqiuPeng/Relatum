@@ -1,0 +1,37 @@
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3168 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+3288 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3285 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3299 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3384 |     let alg_strict = id_only_has("implies_observed(left_id, idempotent)")
+╔════════════════════════════════════════════════════════════╗
+║  CROSS-DOMAIN META-ANALYSIS: Phase 6 across 3 domains    ║
+╚════════════════════════════════════════════════════════════╝
+┌─────────────────────────────────────────────────────────────────┐
+│ STRUCTURAL PATTERN         │ Algebra  │ Order    │ Set theory │
+├─────────────────────────────────────────────────────────────────┤
+│ Definitional equivalence    │ left↔rgt │ max↔min  │ set↔sup∅   │
+│ Equivalence breaks (weaker) │ magma:✗  │ chain:✗  │ n/a        │
+│ Strict implication exists    │ id:✓     │ ✓        │ ✓          │
+│ Degenerate full equivalence │ id↔idem  │ max↔iso  │ set↔self   │
+└─────────────────────────────────────────────────────────────────┘
+  Meta-level observations (C1 summary):
+  1. Definitional equivalence found in all 3 domains: 3/3
+  2. Equivalence breaks in weaker structures: 2/2
+  3. Strict implications in all 3 domains: 3/3
+  4. Degenerate full equivalence in all 3 domains: 3/3
+  Cross-domain consistency: 11/11 patterns confirmed
+  Conclusion: Phase 6 mechanism produces structurally
+  analogous findings across algebra, order theory, and set
+  theory. The same 4 meta-patterns repeat in all domains.
+test test_cross_domain_meta_analysis ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.12s
