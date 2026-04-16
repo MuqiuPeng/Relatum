@@ -1,0 +1,48 @@
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3168 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+3288 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3285 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3299 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+============================================================
+  PHASE 6: ZFC PROPERTY IMPLICATIONS
+  142 facts, 22 rounds
+============================================================
+  Property extensions:
+    is_set                 |ext|=8 ["empty", "power(empty)", "power(power(empty))", "power(power(power(empty)))", "power(power(power(power(empty))))", "power(power(power(power(power(empty)))))", "power(power(power(power(power(power(empty))))))", "power(power(power(power(power(power(power(empty)))))))"]
+    superset_of_empty      |ext|=8 ["empty", "power(empty)", "power(power(empty))", "power(power(power(empty)))", "power(power(power(power(empty))))", "power(power(power(power(power(empty)))))", "power(power(power(power(power(power(empty))))))", "power(power(power(power(power(power(power(empty)))))))"]
+    has_member_empty       |ext|=7 ["power(empty)", "power(power(empty))", "power(power(power(empty)))", "power(power(power(power(empty))))", "power(power(power(power(power(empty)))))", "power(power(power(power(power(power(empty))))))", "power(power(power(power(power(power(power(empty)))))))"]
+    is_in_power_empty      |ext|=1 ["empty"]
+    self_subset            |ext|=8 ["empty", "power(empty)", "power(power(empty))", "power(power(power(empty)))", "power(power(power(power(empty))))", "power(power(power(power(power(empty)))))", "power(power(power(power(power(power(empty))))))", "power(power(power(power(power(power(power(empty)))))))"]
+  Discovered implications:
+    implies_observed(has_member_empty, is_set)
+    implies_observed(has_member_empty, self_subset)
+    implies_observed(has_member_empty, superset_of_empty)
+    implies_observed(is_in_power_empty, is_set)
+    implies_observed(is_in_power_empty, self_subset)
+    implies_observed(is_in_power_empty, superset_of_empty)
+    implies_observed(is_set, self_subset)
+    implies_observed(is_set, superset_of_empty)
+    implies_observed(self_subset, is_set)
+    implies_observed(self_subset, superset_of_empty)
+    implies_observed(superset_of_empty, is_set)
+    implies_observed(superset_of_empty, self_subset)
+  Discovered equivalences:
+    equivalent_observed(is_set, self_subset)
+    equivalent_observed(is_set, superset_of_empty)
+    equivalent_observed(self_subset, superset_of_empty)
+  Key findings:
+    is_set ↔ superset_of_empty: true
+    is_set ↔ self_subset: true
+    has_member_empty → is_set: true
+    is_in_power_empty → has_member_empty: false
+test test_zfc_property_implications ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.10s

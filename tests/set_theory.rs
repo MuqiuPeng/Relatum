@@ -3105,6 +3105,162 @@ fn test_order_property_implications() {
     }
 }
 
+// ── Phase 6 on ZFC: property implications on set-theoretic facts ─────
+
+/// Phase 6 on ZFC: define set-theoretic properties, run implication
+/// analysis on the closed fact set from zfc5_engine.
+#[test]
+fn test_zfc_property_implications() {
+    // Use a focused ZFC engine without pairing (avoids combinatorial explosion)
+    let mut engine = ClosureEngine::new();
+    engine.define_relation("set", 1);
+    engine.define_relation("member", 2);
+    engine.define_relation("subset", 2);
+    engine.define_equivalence("eq");
+
+    for v in &["x", "y", "z", "a", "b", "s", "_px"] {
+        engine.define_variable(*v);
+    }
+
+    engine.define_constant("empty");
+    engine.add_fact(Relation::new("set", vec![c("empty")]));
+
+    // Subset rules
+    engine.add_rule(Rule::new("empty_subset",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])],
+    ));
+    engine.add_rule(Rule::new("subset_refl",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("x")])],
+    ));
+
+    // Powerset
+    engine.add_rule(Rule::new("powerset_exists",
+        vec![RelationPattern::new("set", vec![Term::var("a")])],
+        vec![RelationPattern::new("set", vec![
+            Term::app("power", vec![Term::var("a")])])],
+    ));
+    engine.add_rule(Rule::new("powerset_member",
+        vec![
+            RelationPattern::new("subset", vec![Term::var("s"), Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("s")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("s"),
+            Term::app("power", vec![Term::var("a")]),
+        ])],
+    ));
+
+    // No union — keep the universe small and linear (pure powerset chain)
+
+    // Define properties BEFORE closure so detect rules participate
+
+    // is_set(x) := set(x)
+    engine.define_property("is_set", &["_px"],
+        vec![RelationPattern::new("set", vec![Term::var("_px")])]);
+
+    // superset_of_empty(x) := subset(empty, x)
+    engine.define_property("superset_of_empty", &["_px"],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("_px")])]);
+
+    // has_member_empty(x) := member(empty, x) — "x contains empty as a member"
+    engine.define_property("has_member_empty", &["_px"],
+        vec![RelationPattern::new("member", vec![c("empty"), Term::var("_px")])]);
+
+    // is_in_power_empty(x) := member(x, power(empty)) — "x ∈ P(∅)"
+    engine.define_property("is_in_power_empty", &["_px"],
+        vec![RelationPattern::new("member", vec![
+            Term::var("_px"), Term::app("power", vec![c("empty")]),
+        ])]);
+
+    // self_subset(x) := subset(x, x) — "x ⊆ x"
+    engine.define_property("self_subset", &["_px"],
+        vec![RelationPattern::new("subset", vec![Term::var("_px"), Term::var("_px")])]);
+
+    engine.enable_property_implication();
+
+    // Run closure — pure powerset chain, no pairing/union explosion
+    engine.set_max_rounds(20);
+    engine.set_max_facts(500);
+    let result = engine.derive_closure();
+
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  PHASE 6: ZFC PROPERTY IMPLICATIONS");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    // Show property extensions
+    let props = ["is_set", "superset_of_empty", "has_member_empty",
+                 "is_in_power_empty", "self_subset"];
+    println!("\n  Property extensions:");
+    for prop in &props {
+        let mut ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop)
+                && f.is_ground())
+            .map(|f| f.terms()[0].to_string())
+            .collect();
+        ext.sort();
+        ext.truncate(10);
+        println!("    {:<22} |ext|={} {:?}", prop, ext.len(), ext);
+    }
+
+    // Show implications
+    let mut impls: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "implies_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    impls.sort();
+    let mut equivs: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "equivalent_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    equivs.sort();
+
+    println!("\n  Discovered implications:");
+    for i in &impls { println!("    {}", i); }
+    println!("\n  Discovered equivalences:");
+    // Deduplicate
+    let mut seen: HashSet<String> = HashSet::new();
+    for e in &equivs {
+        let parts: Vec<&str> = e.split(&['(', ',', ')'][..]).collect();
+        let key = if parts.len() >= 3 {
+            let mut sorted = vec![parts[1].trim(), parts[2].trim()];
+            sorted.sort();
+            format!("{} ↔ {}", sorted[0], sorted[1])
+        } else { e.clone() };
+        if seen.insert(key.clone()) {
+            println!("    {}", e);
+        }
+    }
+
+    // Key expected findings
+    println!("\n  Key findings:");
+
+    // is_set ↔ superset_of_empty: in ZFC, subset(empty, x) holds for all sets
+    // (from empty_subset rule). So ext(superset_of_empty) = ext(is_set)
+    println!("    is_set ↔ superset_of_empty: {}",
+        has("equivalent_observed(is_set, superset_of_empty)")
+        || has("equivalent_observed(superset_of_empty, is_set)"));
+
+    // is_set ↔ self_subset: subset(x,x) holds for all sets (from subset_refl)
+    println!("    is_set ↔ self_subset: {}",
+        has("equivalent_observed(is_set, self_subset)")
+        || has("equivalent_observed(self_subset, is_set)"));
+
+    // has_member_empty → is_set: if empty ∈ x, then x is a set?
+    // Not necessarily by the rules — member(empty, x) doesn't imply set(x)
+    // But in practice, all x where member(empty, x) holds ARE sets
+    println!("    has_member_empty → is_set: {}",
+        has("implies_observed(has_member_empty, is_set)"));
+
+    // is_in_power_empty: only empty ∈ P(∅) (since only empty ⊆ ∅)
+    // So ext(is_in_power_empty) = {empty}
+    println!("    is_in_power_empty → has_member_empty: {}",
+        has("implies_observed(is_in_power_empty, has_member_empty)"));
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
