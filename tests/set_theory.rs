@@ -1949,6 +1949,13 @@ fn test_poset_autonomous_discovery() {
         max_rounds: 2,
     };
 
+    // Check: how many candidates does the generator produce?
+    let candidates = search::generate_candidates(&engine, &config.beam.candidate_config);
+    println!("\n  Candidates generated: {}", candidates.len());
+    for (i, r) in candidates.iter().enumerate().take(10) {
+        println!("    [{}] {}", i, r);
+    }
+
     let log = search::run_discovery_named(&engine, &config, "diamond_poset");
 
     // Report what the system discovered
@@ -1971,7 +1978,7 @@ fn test_poset_autonomous_discovery() {
             println!("  Best beam: score={:.3}, derived={}, rules={:?}",
                 beam.score, beam.profile.derived_facts, beam.rule_names);
         } else {
-            println!("  No beam result");
+            println!("  No beam result (no candidate rules generated or all scored ≤ 0)");
         }
         println!("  Chain identities: {}", step.chain_identities.len());
         println!("  Total facts: {}, relations: {}",

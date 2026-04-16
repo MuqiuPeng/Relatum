@@ -216,6 +216,82 @@ pub fn generate_candidates(engine: &ClosureEngine, config: &CandidateConfig) -> 
         }
     }
 
+    // ── Relational composition candidates ──
+    // For pure binary-relation structures (no constructors), generate
+    // composition patterns: R(x,y), S(y,z) |- T(x,z) etc.
+    // These discover transitivity-like and chain properties.
+    if constructors.is_empty() && binary_rels.len() >= 1 {
+        let xv = Term::var("x");
+        let yv = Term::var("y");
+        let zv = Term::var("z");
+
+        // Two-premise compositions: R(x,y), S(y,z) |- T(x,z)
+        for r1 in &binary_rels {
+            for r2 in &binary_rels {
+                for r3 in &binary_rels {
+                    let name = format!("rel_comp_{}_{}_{}",  r1, r2, r3);
+                    if seen.insert(name.clone()) {
+                        let rule = Rule::new(
+                            &name,
+                            vec![
+                                RelationPattern::new(r1.as_str(), vec![xv.clone(), yv.clone()]),
+                                RelationPattern::new(r2.as_str(), vec![yv.clone(), zv.clone()]),
+                            ],
+                            vec![RelationPattern::new(r3.as_str(), vec![xv.clone(), zv.clone()])],
+                        );
+                        if score::rule_complexity(&rule) <= config.max_complexity {
+                            candidates.push(rule);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Single-premise inversions: R(x,y) |- S(y,x)
+        for r1 in &binary_rels {
+            for r2 in &binary_rels {
+                if r1 == r2 { continue; } // skip identity
+                let name = format!("rel_inv_{}_{}", r1, r2);
+                if seen.insert(name.clone()) {
+                    let rule = Rule::new(
+                        &name,
+                        vec![RelationPattern::new(r1.as_str(), vec![xv.clone(), yv.clone()])],
+                        vec![RelationPattern::new(r2.as_str(), vec![yv.clone(), xv.clone()])],
+                    );
+                    if score::rule_complexity(&rule) <= config.max_complexity {
+                        candidates.push(rule);
+                    }
+                }
+            }
+        }
+
+        // Diagonal: R(x,y) |- S(x,x) or R(x,y) |- S(y,y)
+        for r1 in &binary_rels {
+            for r2 in &binary_rels {
+                {
+                    let name = format!("rel_diag_left_{}_{}", r1, r2);
+                    if seen.insert(name.clone()) {
+                        candidates.push(Rule::new(
+                            &name,
+                            vec![RelationPattern::new(r1.as_str(), vec![xv.clone(), yv.clone()])],
+                            vec![RelationPattern::new(r2.as_str(), vec![xv.clone(), xv.clone()])],
+                        ));
+                    }
+                }
+                {
+                    let name = format!("rel_diag_right_{}_{}", r1, r2);
+                    if seen.insert(name.clone()) {
+                        candidates.push(Rule::new(
+                            &name,
+                            vec![RelationPattern::new(r1.as_str(), vec![xv.clone(), yv.clone()])],
+                            vec![RelationPattern::new(r2.as_str(), vec![yv.clone(), yv.clone()])],
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     // Data-driven candidates: induce patterns from the fact set
     candidates.extend(induce_candidates(engine, config));
 
