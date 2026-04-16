@@ -1,0 +1,60 @@
+\section{Property Implication Analysis}
+\label{sec:property}
+
+% Section 5 of the paper.
+% Phase 6: properties as first-class objects
+% Universal detection via double negation
+% implies_observed / equivalent_observed
+% Full table: 10 axiom classes x 3 property pairs
+
+\subsection{Properties as First-Class Objects}
+
+% define_property API, has_property_1, is_property
+% Detection (forward): formula -> has_property
+% No backward application (cascading prevention)
+
+\subsection{Universal Property Detection}
+
+% Existential detection insufficient for algebraic properties
+% Double negation: not_left_id(e) <- element(e), element(x), NOT op(e,x,x)
+%                  left_id(e) <- element(e), NOT not_left_id(e)
+
+\subsection{Implication Discovery}
+
+% derive_property_implications: ext(P) subset ext(Q) -> implies_observed(P,Q)
+% implies_observed vs implies (inductive vs deductive)
+% Modus ponens only on deductive implies
+
+\subsection{Full Property Table}
+
+% Table 1: 10 axiom classes x {left<->right, left<->idem, right<->idem}
+
+\begin{table}[h]
+\centering
+\caption{Property equivalences across axiom classes on 3-element carriers.
+$\leftrightarrow$ indicates observed equivalence (bidirectional implication);
+$\times$ indicates no equivalence. All properties detected via universal
+(double-negation) mechanism.}
+\label{tab:property-table}
+\begin{tabular}{lccc}
+\toprule
+Axiom class & left $\leftrightarrow$ right & left $\leftrightarrow$ idem & right $\leftrightarrow$ idem \\
+\midrule
+\texttt{assoc}             & $\times$ & $\times$ & $\times$ \\
+\texttt{assoc+comm}        & $\times$ & $\times$ & $\times$ \\
+\texttt{assoc+comm+id}     & $\leftrightarrow$ & $\times$ & $\times$ \\
+\texttt{assoc+comm+id+inv} & $\leftrightarrow$ & $\leftrightarrow$ & $\leftrightarrow$ \\
+\texttt{assoc+id}          & $\leftrightarrow$ & $\times$ & $\times$ \\
+\texttt{comm}              & $\times$ & $\times$ & $\times$ \\
+\texttt{comm+id}           & $\leftrightarrow$ & $\leftrightarrow$ & $\leftrightarrow$ \\
+\texttt{comm+id+inv}       & $\leftrightarrow$ & $\leftrightarrow$ & $\leftrightarrow$ \\
+\texttt{id}                & $\leftrightarrow$ & $\times$ & $\times$ \\
+\texttt{id+inv}            & $\leftrightarrow$ & $\leftrightarrow$ & $\leftrightarrow$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Key findings:
+% 1. id present <-> left=right (necessary and sufficient)
+% 2. inv or comm+id -> identity = unique idempotent
+% 3. assoc alone does not affect identity equivalence

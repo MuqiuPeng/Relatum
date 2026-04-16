@@ -1,0 +1,29 @@
+\section{Cross-Validation}
+\label{sec:cross}
+
+% Section 6 of the paper.
+% The central result: two independent mechanisms produce consistent classifications.
+
+% Phase 1 (Section 4): closure scoring
+%   Mechanism: beam search over candidate rules, scored by generativity
+%   Finding: group axioms produce the richest closure
+%   Structural boundary: id+inv separates optimal from suboptimal
+
+% Phase 6 (Section 5): property implication
+%   Mechanism: property extension inclusion after double-negation detection
+%   Finding: id determines left<->right; inv determines id<->idempotent
+%   Structural boundary: same as Phase 1
+
+% Why this matters:
+%   - Two completely different inference paths
+%   - No shared intermediate results
+%   - Same structural classification emerges
+%   - Neither mechanism was told what to look for
+%   - Cross-validation is a stronger form of evidence than single-method discovery
+
+% Specific correspondences:
+%   Phase 1 theorem: op(?v0,?t1,?t1)(x) -> op(?t0,?v0,?t0)(x)
+%   Phase 6 finding: equivalent_observed(left_id, right_id) on all id-classes
+%   These are the SAME mathematical fact expressed in different formalisms:
+%     "left identity implies right identity" (Phase 1: as a universal rule)
+%     "left_id and right_id have equal extensions" (Phase 6: as property equivalence)

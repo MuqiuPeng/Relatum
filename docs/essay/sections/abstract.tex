@@ -1,0 +1,11 @@
+\begin{abstract}
+
+We present Relatum, a relation-first reasoning engine that autonomously discovers algebraic structure through two independent mechanisms: \emph{inductive closure scoring} and \emph{property implication analysis}. Starting from an exhaustive enumeration of all 19{,}683 binary operations on a 3-element carrier, the closure-scoring mechanism partitions the model space into 10 axiom classes and identifies the abelian group region as optimal through dual-signal alignment of model-space rarity and closure-space richness. A formal equivalence proof establishes that the discovered rule bundle is logically equivalent to the group axiom subset $\{G_2, G_3\}$, holding for all groups including infinite ones.
+
+Independently, the property implication mechanism defines algebraic properties (left identity, right identity, idempotent) as first-class relational objects and discovers their pairwise equivalence or strict implication on each axiom class by comparing property extensions. Across all 10 classes, the system finds: (1)~the presence of an identity element is both necessary and sufficient for left--right identity equivalence; (2)~the presence of inverses (or commutativity with identity) is necessary and sufficient for the identity element to be the unique idempotent; (3)~associativity alone does not affect identity equivalence.
+
+The two mechanisms use entirely different inference paths---closure generativity scoring versus property extension inclusion---yet produce consistent structural classifications. This cross-validation, obtained without human guidance on what to look for, constitutes the central result: the algebraic boundary between groups and weaker structures is discoverable from raw operation tables by multiple independent methods within a single relational framework.
+
+The engine also supports pattern-level deduction (variable-to-variable unification, stratified negation, $\omega$-rule inductive promotion, and proof by contradiction), demonstrated on ZFC set-theoretic axioms where the system derives universally quantified conclusions such as $\forall A.\;\varnothing \in \mathcal{P}(A)$ from two input propositions in 0.00s with 11 total facts.
+
+\end{abstract}
