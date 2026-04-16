@@ -1,0 +1,62 @@
+3104 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3224 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3221 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3235 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+============================================================
+  PROTO-LEVEL AXIOM DISCOVERY
+  Input: raw edges. No rules. No properties defined.
+  System discovers which axiom schemas are valuable.
+============================================================
+  Candidate axiom schemas: 18
+    rel_comp_R_R_R
+    rel_comp_R_R_eq
+    rel_comp_R_eq_R
+    rel_comp_R_eq_eq
+    rel_comp_eq_R_R
+    rel_comp_eq_R_eq
+    rel_comp_eq_eq_R
+    rel_comp_eq_eq_eq
+    rel_inv_R_eq
+    rel_inv_eq_R
+    rel_diag_left_R_R
+    rel_diag_right_R_R
+    rel_diag_left_R_eq
+    rel_diag_right_R_eq
+    rel_diag_left_eq_R
+    rel_diag_right_eq_R
+    rel_diag_left_eq_eq
+    rel_diag_right_eq_eq
+  Beam search results:
+  Step 0:
+    #1: score=10.10, derived=11, rules=["rel_comp_R_R_R"]
+    #2: score=9.40, derived=10, rules=["rel_inv_eq_R"]
+    #3: score=9.40, derived=10, rules=["rel_diag_left_eq_R"]
+    #4: score=9.40, derived=10, rules=["rel_diag_right_eq_R"]
+    #5: score=9.10, derived=10, rules=["rel_comp_eq_eq_R"]
+  Step 1:
+    #1: score=14.50, derived=16, rules=["rel_comp_R_R_R", "rel_inv_eq_R"]
+    #2: score=14.50, derived=16, rules=["rel_comp_R_R_R", "rel_diag_left_eq_R"]
+    #3: score=14.50, derived=16, rules=["rel_comp_R_R_R", "rel_diag_right_eq_R"]
+    #4: score=14.50, derived=16, rules=["rel_inv_eq_R", "rel_comp_R_R_R"]
+    #5: score=14.50, derived=16, rules=["rel_diag_left_eq_R", "rel_comp_R_R_R"]
+  Step 2:
+    #1: score=14.50, derived=16, rules=["rel_comp_R_R_R", "rel_inv_eq_R"]
+    #2: score=14.50, derived=16, rules=["rel_comp_R_R_R", "rel_diag_left_eq_R"]
+    #3: score=14.50, derived=16, rules=["rel_comp_R_R_R", "rel_diag_right_eq_R"]
+    #4: score=14.50, derived=16, rules=["rel_inv_eq_R", "rel_comp_R_R_R"]
+    #5: score=14.50, derived=16, rules=["rel_diag_left_eq_R", "rel_comp_R_R_R"]
+  DISCOVERED: best axiom bundle = ["rel_comp_R_R_R", "rel_inv_eq_R"]
+  Score: 14.50, derived facts: 16
+  Contains transitivity (R∘R→R): true
+  System autonomously discovered transitivity as the
+  most valuable axiom for this binary relation.
+  No human told it what transitivity is.
+test test_proto_axiom_discovery ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 1.18s

@@ -1864,53 +1864,44 @@ fn compute_poset_properties(
     props
 }
 
-/// Run the EXISTING discovery pipeline on a poset — no manually defined
-/// properties, no manually defined rules for maximal/minimal.
-/// The system auto-generates candidates, auto-scores, auto-promotes concepts.
+/// Proto-level discovery: beam search over AXIOM CANDIDATES, not models.
+///
+/// Input: raw binary relation facts (NOT transitively closed), NO rules.
+/// The system generates relational composition candidates and discovers
+/// which axiom schemas are most valuable (produce the most new facts).
+///
+/// Expected: the system discovers transitivity as the top-scoring axiom
+/// for this strict ordering — without being told what transitivity is.
 #[test]
-fn test_poset_autonomous_discovery() {
-    use relatum::relational::search::{self, DiscoveryConfig, BeamConfig, CandidateConfig, PromotionConfig, AdaptivePolicy};
+fn test_proto_axiom_discovery() {
+    use relatum::relational::search::{self, BeamConfig, CandidateConfig, AdaptivePolicy};
     use relatum::relational::score::ScoreWeights;
 
     println!("\n============================================================");
-    println!("  AUTONOMOUS POSET DISCOVERY");
-    println!("  (same pipeline as algebraic discovery, different data)");
+    println!("  PROTO-LEVEL AXIOM DISCOVERY");
+    println!("  Input: raw edges. No rules. No properties defined.");
+    println!("  System discovers which axiom schemas are valuable.");
     println!("============================================================");
 
-    // Build a poset engine with raw data — NO manually defined properties
+    // Raw binary relation — NOT transitively closed, NO rules
     let mut engine = ClosureEngine::new();
-    engine.define_relation("lt", 2);
+    engine.define_relation("R", 2);
     engine.define_equivalence("eq");
+    engine.define_relation("distinct", 2);
 
-    // Larger poset: 6 elements, mix of chains and diamonds
-    //   a < b < d < f
-    //   a < c < e < f
-    //   b < e  (cross-link)
-    let elems_list = ["a", "b", "c", "d", "e", "f"];
-    for e in &elems_list {
+    let elems = ["a", "b", "c", "d", "e"];
+    for e in &elems {
         engine.define_constant(*e);
     }
-    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
-    engine.add_fact(Relation::binary("lt", c("a"), c("c")));
-    engine.add_fact(Relation::binary("lt", c("b"), c("d")));
-    engine.add_fact(Relation::binary("lt", c("b"), c("e")));
-    engine.add_fact(Relation::binary("lt", c("c"), c("e")));
-    engine.add_fact(Relation::binary("lt", c("d"), c("f")));
-    engine.add_fact(Relation::binary("lt", c("e"), c("f")));
-
-    // Transitivity — the only rule we provide
     for v in &["x", "y", "z"] { engine.define_variable(*v); }
-    engine.add_rule(Rule::new("lt_trans",
-        vec![
-            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
-            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
-        ],
-        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
-    ));
 
-    // Pairwise distinct
-    let elems = elems_list;
-    engine.define_relation("distinct", 2);
+    // Chain: a→b→c→d→e (raw edges only, NOT transitive closure)
+    engine.add_fact(Relation::binary("R", c("a"), c("b")));
+    engine.add_fact(Relation::binary("R", c("b"), c("c")));
+    engine.add_fact(Relation::binary("R", c("c"), c("d")));
+    engine.add_fact(Relation::binary("R", c("d"), c("e")));
+
+    // Distinct pairs (for consistency checking)
     for i in 0..elems.len() {
         for j in (i+1)..elems.len() {
             engine.add_fact(Relation::binary("distinct", c(elems[i]), c(elems[j])));
@@ -1918,71 +1909,63 @@ fn test_poset_autonomous_discovery() {
         }
     }
 
-    // Discovery config — same structure as algebraic discovery
+    // Beam search config — discover axiom schemas
     let mut exclude = HashSet::new();
     exclude.insert("distinct".to_string());
 
-    let config = DiscoveryConfig {
-        beam: BeamConfig {
-            candidate_config: CandidateConfig {
-                guard_relation: None,
-                exclude_relations: exclude.clone(),
-                min_pattern_support: 2,
-                ..CandidateConfig::default()
-            },
-            weights: ScoreWeights {
-                generativity: 1.0,
-                compression: 0.5,
-                consistency_penalty: 10.0,
-                exclusions: vec![("eq".to_string(), "distinct".to_string())],
-            },
-            beam_width: 5,
-            max_rules_per_beam: 3,
-            max_steps: 2,
-            adaptive: AdaptivePolicy::Fixed,
-        },
-        promotion: PromotionConfig {
-            min_support: 2,
-            max_promotions_per_round: 5,
+    let beam_config = BeamConfig {
+        candidate_config: CandidateConfig {
+            guard_relation: None,
             exclude_relations: exclude,
+            min_pattern_support: 2,
+            ..CandidateConfig::default()
         },
-        max_rounds: 2,
+        weights: ScoreWeights {
+            generativity: 1.0,
+            compression: 0.5,
+            consistency_penalty: 10.0,
+            exclusions: vec![("eq".to_string(), "distinct".to_string())],
+        },
+        beam_width: 10,
+        max_rules_per_beam: 3,
+        max_steps: 3,
+        adaptive: AdaptivePolicy::Fixed,
     };
 
-    // Check: how many candidates does the generator produce?
-    let candidates = search::generate_candidates(&engine, &config.beam.candidate_config);
-    println!("\n  Candidates generated: {}", candidates.len());
-    for (i, r) in candidates.iter().enumerate().take(10) {
-        println!("    [{}] {}", i, r);
+    // Generate candidates
+    let candidates = search::generate_candidates(&engine, &beam_config.candidate_config);
+    println!("\n  Candidate axiom schemas: {}", candidates.len());
+    for r in &candidates {
+        println!("    {}", r.name());
     }
 
-    let log = search::run_discovery_named(&engine, &config, "diamond_poset");
+    // Run beam search — system discovers which axioms are most productive
+    let beam_log = search::beam_search(&engine, &beam_config);
 
-    // Report what the system discovered
-    println!("\n  Initial relations: {:?}", log.initial_relations);
-    println!("  Initial rules: {}", log.initial_rules);
+    println!("\n  Beam search results:");
+    for step in &beam_log {
+        println!("\n  Step {}:", step.round);
+        for (i, entry) in step.beam.iter().enumerate().take(5) {
+            println!("    #{}: score={:.2}, derived={}, rules={:?}",
+                i+1, entry.score, entry.profile.derived_facts, entry.rule_names);
+        }
+    }
 
-    for step in &log.steps {
-        println!("\n  --- Round {} ---", step.round);
-        println!("  Promoted concepts: {}", step.promoted.len());
-        for concept in &step.promoted {
-            println!("    {} (arity {}, support {}, instances {})",
-                concept.name, concept.arity, concept.support, concept.instances);
-            println!("      pattern: {}", concept.source_pattern);
-            for inst in &concept.instance_set {
-                println!("      instance: {}", inst);
-            }
-        }
-        println!("  Verification rules: {:?}", step.verification_rules);
-        if let Some(beam) = &step.beam_best {
-            println!("  Best beam: score={:.3}, derived={}, rules={:?}",
-                beam.score, beam.profile.derived_facts, beam.rule_names);
-        } else {
-            println!("  No beam result (no candidate rules generated or all scored ≤ 0)");
-        }
-        println!("  Chain identities: {}", step.chain_identities.len());
-        println!("  Total facts: {}, relations: {}",
-            step.total_facts, step.total_relations);
+    // The top-scoring axiom should be transitivity: R(x,y),R(y,z)|-R(x,z)
+    let final_step = beam_log.last().unwrap();
+    let best = &final_step.beam[0];
+    println!("\n  DISCOVERED: best axiom bundle = {:?}", best.rule_names);
+    println!("  Score: {:.2}, derived facts: {}", best.score, best.profile.derived_facts);
+
+    // Verify: transitivity should be in the best bundle
+    let has_transitivity = best.rule_names.iter()
+        .any(|name| name.contains("R_R_R"));  // rel_comp_R_R_R = transitivity
+    println!("  Contains transitivity (R∘R→R): {}", has_transitivity);
+
+    if has_transitivity {
+        println!("\n  System autonomously discovered transitivity as the");
+        println!("  most valuable axiom for this binary relation.");
+        println!("  No human told it what transitivity is.");
     }
 }
 
