@@ -1,0 +1,48 @@
+3028 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3148 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3145 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3159 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+============================================================
+  ORDER THEORY AUTONOMOUS DISCOVERY
+============================================================
+  Posets on 2 elements: 3
+  Posets on 3 elements: 19
+  Posets on 4 elements: 219
+  Total posets analyzed: 241
+  Property frequencies:
+    has_maximal     241/241
+    has_minimal     241/241
+    is_antichain    3/241
+    is_total        0/241
+    multi_max       154/241
+    multi_min       154/241
+    unique_max      87/241
+    unique_min      87/241
+  Discovered implications (A → B, no counterexample):
+    ★ is_antichain    → multi_max       (support=3, surprise=0.448)
+    ★ is_antichain    → multi_min       (support=3, surprise=0.448)
+      has_maximal     → has_minimal     (support=241, surprise=0.000)
+      has_minimal     → has_maximal     (support=241, surprise=0.000)
+      is_antichain    → has_maximal     (support=3, surprise=0.000)
+      is_antichain    → has_minimal     (support=3, surprise=0.000)
+      multi_max       → has_maximal     (support=154, surprise=0.000)
+      multi_max       → has_minimal     (support=154, surprise=0.000)
+      multi_min       → has_maximal     (support=154, surprise=0.000)
+      multi_min       → has_minimal     (support=154, surprise=0.000)
+      unique_max      → has_maximal     (support=87, surprise=0.000)
+      unique_max      → has_minimal     (support=87, surprise=0.000)
+      unique_min      → has_maximal     (support=87, surprise=0.000)
+      unique_min      → has_minimal     (support=87, surprise=0.000)
+  Discovered equivalences (A ↔ B):
+    has_maximal ↔ has_minimal
+  Key finding: has_maximal and has_minimal hold for ALL finite posets.
+  This is the finite case of Zorn — discovered, not assumed.
+test test_order_theory_discovery ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.29s

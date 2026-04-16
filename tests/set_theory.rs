@@ -1670,6 +1670,296 @@ fn test_peano_chain_maximality() {
     println!("  Same rules work on ANY finite poset given as input.");
 }
 
+// ── Autonomous order-theory discovery ────────────────────────
+
+/// Generate all strict partial orders on n labeled elements.
+/// Returns vec of (element_names, lt_pairs).
+fn enumerate_posets(n: usize) -> Vec<(Vec<String>, Vec<(String, String)>)> {
+    let elements: Vec<String> = (0..n).map(|i| format!("e{}", i)).collect();
+    // All possible directed pairs (i, j) with i ≠ j
+    let mut possible_pairs: Vec<(usize, usize)> = Vec::new();
+    for i in 0..n {
+        for j in 0..n {
+            if i != j { possible_pairs.push((i, j)); }
+        }
+    }
+
+    let mut valid_posets = Vec::new();
+    let num_subsets = 1u64 << possible_pairs.len();
+
+    for mask in 0..num_subsets {
+        let mut lt: Vec<Vec<bool>> = vec![vec![false; n]; n];
+        for (bit, &(i, j)) in possible_pairs.iter().enumerate() {
+            if mask & (1u64 << bit) != 0 {
+                lt[i][j] = true;
+            }
+        }
+        // Check: no self-loops (irreflexive)
+        let mut valid = true;
+        for i in 0..n {
+            if lt[i][i] { valid = false; break; }
+        }
+        if !valid { continue; }
+
+        // Check: antisymmetric (no i<j and j<i)
+        for i in 0..n {
+            for j in (i+1)..n {
+                if lt[i][j] && lt[j][i] { valid = false; break; }
+            }
+            if !valid { break; }
+        }
+        if !valid { continue; }
+
+        // Check: transitive
+        for i in 0..n {
+            for j in 0..n {
+                for k in 0..n {
+                    if lt[i][j] && lt[j][k] && !lt[i][k] {
+                        valid = false; break;
+                    }
+                }
+                if !valid { break; }
+            }
+            if !valid { break; }
+        }
+        if !valid { continue; }
+
+        // Collect pairs
+        let mut pairs = Vec::new();
+        for i in 0..n {
+            for j in 0..n {
+                if lt[i][j] {
+                    pairs.push((elements[i].clone(), elements[j].clone()));
+                }
+            }
+        }
+        valid_posets.push((elements.clone(), pairs));
+    }
+
+    valid_posets
+}
+
+/// Compute properties of a poset using the engine.
+fn compute_poset_properties(
+    elements: &[String],
+    lt_pairs: &[(String, String)],
+) -> HashMap<String, bool> {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("lt", 2);
+    engine.define_relation("maximal", 1);
+    engine.define_relation("minimal", 1);
+    engine.define_relation("comparable", 2);
+    engine.define_relation("has_max", 0);
+    engine.define_relation("has_min", 0);
+    engine.define_relation("is_total", 0);
+    engine.define_relation("has_unique_max", 0);
+    engine.define_relation("contradiction", 0);
+
+    for v in &["x", "y", "z"] {
+        engine.define_variable(*v);
+    }
+
+    for e in elements {
+        engine.define_constant(e);
+        engine.add_fact(Relation::new("element", vec![c(e)]));
+    }
+
+    for (a, b) in lt_pairs {
+        engine.add_fact(Relation::binary("lt", c(a), c(b)));
+    }
+
+    // Transitivity (stratum 0)
+    engine.add_rule(Rule::new("lt_trans",
+        vec![
+            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
+        ],
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
+    ));
+
+    // Comparable: x and y are comparable if x<y or y<x
+    engine.add_rule(Rule::new("comp_lt",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")])],
+        vec![RelationPattern::new("comparable", vec![Term::var("x"), Term::var("y")])],
+    ));
+    engine.add_rule(Rule::new("comp_gt",
+        vec![RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")])],
+        vec![RelationPattern::new("comparable", vec![Term::var("x"), Term::var("y")])],
+    ));
+
+    // Maximal: element(x), NOT lt(x, ?y) — stratum 1
+    engine.add_rule(Rule::new("maximal_def",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("maximal", vec![Term::var("x")])],
+    ).with_negated(vec![
+        RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+    ]));
+
+    // Minimal: element(x), NOT lt(?y, x)
+    engine.add_rule(Rule::new("minimal_def",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("minimal", vec![Term::var("x")])],
+    ).with_negated(vec![
+        RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")]),
+    ]));
+
+    // has_max ← maximal(?x)
+    engine.add_rule(Rule::new("has_max_def",
+        vec![RelationPattern::new("maximal", vec![Term::var("x")])],
+        vec![RelationPattern::new("has_max", vec![])],
+    ));
+    engine.add_rule(Rule::new("has_min_def",
+        vec![RelationPattern::new("minimal", vec![Term::var("x")])],
+        vec![RelationPattern::new("has_min", vec![])],
+    ));
+
+    // is_total: all pairs comparable
+    // Detect NOT total: element(x), element(y), x≠y, NOT comparable(x,y) → not_total
+    // Then: is_total ← NOT not_total
+    engine.define_relation("not_total", 0);
+    engine.add_rule(Rule::new("not_total_def",
+        vec![
+            RelationPattern::new("element", vec![Term::var("x")]),
+            RelationPattern::new("element", vec![Term::var("y")]),
+        ],
+        vec![RelationPattern::new("not_total", vec![])],
+    ).with_negated(vec![
+        RelationPattern::new("comparable", vec![Term::var("x"), Term::var("y")]),
+    ]));
+    engine.add_rule(Rule::new("is_total_def",
+        vec![],
+        vec![RelationPattern::new("is_total", vec![])],
+    ).with_negated(vec![
+        RelationPattern::new("not_total", vec![]),
+    ]).with_stratum(2));
+
+    // Unique max: exactly one maximal element
+    // has_two_max ← maximal(x), maximal(y), x ≠ y (via NOT lt and comparability)
+    // Simpler: has_two_max ← maximal(x), maximal(y), and x,y are different elements
+    // We detect: two distinct maximals
+    engine.define_relation("multi_max", 0);
+    engine.define_relation("multi_min", 0);
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    // Count maximal/minimal
+    let max_count = result.facts.iter().filter(|f| f.name() == "maximal").count();
+    let min_count = result.facts.iter().filter(|f| f.name() == "minimal").count();
+
+    let mut props = HashMap::new();
+    props.insert("has_maximal".into(), has("has_max()"));
+    props.insert("has_minimal".into(), has("has_min()"));
+    props.insert("unique_max".into(), max_count == 1);
+    props.insert("unique_min".into(), min_count == 1);
+    props.insert("is_total".into(), has("is_total()"));
+    props.insert("is_antichain".into(), lt_pairs.is_empty());
+    props.insert("multi_max".into(), max_count > 1);
+    props.insert("multi_min".into(), min_count > 1);
+    props
+}
+
+/// Autonomous discovery: enumerate all small posets, compute properties,
+/// find implications between properties.
+#[test]
+fn test_order_theory_discovery() {
+    println!("\n============================================================");
+    println!("  ORDER THEORY AUTONOMOUS DISCOVERY");
+    println!("============================================================");
+
+    // Enumerate posets of size 2, 3, 4
+    let mut all_results: Vec<(usize, Vec<(String, String)>, HashMap<String, bool>)> = Vec::new();
+
+    for n in 2..=4 {
+        let posets = enumerate_posets(n);
+        println!("\n  Posets on {} elements: {}", n, posets.len());
+
+        for (elements, pairs) in &posets {
+            let props = compute_poset_properties(elements, pairs);
+            all_results.push((n, pairs.clone(), props));
+        }
+    }
+
+    println!("\n  Total posets analyzed: {}", all_results.len());
+
+    // Collect all property names
+    let prop_names: Vec<String> = {
+        let mut names: Vec<String> = all_results[0].2.keys().cloned().collect();
+        names.sort();
+        names
+    };
+
+    // Count how often each property holds
+    println!("\n  Property frequencies:");
+    for name in &prop_names {
+        let count = all_results.iter().filter(|(_, _, p)| *p.get(name).unwrap_or(&false)).count();
+        println!("    {:<15} {}/{}", name, count, all_results.len());
+    }
+
+    // Find implications: A → B (whenever A holds, B also holds)
+    println!("\n  Discovered implications (A → B, no counterexample):");
+    let mut implications = Vec::new();
+
+    for a in &prop_names {
+        for b in &prop_names {
+            if a == b { continue; }
+            let a_count = all_results.iter().filter(|(_, _, p)| *p.get(a).unwrap_or(&false)).count();
+            if a_count == 0 { continue; }
+
+            let counterexamples = all_results.iter().filter(|(_, _, p)| {
+                *p.get(a).unwrap_or(&false) && !*p.get(b).unwrap_or(&false)
+            }).count();
+
+            if counterexamples == 0 {
+                let b_count = all_results.iter().filter(|(_, _, p)| *p.get(b).unwrap_or(&false)).count();
+                // Surprise: how much does knowing A narrow down B?
+                let surprise = if b_count == all_results.len() { 0.0 }
+                    else { (all_results.len() as f64 / b_count as f64).ln() };
+                implications.push((a.clone(), b.clone(), a_count, surprise));
+            }
+        }
+    }
+
+    implications.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (a, b, support, surprise) in &implications {
+        let marker = if *surprise > 0.1 { "★" } else { " " };
+        println!("    {} {:<15} → {:<15} (support={}, surprise={:.3})",
+            marker, a, b, support, surprise);
+    }
+
+    // Find equivalences: A ↔ B
+    println!("\n  Discovered equivalences (A ↔ B):");
+    let mut equivalences: Vec<(String, String)> = Vec::new();
+    for i in 0..implications.len() {
+        for j in (i+1)..implications.len() {
+            if implications[i].0 == implications[j].1 && implications[i].1 == implications[j].0 {
+                if !equivalences.iter().any(|(a,b)| (a == &implications[i].0 && b == &implications[i].1) ||
+                    (a == &implications[i].1 && b == &implications[i].0)) {
+                    equivalences.push((implications[i].0.clone(), implications[i].1.clone()));
+                }
+            }
+        }
+    }
+    for (a, b) in &equivalences {
+        println!("    {} ↔ {}", a, b);
+    }
+
+    // Basic assertions: every non-empty poset has a maximal and minimal element
+    for (n, _, props) in &all_results {
+        assert!(props["has_maximal"], "poset of size {} should have maximal", n);
+        assert!(props["has_minimal"], "poset of size {} should have minimal", n);
+    }
+
+    println!("\n  Key finding: has_maximal and has_minimal hold for ALL finite posets.");
+    println!("  This is the finite case of Zorn — discovered, not assumed.");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
