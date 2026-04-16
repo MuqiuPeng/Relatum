@@ -1,0 +1,35 @@
+3104 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3224 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3221 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3235 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+============================================================
+  MIXED PROTO DISCOVERY
+  Three relations, three structures, one search.
+============================================================
+  Total candidates: 112
+    chain-related: 58, sym-related: 58, cyc-related: 58, cross-relation: 60
+  Beam search results:
+    #1: score=33.20, derived=35, incon=0, rules=["rel_comp_sym_sym_cyc", "rel_comp_cyc_eq_sym"]
+    #2: score=33.20, derived=35, incon=0, rules=["rel_comp_sym_sym_cyc", "rel_comp_eq_cyc_sym"]
+    #3: score=22.50, derived=24, incon=0, rules=["rel_inv_eq_cyc", "rel_comp_cyc_cyc_sym"]
+    #4: score=22.50, derived=24, incon=0, rules=["rel_inv_eq_sym", "rel_comp_sym_sym_chain"]
+    #5: score=22.50, derived=24, incon=0, rules=["rel_inv_eq_sym", "rel_comp_sym_sym_cyc"]
+    #6: score=22.50, derived=24, incon=0, rules=["rel_diag_left_eq_cyc", "rel_comp_cyc_cyc_sym"]
+    #7: score=22.50, derived=24, incon=0, rules=["rel_diag_right_eq_cyc", "rel_comp_cyc_cyc_sym"]
+    #8: score=22.50, derived=24, incon=0, rules=["rel_diag_left_eq_sym", "rel_comp_sym_sym_chain"]
+    #9: score=22.50, derived=24, incon=0, rules=["rel_diag_left_eq_sym", "rel_comp_sym_sym_cyc"]
+    #10: score=22.50, derived=24, incon=0, rules=["rel_diag_right_eq_sym", "rel_comp_sym_sym_chain"]
+  BEST AXIOM BUNDLE: ["rel_comp_sym_sym_cyc", "rel_comp_cyc_eq_sym"]
+  Score: 33.20, derived: 35, inconsistencies: 0
+  Analysis:
+    rel_comp_sym_sym_cyc — self-composition for sym
+    rel_comp_cyc_eq_sym — self-composition for sym
+test test_proto_mixed_discovery ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 3.44s

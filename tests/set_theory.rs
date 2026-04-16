@@ -1969,6 +1969,129 @@ fn test_proto_axiom_discovery() {
     }
 }
 
+/// Mixed relations: feed chain + symmetric + cyclic data together.
+/// One beam search should discover different axioms for different relations.
+#[test]
+fn test_proto_mixed_discovery() {
+    use relatum::relational::search::{self, BeamConfig, CandidateConfig, AdaptivePolicy};
+    use relatum::relational::score::ScoreWeights;
+
+    println!("\n============================================================");
+    println!("  MIXED PROTO DISCOVERY");
+    println!("  Three relations, three structures, one search.");
+    println!("============================================================");
+
+    let mut engine = ClosureEngine::new();
+
+    // Three NAMED relations — system doesn't know their semantics
+    engine.define_relation("chain", 2);   // will be a strict order
+    engine.define_relation("sym", 2);     // will be symmetric
+    engine.define_relation("cyc", 2);     // will be cyclic
+    engine.define_equivalence("eq");
+    engine.define_relation("distinct", 2);
+
+    let elems = ["a", "b", "c", "d", "e", "f"];
+    for e in &elems {
+        engine.define_constant(*e);
+    }
+    for v in &["x", "y", "z"] { engine.define_variable(*v); }
+
+    // Chain data: a→b→c (strict, non-symmetric, non-cyclic)
+    engine.add_fact(Relation::binary("chain", c("a"), c("b")));
+    engine.add_fact(Relation::binary("chain", c("b"), c("c")));
+
+    // Symmetric data: d↔e, e↔f (always paired both ways)
+    engine.add_fact(Relation::binary("sym", c("d"), c("e")));
+    engine.add_fact(Relation::binary("sym", c("e"), c("d")));
+    engine.add_fact(Relation::binary("sym", c("e"), c("f")));
+    engine.add_fact(Relation::binary("sym", c("f"), c("e")));
+
+    // Cyclic data: a→b→c→a (cycle)
+    engine.add_fact(Relation::binary("cyc", c("a"), c("b")));
+    engine.add_fact(Relation::binary("cyc", c("b"), c("c")));
+    engine.add_fact(Relation::binary("cyc", c("c"), c("a")));
+
+    // Distinct pairs
+    for i in 0..elems.len() {
+        for j in (i+1)..elems.len() {
+            engine.add_fact(Relation::binary("distinct", c(elems[i]), c(elems[j])));
+            engine.add_fact(Relation::binary("distinct", c(elems[j]), c(elems[i])));
+        }
+    }
+
+    let mut exclude = HashSet::new();
+    exclude.insert("distinct".to_string());
+
+    let beam_config = BeamConfig {
+        candidate_config: CandidateConfig {
+            guard_relation: None,
+            exclude_relations: exclude,
+            min_pattern_support: 2,
+            ..CandidateConfig::default()
+        },
+        weights: ScoreWeights {
+            generativity: 1.0,
+            compression: 0.5,
+            consistency_penalty: 10.0,
+            exclusions: vec![("eq".to_string(), "distinct".to_string())],
+        },
+        beam_width: 15,
+        max_rules_per_beam: 3,
+        max_steps: 2,
+        adaptive: AdaptivePolicy::Fixed,
+    };
+
+    let candidates = search::generate_candidates(&engine, &beam_config.candidate_config);
+    println!("\n  Total candidates: {}", candidates.len());
+
+    // Show candidates grouped by relation
+    let chain_cands: Vec<_> = candidates.iter().filter(|r| r.name().contains("chain")).collect();
+    let sym_cands: Vec<_> = candidates.iter().filter(|r| r.name().contains("sym")).collect();
+    let cyc_cands: Vec<_> = candidates.iter().filter(|r| r.name().contains("cyc")).collect();
+    let cross_cands: Vec<_> = candidates.iter()
+        .filter(|r| !r.name().contains("chain") || r.name().contains("sym") || r.name().contains("cyc"))
+        .filter(|r| {
+            let n = r.name();
+            (n.contains("chain") && (n.contains("sym") || n.contains("cyc"))) ||
+            (n.contains("sym") && n.contains("cyc"))
+        })
+        .collect();
+
+    println!("    chain-related: {}, sym-related: {}, cyc-related: {}, cross-relation: {}",
+        chain_cands.len(), sym_cands.len(), cyc_cands.len(), cross_cands.len());
+
+    let beam_log = search::beam_search(&engine, &beam_config);
+
+    println!("\n  Beam search results:");
+    let final_step = beam_log.last().unwrap();
+    for (i, entry) in final_step.beam.iter().enumerate().take(10) {
+        println!("    #{}: score={:.2}, derived={}, incon={}, rules={:?}",
+            i+1, entry.score, entry.profile.derived_facts,
+            entry.profile.inconsistencies, entry.rule_names);
+    }
+
+    let best = &final_step.beam[0];
+    println!("\n  BEST AXIOM BUNDLE: {:?}", best.rule_names);
+    println!("  Score: {:.2}, derived: {}, inconsistencies: {}",
+        best.score, best.profile.derived_facts, best.profile.inconsistencies);
+
+    // Analyze: which relations benefit from which axioms?
+    println!("\n  Analysis:");
+    for rule_name in &best.rule_names {
+        println!("    {} — {}", rule_name,
+            if rule_name.contains("chain") && rule_name.contains("chain") && rule_name.ends_with("chain") {
+                "transitivity for chain"
+            } else if rule_name.contains("sym") && rule_name.contains("sym") {
+                "self-composition for sym"
+            } else if rule_name.contains("inv") && rule_name.contains("sym") {
+                "symmetry for sym (already present)"
+            } else {
+                "cross-relation or other"
+            }
+        );
+    }
+}
+
 /// Enumerate posets and find implications (manual property version for comparison).
 #[test]
 fn test_order_theory_discovery() {

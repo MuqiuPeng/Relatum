@@ -248,9 +248,9 @@ pub fn generate_candidates(engine: &ClosureEngine, config: &CandidateConfig) -> 
         }
 
         // Single-premise inversions: R(x,y) |- S(y,x)
+        // Includes R(x,y) |- R(y,x) which is SYMMETRY (not identity — args swapped)
         for r1 in &binary_rels {
             for r2 in &binary_rels {
-                if r1 == r2 { continue; } // skip identity
                 let name = format!("rel_inv_{}_{}", r1, r2);
                 if seen.insert(name.clone()) {
                     let rule = Rule::new(
