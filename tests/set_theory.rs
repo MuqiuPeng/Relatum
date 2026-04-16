@@ -2716,6 +2716,197 @@ fn test_property_implication_loop() {
     println!("  by the structural relationship between left_id and right_id.");
 }
 
+// ── Full property table across phase1 axiom classes ─────────
+
+/// Generate all 3-element binary operations, classify by axioms, return
+/// one representative operation table per class.
+fn representative_tables() -> Vec<(String, [[u8; 3]; 3])> {
+    let mut by_class: std::collections::BTreeMap<String, [[u8; 3]; 3]> = std::collections::BTreeMap::new();
+
+    // Enumerate all 3^9 = 19683 operations on {0, 1, 2}
+    for code in 0u32..19683 {
+        let mut table = [[0u8; 3]; 3];
+        let mut c = code;
+        for i in 0..3 {
+            for j in 0..3 {
+                table[i][j] = (c % 3) as u8;
+                c /= 3;
+            }
+        }
+
+        // Check axioms
+        let op = |a: usize, b: usize| -> usize { table[a][b] as usize };
+
+        let assoc = (0..3).all(|a| (0..3).all(|b| (0..3).all(|c| op(op(a,b),c) == op(a,op(b,c)))));
+        let comm = (0..3).all(|a| (0..3).all(|b| op(a,b) == op(b,a)));
+
+        let id = (0..3).any(|e| (0..3).all(|x| op(e,x) == x && op(x,e) == x));
+        let inv = id && {
+            let e = (0..3).find(|&e| (0..3).all(|x| op(e,x) == x && op(x,e) == x)).unwrap();
+            (0..3).all(|a| (0..3).any(|b| op(a,b) == e && op(b,a) == e))
+        };
+
+        let mut tags = Vec::new();
+        if assoc { tags.push("assoc"); }
+        if comm { tags.push("comm"); }
+        if id { tags.push("id"); }
+        if inv { tags.push("inv"); }
+
+        let class = if tags.is_empty() { "none".to_string() } else { tags.join("+") };
+
+        by_class.entry(class).or_insert(table);
+    }
+
+    by_class.into_iter()
+        .filter(|(k, _)| k != "none") // skip the huge "none" class
+        .map(|(k, v)| (k, v))
+        .collect()
+}
+
+/// Build an engine from a 3-element operation table, with universal
+/// property detection (double negation) for left_id, right_id, idempotent.
+fn property_engine_from_table(table: &[[u8; 3]; 3]) -> ClosureEngine {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("op", 3);
+    engine.define_relation("not_left_id", 1);
+    engine.define_relation("not_right_id", 1);
+
+    for v in &["e", "x", "y", "a"] { engine.define_variable(*v); }
+
+    let elems = ["e0", "e1", "e2"];
+    for e in &elems {
+        engine.define_constant(*e);
+        engine.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+
+    for i in 0..3 {
+        for j in 0..3 {
+            engine.add_fact(Relation::new("op", vec![
+                c(elems[i]), c(elems[j]), c(elems[table[i][j] as usize]),
+            ]));
+        }
+    }
+
+    // Universal detection via double negation
+    engine.add_rule(Rule::new("not_left_id_def",
+        vec![
+            RelationPattern::new("element", vec![Term::var("e")]),
+            RelationPattern::new("element", vec![Term::var("x")]),
+        ],
+        vec![RelationPattern::new("not_left_id", vec![Term::var("e")])],
+    ).with_negated(vec![
+        RelationPattern::new("op", vec![Term::var("e"), Term::var("x"), Term::var("x")]),
+    ]));
+
+    engine.add_rule(Rule::new("not_right_id_def",
+        vec![
+            RelationPattern::new("element", vec![Term::var("e")]),
+            RelationPattern::new("element", vec![Term::var("x")]),
+        ],
+        vec![RelationPattern::new("not_right_id", vec![Term::var("e")])],
+    ).with_negated(vec![
+        RelationPattern::new("op", vec![Term::var("x"), Term::var("e"), Term::var("x")]),
+    ]));
+
+    // left_id
+    engine.define_property("left_id", &["e"],
+        vec![RelationPattern::new("element", vec![Term::var("e")])]);
+    engine.remove_rules_by_name("left_id_detect");
+    engine.add_rule(Rule::new("left_id_detect",
+        vec![RelationPattern::new("element", vec![Term::var("e")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("e"), c("left_id")])],
+    ).with_negated(vec![
+        RelationPattern::new("not_left_id", vec![Term::var("e")]),
+    ]).with_stratum(2));
+
+    // right_id
+    engine.define_property("right_id", &["e"],
+        vec![RelationPattern::new("element", vec![Term::var("e")])]);
+    engine.remove_rules_by_name("right_id_detect");
+    engine.add_rule(Rule::new("right_id_detect",
+        vec![RelationPattern::new("element", vec![Term::var("e")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("e"), c("right_id")])],
+    ).with_negated(vec![
+        RelationPattern::new("not_right_id", vec![Term::var("e")]),
+    ]).with_stratum(2));
+
+    // idempotent (existential is correct for self-op)
+    engine.define_property("idempotent", &["a"],
+        vec![RelationPattern::new("op", vec![
+            Term::var("a"), Term::var("a"), Term::var("a"),
+        ])]);
+
+    engine.enable_property_implication();
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(200);
+
+    engine
+}
+
+/// Full property table across all phase1 axiom classes.
+#[test]
+fn test_full_property_table() {
+    let classes = representative_tables();
+
+    println!("\n╔══════════════════════╦═══════════╦═══════════╦═══════════╗");
+    println!("║ axiom class          ║ left↔right║ left↔idem ║ right↔idem║");
+    println!("╠══════════════════════╬═══════════╬═══════════╬═══════════╣");
+
+    let mut results = Vec::new();
+
+    for (class_name, table) in &classes {
+        let mut engine = property_engine_from_table(table);
+        let result = engine.derive_closure();
+
+        let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+        let lr = has("equivalent_observed(left_id, right_id)")
+            || has("equivalent_observed(right_id, left_id)");
+        let li = has("equivalent_observed(left_id, idempotent)")
+            || has("equivalent_observed(idempotent, left_id)");
+        let ri = has("equivalent_observed(right_id, idempotent)")
+            || has("equivalent_observed(idempotent, right_id)");
+
+        let lr_impl = has("implies_observed(left_id, right_id)");
+        let rl_impl = has("implies_observed(right_id, left_id)");
+
+        let left_ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1" && f.terms()[1] == Term::constant("left_id"))
+            .map(|f| f.terms()[0].to_string()).collect();
+        let right_ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1" && f.terms()[1] == Term::constant("right_id"))
+            .map(|f| f.terms()[0].to_string()).collect();
+
+        let lr_sym = if lr { "↔" } else if lr_impl && rl_impl { "↔?" }
+            else if lr_impl { "→" } else if rl_impl { "←" } else { "✗" };
+
+        println!("║ {:<20} ║ {:<9} ║ {:<9} ║ {:<9} ║",
+            class_name, lr_sym,
+            if li { "↔" } else { "✗" },
+            if ri { "↔" } else { "✗" });
+
+        results.push((class_name.clone(), lr, li, ri, left_ext, right_ext));
+    }
+
+    println!("╚══════════════════════╩═══════════╩═══════════╩═══════════╝");
+
+    // Details
+    println!("\n  Extensions:");
+    for (class, _lr, _li, _ri, left, right) in &results {
+        println!("    {}: left_id={:?}, right_id={:?}", class, left, right);
+    }
+
+    // Key assertion: assoc classes have left↔right, non-assoc may not
+    for (class, lr, _, _, _, _) in &results {
+        if class.contains("assoc") && class.contains("id") {
+            assert!(lr, "{}: assoc+id should have left↔right", class);
+        }
+    }
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
