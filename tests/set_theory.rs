@@ -1864,8 +1864,122 @@ fn compute_poset_properties(
     props
 }
 
-/// Autonomous discovery: enumerate all small posets, compute properties,
-/// find implications between properties.
+/// Run the EXISTING discovery pipeline on a poset — no manually defined
+/// properties, no manually defined rules for maximal/minimal.
+/// The system auto-generates candidates, auto-scores, auto-promotes concepts.
+#[test]
+fn test_poset_autonomous_discovery() {
+    use relatum::relational::search::{self, DiscoveryConfig, BeamConfig, CandidateConfig, PromotionConfig, AdaptivePolicy};
+    use relatum::relational::score::ScoreWeights;
+
+    println!("\n============================================================");
+    println!("  AUTONOMOUS POSET DISCOVERY");
+    println!("  (same pipeline as algebraic discovery, different data)");
+    println!("============================================================");
+
+    // Build a poset engine with raw data — NO manually defined properties
+    let mut engine = ClosureEngine::new();
+    engine.define_relation("lt", 2);
+    engine.define_equivalence("eq");
+
+    // Larger poset: 6 elements, mix of chains and diamonds
+    //   a < b < d < f
+    //   a < c < e < f
+    //   b < e  (cross-link)
+    let elems_list = ["a", "b", "c", "d", "e", "f"];
+    for e in &elems_list {
+        engine.define_constant(*e);
+    }
+    engine.add_fact(Relation::binary("lt", c("a"), c("b")));
+    engine.add_fact(Relation::binary("lt", c("a"), c("c")));
+    engine.add_fact(Relation::binary("lt", c("b"), c("d")));
+    engine.add_fact(Relation::binary("lt", c("b"), c("e")));
+    engine.add_fact(Relation::binary("lt", c("c"), c("e")));
+    engine.add_fact(Relation::binary("lt", c("d"), c("f")));
+    engine.add_fact(Relation::binary("lt", c("e"), c("f")));
+
+    // Transitivity — the only rule we provide
+    for v in &["x", "y", "z"] { engine.define_variable(*v); }
+    engine.add_rule(Rule::new("lt_trans",
+        vec![
+            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
+        ],
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
+    ));
+
+    // Pairwise distinct
+    let elems = elems_list;
+    engine.define_relation("distinct", 2);
+    for i in 0..elems.len() {
+        for j in (i+1)..elems.len() {
+            engine.add_fact(Relation::binary("distinct", c(elems[i]), c(elems[j])));
+            engine.add_fact(Relation::binary("distinct", c(elems[j]), c(elems[i])));
+        }
+    }
+
+    // Discovery config — same structure as algebraic discovery
+    let mut exclude = HashSet::new();
+    exclude.insert("distinct".to_string());
+
+    let config = DiscoveryConfig {
+        beam: BeamConfig {
+            candidate_config: CandidateConfig {
+                guard_relation: None,
+                exclude_relations: exclude.clone(),
+                min_pattern_support: 2,
+                ..CandidateConfig::default()
+            },
+            weights: ScoreWeights {
+                generativity: 1.0,
+                compression: 0.5,
+                consistency_penalty: 10.0,
+                exclusions: vec![("eq".to_string(), "distinct".to_string())],
+            },
+            beam_width: 5,
+            max_rules_per_beam: 3,
+            max_steps: 2,
+            adaptive: AdaptivePolicy::Fixed,
+        },
+        promotion: PromotionConfig {
+            min_support: 2,
+            max_promotions_per_round: 5,
+            exclude_relations: exclude,
+        },
+        max_rounds: 2,
+    };
+
+    let log = search::run_discovery_named(&engine, &config, "diamond_poset");
+
+    // Report what the system discovered
+    println!("\n  Initial relations: {:?}", log.initial_relations);
+    println!("  Initial rules: {}", log.initial_rules);
+
+    for step in &log.steps {
+        println!("\n  --- Round {} ---", step.round);
+        println!("  Promoted concepts: {}", step.promoted.len());
+        for concept in &step.promoted {
+            println!("    {} (arity {}, support {}, instances {})",
+                concept.name, concept.arity, concept.support, concept.instances);
+            println!("      pattern: {}", concept.source_pattern);
+            for inst in &concept.instance_set {
+                println!("      instance: {}", inst);
+            }
+        }
+        println!("  Verification rules: {:?}", step.verification_rules);
+        if let Some(beam) = &step.beam_best {
+            println!("  Best beam: score={:.3}, derived={}, rules={:?}",
+                beam.score, beam.profile.derived_facts, beam.rule_names);
+        } else {
+            println!("  No beam result");
+        }
+        println!("  Chain identities: {}", step.chain_identities.len());
+        println!("  Total facts: {}, relations: {}",
+            step.total_facts, step.total_relations);
+    }
+}
+
+/// Enumerate posets and find implications (manual property version for comparison).
 #[test]
 fn test_order_theory_discovery() {
     println!("\n============================================================");
