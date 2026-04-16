@@ -2190,6 +2190,118 @@ fn test_order_theory_discovery() {
     println!("  This is the finite case of Zorn — discovered, not assumed.");
 }
 
+// ── Properties as first-class objects ────────────────────────
+
+/// Properties as first-class terms: define, detect, apply, quantify.
+#[test]
+fn test_property_first_class() {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("subset", 2);
+    engine.define_relation("member", 2);
+    engine.define_relation("set", 1);
+
+    for v in &["x", "y"] { engine.define_variable(*v); }
+
+    engine.define_constant("empty");
+    engine.define_constant("a");
+    engine.define_constant("b");
+
+    // Facts
+    engine.add_fact(Relation::new("set", vec![c("empty")]));
+    engine.add_fact(Relation::new("set", vec![c("a")]));
+    engine.add_fact(Relation::binary("subset", c("empty"), c("a")));
+    engine.add_fact(Relation::binary("subset", c("empty"), c("b")));
+    engine.add_fact(Relation::binary("member", c("empty"), c("a")));
+
+    // ── Define properties ──
+
+    // Unary: "is a superset of empty"
+    engine.define_property(
+        "superset_of_empty",
+        &["x"],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])],
+    );
+
+    // Unary: "contains empty as member"
+    engine.define_property(
+        "contains_empty",
+        &["x"],
+        vec![RelationPattern::new("member", vec![c("empty"), Term::var("x")])],
+    );
+
+    // Binary: "mutual subset" (two premises = conjunction)
+    engine.define_property(
+        "mutual_subset",
+        &["x", "y"],
+        vec![
+            RelationPattern::new("subset", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("subset", vec![Term::var("y"), Term::var("x")]),
+        ],
+    );
+
+    engine.set_max_rounds(5);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  PROPERTIES AS FIRST-CLASS OBJECTS");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    let mut sorted: Vec<String> = result.facts.iter().map(|f| f.to_string()).collect();
+    sorted.sort();
+    for f in &sorted { println!("  {}", f); }
+
+    // ── Detection: formula → has_property ──
+
+    assert!(has("has_property_1(a, superset_of_empty)"),
+        "subset(empty, a) → has_property_1(a, superset_of_empty)");
+    assert!(has("has_property_1(b, superset_of_empty)"),
+        "subset(empty, b) → has_property_1(b, superset_of_empty)");
+    assert!(has("has_property_1(a, contains_empty)"),
+        "member(empty, a) → has_property_1(a, contains_empty)");
+    assert!(!has("has_property_1(b, contains_empty)"),
+        "member(empty, b) not given → no contains_empty for b");
+
+    // ── is_property marks them ──
+
+    assert!(has("is_property(superset_of_empty)"));
+    assert!(has("is_property(contains_empty)"));
+    assert!(has("is_property(mutual_subset)"));
+
+    // ── Application: has_property → formula (backward) ──
+    // If we add has_property_1(b, contains_empty), it should derive member(empty, b)
+    let hyp_result = engine.hypothetical(vec![
+        Relation::new("has_property_1", vec![c("b"), c("contains_empty")]),
+    ]);
+    let hyp_has = |s: &str| hyp_result.facts.iter().any(|f| f.to_string() == s);
+    assert!(hyp_has("member(empty, b)"),
+        "has_property_1(b, contains_empty) → member(empty, b) via backward rule");
+
+    println!("\n  Detection (formula → has_property):");
+    println!("    has_property_1(a, superset_of_empty): {}", has("has_property_1(a, superset_of_empty)"));
+    println!("    has_property_1(b, superset_of_empty): {}", has("has_property_1(b, superset_of_empty)"));
+    println!("    has_property_1(a, contains_empty): {}", has("has_property_1(a, contains_empty)"));
+
+    println!("\n  Application (has_property → formula):");
+    println!("    hypothetical has_property_1(b, contains_empty)");
+    println!("    → member(empty, b): {}", hyp_has("member(empty, b)"));
+
+    println!("\n  Quantification over properties:");
+    println!("    has_property_1(a, ?p) matches both superset_of_empty and contains_empty");
+
+    // Count how many properties a has
+    let a_props: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "has_property_1"
+            && f.terms()[0] == Term::constant("a"))
+        .map(|f| f.terms()[1].to_string())
+        .collect();
+    println!("    a has {} properties: {:?}", a_props.len(), a_props);
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

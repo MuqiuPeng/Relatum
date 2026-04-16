@@ -254,6 +254,72 @@ impl ClosureEngine {
         self.axioms.push(axiom);
     }
 
+    // ── property definitions (Henkin second-order) ──────────
+
+    /// Define a named property as a first-class relational object.
+    ///
+    /// A property is a constant term representing a predicate. The engine
+    /// generates bidirectional rules linking the property to its formula:
+    ///
+    /// ```text
+    /// property subset_of_empty(x) := subset(empty, x)
+    ///
+    /// generates:
+    ///   (detect)  subset(empty, x) |- has_property_1(x, subset_of_empty)
+    ///   (apply)   has_property_1(x, subset_of_empty) |- subset(empty, x)
+    ///   (mark)    is_property(subset_of_empty)
+    /// ```
+    ///
+    /// Properties are first-class: they can be bound to variables, quantified
+    /// over (`has_property_1(?x, ?p)` matches any property), and appear in
+    /// rules as regular terms.
+    pub fn define_property(
+        &mut self,
+        name: &str,
+        params: &[&str],
+        formula: Vec<RelationPattern>,
+    ) {
+        // Property as a constant term
+        self.define_constant(name);
+
+        // Mark as property
+        if !self.relation_defs.contains_key("is_property") {
+            self.define_relation("is_property", 1);
+        }
+        self.add_fact(Relation::new("is_property", vec![Term::constant(name)]));
+
+        // Declare has_property_N relation
+        let arity = params.len() + 1; // params + property ref
+        let has_rel = format!("has_property_{}", params.len());
+        if !self.relation_defs.contains_key(&has_rel) {
+            self.define_relation(&has_rel, arity);
+        }
+
+        // Register param variables
+        for p in params {
+            self.define_variable(*p);
+        }
+
+        // Build has_property_N(param1, ..., paramN, prop_name) pattern
+        let mut has_terms: Vec<Term> = params.iter().map(|p| Term::var(*p)).collect();
+        has_terms.push(Term::constant(name));
+        let has_pattern = RelationPattern::new(&has_rel, has_terms);
+
+        // Forward: formula |- has_property_N(args, prop)
+        self.add_rule(Rule::new(
+            format!("{}_detect", name),
+            formula.clone(),
+            vec![has_pattern.clone()],
+        ));
+
+        // Backward: has_property_N(args, prop) |- formula
+        self.add_rule(Rule::new(
+            format!("{}_apply", name),
+            vec![has_pattern],
+            formula,
+        ));
+    }
+
     pub fn set_max_rounds(&mut self, n: usize) {
         self.max_rounds = n;
     }
