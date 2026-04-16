@@ -1,40 +1,34 @@
 \section{Property Implication Analysis}
 \label{sec:property}
 
-% Section 5 of the paper.
-% Phase 6: properties as first-class objects
-% Universal detection via double negation
-% implies_observed / equivalent_observed
-% Full table: 10 axiom classes x 3 property pairs
+\subsection{Mechanism}
 
-\subsection{Properties as First-Class Objects}
+Given a set of named properties and a closed fact set, the system computes the \emph{extension} of each property---the set of ground elements satisfying it---and checks pairwise inclusion:
 
-% define_property API, has_property_1, is_property
-% Detection (forward): formula -> has_property
-% No backward application (cascading prevention)
+\begin{itemize}
+\item $\mathrm{ext}(P) \subseteq \mathrm{ext}(Q)$ with $\mathrm{ext}(P) \neq \varnothing$ $\Rightarrow$ $\mathit{implies\_observed}(P, Q)$
+\item Bidirectional inclusion $\Rightarrow$ $\mathit{equivalent\_observed}(P, Q)$
+\end{itemize}
 
-\subsection{Universal Property Detection}
+These are \emph{observed} (inductive) relations: they hold on the current data but are not deductively proven. They are intentionally separated from deductive \texttt{implies} to prevent modus ponens from cascading incorrect universalizations.
 
-% Existential detection insufficient for algebraic properties
-% Double negation: not_left_id(e) <- element(e), element(x), NOT op(e,x,x)
-%                  left_id(e) <- element(e), NOT not_left_id(e)
+\subsection{Algebraic Properties}
 
-\subsection{Implication Discovery}
+On each of the 10 axiom classes (Table~\ref{tab:axiom-classes}), we define four properties via universal (double-negation) detection:
 
-% derive_property_implications: ext(P) subset ext(Q) -> implies_observed(P,Q)
-% implies_observed vs implies (inductive vs deductive)
-% Modus ponens only on deductive implies
+\begin{itemize}
+\item $\mathit{left\_id}(e)$: $\forall x.\; \mathit{op}(e, x, x)$
+\item $\mathit{right\_id}(e)$: $\forall x.\; \mathit{op}(x, e, x)$
+\item $\mathit{idempotent}(e)$: $\mathit{op}(e, e, e)$
+\end{itemize}
+
+For each class, one representative operation table is selected and the property implication analysis is run.
 
 \subsection{Full Property Table}
 
-% Table 1: 10 axiom classes x {left<->right, left<->idem, right<->idem}
-
 \begin{table}[h]
 \centering
-\caption{Property equivalences across axiom classes on 3-element carriers.
-$\leftrightarrow$ indicates observed equivalence (bidirectional implication);
-$\times$ indicates no equivalence. All properties detected via universal
-(double-negation) mechanism.}
+\caption{Property equivalences across axiom classes on 3-element carriers. $\leftrightarrow$ indicates observed equivalence; $\times$ indicates no equivalence (empty extension or strict implication only). All properties detected via universal (double-negation) mechanism.}
 \label{tab:property-table}
 \begin{tabular}{lccc}
 \toprule
@@ -54,7 +48,28 @@ Axiom class & left $\leftrightarrow$ right & left $\leftrightarrow$ idem & right
 \end{tabular}
 \end{table}
 
-% Key findings:
-% 1. id present <-> left=right (necessary and sufficient)
-% 2. inv or comm+id -> identity = unique idempotent
-% 3. assoc alone does not affect identity equivalence
+\subsection{Key Findings}
+
+Three structural laws emerge from Table~\ref{tab:property-table}:
+
+\begin{enumerate}
+\item \textbf{Identity determines left--right equivalence.} The column ``left $\leftrightarrow$ right'' is $\leftrightarrow$ if and only if the axiom class contains \texttt{id}. Associativity, commutativity, and inverse are irrelevant.
+
+\item \textbf{Inverse (or commutativity with identity) determines identity--idempotent equivalence.} The column ``left $\leftrightarrow$ idem'' is $\leftrightarrow$ if and only if the class contains \texttt{inv}, or both \texttt{comm} and \texttt{id}.
+
+\item \textbf{Associativity is independent.} Adding or removing \texttt{assoc} does not change any equivalence column. Compare \texttt{id} vs.\ \texttt{assoc+id}, or \texttt{comm+id} vs.\ \texttt{assoc+comm+id}: same pattern.
+\end{enumerate}
+
+Finding (3) is particularly notable: associativity---the defining axiom of semigroups---has no effect on identity-related property equivalences. This is consistent with the algebraic fact that left and right identities coincide in any monoid (associative or not, as long as an identity exists), but the system discovers this without being told.
+
+\subsection{Contrast: Magma without Right Identity}
+
+On a non-associative magma where $e_0$ is a left identity but no right identity exists, the system correctly finds:
+
+\begin{itemize}
+\item $\mathit{has\_property\_1}(e_0, \mathit{left\_id})$: detected
+\item $\mathit{has\_property\_1}(e_0, \mathit{right\_id})$: \textbf{not detected} (no element satisfies $\forall x.\; \mathit{op}(x, e, x)$)
+\item $\mathit{equivalent\_observed}(\mathit{left\_id}, \mathit{right\_id})$: \textbf{false}
+\end{itemize}
+
+This confirms that the mechanism distinguishes groups from non-groups by the internal relationship between left and right identity---discovered, not assumed.

@@ -1,5 +1,59 @@
 \section{System Architecture}
 \label{sec:system}
 
-% TODO: Term/Relation/Rule, closure engine, pattern facts,
-% stratified negation, omega-rule, refutation, property definitions
+Relatum operates on three primitives: \emph{terms}, \emph{relations}, and \emph{rules}. All mathematical content is encoded in these primitives; the engine has no built-in notion of equality, ordering, or algebraic operation.
+
+\subsection{Terms}
+
+A term is either a variable $?x$, a constant $a$, or a function application $f(t_1, \ldots, t_n)$. Constants are nullary applications. Compound terms serve as Skolem witnesses (e.g., $\mathit{power}(\mathit{empty})$) and are bounded by a configurable depth limit (default 8).
+
+\subsection{Relations and Facts}
+
+A relation $R(t_1, \ldots, t_n)$ is a named tuple of terms. A \emph{ground fact} contains no variables. A \emph{pattern fact} contains free variables and represents a universally quantified assertion: $R(\mathit{empty}, \_0)$ means $\forall x.\; R(\mathit{empty}, x)$.
+
+Pattern facts participate in rule matching via bidirectional unification. When a rule premise $R(?s, ?a)$ matches a pattern fact $R(\mathit{empty}, \_0)$, the substitution $\{s \mapsto \mathit{empty},\; a \mapsto \_0\}$ propagates the free variable into the conclusion, producing new pattern facts without ground instantiation.
+
+\subsection{Closure Engine}
+
+The engine computes the least fixed point of a set of inference rules applied to an initial fact set. Each round applies:
+
+\begin{enumerate}
+\item \textbf{User rules} (stratum 0): positive premises matched against the fact set.
+\item \textbf{Reflexivity}: $R(t, t)$ for every ground term $t$ and every reflexive relation $R$.
+\item \textbf{Congruence}: structural replacement under equivalence relations.
+\item \textbf{Axiom instantiation}: ground substitution of universally quantified equations.
+\end{enumerate}
+
+After stratum 0 reaches a fixed point, higher strata execute in order:
+
+\begin{itemize}
+\item \textbf{Stratum 1+: Stratified negation.} Rules with negated premises fire only when the negated pattern is \emph{absent} from the completed fact set. Multiple negation strata are supported; if a higher stratum produces new facts, the engine re-runs from stratum 0 (iterative stratification).
+
+\item \textbf{Refutation phase.} Rules declared with \texttt{with\_refutation} perform proof by contradiction: for each binding from positive premises, the engine clones itself, hypothetically adds facts, runs closure, and checks for a contradiction relation. If all hypothetical branches contradict, the conclusion is established.
+
+\item \textbf{$\omega$-rule.} After saturation, the engine scans for unary relations with inductive structure (base case + step rule $R(x) \vdash R(f(x))$). If found, it promotes $R(\_0)$ as a pattern fact and re-runs closure. A defense mechanism blocks non-ground conclusions from pure-transfer rules ($R(x) \vdash S(x)$) to prevent incorrect universalization.
+
+\item \textbf{Property implication.} If properties are defined, the engine scans all unary property extensions. When $\mathrm{ext}(P) \subseteq \mathrm{ext}(Q)$ with $\mathrm{ext}(P) \neq \varnothing$, it derives $\mathit{implies\_observed}(P, Q)$. Bidirectional inclusion yields $\mathit{equivalent\_observed}(P, Q)$. These are \emph{observed} (inductive) implications, distinct from deductive implications, and do not trigger modus ponens.
+\end{itemize}
+
+\subsection{Properties as First-Class Objects}
+
+A property is a named constant term representing a predicate. The declaration
+
+\begin{verbatim}
+define_property("left_id", &["e"],
+    vec![op(e, x, x)])
+\end{verbatim}
+
+\noindent automatically generates a detection rule $\mathit{op}(e, x, x) \vdash \mathit{has\_property\_1}(e, \mathit{left\_id})$ and marks $\mathit{left\_id}$ with $\mathit{is\_property}(\mathit{left\_id})$.
+
+For algebraic properties requiring universal quantification (e.g., ``$e$ is a left identity for \emph{all} $x$''), detection uses double negation:
+
+\begin{align*}
+\mathit{not\_left\_id}(e) &\leftarrow \mathit{element}(e),\; \mathit{element}(x),\; \lnot\, \mathit{op}(e, x, x) \\
+\mathit{has\_property\_1}(e, \mathit{left\_id}) &\leftarrow \mathit{element}(e),\; \lnot\, \mathit{not\_left\_id}(e)
+\end{align*}
+
+This correctly detects that $e$ satisfies $\mathit{op}(e, x, x)$ for \emph{all} elements $x$, not just some.
+
+Properties are first-class: they can be bound to variables ($\mathit{has\_property\_1}(?x, ?p)$ matches any property), quantified over, and appear in further rules.

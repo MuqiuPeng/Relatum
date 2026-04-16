@@ -1,8 +1,53 @@
 \section{Inductive Discovery via Closure Scoring}
 \label{sec:inductive}
 
-% Section 4 of the paper.
-% Phase 1: 19,683 operations -> 10 axiom classes -> group as optimal
-% Dual-signal: rarity x richness
-% Formal equivalence: D1,D2,D3 <-> G2,G3
-% Transfer to Z4: 6/6 predictions
+\subsection{Model Space Enumeration}
+
+We enumerate all $3^9 = 19{,}683$ binary operations on a 3-element carrier $\{e_0, e_1, e_2\}$. Each operation is classified by which standard axioms it satisfies: associativity, commutativity, identity, and inverse. This yields 10 non-trivial axiom classes (plus a large ``none'' class of 18{,}748 operations satisfying no standard axioms).
+
+\begin{table}[h]
+\centering
+\caption{Axiom classes on 3-element carriers, sorted by model count.}
+\label{tab:axiom-classes}
+\begin{tabular}{lr}
+\toprule
+Axiom class & Models \\
+\midrule
+\texttt{assoc+comm+id+inv} & 3 \\
+\texttt{assoc+id} & 6 \\
+\texttt{id+inv} & 18 \\
+\texttt{comm+id} & 24 \\
+\texttt{assoc+comm+id} & 24 \\
+\texttt{comm+id+inv} & 30 \\
+\texttt{assoc+comm} & 36 \\
+\texttt{assoc} & 44 \\
+\texttt{id} & 138 \\
+\texttt{comm} & 612 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Dual-Signal Scoring}
+
+For each axiom class, the system computes closure under candidate rules discovered by beam search. Two signals are combined:
+
+\begin{itemize}
+\item \textbf{Model-space rarity}: $1 / \ln(\text{model count} + 1)$. Rarer classes carry more information.
+\item \textbf{Closure-space richness}: number of derived facts, weighted by structural diversity.
+\end{itemize}
+
+The \texttt{assoc+comm+id+inv} class (3 models---the abelian groups) scores highest: maximally rare in model space and maximally rich in closure space. This dual alignment identifies the group region as optimal without any prior mathematical knowledge.
+
+\subsection{Discovered Rules and Formal Equivalence}
+
+The beam search discovers a rule bundle $\{D_1, D_2, D_3\}$ that produces the richest closure on group-class models. A formal proof establishes:
+
+\begin{theorem}
+The discovered rule bundle $\{D_1, D_2, D_3\}$ is logically equivalent to the group axiom subset $\{G_2, G_3\}$ (identity and inverse laws), holding for all groups including infinite ones.
+\end{theorem}
+
+\noindent The full proof is provided in the supplementary material. The key insight is that $D_1$ and $D_2$ encode left/right identity behavior, while $D_3$ encodes inverse existence---precisely the group axioms beyond associativity and closure.
+
+\subsection{Transfer Verification}
+
+The discovered rules are transferred to a held-out $\mathbb{Z}_4$ structure (cyclic group of order 4, not seen during discovery). All 6 predictions are correct, confirming that the rules generalize beyond the training carrier size.

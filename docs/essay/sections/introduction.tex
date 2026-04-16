@@ -1,4 +1,35 @@
 \section{Introduction}
 \label{sec:introduction}
 
-% TODO: Motivation, related work, contributions overview
+A central question in automated mathematical reasoning is whether a single computational framework can both \emph{discover} mathematical structure from raw data and \emph{verify} that the discovered structure reflects genuine mathematical truth rather than computational artifact. Most existing systems address one side: automated theorem provers verify conjectures but do not discover them; machine learning systems discover patterns but cannot certify their mathematical status.
+
+We present Relatum, a relation-first reasoning engine that addresses both sides within a unified relational closure framework. The system operates on a minimal ontology---terms, relations, and inference rules---with no built-in mathematical semantics. Algebraic properties, set-theoretic axioms, and order-theoretic concepts are all expressed as relational declarations, and all reasoning reduces to closure computation.
+
+\subsection{Contributions}
+
+This paper makes four contributions:
+
+\begin{enumerate}
+\item \textbf{Inductive algebraic discovery} (Section~\ref{sec:inductive}). Starting from all 19{,}683 binary operations on a 3-element carrier, the system autonomously partitions the model space into 10 axiom classes and identifies the abelian group as the optimal region through dual-signal alignment of model-space rarity and closure-space richness. A formal equivalence proof establishes that the discovered rules are logically equivalent to group axioms.
+
+\item \textbf{Property implication analysis} (Section~\ref{sec:property}). Properties are defined as first-class relational objects. The system discovers pairwise implication and equivalence between properties by comparing their extensions. Across 10 axiom classes, it finds that identity presence determines left--right identity equivalence, and that associativity is independent of this equivalence.
+
+\item \textbf{Cross-domain generality} (Section~\ref{sec:cross}). The property implication mechanism is validated on three unrelated domains---algebra (10 axiom classes), order theory (241 finite posets), and set theory (ZFC powerset chain). Four structural meta-patterns repeat across all three domains, establishing the mechanism as domain-general.
+
+\item \textbf{Failure mode diagnosis} (Section~\ref{sec:cross}). When property equivalences fail to be confirmed, the system distinguishes \emph{structural failure} (genuine mathematical non-equivalence, constant across resource levels) from \emph{resource failure} (definitionally true equivalence that cannot be inductively confirmed due to derivation-rate competition under a finite fact budget).
+\end{enumerate}
+
+\subsection{System capabilities}
+
+The engine supports six reasoning mechanisms, each introduced as a relational extension rather than a separate subsystem:
+
+\begin{itemize}
+\item \textbf{Pattern facts}: variable-to-variable unification, enabling universally quantified conclusions (Section~\ref{sec:system}).
+\item \textbf{Stratified negation}: derive properties defined by absence (e.g., maximal elements).
+\item \textbf{$\omega$-rule}: inductive promotion of saturated ground chains to pattern facts.
+\item \textbf{Proof by contradiction}: hypothetical reasoning via engine cloning.
+\item \textbf{Property implication}: first-class properties with observed implication and equivalence.
+\item \textbf{Compression + purity scoring}: loss function that discovers per-relation axioms in mixed data.
+\end{itemize}
+
+All mechanisms share the same closure engine, the same fact representation, and the same rule-matching infrastructure.

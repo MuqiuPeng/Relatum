@@ -1,35 +1,32 @@
 \section{Limitations and Capability Boundaries}
 \label{sec:limitations}
 
-% Honest accounting of what the system cannot do.
+We document the system's limitations with the same precision as its capabilities.
 
-% 1. Existential vs universal detection
-%   Existential detection (op(e,x,x) for SOME x) gives false positives
-%   on non-group structures. Universal detection (double negation) is
-%   correct but requires two strata of negation.
+\subsection{Existential vs.\ Universal Detection}
 
-% 2. omega-rule defense
-%   Pure-transfer rules (R(x)|-S(x)) are blocked at pattern level.
-%   This is conservative: some correct patterns are lost (e.g., nonneg(_0)).
+Property detection rules of the form $\mathit{op}(e, x, x) \vdash \mathit{has\_property}(e, P)$ are existential: they fire when \emph{any} witness $x$ exists. For properties requiring universal quantification (``for all $x$''), double-negation detection is needed (two strata of negation). Existential detection gives false positives on non-group structures where $\mathit{op}(e, x, x)$ holds for some but not all $x$.
 
-% 3. Backward application disabled
-%   Apply rules (has_property -> formula) cause cascading pattern facts
-%   in algebraic contexts. Currently forward-only detection.
+\subsection{$\omega$-Rule Defense and Pure-Transfer Blocking}
 
-% 4. Zorn's Lemma
-%   System can verify Zorn on specific finite posets but cannot prove
-%   the universal theorem. Requires second-order quantification and
-%   structural induction, beyond first-order Horn + stratified negation.
-%   The iterative chain construction produces depth-bounded "maximal"
-%   elements that are artifacts of the depth limit, not genuine maximality.
-%   Proof by contradiction correctly distinguishes real from fake maximality.
+The $\omega$-rule promotes saturated inductive chains to pattern facts. When a pattern fact $P(\_0)$ triggers a downstream rule $P(x) \vdash Q(x)$ (pure variable transfer), the conclusion $Q(\_0)$ may be incorrect. The defense blocks non-ground conclusions from pure-transfer rules. This is conservative: some correct pattern facts are blocked (e.g., $\mathit{nonneg}(\_0)$ from $\mathit{nat}(\_0)$).
 
-% 5. Property implication is inductive
-%   implies_observed is based on current data (ext(P) subset ext(Q)).
-%   Not a logical proof. Could be invalidated by new elements.
-%   Separated from deductive implies to prevent modus ponens cascading.
+\subsection{Backward Application Disabled}
 
-% 6. Carrier size 3
-%   All algebraic results are on 3-element carriers.
-%   Transfer to Z4 verified (6/6), but systematic n>3 exploration
-%   is computationally expensive.
+Backward (apply) rules $\mathit{has\_property}(e, P) \vdash \mathit{formula}(e, \ldots)$ cause cascading pattern facts in algebraic contexts where the operation relation has rich structure. Currently, property detection is forward-only. Backward inference from properties to formulas is deferred until proper grounding guards are designed.
+
+\subsection{Property Implication Is Inductive}
+
+$\mathit{implies\_observed}(P, Q)$ is based on current data: $\mathrm{ext}(P) \subseteq \mathrm{ext}(Q)$ at the moment of observation. It is not a logical proof and could be invalidated by additional elements. It is intentionally separated from deductive \texttt{implies} to prevent modus ponens from propagating inductive conclusions.
+
+\subsection{Resource-Dependent Equivalence Failure}
+
+When derivation rules have different growth rates (e.g., pairing $O(n^2)$ vs.\ subset $O(n)$), a finite fact budget is exhausted before slower rules catch up. Definitionally true equivalences appear as non-equivalences. The temporal convergence diagnostic (varying the fact cap) can detect this, but cannot resolve it without increasing the budget or removing competing rules.
+
+\subsection{Carrier Size}
+
+All algebraic results are on 3-element carriers. Transfer to $\mathbb{Z}_4$ is verified (6/6 predictions correct), but systematic exploration at $n > 3$ is computationally expensive ($4^{16} \approx 4.3 \times 10^9$ operations at $n = 4$).
+
+\subsection{Zorn's Lemma and Second-Order Reasoning}
+
+The system can verify properties of specific finite posets (maximal element existence) and can construct proof artifacts (chains, termination witnesses). It cannot prove universal theorems about \emph{all} posets, which requires structural induction (second-order reasoning). Zorn's Lemma is a capability boundary marker, not a system target. Depth-bounded ``maximal'' elements are artifacts of the depth limit, not genuine mathematical maximality; proof by contradiction correctly distinguishes the two.

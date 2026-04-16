@@ -1,29 +1,65 @@
-\section{Cross-Validation}
+\section{Cross-Domain Validation}
 \label{sec:cross}
 
-% Section 6 of the paper.
-% The central result: two independent mechanisms produce consistent classifications.
+The property implication mechanism is validated on three unrelated mathematical domains, using the same infrastructure (\texttt{define\_property} + \texttt{derive\_property\_implications}) with different input data.
 
-% Phase 1 (Section 4): closure scoring
-%   Mechanism: beam search over candidate rules, scored by generativity
-%   Finding: group axioms produce the richest closure
-%   Structural boundary: id+inv separates optimal from suboptimal
+\subsection{Three Domains}
 
-% Phase 6 (Section 5): property implication
-%   Mechanism: property extension inclusion after double-negation detection
-%   Finding: id determines left<->right; inv determines id<->idempotent
-%   Structural boundary: same as Phase 1
+\begin{table}[h]
+\centering
+\caption{Cross-domain summary. The same mechanism produces structurally analogous findings across algebra, order theory, and set theory.}
+\label{tab:cross-domain}
+\begin{tabular}{p{3.2cm}p{3.5cm}p{3.5cm}p{3.5cm}}
+\toprule
+ & Algebra & Order theory & Set theory \\
+\midrule
+Input domain & 10 axiom classes & 241 labeled posets (sizes 2--4) & ZFC powerset chain \\
+Properties & left\_id, right\_id, idempotent & is\_maximal, is\_minimal, is\_isolated, is\_extremal & is\_set, superset\_of\_$\varnothing$, has\_member\_$\varnothing$, self\_subset \\
+Definitional equivalence & left $\leftrightarrow$ right (groups) & max $\leftrightarrow$ min (antichains) & is\_set $\leftrightarrow$ superset\_of\_$\varnothing$ \\
+Equivalence breaks & magma: no right\_id & chain: unique max $\neq$ min & pairing: resource boundary \\
+Strict implication & left $\to$ idem (id class) & isolated $\to$ maximal & member\_$\varnothing$ $\to$ is\_set \\
+Degenerate equivalence & id $\leftrightarrow$ idem (groups) & max $\leftrightarrow$ isolated (antichains) & is\_set $\leftrightarrow$ self\_subset \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-% Why this matters:
-%   - Two completely different inference paths
-%   - No shared intermediate results
-%   - Same structural classification emerges
-%   - Neither mechanism was told what to look for
-%   - Cross-validation is a stronger form of evidence than single-method discovery
+\subsection{Four Meta-Patterns}
 
-% Specific correspondences:
-%   Phase 1 theorem: op(?v0,?t1,?t1)(x) -> op(?t0,?v0,?t0)(x)
-%   Phase 6 finding: equivalent_observed(left_id, right_id) on all id-classes
-%   These are the SAME mathematical fact expressed in different formalisms:
-%     "left identity implies right identity" (Phase 1: as a universal rule)
-%     "left_id and right_id have equal extensions" (Phase 6: as property equivalence)
+Four structural meta-patterns are tested across all three domains (11 instances total):
+
+\begin{enumerate}
+\item \textbf{Definitional equivalence in saturated structures.} In each domain, there exists a structure class where distinct-sounding properties have identical extensions: left and right identity in groups, maximal and minimal in antichains, set membership and subset-of-empty in the powerset chain. All 3/3 confirmed.
+
+\item \textbf{Equivalence breaks in weaker structures.} When the structural conditions are relaxed, the equivalence fails. In algebra, a magma has left identity but no right identity. In order theory, a chain has a unique maximum $\neq$ minimum. In set theory, adding pairing causes a resource-dependent divergence. All 3/3 confirmed (2 structural, 1 resource).
+
+\item \textbf{Strict implications.} In each domain, at least one implication holds without its reverse: identity implies idempotent (but not vice versa on the \texttt{id} class), isolated implies maximal (but not vice versa on chains), and containing empty implies being a set (but not vice versa). All 3/3 confirmed.
+
+\item \textbf{Degenerate full equivalence.} In each domain, the most constrained structure (group, antichain, powerset chain) collapses multiple properties into full equivalence. All 3/3 confirmed.
+\end{enumerate}
+
+\noindent Total: 11/11 pattern instances confirmed. No counterexample found.
+
+\subsection{Structural vs.\ Resource Failure}
+
+A methodologically important finding: not all equivalence failures are alike.
+
+\begin{definition}
+An equivalence failure is \emph{structural} if the property extensions differ at all resource levels. It is a \emph{resource failure} if the extensions differ due to derivation-rate competition under a finite fact budget, but the equivalence is definitionally true.
+\end{definition}
+
+\noindent \textbf{Diagnostic criterion.} Run the engine at multiple fact-cap levels ($C_1 < C_2 < C_3$). Compute the extension gap $\delta_i = |\mathrm{ext}(P)| - |\mathrm{ext}(Q)|$ at each level.
+
+\begin{itemize}
+\item Structural: $\delta_1 = \delta_2 = \delta_3$ (constant).
+\item Resource: $\delta_i$ varies with $C_i$ (cap-dependent).
+\end{itemize}
+
+\noindent On the magma (structural failure), the gap between $|\mathrm{ext}(\mathit{left\_id})|$ and $|\mathrm{ext}(\mathit{right\_id})|$ is 1 at all cap levels (100, 200, 500). On ZFC with pairing (resource failure), the gap between $|\mathrm{ext}(\mathit{is\_set})|$ and $|\mathrm{ext}(\mathit{superset\_of\_empty})|$ varies: 67\%, 67\%, 75\%.
+
+This makes the structural/resource distinction \emph{testable}, not just conceptual. The engine can automatically flag which non-equivalences are resource-dependent by running at multiple cap levels.
+
+\subsection{Interpretation}
+
+The cross-domain consistency is not engineered. No part of the system was designed with these specific findings in mind. The property implication mechanism was built for algebra and then applied unchanged to order theory and set theory. The four meta-patterns emerged from the data.
+
+This suggests that the extension-inclusion mechanism captures a genuine structural invariant of mathematical reasoning: the relationship between property extensions reflects the underlying logical dependencies between the properties' definitions, regardless of the specific mathematical domain.

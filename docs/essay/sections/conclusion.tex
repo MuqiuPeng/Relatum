@@ -1,5 +1,32 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-% TODO: Summary, future directions (omega-rule on property implications,
-% compositional properties, automated axiom discovery for order theory)
+We have presented Relatum, a relation-first reasoning engine that discovers mathematical structure through two independent mechanisms---inductive closure scoring and property implication analysis---and demonstrated their cross-validation across three mathematical domains.
+
+\subsection{Summary of Results}
+
+\begin{itemize}
+\item \textbf{Algebraic discovery}: from 19{,}683 raw operations, the system identifies abelian groups as the optimal axiom class through dual-signal alignment, with formal equivalence to standard group axioms and successful transfer to $\mathbb{Z}_4$.
+
+\item \textbf{Property implication}: across 10 axiom classes, the system discovers that identity determines left--right equivalence, inverse determines identity--idempotent equivalence, and associativity is independent of both. On a contrasting magma, equivalences correctly fail.
+
+\item \textbf{Cross-domain generality}: the property mechanism produces structurally analogous findings on algebra (10 classes), order theory (241 posets), and set theory (ZFC). Four meta-patterns---definitional equivalence, equivalence breaking, strict implication, degenerate collapse---repeat across all three domains (11/11 confirmed).
+
+\item \textbf{Failure diagnosis}: the system distinguishes structural failure (genuine mathematical non-equivalence) from resource failure (derivation-rate competition) by varying the fact budget. This makes the limitation not just acknowledged but testable.
+\end{itemize}
+
+\subsection{Central Claim}
+
+The structural boundary between groups and weaker algebraic structures is independently discoverable by two mechanisms that share no intermediate results. The property implication mechanism generalizes to non-algebraic domains without modification. These findings suggest that extension-based property analysis captures a domain-independent structural invariant of mathematical reasoning.
+
+\subsection{Future Directions}
+
+\begin{itemize}
+\item \textbf{Property composition}: allowing the system to construct new properties from existing ones (conjunction, negation) and discover implications on the composite properties.
+
+\item \textbf{$\omega$-rule on property implications}: promoting observed cross-structure implications to meta-level universal claims, with appropriate defenses against the risks identified in Section~\ref{sec:limitations}.
+
+\item \textbf{Larger carriers}: extending the algebraic enumeration beyond $n = 3$, potentially using symmetry reduction to manage the $n^{n^2}$ growth.
+
+\item \textbf{Proto-level axiom discovery}: the beam search with compression + purity scoring autonomously discovers transitivity from raw binary relation data. Extending this to discover full axiom systems (e.g., lattice axioms from poset data) is a natural next step.
+\end{itemize}
