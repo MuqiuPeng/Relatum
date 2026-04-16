@@ -2907,6 +2907,204 @@ fn test_full_property_table() {
     }
 }
 
+// ── Phase 6 on order theory: property implication across 241 posets ──
+
+/// Build a property engine for a poset, with universal detection of
+/// maximal, minimal, and structural properties.
+fn poset_property_engine(
+    elements: &[String],
+    lt_pairs: &[(String, String)],
+) -> ClosureEngine {
+    let mut engine = ClosureEngine::new();
+
+    engine.define_relation("element", 1);
+    engine.define_relation("lt", 2);
+    engine.define_relation("comparable", 2);
+    engine.define_relation("not_maximal", 1);
+    engine.define_relation("not_minimal", 1);
+    engine.define_relation("not_total", 0);
+
+    for v in &["x", "y", "z"] { engine.define_variable(*v); }
+
+    for e in elements {
+        engine.define_constant(e);
+        engine.add_fact(Relation::new("element", vec![c(e)]));
+    }
+    for (a, b) in lt_pairs {
+        engine.add_fact(Relation::binary("lt", c(a), c(b)));
+    }
+
+    // Transitivity
+    engine.add_rule(Rule::new("lt_trans",
+        vec![
+            RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")]),
+            RelationPattern::new("lt", vec![Term::var("y"), Term::var("z")]),
+        ],
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("z")])],
+    ));
+
+    // Comparable
+    engine.add_rule(Rule::new("comp_lt",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")])],
+        vec![RelationPattern::new("comparable", vec![Term::var("x"), Term::var("y")])],
+    ));
+    engine.add_rule(Rule::new("comp_gt",
+        vec![RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")])],
+        vec![RelationPattern::new("comparable", vec![Term::var("x"), Term::var("y")])],
+    ));
+
+    // Universal negation for maximal/minimal
+    engine.add_rule(Rule::new("not_maximal_def",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")])],
+        vec![RelationPattern::new("not_maximal", vec![Term::var("x")])],
+    ));
+    engine.add_rule(Rule::new("not_minimal_def",
+        vec![RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")])],
+        vec![RelationPattern::new("not_minimal", vec![Term::var("x")])],
+    ));
+
+    // Properties via double negation
+    engine.define_property("is_maximal", &["x"],
+        vec![RelationPattern::new("element", vec![Term::var("x")])]);
+    engine.remove_rules_by_name("is_maximal_detect");
+    engine.add_rule(Rule::new("is_maximal_detect",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("x"), c("is_maximal")])],
+    ).with_negated(vec![
+        RelationPattern::new("not_maximal", vec![Term::var("x")]),
+    ]).with_stratum(2));
+
+    engine.define_property("is_minimal", &["x"],
+        vec![RelationPattern::new("element", vec![Term::var("x")])]);
+    engine.remove_rules_by_name("is_minimal_detect");
+    engine.add_rule(Rule::new("is_minimal_detect",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("x"), c("is_minimal")])],
+    ).with_negated(vec![
+        RelationPattern::new("not_minimal", vec![Term::var("x")]),
+    ]).with_stratum(2));
+
+    // is_isolated: element with no comparisons at all
+    engine.define_property("is_isolated", &["x"],
+        vec![RelationPattern::new("element", vec![Term::var("x")])]);
+    engine.remove_rules_by_name("is_isolated_detect");
+    engine.define_relation("has_comparison", 1);
+    engine.add_rule(Rule::new("has_comp_up",
+        vec![RelationPattern::new("lt", vec![Term::var("x"), Term::var("y")])],
+        vec![RelationPattern::new("has_comparison", vec![Term::var("x")])],
+    ));
+    engine.add_rule(Rule::new("has_comp_down",
+        vec![RelationPattern::new("lt", vec![Term::var("y"), Term::var("x")])],
+        vec![RelationPattern::new("has_comparison", vec![Term::var("x")])],
+    ));
+    engine.add_rule(Rule::new("is_isolated_detect",
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("x"), c("is_isolated")])],
+    ).with_negated(vec![
+        RelationPattern::new("has_comparison", vec![Term::var("x")]),
+    ]));
+
+    // is_extremal: maximal OR minimal (has a "boundary" position)
+    // Detected existentially: if is_maximal or is_minimal
+    engine.define_property("is_extremal", &["x"],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("x"), c("is_maximal")])]);
+    // Also detect from is_minimal
+    engine.add_rule(Rule::new("is_extremal_detect_min",
+        vec![RelationPattern::new("has_property_1", vec![Term::var("x"), c("is_minimal")])],
+        vec![RelationPattern::new("has_property_1", vec![Term::var("x"), c("is_extremal")])],
+    ));
+
+    engine.enable_property_implication();
+
+    engine.set_max_rounds(10);
+    engine.set_max_facts(500);
+
+    engine
+}
+
+/// Phase 6 on order theory: run property implication across all 241 posets
+/// (sizes 2-4) and tabulate which property implications hold universally.
+#[test]
+fn test_order_property_implications() {
+    println!("\n============================================================");
+    println!("  PHASE 6: ORDER THEORY PROPERTY IMPLICATIONS");
+    println!("  Properties: is_maximal, is_minimal, is_isolated, is_extremal");
+    println!("============================================================");
+
+    let mut all_impls: HashMap<(String, String), usize> = HashMap::new();
+    let mut all_equivs: HashMap<(String, String), usize> = HashMap::new();
+    let mut total_posets = 0usize;
+    let mut posets_with_order = 0usize; // non-antichain posets
+
+    for n in 2..=4 {
+        let posets = enumerate_posets(n);
+        for (elements, pairs) in &posets {
+            total_posets += 1;
+            if !pairs.is_empty() { posets_with_order += 1; }
+
+            let mut engine = poset_property_engine(elements, pairs);
+            let result = engine.derive_closure();
+
+            for f in result.facts.iter() {
+                if f.name() == "implies_observed" && f.terms()[0] != f.terms()[1] {
+                    let key = (f.terms()[0].to_string(), f.terms()[1].to_string());
+                    *all_impls.entry(key).or_insert(0) += 1;
+                }
+                if f.name() == "equivalent_observed" && f.terms()[0] != f.terms()[1] {
+                    let key = (f.terms()[0].to_string(), f.terms()[1].to_string());
+                    *all_equivs.entry(key).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+
+    println!("\n  Total posets: {} ({} with ordering)", total_posets, posets_with_order);
+
+    // Sort implications by frequency
+    let mut impl_vec: Vec<((String, String), usize)> = all_impls.into_iter().collect();
+    impl_vec.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut equiv_vec: Vec<((String, String), usize)> = all_equivs.into_iter().collect();
+    equiv_vec.sort_by(|a, b| b.1.cmp(&a.1));
+
+    println!("\n  Implications (A → B) frequency across {} posets:", total_posets);
+    for ((a, b), count) in &impl_vec {
+        let pct = *count as f64 / total_posets as f64 * 100.0;
+        let marker = if *count == total_posets { "★" }
+            else if pct > 90.0 { "◆" }
+            else { " " };
+        println!("    {} {:<15} → {:<15} {}/{} ({:.0}%)",
+            marker, a, b, count, total_posets, pct);
+    }
+
+    println!("\n  Equivalences (A ↔ B) frequency:");
+    // Deduplicate (A↔B and B↔A)
+    let mut seen_equivs: HashSet<(String, String)> = HashSet::new();
+    for ((a, b), count) in &equiv_vec {
+        if seen_equivs.contains(&(b.clone(), a.clone())) { continue; }
+        seen_equivs.insert((a.clone(), b.clone()));
+        let pct = *count as f64 / total_posets as f64 * 100.0;
+        let marker = if *count == total_posets { "★" } else { " " };
+        println!("    {} {:<15} ↔ {:<15} {}/{} ({:.0}%)",
+            marker, a, b, count, total_posets, pct);
+    }
+
+    // Key assertions
+    // is_maximal and is_minimal should both always exist (all finite posets have both)
+    // is_isolated → is_maximal AND is_isolated → is_minimal should hold universally
+    let iso_max = impl_vec.iter().find(|((a,b),_)| a == "is_isolated" && b == "is_maximal");
+    let iso_min = impl_vec.iter().find(|((a,b),_)| a == "is_isolated" && b == "is_minimal");
+
+    println!("\n  Key findings:");
+    if let Some((_, count)) = iso_max {
+        println!("    is_isolated → is_maximal: {}/{} ({:.0}%)",
+            count, total_posets, *count as f64 / total_posets as f64 * 100.0);
+    }
+    if let Some((_, count)) = iso_min {
+        println!("    is_isolated → is_minimal: {}/{} ({:.0}%)",
+            count, total_posets, *count as f64 / total_posets as f64 * 100.0);
+    }
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
