@@ -12,7 +12,7 @@
      = help: maybe it is overwritten before being read?
 415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-3384 |     let alg_strict = id_only_has("implies_observed(left_id, idempotent)")
+3542 |     let alg_strict = id_only_has("implies_observed(left_id, idempotent)")
 ╔════════════════════════════════════════════════════════════╗
 ║  CROSS-DOMAIN META-ANALYSIS: Phase 6 across 3 domains    ║
 ╚════════════════════════════════════════════════════════════╝
@@ -20,7 +20,7 @@
 │ STRUCTURAL PATTERN         │ Algebra  │ Order    │ Set theory │
 ├─────────────────────────────────────────────────────────────────┤
 │ Definitional equivalence    │ left↔rgt │ max↔min  │ set↔sup∅   │
-│ Equivalence breaks (weaker) │ magma:✗  │ chain:✗  │ n/a        │
+│ Equivalence breaks (weaker) │ magma:✗  │ chain:✗  │ pair:cap   │
 │ Strict implication exists    │ id:✓     │ ✓        │ ✓          │
 │ Degenerate full equivalence │ id↔idem  │ max↔iso  │ set↔self   │
 └─────────────────────────────────────────────────────────────────┘
@@ -34,4 +34,4 @@
   analogous findings across algebra, order theory, and set
   theory. The same 4 meta-patterns repeat in all domains.
 test test_cross_domain_meta_analysis ... ok
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.12s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.12s

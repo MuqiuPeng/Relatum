@@ -3261,6 +3261,162 @@ fn test_zfc_property_implications() {
         has("implies_observed(is_in_power_empty, has_member_empty)"));
 }
 
+/// Phase 6 on ZFC with pairing: richer universe to test if equivalences hold
+/// and whether new strict implications emerge.
+#[test]
+fn test_zfc_property_with_pairing() {
+    let mut engine = ClosureEngine::new();
+    engine.define_relation("set", 1);
+    engine.define_relation("member", 2);
+    engine.define_relation("subset", 2);
+    engine.define_equivalence("eq");
+    for v in &["x","y","z","a","b","s","_px"] { engine.define_variable(*v); }
+
+    engine.define_constant("empty");
+    engine.add_fact(Relation::new("set", vec![c("empty")]));
+
+    // Subset rules
+    engine.add_rule(Rule::new("empty_subset",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])]));
+    engine.add_rule(Rule::new("subset_refl",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("x")])]));
+
+    // Powerset
+    engine.add_rule(Rule::new("powerset_exists",
+        vec![RelationPattern::new("set", vec![Term::var("a")])],
+        vec![RelationPattern::new("set", vec![Term::app("power", vec![Term::var("a")])])]));
+    engine.add_rule(Rule::new("powerset_member",
+        vec![
+            RelationPattern::new("subset", vec![Term::var("s"), Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("s")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("s"), Term::app("power", vec![Term::var("a")])])]));
+
+    // PAIRING — the new addition
+    engine.add_rule(Rule::new("pairing_exists",
+        vec![
+            RelationPattern::new("set", vec![Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("b")]),
+        ],
+        vec![RelationPattern::new("set", vec![
+            Term::app("pair", vec![Term::var("a"), Term::var("b")])])]));
+    engine.add_rule(Rule::new("pairing_left",
+        vec![
+            RelationPattern::new("set", vec![Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("b")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("a"),
+            Term::app("pair", vec![Term::var("a"), Term::var("b")])])]));
+    engine.add_rule(Rule::new("pairing_right",
+        vec![
+            RelationPattern::new("set", vec![Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("b")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("b"),
+            Term::app("pair", vec![Term::var("a"), Term::var("b")])])]));
+
+    // Properties
+    engine.define_property("is_set", &["_px"],
+        vec![RelationPattern::new("set", vec![Term::var("_px")])]);
+    engine.define_property("superset_of_empty", &["_px"],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("_px")])]);
+    engine.define_property("has_member_empty", &["_px"],
+        vec![RelationPattern::new("member", vec![c("empty"), Term::var("_px")])]);
+    engine.define_property("self_subset", &["_px"],
+        vec![RelationPattern::new("subset", vec![Term::var("_px"), Term::var("_px")])]);
+    // New: "is a pair" — has at least 2 members via pairing
+    engine.define_property("is_pair_constructed", &["_px"],
+        vec![RelationPattern::new("member", vec![Term::var("a"), Term::var("_px")]),
+             RelationPattern::new("member", vec![Term::var("b"), Term::var("_px")])]);
+
+    engine.enable_property_implication();
+
+    engine.set_max_rounds(12);
+    engine.set_max_facts(3000);
+    let result = engine.derive_closure();
+
+    println!("\n============================================================");
+    println!("  PHASE 6: ZFC WITH PAIRING");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    let props = ["is_set", "superset_of_empty", "has_member_empty",
+                 "self_subset", "is_pair_constructed"];
+    println!("\n  Property extensions:");
+    for prop in &props {
+        let ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop)
+                && f.is_ground())
+            .map(|f| f.terms()[0].to_string())
+            .collect();
+        println!("    {:<22} |ext|={}", prop, ext.len());
+    }
+
+    let mut impls: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "implies_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    impls.sort();
+    let equivs: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "equivalent_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+
+    println!("\n  Implications:");
+    for i in &impls { println!("    {}", i); }
+    println!("\n  Equivalences:");
+    let mut seen: HashSet<String> = HashSet::new();
+    for e in &equivs {
+        if seen.insert(e.clone()) { println!("    {}", e); }
+    }
+
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    // Key test: does is_set ↔ superset_of_empty still hold with pairing?
+    let set_sup = has("equivalent_observed(is_set, superset_of_empty)")
+        || has("equivalent_observed(superset_of_empty, is_set)");
+    let set_self = has("equivalent_observed(is_set, self_subset)")
+        || has("equivalent_observed(self_subset, is_set)");
+
+    println!("\n  Key question: do equivalences survive pairing?");
+    println!("    is_set ↔ superset_of_empty: {}", set_sup);
+    println!("    is_set ↔ self_subset: {}", set_self);
+
+    // New strict implications from pairing?
+    let pair_impl = has("implies_observed(has_member_empty, is_set)");
+    let pair_constructed_impl = has("implies_observed(is_pair_constructed, is_set)");
+    println!("    has_member_empty → is_set: {}", pair_impl);
+    println!("    is_pair_constructed → is_set: {}", pair_constructed_impl);
+
+    // RESOURCE BOUNDARY: with pairing, set generation (O(n²)) outpaces
+    // subset derivation (O(n)). The fact cap is hit before empty_subset
+    // can catch up → ext(superset_of_empty) ⊊ ext(is_set).
+    //
+    // The equivalence is DEFINITIONALLY TRUE but INDUCTIVELY UNCONFIRMABLE
+    // under resource constraints. This is the honest content of the n/a cell:
+    // not "untested" but "resource-dependent divergence."
+    println!("\n  RESOURCE BOUNDARY:");
+    println!("    is_set |ext|={} vs superset_of_empty |ext|={}",
+        result.facts.iter().filter(|f| f.name()=="has_property_1" && f.terms()[1]==Term::constant("is_set") && f.is_ground()).count(),
+        result.facts.iter().filter(|f| f.name()=="has_property_1" && f.terms()[1]==Term::constant("superset_of_empty") && f.is_ground()).count());
+    println!("    Pairing generates sets faster than empty_subset adds subsets.");
+    println!("    The equivalence is definitionally true but inductively");
+    println!("    unconfirmable when derivation rates diverge under a fact cap.");
+    println!("    This is NOT a mathematical breakdown — it's a resource boundary.");
+
+    // The actual test: verify the resource boundary IS observed
+    let is_set_count = result.facts.iter()
+        .filter(|f| f.name()=="has_property_1" && f.terms()[1]==Term::constant("is_set") && f.is_ground()).count();
+    let sup_count = result.facts.iter()
+        .filter(|f| f.name()=="has_property_1" && f.terms()[1]==Term::constant("superset_of_empty") && f.is_ground()).count();
+    assert!(is_set_count > sup_count,
+        "resource boundary: set generation outpaces subset derivation");
+}
+
 // ── Cross-domain meta-analysis ───────────────────────────────
 
 /// Aggregate Phase 6 results across three domains.
@@ -3363,7 +3519,9 @@ fn test_cross_domain_meta_analysis() {
     // Pattern 2: Equivalence breaks in weaker structures
     let alg_break = !mag_has("equivalent_observed(left_id, right_id)");
     let ord_break = !ch_has("equivalent_observed(is_maximal, is_minimal)");
-    println!("│ Equivalence breaks (weaker) │ {:<8} │ {:<8} │ n/a        │",
+    // Set theory: pairing causes resource-dependent divergence
+    // (definitionally true but inductively unconfirmable under fact cap)
+    println!("│ Equivalence breaks (weaker) │ {:<8} │ {:<8} │ pair:cap   │",
         if alg_break { "magma:✗" } else { "magma:↔" },
         if ord_break { "chain:✗" } else { "chain:↔" });
 
