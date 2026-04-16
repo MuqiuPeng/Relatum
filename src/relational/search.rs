@@ -933,7 +933,7 @@ fn effective_weights(
                 generativity: base.generativity,
                 compression: base.compression * comp_scale,
                 consistency_penalty: base.consistency_penalty * penalty_scale,
-                exclusions: base.exclusions.clone(),
+                exclusions: base.exclusions.clone(), purity_decay: base.purity_decay,
             }
         }
     }
@@ -982,17 +982,81 @@ fn score_rule_set(
         }
         engine.add_rule(rule.clone());
     }
+    // Compute compression: remove non-essential facts, re-derive, count re-derivations.
+    // A fact is "compressible" by these rules if removing it still allows re-derivation.
+    let compression_score = if weights.compression > 0.0 {
+        let base_facts: Vec<&Relation> = base.facts().iter().collect();
+        let mut compressible = 0usize;
+        // For each base fact, check if the rules can re-derive it from the others
+        for target in &base_facts {
+            if !target.is_ground() { continue; }
+            let mut trial = base.clone();
+            // Remove the target fact
+            let mut reduced_facts: HashSet<Relation> = base.facts().clone();
+            reduced_facts.remove(*target);
+            // Rebuild engine with reduced facts + candidate rules
+            let mut trial = ClosureEngine::new();
+            // Copy declarations from base
+            for cname in base.constants() {
+                trial.define_constant(cname);
+            }
+            for vname in base.variables() {
+                trial.define_variable(vname);
+            }
+            for (rname, rdef) in base.relation_defs() {
+                trial.define_relation(rname, rdef.arity());
+            }
+            for fact in &reduced_facts {
+                trial.add_fact(fact.clone());
+            }
+            for rule in base.rules() {
+                trial.add_rule(rule.clone());
+            }
+            for rule in rules {
+                trial.add_rule(rule.clone());
+            }
+            trial.set_max_rounds(10);
+            trial.set_max_facts(base.facts().len() + 100);
+            let trial_result = trial.derive_closure();
+            if trial_result.facts.iter().any(|f| f == *target) {
+                compressible += 1;
+            }
+        }
+        compressible as f64
+    } else {
+        0.0
+    };
+
     let result = engine.derive_closure();
     let profile = score::closure_profile_with_exclusions(&result, &weights.exclusions);
 
     let total_complexity: usize = rules.iter().map(|r| score::rule_complexity(r).max(1)).sum();
 
-    // Additive scoring: each derived fact is worth +1, complexity is a mild penalty.
-    // This rewards absolute growth, not just efficiency ratios.
-    let complexity_cost = 0.1; // 10 complexity units ≈ 1 derived fact
-    let score = weights.generativity * profile.derived_facts as f64
+    // Combined scoring: generativity + compression - complexity - inconsistency
+    let complexity_cost = 0.1;
+    let mut score = weights.generativity * profile.derived_facts as f64
+        + weights.compression * compression_score
         - complexity_cost * total_complexity as f64
         - weights.consistency_penalty * profile.inconsistencies as f64;
+
+    // Purity: penalize rules that mix distinct relations.
+    // score *= purity_decay^(n_distinct_relations - 1)
+    // Single-relation rules keep full score; cross-relation rules are decayed.
+    if weights.purity_decay > 0.0 && weights.purity_decay < 1.0 {
+        let distinct_rels: HashSet<&str> = rules
+            .iter()
+            .flat_map(|r| {
+                r.premises()
+                    .iter()
+                    .map(|p| p.name())
+                    .chain(r.conclusions().iter().map(|cc| cc.name()))
+            })
+            .collect();
+        let n = distinct_rels.len().max(1);
+        if n > 1 {
+            score *= weights.purity_decay.powi((n - 1) as i32);
+        }
+    }
 
     (profile, score)
 }
@@ -3065,7 +3129,7 @@ pub fn run_autonomous(carrier_size: usize, max_rounds: usize) -> AutonomousLog {
                 generativity: 1.0,
                 compression: 0.5,
                 consistency_penalty: 10.0,
-                exclusions: excl_pairs,
+                exclusions: excl_pairs, purity_decay: 0.0,
             },
             beam_width: 3,
             max_rules_per_beam: 3,
@@ -3771,6 +3835,7 @@ mod tests {
                 compression: 0.0, // pure generativity for this test
                 consistency_penalty: 0.0,
                 exclusions: Vec::new(),
+                purity_decay: 0.0,
             },
             pre_filter_top_n: 10,
             top_k: 2, // select 2 rules per round
@@ -3836,7 +3901,7 @@ mod tests {
                 generativity: 1.0,
                 compression: 0.0,
                 consistency_penalty: 1.0,
-                exclusions: excl,
+                exclusions: excl, purity_decay: 0.0,
             },
             beam_width: 5,
             max_rules_per_beam: 4,
@@ -3905,7 +3970,7 @@ mod tests {
                 generativity: 1.0,
                 compression: 1.0, // starts at 0 effective, ramps up
                 consistency_penalty: 0.5,
-                exclusions: excl,
+                exclusions: excl, purity_decay: 0.0,
             },
             beam_width: 5,
             max_rules_per_beam: 4,
@@ -4081,7 +4146,7 @@ mod tests {
                 generativity: 1.0,
                 compression: 0.5,
                 consistency_penalty: 10.0, // each inconsistency is fatal
-                exclusions: excl,
+                exclusions: excl, purity_decay: 0.0,
             },
             beam_width: 5,
             max_rules_per_beam: 4,
@@ -4239,7 +4304,7 @@ mod tests {
                         generativity: 1.0,
                         compression: 0.5,
                         consistency_penalty: 10.0,
-                        exclusions: excl.clone(),
+                        exclusions: excl.clone(), purity_decay: 0.0,
                     },
                     beam_width: 3,
                     max_rules_per_beam: 3,
@@ -4293,7 +4358,7 @@ mod tests {
                     generativity: 1.0,
                     compression: 0.5,
                     consistency_penalty: 10.0,
-                    exclusions: excl,
+                    exclusions: excl, purity_decay: 0.0,
                 },
                 beam_width: 3,
                 max_rules_per_beam: 3,
@@ -4422,7 +4487,7 @@ mod tests {
                     generativity: 1.0,
                     compression: 0.5,
                     consistency_penalty: 10.0,
-                    exclusions: excl,
+                    exclusions: excl, purity_decay: 0.0,
                 },
                 beam_width: 3,
                 max_rules_per_beam: 3,
@@ -4532,7 +4597,7 @@ mod tests {
                     generativity: 1.0,
                     compression: 0.5,
                     consistency_penalty: 10.0,
-                    exclusions: excl,
+                    exclusions: excl, purity_decay: 0.0,
                 },
                 beam_width: 3,
                 max_rules_per_beam: 3,

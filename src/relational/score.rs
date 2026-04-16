@@ -217,6 +217,11 @@ pub struct ScoreWeights {
     pub consistency_penalty: f64,
     /// Mutual exclusion pairs for consistency checking.
     pub exclusions: Vec<ExclusionPair>,
+    /// Purity decay: score is multiplied by purity_decay^(n_relations - 1).
+    /// 0.0 = no purity preference (default).
+    /// 0.3 = strong preference for single-relation rules (2-rel → ×0.3, 3-rel → ×0.09).
+    /// 1.0 = no penalty for cross-relation rules.
+    pub purity_decay: f64,
 }
 
 impl Default for ScoreWeights {
@@ -226,6 +231,7 @@ impl Default for ScoreWeights {
             compression: 1.0,
             consistency_penalty: 0.0,
             exclusions: Vec::new(),
+            purity_decay: 0.0,
         }
     }
 }
@@ -738,7 +744,7 @@ mod tests {
             generativity: 1.0,
             compression: 0.0,
             consistency_penalty: 2.0,
-            exclusions: excl,
+            exclusions: excl, purity_decay: 0.0,
         };
 
         let vv = Term::var("v");

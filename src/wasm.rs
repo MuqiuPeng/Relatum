@@ -148,6 +148,7 @@ pub fn discover(input_json: &str) -> Result<String, JsValue> {
                 compression: 0.5,
                 consistency_penalty: 10.0,
                 exclusions: vec![("eq".to_string(), "distinct".to_string())],
+                purity_decay: 0.0,
             },
             beam_width: 5,
             max_rules_per_beam: 4,

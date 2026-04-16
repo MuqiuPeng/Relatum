@@ -1925,6 +1925,7 @@ fn test_proto_axiom_discovery() {
             compression: 0.5,
             consistency_penalty: 10.0,
             exclusions: vec![("eq".to_string(), "distinct".to_string())],
+            purity_decay: 0.0,
         },
         beam_width: 10,
         max_rules_per_beam: 3,
@@ -2022,6 +2023,7 @@ fn test_proto_mixed_discovery() {
     let mut exclude = HashSet::new();
     exclude.insert("distinct".to_string());
 
+    // compression=2.0 (value self-explanation) + purity_decay=0.3 (prefer self-relation)
     let beam_config = BeamConfig {
         candidate_config: CandidateConfig {
             guard_relation: None,
@@ -2031,9 +2033,10 @@ fn test_proto_mixed_discovery() {
         },
         weights: ScoreWeights {
             generativity: 1.0,
-            compression: 0.5,
+            compression: 2.0,
             consistency_penalty: 10.0,
             exclusions: vec![("eq".to_string(), "distinct".to_string())],
+            purity_decay: 0.3,
         },
         beam_width: 15,
         max_rules_per_beam: 3,
