@@ -51,3 +51,11 @@ The discovered rule bundle $\{D_1, D_2, D_3\}$ is logically equivalent to the gr
 \subsection{Transfer Verification}
 
 The discovered rules are transferred to a held-out $\mathbb{Z}_4$ structure (cyclic group of order 4, not seen during discovery). All 6 predictions are correct, confirming that the rules generalize beyond the training carrier size.
+
+\subsection{Proto-Level Axiom Discovery}
+
+The same beam search mechanism operates at the \emph{axiom schema} level, not just the model level. Given raw binary relation data (edges $R(a,b), R(b,c), R(c,d), R(d,e)$) with no rules and no prior knowledge, the system generates 18 relational composition candidates and scores them by generativity.
+
+The top-scoring candidate is $R(x,y), R(y,z) \vdash R(x,z)$---transitivity---with a score of 10.10 and 11 derived facts. The system discovers transitivity as the most productive axiom schema for this binary relation, without being told what transitivity is.
+
+When multiple relations are present simultaneously (a strict order, a symmetric relation, and a cyclic relation), a scoring function combining \emph{compression} (how many existing facts does the axiom re-derive?) and \emph{purity} (does the axiom stay within a single relation?) correctly identifies per-relation axioms: symmetry + transitivity for the symmetric relation, transitivity for the order, and cyclic closure for the cycle. Without the compression + purity loss, cross-relation mappings dominate; with it, each relation's natural axioms emerge independently.

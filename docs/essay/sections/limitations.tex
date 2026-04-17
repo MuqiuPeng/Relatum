@@ -30,3 +30,5 @@ All algebraic results are on 3-element carriers. Transfer to $\mathbb{Z}_4$ is v
 \subsection{Zorn's Lemma and Second-Order Reasoning}
 
 The system can verify properties of specific finite posets (maximal element existence) and can construct proof artifacts (chains, termination witnesses). It cannot prove universal theorems about \emph{all} posets, which requires structural induction (second-order reasoning). Zorn's Lemma is a capability boundary marker, not a system target. Depth-bounded ``maximal'' elements are artifacts of the depth limit, not genuine mathematical maximality; proof by contradiction correctly distinguishes the two.
+
+This limitation is not specific to Relatum. Any finitary syntactic reasoning system operating on first-order Horn clauses with stratified negation faces the same boundary: universal theorems about infinite families of structures require meta-level induction that cannot be expressed within the object-level closure. This is a consequence of the expressive gap between first-order and second-order logic, not an engineering deficiency.

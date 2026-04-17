@@ -7,7 +7,7 @@ We present Relatum, a relation-first reasoning engine that addresses both sides 
 
 \subsection{Contributions}
 
-This paper makes four contributions:
+This paper makes five contributions:
 
 \begin{enumerate}
 \item \textbf{Inductive algebraic discovery} (Section~\ref{sec:inductive}). Starting from all 19{,}683 binary operations on a 3-element carrier, the system autonomously partitions the model space into 10 axiom classes and identifies the abelian group as the optimal region through dual-signal alignment of model-space rarity and closure-space richness. A formal equivalence proof establishes that the discovered rules are logically equivalent to group axioms.
@@ -31,7 +31,7 @@ The engine supports six reasoning mechanisms, each introduced as a relational ex
 \item \textbf{$\omega$-rule}: inductive promotion of saturated ground chains to pattern facts.
 \item \textbf{Proof by contradiction}: hypothetical reasoning via engine cloning.
 \item \textbf{Property implication}: first-class properties with observed implication and equivalence.
-\item \textbf{Compression + purity scoring}: loss function that discovers per-relation axioms in mixed data.
+\item \textbf{Proto-level axiom discovery}: beam search over relational composition candidates with compression + purity scoring, demonstrated by autonomous discovery of transitivity from raw binary relation data (Section~\ref{sec:inductive}).
 \end{itemize}
 
 All mechanisms share the same closure engine, the same fact representation, and the same rule-matching infrastructure.
