@@ -604,12 +604,109 @@ impl ClosureEngine {
         ]).with_stratum(3));
     }
 
+    // ── property disjunction ──────────────────────────────
+
+    /// Define a disjunctive property: ext(p_or_q) = ext(p) ∪ ext(q).
+    /// Only forward rules (construction, no decomposition via negation).
+    pub fn define_compose_or(&mut self, name: &str, p: &str, q: &str) {
+        self.define_constant(name);
+        if !self.relation_defs.contains_key("is_property") {
+            self.define_relation("is_property", 1);
+        }
+        self.add_fact(Relation::new("is_property", vec![Term::constant(name)]));
+
+        if !self.relation_defs.contains_key("has_property_1") {
+            self.define_relation("has_property_1", 2);
+        }
+
+        self.define_variable("_ox");
+
+        let x = Term::var("_ox");
+
+        // Rule A: has_property_1(x, p) |- has_property_1(x, name)
+        self.add_rule(Rule::new(
+            format!("{}_or_left", name),
+            vec![RelationPattern::new("has_property_1", vec![x.clone(), Term::constant(p)])],
+            vec![RelationPattern::new("has_property_1", vec![x.clone(), Term::constant(name)])],
+        ).with_ground_required(vec!["_ox".to_string()]));
+
+        // Rule B: has_property_1(x, q) |- has_property_1(x, name)
+        self.add_rule(Rule::new(
+            format!("{}_or_right", name),
+            vec![RelationPattern::new("has_property_1", vec![x.clone(), Term::constant(q)])],
+            vec![RelationPattern::new("has_property_1", vec![x, Term::constant(name)])],
+        ).with_ground_required(vec!["_ox".to_string()]));
+    }
+
+    /// Score a property disjunction: how informative is p ∨ q?
+    pub fn score_combo_or(&self, p: &str, q: &str) -> (f64, String) {
+        let ext_p = self.property_extension(p);
+        let ext_q = self.property_extension(q);
+        let ext_or: HashSet<Term> = ext_p.union(&ext_q).cloned().collect();
+        let domain_size = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "element" && f.arity() == 1 && f.is_ground())
+            .count();
+
+        // Hard filters
+        if ext_or.is_empty() {
+            return (0.0, "empty_extension".into());
+        }
+        if ext_or == ext_p {
+            return (0.0, "degenerate_to_p".into());
+        }
+        if ext_or == ext_q {
+            return (0.0, "degenerate_to_q".into());
+        }
+        if domain_size > 0 && ext_or.len() == domain_size {
+            return (0.0, "trivial_universal".into());
+        }
+
+        // Cross-degenerate: check against all existing properties
+        let properties: Vec<Term> = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "is_property" && f.arity() == 1 && f.is_ground())
+            .map(|f| f.terms()[0].clone())
+            .collect();
+        for prop in &properties {
+            let prop_name = prop.to_string();
+            if prop_name == p || prop_name == q {
+                continue;
+            }
+            let ext_existing = self.property_extension(&prop_name);
+            if !ext_existing.is_empty() && ext_or == ext_existing {
+                return (0.0, format!("degenerate_to_{}", prop_name));
+            }
+        }
+
+        // Soft scoring
+        let jaccard = |a: &HashSet<Term>, b: &HashSet<Term>| -> f64 {
+            let u = a.union(b).count();
+            if u == 0 { 0.0 } else { a.intersection(b).count() as f64 / u as f64 }
+        };
+
+        let coverage = ext_or.len() as f64 / domain_size.max(1) as f64;
+        let covering_penalty = 1.0 - coverage;
+        let disjointness = 1.0 - jaccard(&ext_p, &ext_q);
+        let rarity = if domain_size == 0 {
+            0.0
+        } else {
+            let ratio = ext_or.len() as f64 / domain_size as f64;
+            4.0 * ratio * (1.0 - ratio)
+        };
+
+        let score = covering_penalty * disjointness * rarity;
+        (score, "positive".into())
+    }
+
     // ── auto combination search ─────────────────────────────
 
-    /// Enumerate all pairs of existing properties, score each conjunction,
-    /// and return candidates sorted by score (descending). Only non-zero
-    /// scores are included.
-    pub fn enumerate_combo_candidates(&self) -> Vec<(String, String, f64, String)> {
+    /// Enumerate all pairs of existing properties, score each conjunction
+    /// AND disjunction, and return candidates sorted by score (descending).
+    /// Returns (op, p, q, score, diagnosis). op is "and" or "or".
+    pub fn enumerate_combo_candidates(&self) -> Vec<(String, String, String, f64, String)> {
         let properties: Vec<String> = self
             .facts
             .iter()
@@ -622,40 +719,57 @@ impl ClosureEngine {
             for j in (i + 1)..properties.len() {
                 let p = &properties[i];
                 let q = &properties[j];
-                let (score, diag) = self.score_combo_and(p, q);
-                if score > 0.0 {
-                    candidates.push((p.clone(), q.clone(), score, diag));
+
+                let (and_score, and_diag) = self.score_combo_and(p, q);
+                if and_score > 0.0 {
+                    candidates.push(("and".into(), p.clone(), q.clone(), and_score, and_diag));
+                }
+
+                let (or_score, or_diag) = self.score_combo_or(p, q);
+                if or_score > 0.0 {
+                    candidates.push(("or".into(), p.clone(), q.clone(), or_score, or_diag));
                 }
             }
         }
-        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
         candidates
     }
 
-    /// Automatically construct the top-K scoring property conjunctions.
+    /// Automatically construct the top-K scoring property combinations (AND + OR).
     /// Returns the names of constructed combinations.
     pub fn auto_construct_top_k(&mut self, k: usize) -> Vec<String> {
         let candidates = self.enumerate_combo_candidates();
         let mut constructed = Vec::new();
 
         if !self.relation_defs.contains_key("auto_constructed") {
-            self.define_relation("auto_constructed", 3);
+            self.define_relation("auto_constructed", 4);
         }
 
-        for (rank, (p, q, score, _diag)) in candidates.iter().take(k).enumerate() {
-            let name = format!("combo_{}_{}", p, q);
-            self.define_compose_and(&name, p, q);
-            self.record_combo_score(&name, p, q);
+        for (rank, (op, p, q, score, _diag)) in candidates.iter().take(k).enumerate() {
+            let name = format!("{}_{}_{}",
+                if op == "and" { "and" } else { "or" }, p, q);
+            match op.as_str() {
+                "and" => self.define_compose_and(&name, p, q),
+                "or" => self.define_compose_or(&name, p, q),
+                _ => {}
+            }
+            // Record score
+            if op == "and" {
+                self.record_combo_score(&name, p, q);
+            }
 
-            // Record rank
             let rank_str = format!("{}", rank + 1);
+            let score_str = format!("{:.4}", score);
             self.define_constant(&rank_str);
             self.define_constant(&name);
+            self.define_constant(&score_str);
+            self.define_constant(op);
             self.add_fact(Relation::new(
                 "auto_constructed",
                 vec![
                     Term::constant(&name),
-                    Term::constant(&format!("{:.4}", score)),
+                    Term::constant(op),
+                    Term::constant(&score_str),
                     Term::constant(&rank_str),
                 ],
             ));

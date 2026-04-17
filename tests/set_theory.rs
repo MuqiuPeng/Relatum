@@ -4095,8 +4095,8 @@ fn test_auto_combo_search() {
     println!("\n  Algebra (assoc+id):");
     println!("    Properties: left_id, right_id, idempotent");
     println!("    Candidates with score > 0: {}", cands_alg.len());
-    for (p, q, score, diag) in &cands_alg {
-        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    for (op, p, q, score, diag) in &cands_alg {
+        println!("      {} {} {} → score={:.4} ({})", p, op, q, score, diag);
     }
 
     if !cands_alg.is_empty() {
@@ -4120,8 +4120,8 @@ fn test_auto_combo_search() {
     println!("\n  Order theory (chain a<b<c<d):");
     println!("    Properties: is_maximal, is_minimal, is_isolated, is_extremal");
     println!("    Candidates with score > 0: {}", cands_ord.len());
-    for (p, q, score, diag) in &cands_ord {
-        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    for (op, p, q, score, diag) in &cands_ord {
+        println!("      {} {} {} → score={:.4} ({})", p, op, q, score, diag);
     }
 
     if !cands_ord.is_empty() {
@@ -4173,8 +4173,8 @@ fn test_auto_combo_search() {
     println!("\n  Set theory (powerset chain):");
     println!("    Properties: is_set, superset_of_empty, has_member_empty, self_subset");
     println!("    Candidates with score > 0: {}", cands_set.len());
-    for (p, q, score, diag) in &cands_set {
-        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    for (op, p, q, score, diag) in &cands_set {
+        println!("      {} {} {} → score={:.4} ({})", p, op, q, score, diag);
     }
 
     if !cands_set.is_empty() {
@@ -4238,8 +4238,8 @@ fn test_negate_and_combo() {
     // Now search for combos
     let cands = eng.enumerate_combo_candidates();
     println!("\n    Candidates with score > 0: {}", cands.len());
-    for (p, q, score, diag) in &cands {
-        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    for (op, p, q, score, diag) in &cands {
+        println!("      {} {} {} → score={:.4} ({})", p, op, q, score, diag);
     }
 
     // On 3-element carriers, property space too small for informative combos
@@ -4276,8 +4276,8 @@ fn test_negate_and_combo() {
 
     let cands_ord = eng_ord.enumerate_combo_candidates();
     println!("\n    Candidates with score > 0: {}", cands_ord.len());
-    for (p, q, score, diag) in cands_ord.iter().take(5) {
-        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    for (op, p, q, score, diag) in cands_ord.iter().take(5) {
+        println!("      {} {} {} → score={:.4} ({})", p, op, q, score, diag);
     }
 
     // ── Summary ──
@@ -4286,6 +4286,63 @@ fn test_negate_and_combo() {
     println!("    After negation:  {} (algebra), {} (order)",
         cands.len(), cands_ord.len());
     println!("    Negation creates orthogonal properties → informative intersections");
+}
+
+/// compose_or + unified auto search with AND+OR.
+#[test]
+fn test_compose_or_and_search() {
+    println!("\n============================================================");
+    println!("  COMPOSE_OR + UNIFIED AUTO SEARCH (AND + OR)");
+    println!("============================================================");
+
+    // Order theory (chain a<b<c<d) with negations
+    let mut eng = poset_property_engine(
+        &["a".into(), "b".into(), "c".into(), "d".into()],
+        &[("a".into(),"b".into()), ("b".into(),"c".into()), ("c".into(),"d".into())],
+    );
+    eng.define_negate("not_maximal", "is_maximal");
+    eng.define_negate("not_minimal", "is_minimal");
+    eng.enable_property_implication();
+    eng.set_max_rounds(10);
+    eng.set_max_facts(300);
+    eng.derive_closure();
+
+    println!("\n  Order theory (chain a<b<c<d):");
+    for prop in &["is_maximal", "is_minimal", "is_extremal",
+                   "not_maximal", "not_minimal"] {
+        let ext: Vec<String> = eng.facts().iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop) && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+        println!("    {:<18} ext = {:?}", prop, ext);
+    }
+
+    // Unified search (AND + OR)
+    let cands = eng.enumerate_combo_candidates();
+    let and_count = cands.iter().filter(|(op,_,_,_,_)| op == "and").count();
+    let or_count = cands.iter().filter(|(op,_,_,_,_)| op == "or").count();
+
+    println!("\n    Candidates (AND+OR) with score > 0: {} (AND={}, OR={})",
+        cands.len(), and_count, or_count);
+    for (op, p, q, score, diag) in &cands {
+        println!("      {} {} {} → score={:.4} ({})", p, op, q, score, diag);
+    }
+
+    // OR-specific: or(maximal, minimal) should be degenerate to extremal
+    let (or_mm_score, or_mm_diag) = eng.score_combo_or("is_maximal", "is_minimal");
+    println!("\n    or(maximal, minimal): {:.4} ({}) — should be degenerate_to_is_extremal",
+        or_mm_score, or_mm_diag);
+    assert_eq!(or_mm_score, 0.0);
+    assert!(or_mm_diag.contains("degenerate"),
+        "or(max,min) = ext(extremal) → degenerate");
+
+    // Auto-construct top-5
+    let constructed = eng.auto_construct_top_k(5);
+    println!("    Auto-constructed: {:?}", constructed);
+
+    println!("\n  Summary:");
+    println!("    AND: {} informative, OR: {} informative", and_count, or_count);
+    println!("    or(maximal, minimal) correctly filtered as degenerate to extremal");
 }
 
 /// Simple premise matching against a vec of fact references.
