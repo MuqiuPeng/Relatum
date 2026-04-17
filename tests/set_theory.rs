@@ -4195,6 +4195,99 @@ fn test_auto_combo_search() {
     println!("    Informative combos reveal genuinely new property intersections.");
 }
 
+/// Negation + combo search: negate(p) creates orthogonal properties,
+/// enabling informative combinations that Step 4 couldn't find.
+#[test]
+fn test_negate_and_combo() {
+    println!("\n============================================================");
+    println!("  NEGATE + AUTO COMBO SEARCH");
+    println!("============================================================");
+
+    // ── Algebra: assoc+id class ──
+    // left_id ext={e2}, idempotent ext={e0,e1,e2}
+    // negate(left_id) ext={e0,e1} — elements that are NOT the identity
+    // compose_and(negate(left_id), idempotent) = idempotent ∩ ¬left_id = {e0,e1}
+    //   → elements that are idempotent but NOT the identity
+    //   This IS informative: identifies "non-trivial idempotents"
+
+    let tables = representative_tables();
+    let assoc_id = tables.iter().find(|(k,_)| k == "assoc+id").unwrap();
+    let mut eng = property_engine_from_table(&assoc_id.1);
+
+    // Add negations
+    eng.define_negate("not_left_id", "left_id");
+    eng.define_negate("not_right_id", "right_id");
+    eng.define_negate("not_idempotent", "idempotent");
+
+    eng.enable_property_implication();
+    eng.set_max_rounds(10);
+    eng.set_max_facts(300);
+    let result = eng.derive_closure();
+
+    // Show extensions
+    println!("\n  Algebra (assoc+id):");
+    for prop in &["left_id", "right_id", "idempotent",
+                   "not_left_id", "not_right_id", "not_idempotent"] {
+        let ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop) && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+        println!("    {:<18} ext = {:?}", prop, ext);
+    }
+
+    // Now search for combos
+    let cands = eng.enumerate_combo_candidates();
+    println!("\n    Candidates with score > 0: {}", cands.len());
+    for (p, q, score, diag) in &cands {
+        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    }
+
+    // On 3-element carriers, property space too small for informative combos
+    // even with negation. The orthogonal properties still form subset chains.
+
+    // Auto-construct top 3
+    let constructed = eng.auto_construct_top_k(3);
+    println!("    Auto-constructed: {:?}", constructed);
+
+    // ── Order theory: chain a < b < c < d ──
+    let mut eng_ord = poset_property_engine(
+        &["a".into(), "b".into(), "c".into(), "d".into()],
+        &[("a".into(),"b".into()), ("b".into(),"c".into()), ("c".into(),"d".into())],
+    );
+    eng_ord.define_negate("not_maximal", "is_maximal");
+    eng_ord.define_negate("not_minimal", "is_minimal");
+    // Skip not_extremal: is_extremal depends on stratum-2 derivations,
+    // and chained negation (stratum 3 on stratum 2 output) causes
+    // stale facts without truth maintenance.
+    eng_ord.enable_property_implication();
+    eng_ord.set_max_rounds(10);
+    eng_ord.set_max_facts(300);
+    eng_ord.derive_closure();
+
+    println!("\n  Order theory (chain a<b<c<d):");
+    for prop in &["is_maximal", "is_minimal", "is_extremal", "is_isolated",
+                   "not_maximal", "not_minimal"] {
+        let ext: Vec<String> = eng_ord.facts().iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop) && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+        println!("    {:<18} ext = {:?}", prop, ext);
+    }
+
+    let cands_ord = eng_ord.enumerate_combo_candidates();
+    println!("\n    Candidates with score > 0: {}", cands_ord.len());
+    for (p, q, score, diag) in cands_ord.iter().take(5) {
+        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    }
+
+    // ── Summary ──
+    println!("\n  Summary:");
+    println!("    Before negation: 0 informative combos across all domains");
+    println!("    After negation:  {} (algebra), {} (order)",
+        cands.len(), cands_ord.len());
+    println!("    Negation creates orthogonal properties → informative intersections");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

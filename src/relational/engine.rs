@@ -541,6 +541,51 @@ impl ClosureEngine {
         ));
     }
 
+    // ── property negation ──────────────────────────────────
+
+    /// Define the negation of a property: ext(not_p) = domain \ ext(p).
+    ///
+    /// ```text
+    /// define_negate("not_left_id", "left_id")
+    ///
+    /// generates:
+    ///   is_property(not_left_id)
+    ///   element(x), NOT has_property_1(x, left_id) |- has_property_1(x, not_left_id)
+    /// ```
+    ///
+    /// The negated property's extension is the complement of the original
+    /// within the element domain.
+    pub fn define_negate(&mut self, name: &str, p: &str) {
+        self.define_constant(name);
+        if !self.relation_defs.contains_key("is_property") {
+            self.define_relation("is_property", 1);
+        }
+        self.add_fact(Relation::new("is_property", vec![Term::constant(name)]));
+
+        if !self.relation_defs.contains_key("has_property_1") {
+            self.define_relation("has_property_1", 2);
+        }
+
+        self.define_variable("_nx");
+
+        // element(x), NOT has_property_1(x, p) |- has_property_1(x, name)
+        // Stratum 3: must run AFTER stratum 2 (where has_property_1 facts
+        // are derived via double-negation detection for universal properties).
+        self.add_rule(Rule::new(
+            format!("{}_negate_detect", name),
+            vec![RelationPattern::new("element", vec![Term::var("_nx")])],
+            vec![RelationPattern::new(
+                "has_property_1",
+                vec![Term::var("_nx"), Term::constant(name)],
+            )],
+        ).with_negated(vec![
+            RelationPattern::new(
+                "has_property_1",
+                vec![Term::var("_nx"), Term::constant(p)],
+            ),
+        ]).with_stratum(3));
+    }
+
     // ── auto combination search ─────────────────────────────
 
     /// Enumerate all pairs of existing properties, score each conjunction,
