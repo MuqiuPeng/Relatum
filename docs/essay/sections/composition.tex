@@ -79,3 +79,61 @@ The sole surviving combination, $\lnot\text{maximal} \wedge \lnot\text{minimal}$
 
 \item \textbf{Carrier size matters.} On 3-element carriers, even negation cannot escape degeneracy (all property subsets form chains). The 4-element chain provides just enough room for a genuinely new intersection. This suggests that concept discovery requires a minimum structural complexity in the input domain.
 \end{enumerate}
+
+\subsection{Disjunction}
+
+$\texttt{define\_compose\_or}(\textit{name}, p, q)$ constructs a property with $\mathrm{ext}(\textit{name}) = \mathrm{ext}(p) \cup \mathrm{ext}(q)$. Only forward rules are generated (no negation-based decomposition):
+\begin{align*}
+\mathit{has\_property}(x, p) &\vdash \mathit{has\_property}(x, \textit{name}) \\
+\mathit{has\_property}(x, q) &\vdash \mathit{has\_property}(x, \textit{name})
+\end{align*}
+
+Scoring follows the same filter structure as conjunction, with soft factors adapted for unions: $\text{score} = \text{covering\_penalty} \times \text{disjointness} \times \text{rarity}$.
+
+On the 4-element chain, $\mathit{or}(\text{maximal}, \text{minimal}) = \{a, d\} = \mathrm{ext}(\text{extremal})$, correctly filtered as \texttt{degenerate\_to\_is\_extremal}.
+
+\subsection{Property Space Analysis}
+
+The combination scoring infrastructure enables a structural characterization of each domain's property space. For every pair of properties, the degenerate diagnosis carries implicit information:
+
+\begin{itemize}
+\item $\text{and}(p, q)$ degenerates to $p$ $\Rightarrow$ $\mathrm{ext}(p) \subseteq \mathrm{ext}(q)$ $\Rightarrow$ $\mathit{implies}(p, q)$.
+\item $\text{or}(p, q)$ degenerates to $p$ $\Rightarrow$ $\mathrm{ext}(q) \subseteq \mathrm{ext}(p)$ $\Rightarrow$ $\mathit{implies}(q, p)$.
+\item AND degenerate ratio $> 80\%$ $\Rightarrow$ the property space is \emph{hierarchical} (extensions form subset chains).
+\item OR degenerate ratio $= 100\%$ $\Rightarrow$ the property lattice is \emph{union-closed} (no disjunction produces a new extension).
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\caption{Property space structure across three domains. All properties include negations where applicable. ``Informative'' means score $> 0$ after all filters.}
+\label{tab:propspace}
+\begin{tabular}{lccc}
+\toprule
+ & Algebra & Order & Set theory \\
+ & (assoc+id, $n{=}3$) & (chain, $n{=}4$) & (powerset, $n{=}8$) \\
+\midrule
+Properties & 6 & 6 & 5 \\
+Pairs & 15 & 15 & 10 \\
+AND degenerate & 100\% & 93\% & 100\% \\
+OR degenerate & 100\% & 100\% & 100\% \\
+AND informative & 0 & 1 & 0 \\
+OR informative & 0 & 0 & 0 \\
+Hierarchical & \checkmark & \checkmark & \checkmark \\
+Union-closed & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Meta-Level Observations}
+
+Three patterns hold across all tested domains (3~data points; low confidence, documented as observations rather than theorems):
+
+\begin{enumerate}
+\item \textbf{Union-closed.} In all three domains, OR produces zero informative combinations. Every disjunction either degenerates to a parent, reconstructs an existing property, or covers the entire domain. Property lattices derived from single structures appear to be closed under union.
+
+\item \textbf{Hierarchical.} AND degenerate rates exceed 93\% in all domains. Property extensions form subset chains rather than crossing freely. The sole exception---$\lnot\text{maximal} \wedge \lnot\text{minimal}$ on the 4-element chain---requires negation to create an intersection that is a proper subset of both parents.
+
+\item \textbf{Disjunction $<$ conjunction + negation.} Across all domains, the only informative composition operator is conjunction applied to negated properties. Disjunction adds no new concepts. This suggests that for concept discovery in derived property spaces, complementation (negation) is the essential ingredient, not aggregation (disjunction).
+\end{enumerate}
+
+These observations are consistent with a general principle: when properties are derived from a single coherent structure (an algebra, an ordering, a set-theoretic construction), their extensions naturally form a lattice in which unions correspond to existing concepts. Novel concepts arise only by \emph{subtracting} known structure (via negation), not by \emph{adding} known structure (via disjunction).
