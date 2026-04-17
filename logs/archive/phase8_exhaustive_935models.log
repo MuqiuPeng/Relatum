@@ -1,0 +1,26 @@
+╔════════════════════════════════════════════════════════════╗
+║  EXHAUSTIVE PROPERTY IMPLICATION ACROSS AXIOM CLASSES    ║
+╚════════════════════════════════════════════════════════════╝
+
+  class                    models left↔right  left↔idem right↔idem
+  ──────────────────────── ────── ────────── ────────── ──────────
+  assoc                        44     ✗ 0/44     ? 1/44     ? 1/44
+  assoc+comm                   36     ✗ 0/36     ✗ 0/36     ✗ 0/36
+  assoc+comm+id                24    ✓ 24/24     ✗ 0/24     ✗ 0/24
+  assoc+comm+id+inv             3      ✓ 3/3      ✓ 3/3      ✓ 3/3
+  assoc+id                      6      ✓ 6/6      ✗ 0/6      ✗ 0/6
+  comm                        612    ✗ 0/612    ✗ 0/612    ✗ 0/612
+  comm+id                      24    ✓ 24/24    ? 18/24    ? 18/24
+  comm+id+inv                  30    ✓ 30/30    ? 15/30    ? 15/30
+  id                          138  ✓ 138/138   ? 54/138   ? 54/138
+  id+inv                       18    ✓ 18/18    ✓ 18/18    ✓ 18/18
+
+  Legend: ✓ = holds on ALL models (exhaustive verification)
+          ✗ = holds on NO models
+          ? = holds on some but not all (class is heterogeneous)
+
+  Exhaustive verification across all 935 non-trivial models.
+  ✓ entries are not induction — they are complete enumeration.
+test test_exhaustive_class_implications ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.93s

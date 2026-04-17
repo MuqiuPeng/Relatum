@@ -4658,6 +4658,94 @@ fn test_property_space_analysis() {
     }
 }
 
+/// Exhaustive property implication verification across ALL models in each axiom class.
+/// Not sampling — checking every model in the class.
+#[test]
+fn test_exhaustive_class_implications() {
+    println!("\n╔════════════════════════════════════════════════════════════╗");
+    println!("║  EXHAUSTIVE PROPERTY IMPLICATION ACROSS AXIOM CLASSES    ║");
+    println!("╚════════════════════════════════════════════════════════════╝");
+
+    // Enumerate ALL 19683 operations, group by axiom class
+    let mut classes: std::collections::BTreeMap<String, Vec<[[u8; 3]; 3]>> =
+        std::collections::BTreeMap::new();
+
+    for code in 0u32..19683 {
+        let mut table = [[0u8; 3]; 3];
+        let mut c2 = code;
+        for i in 0..3 {
+            for j in 0..3 {
+                table[i][j] = (c2 % 3) as u8;
+                c2 /= 3;
+            }
+        }
+        let op = |a: usize, b: usize| -> usize { table[a][b] as usize };
+        let assoc = (0..3).all(|a| (0..3).all(|b| (0..3).all(|cc|
+            op(op(a,b),cc) == op(a,op(b,cc)))));
+        let comm = (0..3).all(|a| (0..3).all(|b| op(a,b) == op(b,a)));
+        let id = (0..3).any(|e| (0..3).all(|x| op(e,x) == x && op(x,e) == x));
+        let inv = id && {
+            let e = (0..3).find(|&e| (0..3).all(|x| op(e,x) == x && op(x,e) == x)).unwrap();
+            (0..3).all(|a| (0..3).any(|b| op(a,b) == e && op(b,a) == e))
+        };
+        let mut tags = Vec::new();
+        if assoc { tags.push("assoc"); }
+        if comm { tags.push("comm"); }
+        if id { tags.push("id"); }
+        if inv { tags.push("inv"); }
+        let class = if tags.is_empty() { "none".to_string() } else { tags.join("+") };
+        if class != "none" {
+            classes.entry(class).or_default().push(table);
+        }
+    }
+
+    // For each class, run property implication on EVERY model
+    println!("\n  {:24} {:>6} {:>10} {:>10} {:>10}",
+        "class", "models", "left↔right", "left↔idem", "right↔idem");
+    println!("  {:─<24} {:─>6} {:─>10} {:─>10} {:─>10}", "", "", "", "", "");
+
+    let pairs = [("left_id", "right_id"), ("left_id", "idempotent"), ("right_id", "idempotent")];
+
+    for (class_name, tables) in &classes {
+        let n = tables.len();
+        let mut pair_counts = [0usize; 3]; // count of models where equiv holds
+
+        for table in tables {
+            let mut eng = property_engine_from_table(table);
+            eng.enable_property_implication();
+            eng.set_max_rounds(10);
+            eng.set_max_facts(200);
+            eng.derive_closure();
+
+            for (i, &(p, q)) in pairs.iter().enumerate() {
+                let has_equiv = eng.facts().iter().any(|f|
+                    f.name() == "equivalent_observed"
+                    && ((f.terms()[0] == Term::constant(p) && f.terms()[1] == Term::constant(q))
+                        || (f.terms()[0] == Term::constant(q) && f.terms()[1] == Term::constant(p))));
+                if has_equiv { pair_counts[i] += 1; }
+            }
+        }
+
+        let fmt = |count: usize, total: usize| -> String {
+            if count == total { format!("✓ {}/{}", count, total) }
+            else if count == 0 { format!("✗ 0/{}", total) }
+            else { format!("? {}/{}", count, total) }
+        };
+
+        println!("  {:24} {:>6} {:>10} {:>10} {:>10}",
+            class_name, n,
+            fmt(pair_counts[0], n),
+            fmt(pair_counts[1], n),
+            fmt(pair_counts[2], n));
+    }
+
+    println!("\n  Legend: ✓ = holds on ALL models (exhaustive verification)");
+    println!("          ✗ = holds on NO models");
+    println!("          ? = holds on some but not all (class is heterogeneous)");
+    println!("\n  Exhaustive verification across all 935 non-trivial models.");
+    println!("  ✓ entries are not induction — they are complete enumeration.");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
