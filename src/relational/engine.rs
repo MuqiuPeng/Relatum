@@ -410,6 +410,45 @@ impl ClosureEngine {
         ).with_ground_required(vec!["_cx".to_string()]));
     }
 
+    // ── property similarity ────────────────────────────────
+
+    /// Get the extension of a unary property: all ground elements x
+    /// where has_property_1(x, prop_name) holds.
+    pub fn property_extension(&self, prop_name: &str) -> HashSet<Term> {
+        self.facts
+            .iter()
+            .filter(|f| {
+                f.name() == "has_property_1"
+                    && f.arity() == 2
+                    && f.terms()[1] == Term::constant(prop_name)
+                    && f.is_ground()
+            })
+            .map(|f| f.terms()[0].clone())
+            .collect()
+    }
+
+    /// Jaccard similarity between two property extensions.
+    /// Returns None if both extensions are empty (no data).
+    pub fn extension_similarity(
+        ext1: &HashSet<Term>,
+        ext2: &HashSet<Term>,
+    ) -> Option<f64> {
+        let union_size = ext1.union(ext2).count();
+        if union_size == 0 {
+            None
+        } else {
+            let inter_size = ext1.intersection(ext2).count();
+            Some(inter_size as f64 / union_size as f64)
+        }
+    }
+
+    /// Compute Jaccard similarity between two named properties.
+    pub fn property_similarity(&self, p: &str, q: &str) -> Option<f64> {
+        let ext_p = self.property_extension(p);
+        let ext_q = self.property_extension(q);
+        Self::extension_similarity(&ext_p, &ext_q)
+    }
+
     // ── property implication (Henkin second-order, phase 2) ──
 
     /// Declare that property implication should be tracked.
@@ -520,13 +559,47 @@ impl ClosureEngine {
             self.define_relation("equivalent_observed", 2);
         }
 
+        // Record similarity for all non-trivial property pairs
+        if !self.relation_defs.contains_key("similarity") {
+            self.define_relation("similarity", 3);
+        }
+
         let mut new_facts = Vec::new();
+        let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
+
         for (p, ext_p) in &extensions {
-            if ext_p.is_empty() {
-                continue;
-            }
             for (q, ext_q) in &extensions {
                 if p == q {
+                    continue;
+                }
+
+                // Similarity (record once per unordered pair)
+                let p_str = p.to_string();
+                let q_str = q.to_string();
+                let pair_key = if p_str < q_str {
+                    (p_str.clone(), q_str.clone())
+                } else {
+                    (q_str.clone(), p_str.clone())
+                };
+                if seen_pairs.insert(pair_key) {
+                    if let Some(sim) = Self::extension_similarity(ext_p, ext_q) {
+                        // Encode similarity as a ternary relation with a
+                        // string-encoded float: similarity(p, q, "0.75")
+                        let sim_str = format!("{:.4}", sim);
+                        self.define_constant(&sim_str);
+                        let sim_fact = Relation::new(
+                            "similarity",
+                            vec![p.clone(), q.clone(), Term::constant(&sim_str)],
+                        );
+                        if !self.facts.contains(&sim_fact) {
+                            new_facts.push(sim_fact);
+                        }
+                    }
+                    // If None (both empty), no similarity fact recorded
+                }
+
+                // Implication (directional)
+                if ext_p.is_empty() {
                     continue;
                 }
                 if ext_p.is_subset(ext_q) {
@@ -535,7 +608,6 @@ impl ClosureEngine {
                     if !self.facts.contains(&impl_fact) {
                         new_facts.push(impl_fact);
                     }
-                    // Check reverse for equivalence
                     if ext_q.is_subset(ext_p) {
                         let equiv_fact =
                             Relation::binary("equivalent_observed", p.clone(), q.clone());
