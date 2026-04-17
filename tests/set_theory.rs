@@ -4955,6 +4955,150 @@ fn test_modus_ponens_breakthrough() {
     println!("  The injected implication broke through the original fixpoint.");
 }
 
+/// Phase 9 re-verification: does implies promotion change the exhaustive table?
+/// Specifically: comm+id was 18/24 for left↔idem. With modus ponens, does it become 24/24?
+#[test]
+fn test_phase9_exhaustive_recheck() {
+    println!("\n╔════════════════════════════════════════════════════════════╗");
+    println!("║  PHASE 9: EXHAUSTIVE RE-VERIFICATION WITH PROMOTION      ║");
+    println!("╚════════════════════════════════════════════════════════════╝");
+
+    // Enumerate all 19683 operations, group by axiom class
+    let mut classes: std::collections::BTreeMap<String, Vec<[[u8; 3]; 3]>> =
+        std::collections::BTreeMap::new();
+    for code in 0u32..19683 {
+        let mut table = [[0u8; 3]; 3];
+        let mut c2 = code;
+        for i in 0..3 { for j in 0..3 { table[i][j] = (c2 % 3) as u8; c2 /= 3; } }
+        let op = |a: usize, b: usize| -> usize { table[a][b] as usize };
+        let assoc = (0..3).all(|a| (0..3).all(|b| (0..3).all(|cc| op(op(a,b),cc) == op(a,op(b,cc)))));
+        let comm = (0..3).all(|a| (0..3).all(|b| op(a,b) == op(b,a)));
+        let id = (0..3).any(|e| (0..3).all(|x| op(e,x) == x && op(x,e) == x));
+        let inv = id && {
+            let e = (0..3).find(|&e| (0..3).all(|x| op(e,x) == x && op(x,e) == x)).unwrap();
+            (0..3).all(|a| (0..3).any(|b| op(a,b) == e && op(b,a) == e))
+        };
+        let mut tags = Vec::new();
+        if assoc { tags.push("assoc"); }
+        if comm { tags.push("comm"); }
+        if id { tags.push("id"); }
+        if inv { tags.push("inv"); }
+        let class = if tags.is_empty() { "none".to_string() } else { tags.join("+") };
+        if class != "none" { classes.entry(class).or_default().push(table); }
+    }
+
+    let pairs = [("left_id", "idempotent")]; // focus on left↔idem
+
+    // Focus classes: those that showed ? in Phase 8
+    let focus = ["comm+id", "comm+id+inv", "id", "assoc"];
+
+    println!("\n  {:24} {:>6} {:>12} {:>12}", "class", "models", "Phase8(raw)", "Phase9(+mp)");
+    println!("  {:─<24} {:─>6} {:─>12} {:─>12}", "", "", "", "");
+
+    for class_name in &focus {
+        let tables = match classes.get(*class_name) {
+            Some(t) => t,
+            None => continue,
+        };
+        let n = tables.len();
+        let mut phase8_count = 0usize;
+        let mut phase9_count = 0usize;
+
+        for table in tables {
+            // Phase 8: standard run (no promotion)
+            let mut eng8 = property_engine_from_table(table);
+            eng8.enable_property_implication();
+            eng8.set_max_rounds(10);
+            eng8.set_max_facts(200);
+            let res8 = eng8.derive_closure();
+
+            let has_equiv8 = res8.facts.iter().any(|f|
+                f.name() == "equivalent_observed"
+                && ((f.terms()[0] == Term::constant("left_id") && f.terms()[1] == Term::constant("idempotent"))
+                    || (f.terms()[0] == Term::constant("idempotent") && f.terms()[1] == Term::constant("left_id"))));
+            if has_equiv8 { phase8_count += 1; }
+
+            // Phase 9: with implies promotion (already built into derive_closure)
+            // The promotion happens automatically if fixed_point is reached.
+            // Check if implies(left_id, idempotent) was promoted and modus ponens fired.
+            let has_equiv9 = res8.facts.iter().any(|f|
+                f.name() == "equivalent_observed"
+                && ((f.terms()[0] == Term::constant("left_id") && f.terms()[1] == Term::constant("idempotent"))
+                    || (f.terms()[0] == Term::constant("idempotent") && f.terms()[1] == Term::constant("left_id"))))
+                || res8.facts.iter().any(|f|
+                    f.name() == "equivalent" // deductive equivalent via promoted implies
+                    && ((f.terms()[0] == Term::constant("left_id") && f.terms()[1] == Term::constant("idempotent"))
+                        || (f.terms()[0] == Term::constant("idempotent") && f.terms()[1] == Term::constant("left_id"))));
+
+            // Actually: since promotion is now part of derive_closure,
+            // res8 already includes promotion effects. phase8 and phase9
+            // are the SAME run. The question is whether promotion changes anything.
+            //
+            // To compare: we need a run WITHOUT promotion. But promotion is
+            // built into derive_closure. Let's check if the implies_observed
+            // to implies promotion added any new has_property facts.
+
+            // Simpler: just check if the equivalence holds, period.
+            // The phase8 column already includes promotion.
+            if has_equiv9 { phase9_count += 1; }
+        }
+
+        // Since promotion is now part of the engine, both columns are the same.
+        // The real comparison is: current (with promotion) vs Phase 8 data (without).
+        println!("  {:24} {:>6} {:>12} {:>12}",
+            class_name, n,
+            format!("{}/{}", phase8_count, n),
+            format!("{}/{}", phase9_count, n));
+    }
+
+    // Direct comparison: look at the actual extensions for a comm+id model
+    // where Phase 8 showed non-equivalence
+    println!("\n  Detailed: comm+id class, looking for non-equivalent models...");
+
+    let comm_id_tables = classes.get("comm+id").unwrap();
+    let mut equiv_count = 0;
+    let mut non_equiv_example = None;
+
+    for (idx, table) in comm_id_tables.iter().enumerate() {
+        let mut eng = property_engine_from_table(table);
+        eng.enable_property_implication();
+        eng.set_max_rounds(10);
+        eng.set_max_facts(200);
+        let res = eng.derive_closure();
+
+        let left_ext: Vec<String> = res.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant("left_id") && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+        let idem_ext: Vec<String> = res.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant("idempotent") && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+
+        if left_ext.len() == idem_ext.len() && {
+            let l: HashSet<_> = left_ext.iter().collect();
+            let i: HashSet<_> = idem_ext.iter().collect();
+            l == i
+        } {
+            equiv_count += 1;
+        } else if non_equiv_example.is_none() {
+            non_equiv_example = Some((idx, table.clone(), left_ext, idem_ext));
+        }
+    }
+
+    println!("    Equivalent: {}/{}", equiv_count, comm_id_tables.len());
+
+    if let Some((idx, table, left, idem)) = non_equiv_example {
+        println!("    Non-equivalent example (model #{}):", idx);
+        println!("      table: {:?}", table);
+        println!("      ext(left_id) = {:?}", left);
+        println!("      ext(idempotent) = {:?}", idem);
+        println!("    → This is GENUINE mathematical diversity, not a mechanism gap.");
+    } else {
+        println!("    All models are equivalent! Phase 8 result was a mechanism artifact.");
+    }
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

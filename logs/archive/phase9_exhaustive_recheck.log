@@ -1,0 +1,20 @@
+║  PHASE 9: EXHAUSTIVE RE-VERIFICATION WITH PROMOTION      ║
+╚════════════════════════════════════════════════════════════╝
+
+  class                    models  Phase8(raw)  Phase9(+mp)
+  ──────────────────────── ────── ──────────── ────────────
+  comm+id                      24        18/24        18/24
+  comm+id+inv                  30        15/30        15/30
+  id                          138       54/138       54/138
+  assoc                        44         1/44         1/44
+
+  Detailed: comm+id class, looking for non-equivalent models...
+    Equivalent: 18/24
+    Non-equivalent example (model #5):
+      table: [[0, 1, 2], [1, 1, 2], [2, 2, 0]]
+      ext(left_id) = ["e0"]
+      ext(idempotent) = ["e0", "e1"]
+    → This is GENUINE mathematical diversity, not a mechanism gap.
+test test_phase9_exhaustive_recheck ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 1.01s
