@@ -541,6 +541,68 @@ impl ClosureEngine {
         ));
     }
 
+    // ── auto combination search ─────────────────────────────
+
+    /// Enumerate all pairs of existing properties, score each conjunction,
+    /// and return candidates sorted by score (descending). Only non-zero
+    /// scores are included.
+    pub fn enumerate_combo_candidates(&self) -> Vec<(String, String, f64, String)> {
+        let properties: Vec<String> = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "is_property" && f.arity() == 1 && f.is_ground())
+            .map(|f| f.terms()[0].to_string())
+            .collect();
+
+        let mut candidates = Vec::new();
+        for i in 0..properties.len() {
+            for j in (i + 1)..properties.len() {
+                let p = &properties[i];
+                let q = &properties[j];
+                let (score, diag) = self.score_combo_and(p, q);
+                if score > 0.0 {
+                    candidates.push((p.clone(), q.clone(), score, diag));
+                }
+            }
+        }
+        candidates.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        candidates
+    }
+
+    /// Automatically construct the top-K scoring property conjunctions.
+    /// Returns the names of constructed combinations.
+    pub fn auto_construct_top_k(&mut self, k: usize) -> Vec<String> {
+        let candidates = self.enumerate_combo_candidates();
+        let mut constructed = Vec::new();
+
+        if !self.relation_defs.contains_key("auto_constructed") {
+            self.define_relation("auto_constructed", 3);
+        }
+
+        for (rank, (p, q, score, _diag)) in candidates.iter().take(k).enumerate() {
+            let name = format!("combo_{}_{}", p, q);
+            self.define_compose_and(&name, p, q);
+            self.record_combo_score(&name, p, q);
+
+            // Record rank
+            let rank_str = format!("{}", rank + 1);
+            self.define_constant(&rank_str);
+            self.define_constant(&name);
+            self.add_fact(Relation::new(
+                "auto_constructed",
+                vec![
+                    Term::constant(&name),
+                    Term::constant(&format!("{:.4}", score)),
+                    Term::constant(&rank_str),
+                ],
+            ));
+
+            constructed.push(name);
+        }
+
+        constructed
+    }
+
     // ── property implication (Henkin second-order, phase 2) ──
 
     /// Declare that property implication should be tracked.

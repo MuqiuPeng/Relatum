@@ -4075,6 +4075,126 @@ fn test_combo_score() {
     println!("    Informative → score=0.167, positive ✓");
 }
 
+/// Auto combination search across three domains.
+#[test]
+fn test_auto_combo_search() {
+    println!("\n============================================================");
+    println!("  AUTO COMBINATION SEARCH (Top-K across 3 domains)");
+    println!("============================================================");
+
+    // ── Domain 1: Algebra (assoc+id class — has non-trivial property landscape) ──
+    let tables = representative_tables();
+    let assoc_id = tables.iter().find(|(k,_)| k == "assoc+id").unwrap();
+    let mut eng_alg = property_engine_from_table(&assoc_id.1);
+    eng_alg.enable_property_implication();
+    eng_alg.set_max_rounds(10);
+    eng_alg.set_max_facts(200);
+    eng_alg.derive_closure();
+
+    let cands_alg = eng_alg.enumerate_combo_candidates();
+    println!("\n  Algebra (assoc+id):");
+    println!("    Properties: left_id, right_id, idempotent");
+    println!("    Candidates with score > 0: {}", cands_alg.len());
+    for (p, q, score, diag) in &cands_alg {
+        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    }
+
+    if !cands_alg.is_empty() {
+        let constructed_alg = eng_alg.auto_construct_top_k(3);
+        println!("    Constructed: {:?}", constructed_alg);
+    } else {
+        println!("    No informative combinations (all degenerate)");
+    }
+
+    // ── Domain 2: Order theory (chain a < b < c < d) ──
+    let mut eng_ord = poset_property_engine(
+        &["a".into(), "b".into(), "c".into(), "d".into()],
+        &[("a".into(),"b".into()), ("b".into(),"c".into()), ("c".into(),"d".into())],
+    );
+    eng_ord.enable_property_implication();
+    eng_ord.set_max_rounds(10);
+    eng_ord.set_max_facts(200);
+    eng_ord.derive_closure();
+
+    let cands_ord = eng_ord.enumerate_combo_candidates();
+    println!("\n  Order theory (chain a<b<c<d):");
+    println!("    Properties: is_maximal, is_minimal, is_isolated, is_extremal");
+    println!("    Candidates with score > 0: {}", cands_ord.len());
+    for (p, q, score, diag) in &cands_ord {
+        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    }
+
+    if !cands_ord.is_empty() {
+        let constructed_ord = eng_ord.auto_construct_top_k(3);
+        println!("    Constructed: {:?}", constructed_ord);
+    } else {
+        println!("    No informative combinations");
+    }
+
+    // ── Domain 3: Set theory (powerset chain) ──
+    let mut eng_set = ClosureEngine::new();
+    eng_set.define_relation("set", 1);
+    eng_set.define_relation("member", 2);
+    eng_set.define_relation("subset", 2);
+    eng_set.define_equivalence("eq");
+    for v in &["x","y","z","a","b","s","_px"] { eng_set.define_variable(*v); }
+    eng_set.define_constant("empty");
+    eng_set.add_fact(Relation::new("set", vec![c("empty")]));
+    eng_set.add_rule(Rule::new("empty_subset",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])]));
+    eng_set.add_rule(Rule::new("subset_refl",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("x")])]));
+    eng_set.add_rule(Rule::new("powerset_exists",
+        vec![RelationPattern::new("set", vec![Term::var("a")])],
+        vec![RelationPattern::new("set", vec![Term::app("power", vec![Term::var("a")])])]));
+    eng_set.add_rule(Rule::new("powerset_member",
+        vec![
+            RelationPattern::new("subset", vec![Term::var("s"), Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("s")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("s"), Term::app("power", vec![Term::var("a")])])]));
+    eng_set.define_property("is_set", &["_px"],
+        vec![RelationPattern::new("set", vec![Term::var("_px")])]);
+    eng_set.define_property("superset_of_empty", &["_px"],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("_px")])]);
+    eng_set.define_property("has_member_empty", &["_px"],
+        vec![RelationPattern::new("member", vec![c("empty"), Term::var("_px")])]);
+    eng_set.define_property("self_subset", &["_px"],
+        vec![RelationPattern::new("subset", vec![Term::var("_px"), Term::var("_px")])]);
+    eng_set.enable_property_implication();
+    eng_set.set_max_rounds(20);
+    eng_set.set_max_facts(500);
+    eng_set.derive_closure();
+
+    let cands_set = eng_set.enumerate_combo_candidates();
+    println!("\n  Set theory (powerset chain):");
+    println!("    Properties: is_set, superset_of_empty, has_member_empty, self_subset");
+    println!("    Candidates with score > 0: {}", cands_set.len());
+    for (p, q, score, diag) in &cands_set {
+        println!("      {} ∧ {} → score={:.4} ({})", p, q, score, diag);
+    }
+
+    if !cands_set.is_empty() {
+        let constructed_set = eng_set.auto_construct_top_k(3);
+        println!("    Constructed: {:?}", constructed_set);
+    } else {
+        println!("    No informative combinations");
+    }
+
+    // ── Summary ──
+    println!("\n  Summary:");
+    println!("    Algebra:     {} informative combos", cands_alg.len());
+    println!("    Order:       {} informative combos", cands_ord.len());
+    println!("    Set theory:  {} informative combos", cands_set.len());
+    println!("\n  Interpretation:");
+    println!("    Few/no informative combos = structure is already well-captured");
+    println!("    by individual properties (degenerate/saturated).");
+    println!("    Informative combos reveal genuinely new property intersections.");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
