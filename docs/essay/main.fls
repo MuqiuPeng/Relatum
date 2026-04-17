@@ -209,6 +209,11 @@ INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ectt0800.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ectt0800.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecti0800.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecti0600.tfm
+INPUT .\sections\space-analysis.tex
+INPUT .\sections\space-analysis.tex
+INPUT .\sections\space-analysis.tex
+INPUT .\sections\space-analysis.tex
+INPUT sections\space-analysis.tex
 INPUT .\sections\limitations.tex
 INPUT .\sections\limitations.tex
 INPUT .\sections\limitations.tex

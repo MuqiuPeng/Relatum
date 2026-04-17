@@ -15,9 +15,11 @@ The $\omega$-rule promotes saturated inductive chains to pattern facts. When a p
 
 Backward (apply) rules $\mathit{has\_property}(e, P) \vdash \mathit{formula}(e, \ldots)$ cause cascading pattern facts in algebraic contexts where the operation relation has rich structure. Currently, property detection is forward-only. Backward inference from properties to formulas is deferred until proper grounding guards are designed.
 
-\subsection{Property Implication Is Inductive}
+\subsection{Property Implication: Observed vs.\ Deductive}
 
-$\mathit{implies\_observed}(P, Q)$ is based on current data: $\mathrm{ext}(P) \subseteq \mathrm{ext}(Q)$ at the moment of observation. It is not a logical proof and could be invalidated by additional elements. It is intentionally separated from deductive \texttt{implies} to prevent modus ponens from propagating inductive conclusions.
+$\mathit{implies\_observed}(P, Q)$ is computed from current extensions: $\mathrm{ext}(P) \subseteq \mathrm{ext}(Q)$. At fixpoint, this is a theorem of the structure (all derivable instances have been derived). The engine promotes to deductive $\mathit{implies}(P, Q)$, enabling modus ponens.
+
+However, single-representative sampling can produce false universals: a property equivalence that holds on one representative may fail on other models in the same axiom class. Exhaustive verification (Section~\ref{sec:exhaustive}) is required to distinguish universal from partial equivalences. The three-phase protocol (sample $\to$ exhaust $\to$ saturate) provides the complete epistemic chain.
 
 \subsection{Resource-Dependent Equivalence Failure}
 

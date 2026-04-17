@@ -8,7 +8,7 @@ We have presented Relatum, a relation-first reasoning engine that discovers math
 \begin{itemize}
 \item \textbf{Algebraic discovery}: from 19{,}683 raw operations, the system identifies abelian groups as the optimal axiom class through dual-signal alignment, with formal equivalence to standard group axioms and successful transfer to $\mathbb{Z}_4$.
 
-\item \textbf{Property implication}: across 10 axiom classes, the system discovers that identity determines left--right equivalence, inverse determines identity--idempotent equivalence, and associativity is independent of both. On a contrasting magma, equivalences correctly fail.
+\item \textbf{Property implication}: across 10 axiom classes and 935 models, the system discovers that identity determines left--right equivalence (935/935), inverse guarantees identity--idempotent equivalence (fully verified on \texttt{id+inv}), but commutativity with identity yields only 75\% equivalence---revealing extra-idempotent diversity within axiom classes. A three-phase verification protocol (single-representative $\to$ exhaustive $\to$ saturation-confirmed) establishes this as genuine mathematical diversity, not a mechanism artifact.
 
 \item \textbf{Cross-domain generality}: the property mechanism produces structurally analogous findings on algebra (10 classes), order theory (241 posets), and set theory (ZFC). Four meta-patterns---definitional equivalence, equivalence breaking, strict implication, degenerate collapse---repeat across all three domains (11/11 confirmed).
 

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.5.19)  17 APR 2026 14:29
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.5.19)  17 APR 2026 14:38
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -356,21 +356,28 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 {C:/Users/guans/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}]) (sections/system.tex
 
 [2]
+Overfull \hbox (43.66798pt too wide) in paragraph at lines 16--17
+ []\T1/cmr/bx/n/10.95 Concrete ex-am-ple.[] \T1/cmr/m/n/10.95 Start-ing from one ground fact $[]\OT1/cmr/m/n/10.95 ([])$ \T1/cmr/m/n/10.95 and the pat-tern ax-iom $[]\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10.95 ; []\OT1/cmr/m/n/10.95 0)$
+ []
+
+
 
 [3]) (sections/inductive-discovery.tex
-
-[4]) (sections/property-implication.tex
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
+
+[4]) (sections/property-implication.tex
+
+[5]
 Overfull \hbox (2.04388pt too wide) in paragraph at lines 58--59
 []\T1/cmr/bx/n/10.95 Inverse (or com-mu-ta-tiv-ity with iden-tity) de-ter-mines identity--idempotent equiv-
  []
 
 
 
-[5]) (sections/cross-validation.tex
+[6]) (sections/cross-validation.tex
 Underfull \hbox (badness 4556) in paragraph at lines 16--16
 []\T1/cmr/m/n/10.95 241 la-beled posets
  []
@@ -431,19 +438,16 @@ Underfull \hbox (badness 10000) in paragraph at lines 20--21
  []
 
 
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-
-[6]
 
 [7]) (sections/composition.tex
 
 [8]
 
-[9]
+[9]) (sections/space-analysis.tex
 
-[10]) (sections/limitations.tex
+[10]
+
+[11]) (sections/limitations.tex
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 (hyperref)                removing `math shift' on input line 10.
@@ -458,30 +462,30 @@ Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 
 
 
-[11]) (sections/conclusion.tex
+[12]) (sections/conclusion.tex
 
-[12])
+[13])
 
-[13] (main.aux)
+[14] (main.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-04-14>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 7789CCFF6CD8D39FE0FB228B52C47F3C;7758.
+(rerunfilecheck)             Checksum: 7B6EBECFC3342DB6C800094A79209122;8351.
  ) 
 Here is how much of TeX's memory you used:
- 11646 strings out of 469941
- 188437 string characters out of 5480012
- 601486 words of memory out of 5000000
- 38211 multiletter control sequences out of 15000+600000
+ 11666 strings out of 469941
+ 188851 string characters out of 5480012
+ 600486 words of memory out of 5000000
+ 38221 multiletter control sequences out of 15000+600000
  650146 words of font info for 97 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  75i,12n,79p,792b,534s stack positions out of 10000i,1000n,20000p,200000b,200000s
  <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm0800.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt1095.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\tcrm1095.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1095.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1200.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecti1095.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm1095.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1440.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecti1000.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm1000.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1000.pk> <C:\Users\guans\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm1728.pk><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmex10.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmmi10.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmmi12.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmmi8.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmr10.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmr6.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmr7.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmr8.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmsy10.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/cm/cmti10.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/symbols/msam10.pfb><D:/ProgramFiles/MikTex/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on main.pdf (13 pages, 335300 bytes).
+Output written on main.pdf (14 pages, 342467 bytes).
 PDF statistics:
- 831 PDF objects out of 1000 (max. 8388607)
- 92 named destinations out of 1000 (max. 500000)
- 361 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 858 PDF objects out of 1000 (max. 8388607)
+ 99 named destinations out of 1000 (max. 500000)
+ 385 words of extra memory for PDF output out of 10000 (max. 10000000)
 
