@@ -13,6 +13,8 @@ We have presented Relatum, a relation-first reasoning engine that discovers math
 \item \textbf{Cross-domain generality}: the property mechanism produces structurally analogous findings on algebra (10 classes), order theory (241 posets), and set theory (ZFC). Four meta-patterns---definitional equivalence, equivalence breaking, strict implication, degenerate collapse---repeat across all three domains (11/11 confirmed).
 
 \item \textbf{Failure diagnosis}: the system distinguishes structural failure (genuine mathematical non-equivalence) from resource failure (derivation-rate competition) by varying the fact budget. This makes the limitation not just acknowledged but testable.
+
+\item \textbf{Concept discovery}: property conjunction without negation yields 0 informative combinations across all domains (properties are already ``minimally complete''). Adding negation as an orthogonality generator produces genuinely new concepts: ``interior elements'' on a 4-element chain. Cross-degenerate filtering eliminates 67\% of false discoveries.
 \end{itemize}
 
 \subsection{Central Claim}
@@ -22,7 +24,7 @@ The structural boundary between groups and weaker algebraic structures is indepe
 \subsection{Future Directions}
 
 \begin{itemize}
-\item \textbf{Property composition}: allowing the system to construct new properties from existing ones (conjunction, negation) and discover implications on the composite properties.
+\item \textbf{Deeper composition}: recursive composition ($p \wedge (q \wedge r)$), disjunction ($p \vee q$), and conditional properties ($p \mid q$) as additional constructors.
 
 \item \textbf{$\omega$-rule on property implications}: promoting observed cross-structure implications to meta-level universal claims, with appropriate defenses against the risks identified in Section~\ref{sec:limitations}.
 

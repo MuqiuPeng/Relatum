@@ -17,6 +17,8 @@ This paper makes four contributions:
 \item \textbf{Cross-domain generality} (Section~\ref{sec:cross}). The property implication mechanism is validated on three unrelated domains---algebra (10 axiom classes), order theory (241 finite posets), and set theory (ZFC powerset chain). Four structural meta-patterns repeat across all three domains, establishing the mechanism as domain-general.
 
 \item \textbf{Failure mode diagnosis} (Section~\ref{sec:cross}). When property equivalences fail to be confirmed, the system distinguishes \emph{structural failure} (genuine mathematical non-equivalence, constant across resource levels) from \emph{resource failure} (definitionally true equivalence that cannot be inductively confirmed due to derivation-rate competition under a finite fact budget).
+
+\item \textbf{Property composition and concept discovery} (Section~\ref{sec:composition}). The system constructs new properties via conjunction and negation, scored by independence, rarity, and constraint. On a 4-element chain, it autonomously discovers ``interior elements'' ($\lnot\text{maximal} \wedge \lnot\text{minimal}$). A cross-degenerate filter eliminates combinations that reconstruct existing properties.
 \end{enumerate}
 
 \subsection{System capabilities}

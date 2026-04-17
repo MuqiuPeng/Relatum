@@ -6,6 +6,8 @@ Independently, the property implication mechanism defines algebraic properties (
 
 The two mechanisms use entirely different inference paths---closure generativity scoring versus property extension inclusion---yet produce consistent structural classifications. This cross-validation, obtained without human guidance on what to look for, constitutes the central result: the algebraic boundary between groups and weaker structures is discoverable from raw operation tables by multiple independent methods within a single relational framework.
 
+Beyond analysis, the system constructs new properties via conjunction and negation, scored by a combination of independence, rarity, and constraint. On a 4-element chain, it autonomously discovers the concept of ``interior elements'' ($\lnot\text{maximal} \wedge \lnot\text{minimal}$) --- a recognized mathematical concept found without being told its name. A cross-degenerate filter eliminates combinations that merely reconstruct existing properties, reducing the false discovery rate from 67\% to 0\%.
+
 The engine also supports pattern-level deduction (variable-to-variable unification, stratified negation, $\omega$-rule inductive promotion, and proof by contradiction), demonstrated on ZFC set-theoretic axioms where the system derives universally quantified conclusions such as $\forall A.\;\varnothing \in \mathcal{P}(A)$ from two input propositions in 0.00s with 11 total facts.
 
 \end{abstract}

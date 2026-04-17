@@ -1,0 +1,81 @@
+\section{Property Composition and Concept Discovery}
+\label{sec:composition}
+
+Sections~\ref{sec:property}--\ref{sec:cross} analyzed properties individually. This section asks: can the system \emph{construct} new properties from existing ones, and can those constructions reveal concepts that no individual property captures?
+
+\subsection{Conjunction}
+
+$\texttt{define\_compose\_and}(\textit{name}, p, q)$ constructs a new property whose extension is $\mathrm{ext}(p) \cap \mathrm{ext}(q)$. Three rules are generated:
+
+\begin{align*}
+\mathit{has\_property}(x, p) \wedge \mathit{has\_property}(x, q) &\vdash \mathit{has\_property}(x, \textit{name}) & \text{(detect)} \\
+\mathit{has\_property}(x, \textit{name}) &\vdash \mathit{has\_property}(x, p) & \text{(split-left)} \\
+\mathit{has\_property}(x, \textit{name}) &\vdash \mathit{has\_property}(x, q) & \text{(split-right)}
+\end{align*}
+
+On $\mathbb{Z}_3$, $\textit{two\_sided\_id} = \textit{left\_id} \wedge \textit{right\_id}$ has extension $\{e_0\}$, identical to both parents. Phase~6 correctly discovers $\textit{two\_sided\_id} \leftrightarrow \textit{left\_id} \leftrightarrow \textit{right\_id}$.
+
+On the magma (no right identity), the conjunction has empty extension, and no false equivalences are derived.
+
+\subsection{Negation}
+
+$\texttt{define\_negate}(\textit{name}, p)$ constructs a property whose extension is the complement: $\mathrm{ext}(\textit{name}) = \mathrm{domain} \setminus \mathrm{ext}(p)$. Detection uses stratified negation at stratum~3:
+
+\[
+\mathit{element}(x),\; \lnot\, \mathit{has\_property}(x, p) \;\vdash\; \mathit{has\_property}(x, \textit{name})
+\]
+
+Negation is the key to escaping the ``0 informative combinations'' result of pure conjunction. Without negation, all property pairs on the test domains produce degenerate combinations (extension equals one parent, or is empty). With negation, orthogonal properties emerge.
+
+\subsection{Combination Scoring}
+
+Not all conjunctions are informative. A scoring function filters degenerate combinations:
+
+\paragraph{Hard filters (score = 0):}
+\begin{itemize}
+\item \textbf{Empty extension}: $\mathrm{ext}(p \wedge q) = \varnothing$.
+\item \textbf{Degenerate to parent}: $\mathrm{ext}(p \wedge q) = \mathrm{ext}(p)$ or $\mathrm{ext}(q)$.
+\item \textbf{Cross-degenerate}: $\mathrm{ext}(p \wedge q) = \mathrm{ext}(r)$ for some existing property $r$.
+\item \textbf{Trivial universal}: $\mathrm{ext}(p \wedge q) = \mathrm{domain}$.
+\end{itemize}
+
+\paragraph{Soft scoring (score $> 0$):}
+\[
+\text{score} = \underbrace{\min(1 - J_p,\; 1 - J_q)}_{\text{independence}} \;\times\; \underbrace{4r(1-r)}_{\text{rarity}} \;\times\; \underbrace{1 - J(p, q)}_{\text{constraint}}
+\]
+where $J_p = J(\mathrm{ext}(p \wedge q),\, \mathrm{ext}(p))$ is the Jaccard similarity between the combination and each parent, and $r = |\mathrm{ext}(p \wedge q)| / |\mathrm{domain}|$.
+
+\subsection{Results: Autonomous Concept Discovery}
+
+\paragraph{Without negation (pure conjunction).} Across all three domains (algebra, order theory, set theory), auto-enumeration of all property pairs finds \textbf{0 informative combinations}. Every conjunction is either empty, degenerates to a parent, or equals an existing property. This is a genuine negative result: the property sets are already ``minimally complete'' for these structures.
+
+\paragraph{With negation.} On a 4-element chain $a < b < c < d$:
+
+\begin{table}[h]
+\centering
+\caption{Auto-discovered combinations on a 4-element chain, after negation. Cross-degenerate filter applied.}
+\label{tab:combos}
+\begin{tabular}{llcl}
+\toprule
+Combination & Extension & Score & Interpretation \\
+\midrule
+$\lnot\text{maximal} \wedge \lnot\text{minimal}$ & $\{b, c\}$ & 0.167 & interior elements \\
+\midrule
+\multicolumn{4}{l}{\emph{Filtered by cross-degenerate check:}} \\
+$\text{extremal} \wedge \lnot\text{minimal}$ & $\{d\} = \mathrm{ext}(\text{is\_maximal})$ & 0 & redundant \\
+$\lnot\text{maximal} \wedge \text{extremal}$ & $\{a\} = \mathrm{ext}(\text{is\_minimal})$ & 0 & redundant \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The sole surviving combination, $\lnot\text{maximal} \wedge \lnot\text{minimal}$, identifies the \emph{interior elements} of the chain---a recognized mathematical concept that the system discovers without being told its name or definition. The cross-degenerate filter correctly eliminates two combinations that merely reconstruct existing properties (\text{is\_maximal} and \text{is\_minimal}) through negation indirection.
+
+\subsection{Interpretation}
+
+\begin{enumerate}
+\item \textbf{Negation as orthogonality generator.} Pure conjunction over a ``complete'' property set yields nothing new. Negation creates properties that are by construction orthogonal to existing ones, opening the combinatorial space.
+
+\item \textbf{Cross-degenerate filtering is essential.} Without it, 2 of 3 candidates were redundant reconstructions of existing properties. The filter reduces false discovery rate from 67\% to 0\%.
+
+\item \textbf{Carrier size matters.} On 3-element carriers, even negation cannot escape degeneracy (all property subsets form chains). The 4-element chain provides just enough room for a genuinely new intersection. This suggests that concept discovery requires a minimum structural complexity in the input domain.
+\end{enumerate}
