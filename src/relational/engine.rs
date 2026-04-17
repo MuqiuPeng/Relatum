@@ -338,6 +338,78 @@ impl ClosureEngine {
         // ).with_ground_required(param_names));
     }
 
+    // ── property composition (phase 3) ────────────────────
+
+    /// Define a composite property as the conjunction of two existing properties.
+    ///
+    /// ```text
+    /// define_compose_and("two_sided_id", "left_id", "right_id")
+    ///
+    /// generates:
+    ///   is_property(two_sided_id)
+    ///   has_property_1(x, left_id), has_property_1(x, right_id)
+    ///       |- has_property_1(x, two_sided_id)                    (detect)
+    ///   has_property_1(x, two_sided_id) |- has_property_1(x, left_id)   (split_l)
+    ///   has_property_1(x, two_sided_id) |- has_property_1(x, right_id)  (split_r)
+    /// ```
+    ///
+    /// The composite property's extension equals the intersection of the
+    /// component extensions: `ext(name) = ext(p) ∩ ext(q)`.
+    pub fn define_compose_and(&mut self, name: &str, p: &str, q: &str) {
+        // Register as a property constant
+        self.define_constant(name);
+        if !self.relation_defs.contains_key("is_property") {
+            self.define_relation("is_property", 1);
+        }
+        self.add_fact(Relation::new("is_property", vec![Term::constant(name)]));
+
+        if !self.relation_defs.contains_key("has_property_1") {
+            self.define_relation("has_property_1", 2);
+        }
+
+        // Ensure a variable for the element parameter
+        self.define_variable("_cx");
+
+        let x = Term::var("_cx");
+        let prop_p = Term::constant(p);
+        let prop_q = Term::constant(q);
+        let prop_name = Term::constant(name);
+
+        // Detect: has_property_1(x, p) ∧ has_property_1(x, q) |- has_property_1(x, name)
+        self.add_rule(Rule::new(
+            format!("{}_compose_detect", name),
+            vec![
+                RelationPattern::new("has_property_1", vec![x.clone(), prop_p.clone()]),
+                RelationPattern::new("has_property_1", vec![x.clone(), prop_q.clone()]),
+            ],
+            vec![
+                RelationPattern::new("has_property_1", vec![x.clone(), prop_name.clone()]),
+            ],
+        ).with_ground_required(vec!["_cx".to_string()]));
+
+        // Split left: has_property_1(x, name) |- has_property_1(x, p)
+        self.add_rule(Rule::new(
+            format!("{}_split_left", name),
+            vec![
+                RelationPattern::new("has_property_1", vec![x.clone(), prop_name.clone()]),
+            ],
+            vec![
+                RelationPattern::new("has_property_1", vec![x.clone(), prop_p]),
+            ],
+        ).with_ground_required(vec!["_cx".to_string()]));
+
+        // Split right: has_property_1(x, name) |- has_property_1(x, q)
+        self.add_rule(Rule::new(
+            format!("{}_split_right", name),
+            vec![
+                RelationPattern::new("has_property_1", vec![x.clone(), prop_name]),
+            ],
+            vec![
+                RelationPattern::new("has_property_1", vec![x, prop_q]),
+            ],
+        ).with_ground_required(vec!["_cx".to_string()]));
+    }
+
     // ── property implication (Henkin second-order, phase 2) ──
 
     /// Declare that property implication should be tracked.

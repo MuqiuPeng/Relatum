@@ -3746,6 +3746,115 @@ fn test_cross_domain_meta_analysis() {
     println!("  theory. The same 4 meta-patterns repeat in all domains.");
 }
 
+// ── Phase 3: Property composition (compose_and) ─────────────
+
+/// compose_and on Z₃ group: two_sided_identity = left_id ∧ right_id.
+/// Expected: ext(two_sided) = ext(left) ∩ ext(right) = {e0}.
+/// Phase 6 should discover all three are equivalent.
+#[test]
+fn test_compose_and_group() {
+    // Z₃ with universal property detection
+    let table: [[u8; 3]; 3] = [[0,1,2],[1,2,0],[2,0,1]];
+    let mut engine = property_engine_from_table(&table);
+
+    // Compose: two_sided_identity = left_id ∧ right_id
+    engine.define_compose_and("two_sided_id", "left_id", "right_id");
+
+    engine.enable_property_implication();
+    engine.set_max_rounds(10);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  COMPOSE_AND: Z₃ Group (two_sided_id = left ∧ right)");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    // Show property extensions
+    for prop in &["left_id", "right_id", "idempotent", "two_sided_id"] {
+        let ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop) && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+        println!("  {:<20} ext = {:?}", prop, ext);
+    }
+
+    // Show equivalences
+    let equivs: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "equivalent_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    println!("\n  Equivalences:");
+    for e in &equivs { println!("    {}", e); }
+
+    // Assertions
+    assert!(has("has_property_1(e1, two_sided_id)") || has("has_property_1(e0, two_sided_id)"),
+        "the identity element should have two_sided_id");
+    assert!(has("equivalent_observed(left_id, two_sided_id)")
+        || has("equivalent_observed(two_sided_id, left_id)"),
+        "left_id ↔ two_sided_id on Z₃ (all three have same ext)");
+    assert!(has("equivalent_observed(right_id, two_sided_id)")
+        || has("equivalent_observed(two_sided_id, right_id)"),
+        "right_id ↔ two_sided_id on Z₃");
+
+    println!("\n  ✓ compose_and correctly computes intersection of extensions");
+    println!("  ✓ Phase 6 discovers equivalence with composed property");
+}
+
+/// compose_and on magma: two_sided_identity should have empty extension
+/// when right_id has no instances.
+#[test]
+fn test_compose_and_magma() {
+    // Non-associative magma: e0 is left_id but no right_id exists
+    let table: [[u8; 3]; 3] = [[0,1,2],[1,2,0],[0,0,1]];
+    let mut engine = property_engine_from_table(&table);
+
+    engine.define_compose_and("two_sided_id", "left_id", "right_id");
+
+    engine.enable_property_implication();
+    engine.set_max_rounds(10);
+    engine.set_max_facts(200);
+
+    let result = engine.derive_closure();
+    let has = |s: &str| result.facts.iter().any(|f| f.to_string() == s);
+
+    println!("\n============================================================");
+    println!("  COMPOSE_AND: Magma (no right identity)");
+    println!("  {} facts, {} rounds", result.facts.len(), result.rounds);
+    println!("============================================================");
+
+    for prop in &["left_id", "right_id", "idempotent", "two_sided_id"] {
+        let ext: Vec<String> = result.facts.iter()
+            .filter(|f| f.name() == "has_property_1"
+                && f.terms()[1] == Term::constant(*prop) && f.is_ground())
+            .map(|f| f.terms()[0].to_string()).collect();
+        println!("  {:<20} ext = {:?}", prop, ext);
+    }
+
+    // two_sided_id should have empty extension (left ∩ empty = empty)
+    let two_sided_ext: Vec<String> = result.facts.iter()
+        .filter(|f| f.name() == "has_property_1"
+            && f.terms()[1] == Term::constant("two_sided_id") && f.is_ground())
+        .map(|f| f.terms()[0].to_string()).collect();
+
+    assert!(two_sided_ext.is_empty(),
+        "two_sided_id ext should be empty (no right identity)");
+
+    // Should NOT discover equivalence between left_id and two_sided_id
+    assert!(!has("equivalent_observed(left_id, two_sided_id)"),
+        "left_id should not be equivalent to two_sided_id (different extensions)");
+
+    // implies_observed(two_sided_id, left_id) should NOT exist
+    // because ext(two_sided_id) is empty → no evidence for implication
+    assert!(!has("implies_observed(two_sided_id, left_id)"),
+        "empty ext → no implication derivable");
+
+    println!("\n  ✓ compose_and correctly gives empty ext when one component is empty");
+    println!("  ✓ No false equivalences derived");
+    println!("  ✓ Empty extension handled correctly (no vacuous implications)");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

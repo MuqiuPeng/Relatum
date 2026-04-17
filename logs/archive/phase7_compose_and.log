@@ -1,0 +1,52 @@
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3168 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+3288 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3285 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3299 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3700 |     let alg_strict = id_only_has("implies_observed(left_id, idempotent)")
+============================================================
+  COMPOSE_AND: Magma (no right identity)
+  27 facts, 10 rounds
+============================================================
+  left_id              ext = ["e0"]
+  right_id             ext = []
+  idempotent           ext = ["e0"]
+  two_sided_id         ext = []
+  ✓ compose_and correctly gives empty ext when one component is empty
+  ✓ No false equivalences derived
+  ✓ Empty extension handled correctly (no vacuous implications)
+test test_compose_and_magma ... ok
+============================================================
+  COMPOSE_AND: Z₃ Group (two_sided_id = left ∧ right)
+  48 facts, 11 rounds
+============================================================
+  left_id              ext = ["e0"]
+  right_id             ext = ["e0"]
+  idempotent           ext = ["e0"]
+  two_sided_id         ext = ["e0"]
+  Equivalences:
+    equivalent_observed(idempotent, left_id)
+    equivalent_observed(idempotent, right_id)
+    equivalent_observed(idempotent, two_sided_id)
+    equivalent_observed(left_id, idempotent)
+    equivalent_observed(left_id, right_id)
+    equivalent_observed(left_id, two_sided_id)
+    equivalent_observed(right_id, idempotent)
+    equivalent_observed(right_id, left_id)
+    equivalent_observed(right_id, two_sided_id)
+    equivalent_observed(two_sided_id, idempotent)
+    equivalent_observed(two_sided_id, left_id)
+    equivalent_observed(two_sided_id, right_id)
+  ✓ compose_and correctly computes intersection of extensions
+  ✓ Phase 6 discovers equivalence with composed property
+test test_compose_and_group ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
