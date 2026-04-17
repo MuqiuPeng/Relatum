@@ -1,0 +1,43 @@
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+993 |             let mut trial = base.clone();
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3168 |                 let op = |a: usize, b: usize| -> usize { table[a * n + b] };
+3288 |             let mut target_axioms = String::new();
+     = note: consider using `_target_axioms` instead
+3285 |             let mut found_target = false;
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+3299 |                 target_axioms = "assoc+comm+id+inv".to_string();
+     = help: maybe it is overwritten before being read?
+415 |     let all_relations: Vec<(String, usize)> = engine.relation_defs()
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+3700 |     let alg_strict = id_only_has("implies_observed(left_id, idempotent)")
+============================================================
+  DEGENERATE META-ANALYSIS
+============================================================
+  Property space structure:
+    property_space(structure, union_closed)
+    property_space(or_degenerate_ratio, 1.00)
+    property_space(and_degenerate_ratio, 0.93)
+    property_space(structure, hierarchical)
+  Structural conclusions:
+    Hierarchical (AND degen >80%): true
+    Union-closed (OR degen 100%): true
+  Implications derived from degeneracies:
+    implies_observed(is_isolated, is_extremal)
+    implies_observed(is_isolated, is_maximal)
+    implies_observed(is_isolated, is_minimal)
+    implies_observed(is_isolated, not_maximal)
+    implies_observed(is_isolated, not_minimal)
+    implies_observed(is_maximal, is_extremal)
+    implies_observed(is_maximal, not_minimal)
+    implies_observed(is_minimal, is_extremal)
+    implies_observed(is_minimal, not_maximal)
+  Interpretation:
+    Properties form a hierarchy (subset chain).
+    Most conjunctions collapse to the smaller operand.
+    Property lattice closed under union.
+    No disjunction produces a genuinely new extension.
+test test_degenerate_meta_analysis ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.01s

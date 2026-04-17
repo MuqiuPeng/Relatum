@@ -4345,6 +4345,67 @@ fn test_compose_or_and_search() {
     println!("    or(maximal, minimal) correctly filtered as degenerate to extremal");
 }
 
+/// Degenerate meta-analysis: extract property space structure from combo diagnostics.
+#[test]
+fn test_degenerate_meta_analysis() {
+    println!("\n============================================================");
+    println!("  DEGENERATE META-ANALYSIS");
+    println!("============================================================");
+
+    // Order theory (chain a<b<c<d) with negations
+    let mut eng = poset_property_engine(
+        &["a".into(), "b".into(), "c".into(), "d".into()],
+        &[("a".into(),"b".into()), ("b".into(),"c".into()), ("c".into(),"d".into())],
+    );
+    eng.define_negate("not_maximal", "is_maximal");
+    eng.define_negate("not_minimal", "is_minimal");
+    eng.enable_property_implication();
+    eng.set_max_rounds(10);
+    eng.set_max_facts(300);
+    eng.derive_closure();
+
+    // Run degenerate analysis
+    eng.analyze_degenerate_structure();
+
+    // Show property_space facts
+    let ps_facts: Vec<String> = eng.facts().iter()
+        .filter(|f| f.name() == "property_space")
+        .map(|f| f.to_string()).collect();
+    println!("\n  Property space structure:");
+    for f in &ps_facts { println!("    {}", f); }
+
+    let has = |s: &str| eng.facts().iter().any(|f| f.to_string() == s);
+
+    // Check structural conclusions
+    println!("\n  Structural conclusions:");
+    let hierarchical = has("property_space(structure, hierarchical)");
+    let union_closed = has("property_space(structure, union_closed)");
+    println!("    Hierarchical (AND degen >80%): {}", hierarchical);
+    println!("    Union-closed (OR degen 100%): {}", union_closed);
+
+    // Check degenerate-derived implications
+    let impl_facts: Vec<String> = eng.facts().iter()
+        .filter(|f| f.name() == "implies_observed" && f.terms()[0] != f.terms()[1])
+        .map(|f| f.to_string()).collect();
+    println!("\n  Implications derived from degeneracies:");
+    let mut sorted = impl_facts.clone();
+    sorted.sort();
+    for f in &sorted { println!("    {}", f); }
+
+    // On this chain: property space should be hierarchical
+    // (most AND combos degenerate because properties form a chain)
+    // OR degenerate rate should be high too
+    println!("\n  Interpretation:");
+    if hierarchical {
+        println!("    Properties form a hierarchy (subset chain).");
+        println!("    Most conjunctions collapse to the smaller operand.");
+    }
+    if union_closed {
+        println!("    Property lattice closed under union.");
+        println!("    No disjunction produces a genuinely new extension.");
+    }
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

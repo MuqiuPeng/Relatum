@@ -780,6 +780,136 @@ impl ClosureEngine {
         constructed
     }
 
+    // ── degenerate meta-analysis ────────────────────────────
+
+    /// Analyze ALL property pair degeneracies and extract structural conclusions.
+    ///
+    /// - `compose_and(p, q) degenerate_to_p` → `implies_observed(p, q)` (ext(p) ⊆ ext(q))
+    /// - `compose_or(p, q) degenerate_to_p` → `implies_observed(q, p)` (ext(q) ⊆ ext(p))
+    /// - High AND degenerate rate → property space is hierarchical
+    /// - 100% OR degenerate rate → property lattice closed under union
+    ///
+    /// Records `property_space_structure(key, value)` facts.
+    pub fn analyze_degenerate_structure(&mut self) {
+        let properties: Vec<String> = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "is_property" && f.arity() == 1 && f.is_ground())
+            .map(|f| f.terms()[0].to_string())
+            .collect();
+
+        if properties.len() < 2 {
+            return;
+        }
+
+        let mut and_total = 0usize;
+        let mut and_degenerate = 0usize;
+        let mut or_total = 0usize;
+        let mut or_degenerate = 0usize;
+        let mut new_implies = Vec::new();
+
+        for i in 0..properties.len() {
+            for j in (i + 1)..properties.len() {
+                let p = &properties[i];
+                let q = &properties[j];
+
+                // AND analysis
+                let (and_score, and_diag) = self.score_combo_and(p, q);
+                and_total += 1;
+                if and_score == 0.0 {
+                    and_degenerate += 1;
+                    if and_diag == "degenerate_to_p" {
+                        // ext(p∩q) = ext(p) → ext(p) ⊆ ext(q) → implies(p, q)
+                        new_implies.push((p.clone(), q.clone()));
+                    } else if and_diag == "degenerate_to_q" {
+                        new_implies.push((q.clone(), p.clone()));
+                    }
+                }
+
+                // OR analysis
+                let (or_score, or_diag) = self.score_combo_or(p, q);
+                or_total += 1;
+                if or_score == 0.0 {
+                    or_degenerate += 1;
+                    if or_diag == "degenerate_to_p" {
+                        // ext(p∪q) = ext(p) → ext(q) ⊆ ext(p) → implies(q, p)
+                        new_implies.push((q.clone(), p.clone()));
+                    } else if or_diag == "degenerate_to_q" {
+                        new_implies.push((p.clone(), q.clone()));
+                    }
+                }
+            }
+        }
+
+        // Record structural conclusions
+        if !self.relation_defs.contains_key("property_space") {
+            self.define_relation("property_space", 2);
+        }
+
+        // AND degenerate ratio
+        let and_ratio = if and_total > 0 {
+            and_degenerate as f64 / and_total as f64
+        } else {
+            0.0
+        };
+        let and_ratio_str = format!("{:.2}", and_ratio);
+        self.define_constant(&and_ratio_str);
+        self.define_constant("and_degenerate_ratio");
+        self.add_fact(Relation::binary(
+            "property_space",
+            Term::constant("and_degenerate_ratio"),
+            Term::constant(&and_ratio_str),
+        ));
+
+        if and_ratio > 0.8 {
+            self.define_constant("hierarchical");
+            self.add_fact(Relation::binary(
+                "property_space",
+                Term::constant("structure"),
+                Term::constant("hierarchical"),
+            ));
+        }
+
+        // OR degenerate ratio
+        let or_ratio = if or_total > 0 {
+            or_degenerate as f64 / or_total as f64
+        } else {
+            0.0
+        };
+        let or_ratio_str = format!("{:.2}", or_ratio);
+        self.define_constant(&or_ratio_str);
+        self.define_constant("or_degenerate_ratio");
+        self.add_fact(Relation::binary(
+            "property_space",
+            Term::constant("or_degenerate_ratio"),
+            Term::constant(&or_ratio_str),
+        ));
+
+        if or_ratio >= 1.0 && or_total > 0 {
+            self.define_constant("union_closed");
+            self.add_fact(Relation::binary(
+                "property_space",
+                Term::constant("structure"),
+                Term::constant("union_closed"),
+            ));
+        }
+
+        // Record degenerate-derived implications
+        if !self.relation_defs.contains_key("implies_observed") {
+            self.define_relation("implies_observed", 2);
+        }
+        for (from, to) in &new_implies {
+            let fact = Relation::binary(
+                "implies_observed",
+                Term::constant(from),
+                Term::constant(to),
+            );
+            if !self.facts.contains(&fact) {
+                self.facts.insert(fact);
+            }
+        }
+    }
+
     // ── property implication (Henkin second-order, phase 2) ──
 
     /// Declare that property implication should be tracked.
