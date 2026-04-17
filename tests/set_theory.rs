@@ -3955,6 +3955,126 @@ fn test_extension_similarity() {
     println!("    Partial overlap → similarity 0.33 ✓");
 }
 
+/// Combination scoring: score_combo_and with hard filters and soft scoring.
+#[test]
+fn test_combo_score() {
+    println!("\n============================================================");
+    println!("  COMBINATION SCORING");
+    println!("============================================================");
+
+    // ── Scenario 1: Degenerate (Z₃, left ∧ right = left = right) ──
+    let table_z3: [[u8; 3]; 3] = [[0,1,2],[1,2,0],[2,0,1]];
+    let mut eng1 = property_engine_from_table(&table_z3);
+    eng1.enable_property_implication();
+    eng1.set_max_rounds(10);
+    eng1.set_max_facts(200);
+    eng1.derive_closure();
+
+    let (s1, d1) = eng1.score_combo_and("left_id", "right_id");
+    println!("\n  Scenario 1: Z₃ left_id ∧ right_id");
+    println!("    ext(left) = ext(right) = {{e0}}");
+    println!("    score={:.4}, diagnosis={}", s1, d1);
+    assert_eq!(s1, 0.0);
+    assert!(d1 == "degenerate_to_p" || d1 == "degenerate_to_q",
+        "same ext → degenerate, got '{}'", d1);
+
+    // ── Scenario 2: Empty (magma, right_id empty) ──
+    let table_mag: [[u8; 3]; 3] = [[0,1,2],[1,2,0],[0,0,1]];
+    let mut eng2 = property_engine_from_table(&table_mag);
+    eng2.enable_property_implication();
+    eng2.set_max_rounds(10);
+    eng2.set_max_facts(200);
+    eng2.derive_closure();
+
+    let (s2, d2) = eng2.score_combo_and("left_id", "right_id");
+    println!("\n  Scenario 2: magma left_id ∧ right_id");
+    println!("    ext(left)={{e0}}, ext(right)={{}}");
+    println!("    score={:.4}, diagnosis={}", s2, d2);
+    assert_eq!(s2, 0.0);
+    assert_eq!(d2, "empty_extension");
+
+    // ── Scenario 3: Degenerate subset (assoc+id, left ∧ idempotent = left) ──
+    let tables = representative_tables();
+    let assoc_id = tables.iter().find(|(k,_)| k == "assoc+id").unwrap();
+    let mut eng3 = property_engine_from_table(&assoc_id.1);
+    eng3.enable_property_implication();
+    eng3.set_max_rounds(10);
+    eng3.set_max_facts(200);
+    eng3.derive_closure();
+
+    let ext_l3 = eng3.property_extension("left_id");
+    let ext_i3 = eng3.property_extension("idempotent");
+    let (s3, d3) = eng3.score_combo_and("left_id", "idempotent");
+    println!("\n  Scenario 3: assoc+id left_id ∧ idempotent");
+    println!("    ext(left)={:?}, ext(idem)={:?}",
+        ext_l3.iter().map(|t| t.to_string()).collect::<Vec<_>>(),
+        ext_i3.iter().map(|t| t.to_string()).collect::<Vec<_>>());
+    println!("    score={:.4}, diagnosis={}", s3, d3);
+    // ext(left) ⊂ ext(idem) → intersection = ext(left) → degenerate_to_p
+    assert_eq!(s3, 0.0);
+    assert_eq!(d3, "degenerate_to_p");
+
+    // ── Scenario 4: Informative combination ──
+    // Manually construct: elements {a,b,c,d}
+    // property P: ext = {a, b, c}
+    // property Q: ext = {b, c, d}
+    // P ∧ Q: ext = {b, c} — proper subset of both, non-empty
+    let mut eng4 = ClosureEngine::new();
+    eng4.define_relation("element", 1);
+    for v in &["x"] { eng4.define_variable(*v); }
+    for e in &["a", "b", "c", "d"] {
+        eng4.define_constant(*e);
+        eng4.add_fact(Relation::new("element", vec![c(*e)]));
+    }
+    // Manually set has_property_1 facts (skip formula-based detection)
+    eng4.define_relation("has_property_1", 2);
+    eng4.define_relation("is_property", 1);
+    for prop in &["pp", "qq"] {
+        eng4.define_constant(*prop);
+        eng4.add_fact(Relation::new("is_property", vec![c(*prop)]));
+    }
+    // ext(pp) = {a, b, c}
+    for e in &["a", "b", "c"] {
+        eng4.add_fact(Relation::new("has_property_1", vec![c(*e), c("pp")]));
+    }
+    // ext(qq) = {b, c, d}
+    for e in &["b", "c", "d"] {
+        eng4.add_fact(Relation::new("has_property_1", vec![c(*e), c("qq")]));
+    }
+
+    let (s4, d4) = eng4.score_combo_and("pp", "qq");
+    println!("\n  Scenario 4: manual ext(pp)={{a,b,c}}, ext(qq)={{b,c,d}}");
+    println!("    ext(pp∧qq) = {{b,c}}");
+    println!("    score={:.4}, diagnosis={}", s4, d4);
+    assert!(s4 > 0.0, "informative combination should have positive score");
+    assert_eq!(d4, "positive");
+
+    // Verify the score makes sense
+    // combo = {b,c}, domain = 4
+    // independence: jaccard({b,c},{a,b,c}) = 2/3, indep_p = 1/3
+    //              jaccard({b,c},{b,c,d}) = 2/3, indep_q = 1/3
+    //              independence = 1/3
+    // rarity: ratio = 2/4 = 0.5, balance = 4*0.5*0.5 = 1.0
+    // constraint: jaccard({a,b,c},{b,c,d}) = 2/4 = 0.5, constraint = 0.5
+    // score = 1/3 * 1.0 * 0.5 ≈ 0.167
+    println!("    Expected ≈ 0.167 (independence=0.33 × rarity=1.0 × constraint=0.5)");
+    assert!((s4 - 1.0/6.0).abs() < 0.02,
+        "score should be ~0.167, got {:.4}", s4);
+
+    // ── Also test record_combo_score ──
+    eng4.define_compose_and("pp_and_qq", "pp", "qq");
+    eng4.record_combo_score("pp_and_qq", "pp", "qq");
+    let has4 = |s: &str| eng4.facts().iter().any(|f| f.to_string() == s);
+    assert!(has4("combo_diagnosis(pp_and_qq, pp, positive)"),
+        "diagnosis should be recorded as fact");
+
+    println!("\n  Summary:");
+    println!("    Degenerate (same ext) → score=0, degenerate_to_p ✓");
+    println!("    Empty (one ext empty) → score=0, empty_extension ✓");
+    println!("    Subset (ext⊂ext) → score=0, degenerate_to_p ✓");
+    println!("    Informative → score=0.167, positive ✓");
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 

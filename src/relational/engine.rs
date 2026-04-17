@@ -449,6 +449,98 @@ impl ClosureEngine {
         Self::extension_similarity(&ext_p, &ext_q)
     }
 
+    // ── combination scoring ────────────────────────────────
+
+    /// Score a property conjunction: how informative is `p ∧ q` compared
+    /// to `p` and `q` individually?
+    ///
+    /// Returns `(score, diagnosis)` where score ≥ 0 and diagnosis explains
+    /// the result. Score = 0 with a diagnosis means the combination is
+    /// degenerate (not worth keeping).
+    pub fn score_combo_and(&self, p: &str, q: &str) -> (f64, String) {
+        let ext_p = self.property_extension(p);
+        let ext_q = self.property_extension(q);
+        let ext_combo: HashSet<Term> = ext_p.intersection(&ext_q).cloned().collect();
+        let domain_size = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "element" && f.arity() == 1 && f.is_ground())
+            .count();
+
+        // Hard filters
+        if ext_combo.is_empty() {
+            return (0.0, "empty_extension".into());
+        }
+        if ext_combo == ext_p {
+            return (0.0, "degenerate_to_p".into());
+        }
+        if ext_combo == ext_q {
+            return (0.0, "degenerate_to_q".into());
+        }
+        if domain_size > 0 && ext_combo.len() == domain_size {
+            return (0.0, "trivial_universal".into());
+        }
+
+        // Soft scoring: independence × rarity × constraint
+        let jaccard = |a: &HashSet<Term>, b: &HashSet<Term>| -> f64 {
+            let u = a.union(b).count();
+            if u == 0 {
+                return 0.0;
+            }
+            a.intersection(b).count() as f64 / u as f64
+        };
+
+        let indep_p = 1.0 - jaccard(&ext_combo, &ext_p);
+        let indep_q = 1.0 - jaccard(&ext_combo, &ext_q);
+        let independence = indep_p.min(indep_q);
+
+        let rarity = if domain_size == 0 {
+            0.0
+        } else {
+            let ratio = ext_combo.len() as f64 / domain_size as f64;
+            4.0 * ratio * (1.0 - ratio) // peaks at 0.5
+        };
+
+        let constraint = 1.0 - jaccard(&ext_p, &ext_q);
+
+        let score = independence * rarity * constraint;
+        (score, "positive".into())
+    }
+
+    /// Score and record a combination into the fact set.
+    /// Records `combo_score(p, q, value)` and `combo_diagnosis(p, q, reason)`.
+    pub fn record_combo_score(&mut self, name: &str, p: &str, q: &str) {
+        let (score, diagnosis) = self.score_combo_and(p, q);
+
+        if !self.relation_defs.contains_key("combo_score") {
+            self.define_relation("combo_score", 3);
+        }
+        if !self.relation_defs.contains_key("combo_diagnosis") {
+            self.define_relation("combo_diagnosis", 3);
+        }
+
+        let score_str = format!("{:.4}", score);
+        self.define_constant(&score_str);
+        self.define_constant(&diagnosis);
+
+        self.add_fact(Relation::new(
+            "combo_score",
+            vec![
+                Term::constant(name),
+                Term::constant(p),
+                Term::constant(&score_str),
+            ],
+        ));
+        self.add_fact(Relation::new(
+            "combo_diagnosis",
+            vec![
+                Term::constant(name),
+                Term::constant(p),
+                Term::constant(&diagnosis),
+            ],
+        ));
+    }
+
     // ── property implication (Henkin second-order, phase 2) ──
 
     /// Declare that property implication should be tracked.
