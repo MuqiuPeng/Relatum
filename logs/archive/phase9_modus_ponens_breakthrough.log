@@ -1,0 +1,11 @@
+  MODUS PONENS BREAKTHROUGH
+============================================================
+  Before: ext(Q) = [a] (1 instance)
+  Inject: implies(P, Q)
+  After:  ext(Q) = ["a", "b", "c"] (3 instances)
+
+  ★ implies(P,Q) + modus ponens: ext(Q) grew from 1 to 3
+  The injected implication broke through the original fixpoint.
+test test_modus_ponens_breakthrough ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.00s

@@ -1704,8 +1704,34 @@ impl ClosureEngine {
         if self.relation_defs.contains_key("is_property") && !hit_limit {
             let pre_impl = self.facts.len();
             self.derive_property_implications();
+
+            // ── Inductive promotion: implies_observed → implies ──
+            // ext(P) ⊆ ext(Q) on current facts: promote to deductive implies.
+            // Modus ponens then derives new has_property facts, potentially
+            // closing resource gaps where one property was derived faster
+            // than another.
+            {
+                let to_promote: Vec<Relation> = self
+                    .facts
+                    .iter()
+                    .filter(|f| f.name() == "implies_observed" && f.arity() == 2)
+                    .map(|f| Relation::binary("implies", f.terms()[0].clone(), f.terms()[1].clone()))
+                    .filter(|f| !self.facts.contains(f))
+                    .collect();
+
+                if !to_promote.is_empty() {
+                    warnings.push(format!(
+                        "inductive promotion: {} implies_observed → implies",
+                        to_promote.len(),
+                    ));
+                    for fact in to_promote {
+                        self.facts.insert(fact);
+                    }
+                }
+            }
+
             if self.facts.len() > pre_impl {
-                // Re-run positive closure to propagate implications
+                // Re-run positive closure to propagate new implications
                 for _ in 0..self.max_rounds {
                     rounds += 1;
                     let mut new_facts: HashSet<Relation> = HashSet::new();
@@ -1724,6 +1750,42 @@ impl ClosureEngine {
                         if self.facts.len() >= self.max_facts {
                             break;
                         }
+                    }
+                }
+            }
+
+            // ── Modus ponens propagation (isolated) ──────────
+            // After implication phase, run ONLY modus ponens and property
+            // detect rules — not generative rules like pairing — to close
+            // resource gaps between property extensions.
+            let has_any_implies = self.facts.iter().any(|f| f.name() == "implies");
+            if has_any_implies {
+                let mp_rules: Vec<&Rule> = self
+                    .rules
+                    .iter()
+                    .filter(|r| {
+                        !r.has_negation()
+                            && !r.has_refutation()
+                            && (r.name().contains("modus_ponens")
+                                || r.name().contains("_detect")
+                                || r.name().contains("_compose_detect")
+                                || r.name().contains("_or_left")
+                                || r.name().contains("_or_right"))
+                    })
+                    .collect();
+
+                for _ in 0..self.max_rounds {
+                    rounds += 1;
+                    let mut new_facts: HashSet<Relation> = HashSet::new();
+                    for rule in &mp_rules {
+                        apply_rule(rule, &self.facts, &mut new_facts);
+                    }
+                    new_facts.retain(|f| !self.facts.contains(f));
+                    if new_facts.is_empty() {
+                        break;
+                    }
+                    for fact in new_facts {
+                        self.facts.insert(fact);
                     }
                 }
             }
