@@ -4406,6 +4406,258 @@ fn test_degenerate_meta_analysis() {
     }
 }
 
+// ── Property space analysis across 3 domains ────────────────
+
+/// Structured report of a property space analysis.
+struct PropertySpaceReport {
+    domain: String,
+    n_properties: usize,
+    n_pairs: usize,
+    and_total: usize,
+    and_degenerate: usize,
+    and_degenerate_to_p: usize,
+    and_degenerate_to_q: usize,
+    and_degenerate_to_known: usize,
+    and_empty: usize,
+    and_universal: usize,
+    and_informative: usize,
+    or_total: usize,
+    or_degenerate: usize,
+    or_degenerate_to_p: usize,
+    or_degenerate_to_q: usize,
+    or_degenerate_to_known: usize,
+    or_empty: usize,
+    or_universal: usize,
+    or_informative: usize,
+    hierarchical: bool,
+    union_closed: bool,
+}
+
+fn analyze_property_space(engine: &ClosureEngine, domain: &str) -> PropertySpaceReport {
+    let properties: Vec<String> = engine.facts().iter()
+        .filter(|f| f.name() == "is_property" && f.arity() == 1 && f.is_ground())
+        .map(|f| f.terms()[0].to_string())
+        .collect();
+
+    let n = properties.len();
+    let n_pairs = n * (n - 1) / 2;
+
+    let mut r = PropertySpaceReport {
+        domain: domain.to_string(),
+        n_properties: n, n_pairs,
+        and_total: 0, and_degenerate: 0, and_degenerate_to_p: 0,
+        and_degenerate_to_q: 0, and_degenerate_to_known: 0,
+        and_empty: 0, and_universal: 0, and_informative: 0,
+        or_total: 0, or_degenerate: 0, or_degenerate_to_p: 0,
+        or_degenerate_to_q: 0, or_degenerate_to_known: 0,
+        or_empty: 0, or_universal: 0, or_informative: 0,
+        hierarchical: false, union_closed: false,
+    };
+
+    for i in 0..n {
+        for j in (i+1)..n {
+            let p = &properties[i];
+            let q = &properties[j];
+
+            // AND
+            let (as_, ad) = engine.score_combo_and(p, q);
+            r.and_total += 1;
+            if as_ > 0.0 {
+                r.and_informative += 1;
+            } else {
+                r.and_degenerate += 1;
+                match ad.as_str() {
+                    "degenerate_to_p" => r.and_degenerate_to_p += 1,
+                    "degenerate_to_q" => r.and_degenerate_to_q += 1,
+                    "empty_extension" => r.and_empty += 1,
+                    "trivial_universal" => r.and_universal += 1,
+                    d if d.starts_with("degenerate_to_") => r.and_degenerate_to_known += 1,
+                    _ => {}
+                }
+            }
+
+            // OR
+            let (os_, od) = engine.score_combo_or(p, q);
+            r.or_total += 1;
+            if os_ > 0.0 {
+                r.or_informative += 1;
+            } else {
+                r.or_degenerate += 1;
+                match od.as_str() {
+                    "degenerate_to_p" => r.or_degenerate_to_p += 1,
+                    "degenerate_to_q" => r.or_degenerate_to_q += 1,
+                    "empty_extension" => r.or_empty += 1,
+                    "trivial_universal" => r.or_universal += 1,
+                    d if d.starts_with("degenerate_to_") => r.or_degenerate_to_known += 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let and_ratio = if r.and_total > 0 { r.and_degenerate as f64 / r.and_total as f64 } else { 0.0 };
+    r.hierarchical = and_ratio > 0.8;
+    r.union_closed = r.or_total > 0 && r.or_informative == 0;
+
+    r
+}
+
+fn print_report(r: &PropertySpaceReport) {
+    println!("  ┌─ {} ─────────────────────────────────", r.domain);
+    println!("  │ Properties: {}, Pairs: {}", r.n_properties, r.n_pairs);
+    println!("  │");
+    println!("  │ AND: {}/{} degenerate ({:.0}%), {} informative",
+        r.and_degenerate, r.and_total,
+        if r.and_total > 0 { r.and_degenerate as f64 / r.and_total as f64 * 100.0 } else { 0.0 },
+        r.and_informative);
+    println!("  │   to_p={}, to_q={}, to_known={}, empty={}, universal={}",
+        r.and_degenerate_to_p, r.and_degenerate_to_q,
+        r.and_degenerate_to_known, r.and_empty, r.and_universal);
+    println!("  │");
+    println!("  │ OR:  {}/{} degenerate ({:.0}%), {} informative",
+        r.or_degenerate, r.or_total,
+        if r.or_total > 0 { r.or_degenerate as f64 / r.or_total as f64 * 100.0 } else { 0.0 },
+        r.or_informative);
+    println!("  │   to_p={}, to_q={}, to_known={}, empty={}, universal={}",
+        r.or_degenerate_to_p, r.or_degenerate_to_q,
+        r.or_degenerate_to_known, r.or_empty, r.or_universal);
+    println!("  │");
+    println!("  │ Structure: {}{}",
+        if r.hierarchical { "hierarchical " } else { "" },
+        if r.union_closed { "union-closed " } else { "" });
+    println!("  └───────────────────────────────────────");
+}
+
+/// Full property space analysis across 3 domains.
+#[test]
+fn test_property_space_analysis() {
+    println!("\n╔════════════════════════════════════════════════════════════╗");
+    println!("║  PROPERTY SPACE ANALYSIS (3 domains)                     ║");
+    println!("╚════════════════════════════════════════════════════════════╝");
+
+    // ── Domain 1: Algebra (assoc+id, 3 elements) ──
+    let tables = representative_tables();
+    let assoc_id = tables.iter().find(|(k,_)| k == "assoc+id").unwrap();
+    let mut eng_alg = property_engine_from_table(&assoc_id.1);
+    eng_alg.define_negate("not_left_id", "left_id");
+    eng_alg.define_negate("not_right_id", "right_id");
+    eng_alg.define_negate("not_idempotent", "idempotent");
+    eng_alg.enable_property_implication();
+    eng_alg.set_max_rounds(10);
+    eng_alg.set_max_facts(300);
+    eng_alg.derive_closure();
+    let r_alg = analyze_property_space(&eng_alg, "Algebra (assoc+id, n=3)");
+
+    // ── Domain 2: Order theory (chain a<b<c<d) ──
+    let mut eng_ord = poset_property_engine(
+        &["a".into(), "b".into(), "c".into(), "d".into()],
+        &[("a".into(),"b".into()), ("b".into(),"c".into()), ("c".into(),"d".into())],
+    );
+    eng_ord.define_negate("not_maximal", "is_maximal");
+    eng_ord.define_negate("not_minimal", "is_minimal");
+    eng_ord.enable_property_implication();
+    eng_ord.set_max_rounds(10);
+    eng_ord.set_max_facts(300);
+    eng_ord.derive_closure();
+    let r_ord = analyze_property_space(&eng_ord, "Order (chain, n=4)");
+
+    // ── Domain 3: Set theory (powerset chain) ──
+    let mut eng_set = ClosureEngine::new();
+    eng_set.define_relation("set", 1);
+    eng_set.define_relation("member", 2);
+    eng_set.define_relation("subset", 2);
+    eng_set.define_equivalence("eq");
+    for v in &["x","y","z","a","b","s","_px"] { eng_set.define_variable(*v); }
+    eng_set.define_constant("empty");
+    eng_set.add_fact(Relation::new("set", vec![c("empty")]));
+    eng_set.define_relation("element", 1);
+    // Mark sets as elements for combo scoring
+    eng_set.add_rule(Rule::new("set_is_element",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("element", vec![Term::var("x")])],
+    ));
+    eng_set.add_rule(Rule::new("empty_subset",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("x")])]));
+    eng_set.add_rule(Rule::new("subset_refl",
+        vec![RelationPattern::new("set", vec![Term::var("x")])],
+        vec![RelationPattern::new("subset", vec![Term::var("x"), Term::var("x")])]));
+    eng_set.add_rule(Rule::new("powerset_exists",
+        vec![RelationPattern::new("set", vec![Term::var("a")])],
+        vec![RelationPattern::new("set", vec![Term::app("power", vec![Term::var("a")])])]));
+    eng_set.add_rule(Rule::new("powerset_member",
+        vec![
+            RelationPattern::new("subset", vec![Term::var("s"), Term::var("a")]),
+            RelationPattern::new("set", vec![Term::var("s")]),
+        ],
+        vec![RelationPattern::new("member", vec![
+            Term::var("s"), Term::app("power", vec![Term::var("a")])])]));
+    eng_set.define_property("is_set", &["_px"],
+        vec![RelationPattern::new("set", vec![Term::var("_px")])]);
+    eng_set.define_property("superset_of_empty", &["_px"],
+        vec![RelationPattern::new("subset", vec![c("empty"), Term::var("_px")])]);
+    eng_set.define_property("has_member_empty", &["_px"],
+        vec![RelationPattern::new("member", vec![c("empty"), Term::var("_px")])]);
+    eng_set.define_property("self_subset", &["_px"],
+        vec![RelationPattern::new("subset", vec![Term::var("_px"), Term::var("_px")])]);
+    eng_set.define_negate("not_has_member_empty", "has_member_empty");
+    eng_set.enable_property_implication();
+    eng_set.set_max_rounds(20);
+    eng_set.set_max_facts(500);
+    eng_set.derive_closure();
+    let r_set = analyze_property_space(&eng_set, "Set theory (powerset, n=8)");
+
+    // ── Print reports ──
+    println!();
+    print_report(&r_alg);
+    println!();
+    print_report(&r_ord);
+    println!();
+    print_report(&r_set);
+
+    // ── Cross-domain comparison ──
+    println!("\n  ┌─ Cross-domain comparison ───────────────────────────────");
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "", "Algebra", "Order", "Set");
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "AND degenerate %",
+        format!("{:.0}%", r_alg.and_degenerate as f64 / r_alg.and_total.max(1) as f64 * 100.0),
+        format!("{:.0}%", r_ord.and_degenerate as f64 / r_ord.and_total.max(1) as f64 * 100.0),
+        format!("{:.0}%", r_set.and_degenerate as f64 / r_set.and_total.max(1) as f64 * 100.0));
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "OR degenerate %",
+        format!("{:.0}%", r_alg.or_degenerate as f64 / r_alg.or_total.max(1) as f64 * 100.0),
+        format!("{:.0}%", r_ord.or_degenerate as f64 / r_ord.or_total.max(1) as f64 * 100.0),
+        format!("{:.0}%", r_set.or_degenerate as f64 / r_set.or_total.max(1) as f64 * 100.0));
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "AND informative",
+        r_alg.and_informative, r_ord.and_informative, r_set.and_informative);
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "OR informative",
+        r_alg.or_informative, r_ord.or_informative, r_set.or_informative);
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "Hierarchical",
+        r_alg.hierarchical, r_ord.hierarchical, r_set.hierarchical);
+    println!("  │ {:28} {:>10} {:>10} {:>10}", "Union-closed",
+        r_alg.union_closed, r_ord.union_closed, r_set.union_closed);
+    println!("  └───────────────────────────────────────────────────────");
+
+    // ── Meta-level induction (cautious: only 3 data points) ──
+    let all_union_closed = r_alg.union_closed && r_ord.union_closed && r_set.union_closed;
+    let all_hierarchical = r_alg.hierarchical && r_ord.hierarchical && r_set.hierarchical;
+    let all_or_zero = r_alg.or_informative == 0 && r_ord.or_informative == 0 && r_set.or_informative == 0;
+
+    println!("\n  Meta-level observations (3 data points — low confidence):");
+    if all_union_closed {
+        println!("    ★ Union-closed in ALL 3 domains.");
+        println!("      Tentative: property disjunction adds no new concepts");
+        println!("      when the property space is derived from a single structure.");
+    }
+    if all_hierarchical {
+        println!("    ★ Hierarchical in ALL 3 domains.");
+        println!("      Tentative: derived property spaces tend to form subset chains.");
+    }
+    if all_or_zero {
+        println!("    ★ OR informative = 0 in ALL 3 domains.");
+        println!("      Tentative: disjunction is structurally less productive");
+        println!("      than conjunction+negation for concept discovery.");
+    }
+}
+
 /// Simple premise matching against a vec of fact references.
 const MAX_SUBSTITUTIONS: usize = 10_000;
 
