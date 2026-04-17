@@ -30,15 +30,13 @@
     is_minimal         ext = ["a"]
     is_extremal        ext = ["a", "d"]
     is_isolated        ext = []
-    not_maximal        ext = ["a", "b", "c"]
-    not_minimal        ext = ["c", "b", "d"]
-    Candidates with score > 0: 3
-      not_maximal ∧ is_extremal → score=0.2812 (positive)
-      is_extremal ∧ not_minimal → score=0.2812 (positive)
-      not_maximal ∧ not_minimal → score=0.1667 (positive)
+    not_maximal        ext = ["c", "a", "b"]
+    not_minimal        ext = ["c", "d", "b"]
+    Candidates with score > 0: 1
+      not_minimal ∧ not_maximal → score=0.1667 (positive)
   Summary:
     Before negation: 0 informative combos across all domains
-    After negation:  0 (algebra), 3 (order)
+    After negation:  0 (algebra), 1 (order)
     Negation creates orthogonal properties → informative intersections
 test test_negate_and_combo ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.03s

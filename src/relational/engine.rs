@@ -481,6 +481,24 @@ impl ClosureEngine {
             return (0.0, "trivial_universal".into());
         }
 
+        // Check if combo ext equals ANY existing property's ext (cross-degenerate)
+        let properties: Vec<Term> = self
+            .facts
+            .iter()
+            .filter(|f| f.name() == "is_property" && f.arity() == 1 && f.is_ground())
+            .map(|f| f.terms()[0].clone())
+            .collect();
+        for prop in &properties {
+            let prop_name = prop.to_string();
+            if prop_name == p || prop_name == q {
+                continue; // already checked above
+            }
+            let ext_existing = self.property_extension(&prop_name);
+            if !ext_existing.is_empty() && ext_combo == ext_existing {
+                return (0.0, format!("degenerate_to_{}", prop_name));
+            }
+        }
+
         // Soft scoring: independence × rarity × constraint
         let jaccard = |a: &HashSet<Term>, b: &HashSet<Term>| -> f64 {
             let u = a.union(b).count();
