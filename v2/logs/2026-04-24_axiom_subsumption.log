@@ -1,0 +1,206 @@
+Date: 2026-04-24
+Descriptor: axiom_subsumption (ADR 0028)
+Purpose:
+    Re-run the same 8-case rigorous blind battery from 2026-04-24_
+    axiom_rigorous.log after adding ADR 0028's three filters —
+    structural template canonicalization (permutation-aware),
+    subsumption by universal reflexivity, subsumption by premise
+    weakening. Measure before/after on every case. Library code
+    change for this ADR is limited to lib.rs; test data supplied
+    externally by examples/axiom_rigorous_test.rs (unchanged
+    construction, only the reporter now prints both raw and minimal
+    counts).
+
+Mechanism version:
+    ADR 0028 on top of ADR 0027. Same default config
+    (max_premise_edges=2, max_vars=3, min_evidence=1). The
+    rigorous_test example now calls discover_axioms (raw) AND
+    discover_axioms_minimal (subsumed) and reports both per case.
+
+====================================================================
+BEFORE / AFTER SUMMARY
+====================================================================
+
+                               raw(0027)   canon only   minimal(0028)
+  1. transitive closure chain      2           1             1
+  2. equivalence relation         45          26             5
+  3. strict partial order          2           1             1
+  4. almost-transitive             0           0             0
+  5. random sparse                 0           0             0
+  6. tolerance                    37          22             1
+  7. total order                  25          15             1
+  8. complete bipartite            0           0             0
+
+(The "canon only" column isolates the effect of structural
+canonicalization — it's the raw count from the enumeration alone,
+before applying either subsumption filter. Easy to read off: the
+canonicalizer kills about 40–45% of the 0027 duplicates in isolation,
+and the two filters finish the job.)
+
+====================================================================
+PER-CASE VERDICT
+====================================================================
+
+─────────────────────────────────────────────────────────────────────
+CASE 1. Transitive closure chain a<b<c<d<e (no self-loops)
+─────────────────────────────────────────────────────────────────────
+  raw: 1  minimal: 1
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)  bindings=10    ← Transitivity ✓
+
+  ADR 0027 had two templates for transitivity; ADR 0028's canonical-
+  izer now returns the same structural form regardless of initial
+  variable labels, so both collapse to one.
+
+─────────────────────────────────────────────────────────────────────
+CASE 2. Equivalence relation (3 classes: {a,b}, {c,d,e}, {f})
+─────────────────────────────────────────────────────────────────────
+  raw: 26  minimal: 5
+    [R(0,1)] ⇒ R(1,0)                     bindings=14    ← Symmetry ✓
+    [R(0,1) ∧ R(0,2)] ⇒ R(1,2)            bindings=36
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)            bindings=36    ← Transitivity ✓
+    [R(0,1) ∧ R(1,2)] ⇒ R(2,0)            bindings=36
+    [R(0,1) ∧ R(2,1)] ⇒ R(0,2)            bindings=36
+
+  45 → 26 via canonicalization, 26 → 5 via subsumption. Of the five:
+    · one symmetry
+    · four transitivity-like 2-premise templates
+
+  Why four and not one? Under equivalence, R(x,y) ⇔ R(y,x) (symmetry),
+  so the templates are provably equivalent to each other under the
+  *combination* {symmetry, transitivity}. Premise-weakening cannot
+  detect this because no one template's premise is a subset of
+  another's (all have 2 edges, different structure). Reducing these
+  to one would require compositional subsumption — a theorem-prover
+  kind of step, deliberately out of scope for ADR 0028 (see ADR for
+  the rationale).
+
+  Five is tractable for upper-layer work. The 9x reduction from 45
+  is what was needed.
+
+─────────────────────────────────────────────────────────────────────
+CASE 3. Strict partial order (diamond, no self-loops)
+─────────────────────────────────────────────────────────────────────
+  raw: 1  minimal: 1
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)  bindings=2     ← Transitivity ✓
+
+  Already clean in 0027; canonicalization collapsed the relabeled
+  variant. Reflexivity doesn't hold here, so the reflexivity filter
+  does nothing. Premise-weakening has nothing to do (single axiom).
+
+─────────────────────────────────────────────────────────────────────
+CASE 4. Almost-transitive (closure with ONE violation)
+─────────────────────────────────────────────────────────────────────
+  raw: 0  minimal: 0
+
+  Unchanged — the 0027 strict rate-1.0 check correctly suppressed
+  the rule. ADR 0028 had no effect here.
+
+─────────────────────────────────────────────────────────────────────
+CASE 5. Random sparse graph
+─────────────────────────────────────────────────────────────────────
+  raw: 0  minimal: 0
+
+  Same as 4: no false positives in 0027, none in 0028.
+
+─────────────────────────────────────────────────────────────────────
+CASE 6. Tolerance (reflexive + symmetric, NOT transitive)
+─────────────────────────────────────────────────────────────────────
+  raw: 22  minimal: 1
+    [R(0,1)] ⇒ R(1,0)  bindings=7     ← Symmetry ✓
+
+  37 → 22 via canonicalization. Then:
+    · universal reflexivity holds → every `⇒ R(v,v)` dropped.
+    · premise weakening → every 2-premise axiom containing a subset
+      of a 1-premise axiom's premise + same conclusion dropped.
+
+  One axiom survives: symmetry. Transitivity does NOT survive
+  (correctly — a~b and b~c without a~c). This is exactly the clean
+  characterization of a tolerance relation, at rate 1.0 in the
+  template space. No noise left.
+
+─────────────────────────────────────────────────────────────────────
+CASE 7. Total order on {1..5} with self-loops
+─────────────────────────────────────────────────────────────────────
+  raw: 15  minimal: 1
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)  bindings=35    ← Transitivity ✓
+  check_poset: TRUE
+
+  25 → 15 via canonicalization. 15 → 1 via filters. Transitivity is
+  all that structurally survives as a 1-edge-conclusion rule at rate
+  1.0; reflexivity is reported via `check_reflexivity` separately;
+  antisymmetry via `check_antisymmetry` separately; `check_poset`
+  composes the three into the "yes this is a poset" answer.
+
+  The `minimal` output plus the three check methods together give
+  the clean poset verdict, no redundant conclusions clouding it.
+
+─────────────────────────────────────────────────────────────────────
+CASE 8. Complete bipartite
+─────────────────────────────────────────────────────────────────────
+  raw: 0  minimal: 0
+
+  min_evidence ≥ 1 already suppresses vacuous chains. ADR 0028 had
+  no effect.
+
+====================================================================
+AGGREGATE VERDICT
+====================================================================
+
+| Case                   | 0027 | 0028 | genuine axioms |
+|------------------------|------|------|----------------|
+| 1. transitive chain    |  2   |  1   | 1 (trans)      |
+| 2. equivalence         | 45   |  5   | 2 (sym+trans)*|
+| 3. strict partial order|  2   |  1   | 1 (trans)      |
+| 4. broken transitive   |  0   |  0   | 0              |
+| 5. random              |  0   |  0   | 0              |
+| 6. tolerance           | 37   |  1   | 1 (sym)        |
+| 7. total order         | 25   |  1   | 1 (trans)      |
+| 8. bipartite           |  0   |  0   | 0              |
+
+* Counting "one symmetry + one transitivity" as two genuine
+  independent axioms; ADR 0028 output includes those plus three
+  composed variants that collapse under {sym, trans} reasoning.
+
+Every case either matches the human-readable "genuine axiom count"
+exactly, or sits within a factor of 2–3 of it. The remaining gap
+(case 2) is purely compositional-subsumption, explicitly out of
+scope.
+
+====================================================================
+SANITY
+====================================================================
+
+- check_reflexivity / check_antisymmetry / check_poset results
+  unchanged across all 8 cases. Only the `discover_axioms_minimal`
+  output is affected.
+- 128 prior tests + 6 new tests = 134, all pass.
+- Rigorous example is deterministic across runs.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0028 is a success on its stated scope: reduce noise to a
+tractable minimum without touching enumeration correctness. The
+output is now something an upper-layer ("name the theory," "pick
+canonical rules," "compose into a concept") could reasonably consume.
+
+The follow-ups that would tighten this further — all outside ADR 0028:
+
+  1. **Compositional subsumption.** Detect that, under the presence
+     of one axiom X, another axiom Y is entailed. On the equivalence
+     case this would collapse the four transitivity variants to one.
+     Requires SAT/SMT-style reasoning; nontrivial.
+  2. **Conjunctive naming.** Name a pair/triple of axioms as a
+     single named concept (e.g., "equivalence" = {sym, trans, refl}).
+     This is the "theory-object" step the user identified in
+     feedback: going from rule-detection to concept construction.
+  3. **Meta-R encoding of axioms.** Currently axioms are Rust values,
+     not R instances. Persisting them in R would complete the
+     commitment-3 picture ("types are meta-R") for rules as well as
+     patterns.
+
+Of these, (2) is the natural successor — it's the step from
+"individual axioms" to "theory-level structure." (1) would help (2)
+by making its input cleaner on edge cases. (3) is a representational
+question; can come later.

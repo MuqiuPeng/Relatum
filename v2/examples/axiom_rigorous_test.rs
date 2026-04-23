@@ -35,9 +35,14 @@ fn report(rs: &RSet, config: &AxiomDiscoveryConfig) {
         rs.len(),
         rs.identifiers().len()
     );
-    let axioms = rs.discover_axioms(config);
-    println!("  discovered axioms (rate=1.0, evidence≥1): {}", axioms.len());
-    for ev in &axioms {
+    let raw = rs.discover_axioms(config);
+    let minimal = rs.discover_axioms_minimal(config);
+    println!(
+        "  raw axioms: {}  minimal axioms: {}",
+        raw.len(),
+        minimal.len()
+    );
+    for ev in &minimal {
         let prem_str: Vec<String> = ev
             .template
             .premise

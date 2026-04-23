@@ -817,3 +817,69 @@ collections of motifs.
 
 Decision: [0027-axiom-discovery-probe](decisions/0027-axiom-discovery-probe.md).
 Log: [logs/2026-04-24_axiom_discovery.log](../logs/2026-04-24_axiom_discovery.log).
+
+### Axiom discovery: rigorous blind test (ADR 0027 follow-up)
+User asked for a harsher test of the discovery mechanism without
+leaking any test information into the library. Added
+`examples/axiom_rigorous_test.rs` — 8 mathematically well-defined
+cases (transitive chain, equivalence, strict partial order,
+almost-transitive with one broken binding, random sparse, tolerance,
+total order, complete bipartite). Library code unchanged.
+
+Result: every discoverable axiom (within the ≤2-edge-premise / ≤3-var
+positive-implication template form) was found on inputs where it
+holds and absent on inputs where it doesn't. No false positives on
+the broken-transitive, random, or bipartite cases. Honest caveat
+recorded in the log: high counts on cases where reflexivity holds
+universally (45 / 37 / 25) — pointed at subsumption as the immediate
+next fix.
+
+Log: [logs/2026-04-24_axiom_rigorous.log](../logs/2026-04-24_axiom_rigorous.log).
+
+### Axiom subsumption (ADR 0028)
+User's response to the rigorous log: flagged that "no false positives"
+is a bounded claim (inside the template space, not over all axioms),
+that the discovery is still axiom-level not theory-level, and that
+the noise is not cosmetic — it's an upper-layer blocker for concept
+synthesis. Subsumption is therefore a precondition for further work.
+
+Three mechanisms added on top of ADR 0027:
+
+1. **Structural template canonicalization.** Previous canonicalizer
+   only normalized by first-use variable order (invariant under
+   renaming but not permutation). New canonicalizer picks the
+   lex-smallest form over all variable permutations (≤ 24 for
+   max_vars=4). Collapses transitivity's two 0027 variants to one.
+2. **Subsumption by universal reflexivity.** When every data
+   identifier has a self-loop, axioms with conclusion R(v, v) are
+   entailed by reflexivity alone and dropped.
+3. **Subsumption by premise weakening.** If axiom A has a premise
+   that's a subset of B's under some variable mapping preserving
+   the conclusion, then A is strictly stronger and B is dropped.
+
+Composed as `RSet::discover_axioms_minimal(config)`. Raw
+`discover_axioms` unchanged.
+
+Effect on the rigorous 8-case battery:
+
+| Case                | raw(0027) | minimal(0028) |
+|---------------------|----------:|--------------:|
+| transitive chain    |  2        |  1            |
+| equivalence         | 45        |  5            |
+| strict partial order|  2        |  1            |
+| broken transitive   |  0        |  0            |
+| random              |  0        |  0            |
+| tolerance           | 37        |  1            |
+| total order         | 25        |  1            |
+| bipartite           |  0        |  0            |
+
+Cases 1, 3, 6, 7 reduce to exactly one canonical axiom. Case 2
+keeps 5 (symmetry + 4 independent transitivity variants under
+equivalence — compositional subsumption would need a theorem prover,
+deliberately out of scope).
+
+Tests: 128 → 134 (6 new tests for canonicalizer collapse, reflexivity
+subsumption, premise weakening, and per-case minimal output).
+
+Decision: [0028-axiom-subsumption](decisions/0028-axiom-subsumption.md).
+Log: [logs/2026-04-24_axiom_subsumption.log](../logs/2026-04-24_axiom_subsumption.log).

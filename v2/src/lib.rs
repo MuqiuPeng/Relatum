@@ -1020,6 +1020,37 @@ impl RSet {
         results
     }
 
+    /// Discover axioms and return the subsumption-minimized set. ADR 0028.
+    ///
+    /// Applies two redundancy filters to `discover_axioms`:
+    ///
+    /// 1. **Universal reflexivity subsumption.** When every data identifier
+    ///    has a self-loop (`check_reflexivity().rate == 1.0`), any axiom
+    ///    whose conclusion is `R(v, v)` is trivially entailed and dropped.
+    /// 2. **Premise-weakening subsumption.** If axiom A has a subset of
+    ///    axiom B's premise under some variable mapping that also sends
+    ///    A's conclusion to B's conclusion, then B is strictly weaker
+    ///    than A and is dropped.
+    ///
+    /// The raw `discover_axioms` output is unchanged; this method is a
+    /// composable post-filter.
+    pub fn discover_axioms_minimal(
+        &self,
+        config: &AxiomDiscoveryConfig,
+    ) -> Vec<AxiomEvidence> {
+        let raw = self.discover_axioms(config);
+        let reflexive_holds = {
+            let r = self.check_reflexivity();
+            r.identifiers_total > 0 && r.rate == 1.0
+        };
+        let after_refl = if reflexive_holds {
+            subsume_by_reflexivity(raw)
+        } else {
+            raw
+        };
+        subsume_by_premise_weakening(after_refl)
+    }
+
     /// Reflexivity: every data identifier has a self-loop `R(x, x)`.
     /// ADR 0027.
     pub fn check_reflexivity(&self) -> ReflexivityEvidence {
@@ -1635,9 +1666,50 @@ fn enumerate_axiom_templates(config: &AxiomDiscoveryConfig) -> Vec<AxiomTemplate
     templates
 }
 
-/// Canonicalize an axiom template by renumbering variables in
-/// first-use order (over premise then conclusion). ADR 0027.
-fn canonicalize_template(mut tpl: AxiomTemplate) -> AxiomTemplate {
+/// Canonicalize an axiom template to a structural canonical form:
+/// minimum over all variable permutations of the first-use-normalized
+/// form. ADR 0027 / ADR 0028.
+///
+/// ADR 0027's canonicalizer only normalized by first-use ordering,
+/// which is invariant under variable *renaming* but not under variable
+/// *permutation*. That left transitivity's two forms
+/// `[R(0,1), R(1,2)] ⇒ R(0,2)` and `[R(0,1), R(2,0)] ⇒ R(2,1)` both
+/// in the output. ADR 0028 upgrades this: the canonical form is the
+/// lexicographically-smallest first-use-normalized form obtained over
+/// all permutations of the original variable labels. For num_vars ≤ 4
+/// this is bounded by 24 permutations per template.
+fn canonicalize_template(tpl: AxiomTemplate) -> AxiomTemplate {
+    let base = canonicalize_template_first_use(tpl);
+    let n = base.num_vars;
+    if n <= 1 {
+        return base;
+    }
+    let mut best = base.clone();
+    let mut best_key = template_key(&best);
+    let perms = all_permutations(n);
+    for perm in perms {
+        let mut permuted = base.clone();
+        for e in &mut permuted.premise {
+            e.x_var = perm[e.x_var];
+            e.y_var = perm[e.y_var];
+        }
+        permuted.conclusion.x_var = perm[permuted.conclusion.x_var];
+        permuted.conclusion.y_var = perm[permuted.conclusion.y_var];
+        let re_canon = canonicalize_template_first_use(permuted);
+        let key = template_key(&re_canon);
+        if key < best_key {
+            best_key = key;
+            best = re_canon;
+        }
+    }
+    best
+}
+
+/// First-use variable renumbering + premise-edge sort. Invariant under
+/// renaming but NOT under permutation of variable labels; see
+/// `canonicalize_template` for the full structural form.
+fn canonicalize_template_first_use(mut tpl: AxiomTemplate) -> AxiomTemplate {
+    tpl.premise.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
     let mut remap: HashMap<usize, usize> = HashMap::new();
     let mut next: usize = 0;
     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
@@ -1654,14 +1726,179 @@ fn canonicalize_template(mut tpl: AxiomTemplate) -> AxiomTemplate {
         e.x_var = assign(e.x_var, &mut remap, &mut next);
         e.y_var = assign(e.y_var, &mut remap, &mut next);
     }
-    tpl.conclusion.x_var =
-        assign(tpl.conclusion.x_var, &mut remap, &mut next);
-    tpl.conclusion.y_var =
-        assign(tpl.conclusion.y_var, &mut remap, &mut next);
-    // Sort premise edges so conjunction order is canonical.
+    tpl.conclusion.x_var = assign(tpl.conclusion.x_var, &mut remap, &mut next);
+    tpl.conclusion.y_var = assign(tpl.conclusion.y_var, &mut remap, &mut next);
     tpl.premise.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
     tpl.num_vars = next;
     tpl
+}
+
+/// Order key for comparing two templates in canonicalization.
+fn template_key(tpl: &AxiomTemplate) -> (usize, Vec<(usize, usize)>, (usize, usize)) {
+    let premise: Vec<(usize, usize)> =
+        tpl.premise.iter().map(|e| (e.x_var, e.y_var)).collect();
+    let concl = (tpl.conclusion.x_var, tpl.conclusion.y_var);
+    (tpl.num_vars, premise, concl)
+}
+
+/// All permutations of 0..n. n is bounded by AxiomDiscoveryConfig.max_vars
+/// (≤ 4 in practice), so 24 is the maximum size. ADR 0028.
+fn all_permutations(n: usize) -> Vec<Vec<usize>> {
+    let mut out = Vec::new();
+    let mut current: Vec<usize> = (0..n).collect();
+    permute_rec(&mut current, 0, &mut out);
+    out
+}
+
+fn permute_rec(arr: &mut Vec<usize>, k: usize, out: &mut Vec<Vec<usize>>) {
+    if k == arr.len() {
+        out.push(arr.clone());
+        return;
+    }
+    for i in k..arr.len() {
+        arr.swap(k, i);
+        permute_rec(arr, k + 1, out);
+        arr.swap(k, i);
+    }
+}
+
+/// Drop axioms whose conclusion is a self-loop `R(v, v)`. ADR 0028.
+///
+/// Rationale: when universal reflexivity holds on the RSet, any such
+/// conclusion is entailed by reflexivity alone, independent of the
+/// premise. Caller is responsible for checking reflexivity first;
+/// this function itself only inspects the conclusion shape.
+pub fn subsume_by_reflexivity(
+    axioms: Vec<AxiomEvidence>,
+) -> Vec<AxiomEvidence> {
+    axioms
+        .into_iter()
+        .filter(|ev| ev.template.conclusion.x_var != ev.template.conclusion.y_var)
+        .collect()
+}
+
+/// Drop axioms strictly weaker than another axiom in the set. ADR 0028.
+///
+/// Axiom A *subsumes* axiom B if there exists a variable mapping
+/// `σ: vars(A) → vars(B)` such that `σ(conclusion_A) = conclusion_B`
+/// and `σ(premise_A) ⊆ premise_B` as sets of edge templates. When such
+/// a σ exists, A's conclusion follows from a subset of B's premise,
+/// so B adds no new content and is redundant.
+///
+/// The axiom-pair comparison is asymmetric; to avoid two mutually-
+/// equivalent axioms both being dropped, ties are broken by template
+/// key order: among a pair where each subsumes the other, only the
+/// larger-key one is dropped.
+pub fn subsume_by_premise_weakening(
+    axioms: Vec<AxiomEvidence>,
+) -> Vec<AxiomEvidence> {
+    let n = axioms.len();
+    let mut keep = vec![true; n];
+    for i in 0..n {
+        if !keep[i] {
+            continue;
+        }
+        for j in 0..n {
+            if i == j || !keep[j] {
+                continue;
+            }
+            if template_subsumes(&axioms[i].template, &axioms[j].template) {
+                // i subsumes j: drop j. But if j also subsumes i, break
+                // the symmetry by keeping the lex-smaller template.
+                let sym = template_subsumes(&axioms[j].template, &axioms[i].template);
+                if sym {
+                    let ki = template_key(&axioms[i].template);
+                    let kj = template_key(&axioms[j].template);
+                    if ki <= kj {
+                        keep[j] = false;
+                    } else {
+                        keep[i] = false;
+                    }
+                } else {
+                    keep[j] = false;
+                }
+            }
+        }
+    }
+    axioms
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, ev)| if keep[idx] { Some(ev) } else { None })
+        .collect()
+}
+
+/// Does template A subsume template B? See `subsume_by_premise_weakening`.
+fn template_subsumes(a: &AxiomTemplate, b: &AxiomTemplate) -> bool {
+    let b_premise_set: HashSet<(usize, usize)> =
+        b.premise.iter().map(|e| (e.x_var, e.y_var)).collect();
+    // Enumerate every mapping σ: 0..a.num_vars → 0..b.num_vars that
+    // already agrees on the conclusion endpoints, then check premise
+    // inclusion.
+    let a_cx = a.conclusion.x_var;
+    let a_cy = a.conclusion.y_var;
+    let b_cx = b.conclusion.x_var;
+    let b_cy = b.conclusion.y_var;
+    // If conclusion_A has equal endpoints, conclusion_B must too.
+    if (a_cx == a_cy) != (b_cx == b_cy) {
+        return false;
+    }
+    // Seed σ with conclusion constraints.
+    let mut seed: HashMap<usize, usize> = HashMap::new();
+    seed.insert(a_cx, b_cx);
+    if a_cy != a_cx {
+        if let Some(&existing) = seed.get(&a_cy) {
+            if existing != b_cy {
+                return false;
+            }
+        }
+        seed.insert(a_cy, b_cy);
+    }
+    // Enumerate assignments for remaining A-vars.
+    let unassigned: Vec<usize> =
+        (0..a.num_vars).filter(|v| !seed.contains_key(v)).collect();
+    if b.num_vars == 0 {
+        return unassigned.is_empty() && premise_contained(a, &seed, &b_premise_set);
+    }
+    let mut working = seed;
+    extend_and_check(a, b, &b_premise_set, &unassigned, 0, &mut working)
+}
+
+fn extend_and_check(
+    a: &AxiomTemplate,
+    b: &AxiomTemplate,
+    b_premise: &HashSet<(usize, usize)>,
+    unassigned: &[usize],
+    idx: usize,
+    working: &mut HashMap<usize, usize>,
+) -> bool {
+    if idx == unassigned.len() {
+        return premise_contained(a, working, b_premise);
+    }
+    let var = unassigned[idx];
+    for target in 0..b.num_vars {
+        working.insert(var, target);
+        if extend_and_check(a, b, b_premise, unassigned, idx + 1, working) {
+            return true;
+        }
+    }
+    working.remove(&var);
+    false
+}
+
+fn premise_contained(
+    a: &AxiomTemplate,
+    sigma: &HashMap<usize, usize>,
+    b_premise: &HashSet<(usize, usize)>,
+) -> bool {
+    for e in &a.premise {
+        let (Some(&x), Some(&y)) = (sigma.get(&e.x_var), sigma.get(&e.y_var)) else {
+            return false;
+        };
+        if !b_premise.contains(&(x, y)) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Enumerate all bindings of `template.num_vars` variables to
@@ -4228,6 +4465,176 @@ mod tests {
             assert_eq!(ea.premise_bindings, eb.premise_bindings);
             assert_eq!(ea.conclusion_satisfied, eb.conclusion_satisfied);
         }
+    }
+
+    // ADR 0028 subsumption tests.
+
+    #[test]
+    fn adr0028_canonicalizer_collapses_transitivity_variants() {
+        // Transitive closure of 5-chain: 0027's enumeration surfaced two
+        // templates recognized by humans as "transitivity under different
+        // variable-to-slot assignments". The structural canonicalizer must
+        // collapse them into exactly one canonical transitivity template.
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c", "d", "e"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        let axioms = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        // Exactly one axiom, which is classical transitivity.
+        assert_eq!(axioms.len(), 1, "got: {:?}",
+            axioms.iter().map(|e| &e.template).collect::<Vec<_>>());
+        let t = &axioms[0].template;
+        assert_eq!(t.num_vars, 3);
+        assert_eq!(t.premise.len(), 2);
+        assert_eq!(t.conclusion, EdgeTemplate { x_var: 0, y_var: 2 });
+        assert!(t.premise.contains(&EdgeTemplate { x_var: 0, y_var: 1 }));
+        assert!(t.premise.contains(&EdgeTemplate { x_var: 1, y_var: 2 }));
+    }
+
+    #[test]
+    fn adr0028_reflexivity_subsumes_self_loop_conclusions() {
+        // Equivalence relation: symmetry + transitivity both hold; plus
+        // universal reflexivity forces axioms with R(v, v) conclusions to
+        // trivially hold. discover_axioms_minimal must eliminate those.
+        let mut rs = RSet::new();
+        let classes: &[&[&str]] = &[&["a", "b"], &["c", "d", "e"]];
+        for cls in classes {
+            for x in cls.iter() {
+                for y in cls.iter() {
+                    rs.add(R::new(*x, *y));
+                }
+            }
+        }
+        let minimal = rs.discover_axioms_minimal(&AxiomDiscoveryConfig::default());
+        // Every remaining axiom has a non-self-loop conclusion.
+        for ev in &minimal {
+            assert_ne!(
+                ev.template.conclusion.x_var,
+                ev.template.conclusion.y_var,
+                "reflexivity-trivial conclusion leaked through: {:?}",
+                ev.template
+            );
+        }
+        // Symmetry must survive.
+        let symmetry = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        assert!(minimal.iter().any(|e| e.template == symmetry));
+        // Transitivity must survive.
+        let transitivity = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        assert!(minimal.iter().any(|e| e.template == transitivity));
+    }
+
+    #[test]
+    fn adr0028_premise_weakening_drops_redundant_superset() {
+        // Synthetic axioms that share the symmetry conclusion but differ in
+        // premise — the 1-edge-premise (strictly stronger) must dominate.
+        let a = AxiomEvidence {
+            template: AxiomTemplate {
+                num_vars: 2,
+                premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+                conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+            },
+            premise_bindings: 10,
+            conclusion_satisfied: 10,
+            rate: 1.0,
+        };
+        let b = AxiomEvidence {
+            template: AxiomTemplate {
+                num_vars: 2,
+                premise: vec![
+                    EdgeTemplate { x_var: 0, y_var: 0 },
+                    EdgeTemplate { x_var: 0, y_var: 1 },
+                ],
+                conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+            },
+            premise_bindings: 10,
+            conclusion_satisfied: 10,
+            rate: 1.0,
+        };
+        let out = subsume_by_premise_weakening(vec![a.clone(), b]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].template, a.template);
+    }
+
+    #[test]
+    fn adr0028_discover_minimal_matches_raw_when_no_reflexivity() {
+        // Strict partial order (no self-loops): reflexivity holds for 0
+        // identifiers, subsumption-by-reflexivity should NOT fire. The
+        // premise-weakening pass still runs, so the counts match only if
+        // the raw output already lacks dominated pairs — for this case it
+        // does.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"), R::new("a", "c"), R::new("a", "d"),
+            R::new("b", "d"), R::new("c", "d"),
+        ]);
+        let raw = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        let minimal = rs.discover_axioms_minimal(&AxiomDiscoveryConfig::default());
+        // Both should be just transitivity.
+        assert_eq!(raw.len(), 1);
+        assert_eq!(minimal.len(), 1);
+        assert_eq!(raw[0].template, minimal[0].template);
+    }
+
+    #[test]
+    fn adr0028_minimal_collapses_total_order_to_transitivity() {
+        let mut rs = RSet::new();
+        let nodes = ["1", "2", "3", "4", "5"];
+        for i in 0..nodes.len() {
+            rs.add(R::new(nodes[i], nodes[i]));
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        let minimal = rs.discover_axioms_minimal(&AxiomDiscoveryConfig::default());
+        assert_eq!(minimal.len(), 1);
+        let t = &minimal[0].template;
+        assert_eq!(t.num_vars, 3);
+        assert_eq!(t.premise.len(), 2);
+        assert_eq!(t.conclusion, EdgeTemplate { x_var: 0, y_var: 2 });
+    }
+
+    #[test]
+    fn adr0028_minimal_on_tolerance_keeps_symmetry_only() {
+        // Tolerance: reflexive + symmetric, NOT transitive. Minimal axioms
+        // should contain symmetry and NO transitivity.
+        let mut rs = RSet::new();
+        for n in ["a", "b", "c"] {
+            rs.add(R::new(n, n));
+        }
+        rs.extend([
+            R::new("a", "b"), R::new("b", "a"),
+            R::new("b", "c"), R::new("c", "b"),
+        ]);
+        let minimal = rs.discover_axioms_minimal(&AxiomDiscoveryConfig::default());
+        let symmetry = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        assert!(minimal.iter().any(|e| e.template == symmetry));
+        let transitivity = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        assert!(!minimal.iter().any(|e| e.template == transitivity));
     }
 
     #[test]

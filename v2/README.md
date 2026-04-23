@@ -96,6 +96,15 @@ a three-axiom verdict. First v2 mechanism that reaches first-order
 axiomatic properties; axioms live as Rust values, not yet encoded
 as meta-R.
 
+ADR 0028 added **axiom subsumption** on top of 0027: structural
+template canonicalization (permutation-aware, collapsing transitivity's
+two previous forms into one), subsumption by universal reflexivity
+(drops trivially-true `⇒ R(v,v)` conclusions), and subsumption by
+premise weakening (drops axioms dominated by a stronger-premise
+variant). Exposed as `RSet::discover_axioms_minimal`. On the rigorous
+8-case blind battery: 45 → 5 on equivalence, 37 → 1 on tolerance,
+25 → 1 on total order; other cases unchanged or clean already.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,
