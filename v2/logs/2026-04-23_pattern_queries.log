@@ -1,0 +1,148 @@
+Date: 2026-04-23
+Descriptor: pattern_queries (validates ADR 0013)
+Purpose:
+    Exercise the four ADR 0013 query methods on a post-naming mixed
+    graph. Confirm classification of fresh subgraphs against the
+    registry, membership reporting, and instance reconstruction all
+    behave as specified. This is the first time meta-R is read
+    from — the first step where the β layer pays rent.
+
+Mechanism version:
+    ADR 0013 (classify_subgraph, pattern_of, memberships_of,
+    instance_subgraph). No changes to the naming pipeline.
+    Source: v2/src/lib.rs at the commit implementing 0013.
+    Runner: v2/examples/pattern_queries.rs.
+
+Command:
+    cargo run --example pattern_queries
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Registered patterns ===
+  p_0 — 1 instance(s)
+    p_0_i_0  sg: {R(k1,k2), R(k2,k3), R(k3,k1)}  canon: [(0, 0), (0, 0), (0, 0)]
+  p_1 — 1 instance(s)
+    p_1_i_0  sg: {R(s,sa), R(s,sb), R(s,sc)}  canon: [(1, 0), (1, 0), (1, 0)]
+  p_2 — 1 instance(s)
+    p_2_i_0  sg: {R(c2,c3), R(c3,c4)}  canon: [(1, 2), (2, 0)]
+
+=== classify_subgraph ===
+  exact 3-cycle reuse                            ->  p_0
+  fresh 3-cycle with new identifiers             ->  p_0
+  fresh 2-chain with new identifiers             ->  p_2
+  novel 2-spoke out-star (no match)              ->  (unmatched)
+  single edge (not named by default γ)           ->  (unmatched)
+
+=== pattern_of ===
+  p_0_i_0           ->  p_0
+  p_1_i_0           ->  p_1
+  p_2_i_0           ->  p_2
+  k1                ->  (none)
+  not_an_instance   ->  (none)
+  __pattern__       ->  (none)
+
+=== memberships_of (each identifier, which patterns it participates in) ===
+  c2               -> [p_2@p_2_i_0]
+  c3               -> [p_2@p_2_i_0]
+  c4               -> [p_2@p_2_i_0]
+  k1               -> [p_0@p_0_i_0]
+  k2               -> [p_0@p_0_i_0]
+  k3               -> [p_0@p_0_i_0]
+  s                -> [p_1@p_1_i_0]
+  sa               -> [p_1@p_1_i_0]
+  sb               -> [p_1@p_1_i_0]
+  sc               -> [p_1@p_1_i_0]
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. Classification across identifier renaming — the meta-R "paying rent."
+   A fresh 3-cycle on unseen identifiers `{m1, m2, m3}` classifies to
+   p_0 (the named 3-cycle) via canonicalization. Likewise a fresh
+   2-chain on `{u, v, w}` classifies to p_2. This is the first
+   concrete use of named patterns: the system recognizes that a new
+   subgraph matches a previously-named structural type, without the
+   caller having to encode the match logic.
+
+2. Novel structures correctly return None.
+   A 2-spoke out-star is structurally different from every named
+   pattern (the named star has 3 spokes; the chain has 2 edges but
+   they are sequential; the cycle has 3 edges closing back). Classify
+   returns None — the system distinguishes "I haven't seen this
+   structure" from "I know this."
+
+3. Single-edge is None (not named by default γ).
+   Even though ADR 0010's unfiltered naming would have called this
+   p_1 (with 6 instances), the default γ policy filters single-edge.
+   Querying a single edge reflects that: unmatched under the default
+   policy. If a caller wants single-edges classified, they can name
+   that pattern with a permissive policy — this is the principled
+   choice surfacing.
+
+4. pattern_of is symmetric with instances_of.
+   Every instance identifier recovers its owning pattern. Identifiers
+   that aren't instances (raw participants, the marker, bogus strings)
+   all return None cleanly — there is no confusion between "is a
+   participant" and "is an instance," even though both are plain
+   identifiers in the single R space.
+
+5. memberships_of reports only named-pattern participation.
+   Identifiers that participate in no named pattern (c1, c5, ie1,
+   ie2, t1, t2, t3, t4 — chain endpoints and the various single-edge
+   participants filtered by default γ) are absent from the output.
+   This lines up with the γ policy: a participant only exists in R
+   because some pattern's instance recorded it; no recorded instance,
+   no membership.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Incremental classification. A caller with a subgraph in hand can
+    ask "is this a known pattern?" in one method call. No need to
+    re-run the pipeline or duplicate canonicalization.
+  - Lookup by identifier. "Which patterns does x participate in?" is
+    answerable directly, without scanning every instance.
+  - Instance reconstruction. Given an instance id, recover the exact
+    concrete subgraph the system recorded. Closes the loop on
+    ADR 0010's "canonical form is derivable" invariant.
+
+Does NOT enable (still open):
+  - Predict missing structure. Given a partial match (e.g., two edges
+    of a 3-cycle), propose the missing third edge. Requires
+    completion logic — a separate, later layer.
+  - Cross-graph pattern transfer. Named patterns are single-RSet.
+    Carrying a pattern registry from one RSet to another is not yet
+    defined.
+  - Automatic attach on `add`. The query API is read-only;
+    triggering naming on edge insertion is a separate hook design.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0013 validated. Meta-R is now actively queried, not just
+recorded.
+
+The "meta-R paying rent" transition is visible in the output: a
+fresh 3-cycle with unseen identifiers is correctly mapped to p_0.
+That is the first substantive use of the β layer's output.
+
+Open directions (same shortlist as after γ, narrowed):
+  - **Automatic attach on add.** Combine `classify_subgraph` with
+    `run_naming_pass` so that adding new edges can extend existing
+    patterns without a manual second γ call.
+  - **Completion / prediction.** Given a partial subgraph, suggest
+    what's missing. Harder; involves subgraph matching against
+    canonical forms with variables.
+  - **Cross-graph transfer.** Serialize a pattern registry and
+    apply it to a different RSet.
+  - **MDL scoring** and other γ refinements still open per ADR 0012.
+
+Leaning toward automatic attach next — it is the natural
+continuation of "meta-R pays rent," with the smallest surface area
+increase. Completion and transfer are larger jumps.

@@ -333,6 +333,66 @@ impl RSet {
             .collect()
     }
 
+    /// Classify a subgraph against the named-pattern registry. ADR 0013.
+    /// Returns the matching pattern id if one exists, `None` otherwise.
+    /// Thin wrapper over `find_pattern_matching(&sg.canonicalize())`.
+    pub fn classify_subgraph(&self, sg: &Subgraph) -> Option<&str> {
+        let canon = sg.canonicalize();
+        self.find_pattern_matching(&canon)
+    }
+
+    /// Return the pattern that owns `instance_id`, or `None` if the
+    /// argument is not a recognized instance identifier. ADR 0013.
+    pub fn pattern_of(&self, instance_id: &str) -> Option<&str> {
+        let pattern_set: HashSet<&str> = self.patterns().into_iter().collect();
+        self.right_of(instance_id)
+            .into_iter()
+            .find_map(|r| {
+                let x = r.x.as_str();
+                if pattern_set.contains(x) {
+                    Some(x)
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Every (pattern_id, instance_id) pair in which `id` is recorded as
+    /// a participant. ADR 0013.
+    pub fn memberships_of(&self, id: &str) -> Vec<(&str, &str)> {
+        let pattern_set: HashSet<&str> = self.patterns().into_iter().collect();
+        let mut out = Vec::new();
+        for r in self.right_of(id) {
+            let inst = r.x.as_str();
+            // `inst` is an instance iff some R(pattern, inst) exists where
+            // pattern belongs to pattern_set.
+            for parent in self.right_of(inst) {
+                if pattern_set.contains(parent.x.as_str()) {
+                    out.push((parent.x.as_str(), inst));
+                    break;
+                }
+            }
+        }
+        out
+    }
+
+    /// Reconstruct the concrete subgraph of a pattern instance — the RSet
+    /// edges whose endpoints both lie in the instance's participant set.
+    /// ADR 0013.
+    pub fn instance_subgraph(&self, instance_id: &str) -> Subgraph {
+        let participants = self.participants_of(instance_id);
+        let edges: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| {
+                participants.contains(r.x.as_str())
+                    && participants.contains(r.y.as_str())
+            })
+            .cloned()
+            .collect();
+        Subgraph::from_edges(edges)
+    }
+
     /// Look up an existing pattern whose recovered canonical form equals
     /// `canon`. ADR 0010. Recovery works by taking the pattern's first
     /// instance, collecting RSet edges among its participants, and
@@ -1734,6 +1794,99 @@ mod tests {
         assert_eq!(named_second, 0);
         assert_eq!(already_known, 3);
         assert_eq!(rs.patterns().len(), pattern_count_before);
+    }
+
+    #[test]
+    fn classify_subgraph_matches_known_pattern() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let cycle = Subgraph::from_edges([
+            R::new("k1", "k2"), R::new("k2", "k3"), R::new("k3", "k1"),
+        ]);
+        let matched = rs.classify_subgraph(&cycle);
+        assert!(matched.is_some());
+        // Same canonical as p_0; isomorphic under identifier relabeling too.
+        let fresh_cycle = Subgraph::from_edges([
+            R::new("m1", "m2"), R::new("m2", "m3"), R::new("m3", "m1"),
+        ]);
+        assert_eq!(rs.classify_subgraph(&fresh_cycle), matched);
+    }
+
+    #[test]
+    fn classify_subgraph_returns_none_for_novel_structure() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        // Two-spoke out-star — not among the named patterns (default policy
+        // names 3-cycle, 3-star, 2-chain but not 2-star).
+        let two_spoke = Subgraph::from_edges([
+            R::new("h", "a"), R::new("h", "b"),
+        ]);
+        assert_eq!(rs.classify_subgraph(&two_spoke), None);
+    }
+
+    #[test]
+    fn pattern_of_recovers_owner_for_known_instance() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let patterns: Vec<String> = rs.patterns().iter().map(|s| s.to_string()).collect();
+        for pid in &patterns {
+            for inst in rs.instances_of(pid) {
+                let inst = inst.to_string();
+                assert_eq!(rs.pattern_of(&inst), Some(pid.as_str()));
+            }
+        }
+    }
+
+    #[test]
+    fn pattern_of_returns_none_for_non_instance() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        // A regular participant identifier is not itself an instance id.
+        assert_eq!(rs.pattern_of("k1"), None);
+        // Nor is the marker.
+        assert_eq!(rs.pattern_of(PATTERN_MARKER), None);
+        // Nor is a nonsense string.
+        assert_eq!(rs.pattern_of("nope"), None);
+    }
+
+    #[test]
+    fn memberships_of_reports_participation() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        // c2 participates in the chain pattern only (not in star or cycle).
+        // Let's find which pattern owns the chain.
+        let chain_canon: CanonicalForm = {
+            let chain = Subgraph::from_edges([
+                R::new("c2", "c3"),
+                R::new("c3", "c4"),
+            ]);
+            chain.canonicalize()
+        };
+        let chain_pattern = rs
+            .find_pattern_matching(&chain_canon)
+            .map(|s| s.to_string())
+            .expect("chain pattern should be named");
+        let memberships = rs.memberships_of("c3");
+        assert_eq!(memberships.len(), 1);
+        assert_eq!(memberships[0].0, chain_pattern);
+    }
+
+    #[test]
+    fn instance_subgraph_reconstructs_canonical_form() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        for pid in rs.patterns().iter().map(|s| s.to_string()).collect::<Vec<_>>() {
+            let expected = {
+                // Recover pattern's canonical form by reconstructing its
+                // first instance the same way find_pattern_matching does.
+                let inst = rs.instances_of(&pid)[0].to_string();
+                rs.instance_subgraph(&inst).canonicalize()
+            };
+            for inst in rs.instances_of(&pid).iter().map(|s| s.to_string()).collect::<Vec<_>>() {
+                let sg = rs.instance_subgraph(&inst);
+                assert_eq!(sg.canonicalize(), expected);
+            }
+        }
     }
 
     #[test]

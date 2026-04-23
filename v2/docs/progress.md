@@ -345,3 +345,32 @@ Known open directions (post-β, not next-ADR material):
 
 Decision: [0012-gamma-naming-pass](decisions/0012-gamma-naming-pass.md).
 Log: [logs/2026-04-23_gamma_naming_pass.log](../logs/2026-04-23_gamma_naming_pass.log).
+
+Commit: `da22182`.
+
+### Pattern query API — first use of named meta-R (ADR 0013)
+Added four `&self` query methods on `RSet`: `classify_subgraph`,
+`pattern_of`, `memberships_of`, `instance_subgraph`. All are thin
+compositions over ADR 0010 / 0009 primitives — no new state, no
+new ontological commitments. 5 new unit tests; 77 total.
+
+Demonstrates the first concrete use of named meta-R: classifying
+fresh structure against the registry.
+
+From the example run on the default-γ mixed graph (3 patterns
+named: p_0 3-cycle, p_1 3-star, p_2 2-chain):
+
+- `classify_subgraph({m1→m2, m2→m3, m3→m1})` → **p_0**  (fresh
+  cycle on unseen identifiers matches the named 3-cycle pattern)
+- `classify_subgraph({u→v, v→w})` → **p_2**  (fresh chain on
+  unseen identifiers matches the named 2-chain)
+- `classify_subgraph({h→a, h→b})` → **None**  (2-spoke star is
+  not a named pattern)
+- `memberships_of("c3")` → **[(p_2, p_2_i_0)]**
+- `pattern_of("p_0_i_0")` → **p_0**; `pattern_of("k1")` → **None**
+
+This is the first step where meta-R is actively read, not just
+recorded — the "meta-R pays rent" transition.
+
+Decision: [0013-pattern-query-api](decisions/0013-pattern-query-api.md).
+Log: [logs/2026-04-23_pattern_queries.log](../logs/2026-04-23_pattern_queries.log).

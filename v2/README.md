@@ -43,9 +43,12 @@ Full autonomous-abstraction pipeline in place:
 β closed: 0008 (subgraph extraction), 0009 (canonicalization), 0010
 (pattern naming as meta-R), 0012 (γ policy + driver). Probe ADRs
 0007 and 0011 recorded the observations that informed β's shape.
+Query API in ADR 0013: `classify_subgraph`, `pattern_of`,
+`memberships_of`, `instance_subgraph` — the first step where named
+meta-R is actively read.
 
-Post-β directions (not yet scoped): MDL-based relevance, automatic
-triggers, cross-graph patterns, pattern retraction, downstream use
-of named patterns.
+Post-β directions (partially scoped): automatic attach on add,
+prediction / completion, cross-graph pattern transfer, MDL-based
+relevance refinement, pattern retraction.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.
