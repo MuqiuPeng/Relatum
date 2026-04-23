@@ -15,8 +15,10 @@ of the pattern data has to live in the same RSet, as plain R
 instances.
 
 This ADR is β step 3 of 4. It establishes the naming mechanism
-itself — invoked explicitly by a caller. ADR 0011 (γ) will later
-decide *which* candidate patterns are actually worth naming.
+itself — invoked explicitly by a caller. γ (originally planned as
+ADR 0011, now ADR 0012 after ADR 0011 was inserted as a meta-R
+feedback probe) will later decide *which* candidate patterns are
+actually worth naming.
 
 ## Decision
 
@@ -37,7 +39,7 @@ taking any instance, reading its participants, restricting the RSet's
 edges to those participants, and canonicalizing the resulting
 subgraph. Canonical recovery holds under the invariant that instance
 participants do not acquire new edges among themselves after naming.
-Enforcing or relaxing that invariant is ADR 0011's concern; this ADR
+Enforcing or relaxing that invariant is ADR 0012's concern; this ADR
 documents the invariant and lets its violation manifest as
 re-classification at query time.
 
@@ -107,7 +109,7 @@ identifier), and writes the three-shape encoding above.
   `LocalityProfile`, `EdgeFingerprint`, `compound_class_subgraphs`,
   and even `Subgraph::canonicalize` applied to subgraphs spanning
   the pattern tokens all return different values post-naming. This
-  is intended under commitment 3; ADR 0011 will decide whether to
+  is intended under commitment 3; ADR 0012 will decide whether to
   re-run the pipeline against the enlarged RSet and discover
   patterns-of-patterns.
 - **Recovery invariant.** Canonical-form recovery assumes instance
@@ -115,7 +117,7 @@ identifier), and writes the three-shape encoding above.
   and querying. A violation does not corrupt the RSet; it means
   `find_pattern_matching` may fail to match an "old" canonical form
   that no longer describes the current edges-among-participants. An
-  acceptable cost for not storing the canonical explicitly; ADR 0011
+  acceptable cost for not storing the canonical explicitly; ADR 0012
   is the place to decide whether to enforce stability or to add
   a stored-canonical fallback.
 - **Commitment 4 pragmatism.** Reserving `__pattern__`, `p_N`, and
@@ -139,4 +141,4 @@ identifier), and writes the three-shape encoding above.
   every canonical class, and dumps the resulting RSet.
 - Experiment log: `v2/logs/2026-04-23_pattern_naming.log` — before /
   after RSet sizes, full registry view, and observations on the
-  feedback-loop implications for ADR 0011.
+  feedback-loop implications for ADR 0012.

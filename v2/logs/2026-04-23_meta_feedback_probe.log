@@ -1,0 +1,218 @@
+Date: 2026-04-23
+Descriptor: meta_feedback_probe (ADR 0011)
+Purpose:
+    Compare compound_class_subgraphs on the ADR 0007 mixed graph
+    before and after ADR 0010 names all four canonical groups. Decide
+    whether the meta-R feedback surfaces structurally new patterns
+    that γ (ADR 0012) would have reason to iterate on.
+
+Mechanism version:
+    ADR 0011 (probe only — reuses ADR 0007 compound_class_subgraphs,
+    ADR 0008 extraction, ADR 0009 canonicalize, ADR 0010 naming).
+    Source runner: v2/examples/meta_feedback_probe.rs.
+
+Command:
+    cargo run --example meta_feedback_probe
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+========================================
+ BASELINE — before ADR 0010 pattern naming
+========================================
+compound classes: 7
+subgraph instances: 9
+edges across all subgraphs: 14
+class sizes (by total edges, desc): [5, 3, 2, 1, 1, 1, 1]
+
+per-class kind:
+  [data-only] 1 edges / 1 subgraphs:  x=(out=1 in=0 LeftOnly) y=(out=0 in=1 RightOnly) loc=(0,0,0,0)
+  [data-only] 1 edges / 1 subgraphs:  x=(out=1 in=0 LeftOnly) y=(out=1 in=1 Both) loc=(0,0,1,0)
+  [data-only] 2 edges / 2 subgraphs:  x=(out=1 in=1 Both) y=(out=0 in=1 RightOnly) loc=(0,0,0,1)
+  [data-only] 5 edges / 2 subgraphs:  x=(out=1 in=1 Both) y=(out=1 in=1 Both) loc=(0,0,1,1)
+  [data-only] 1 edges / 1 subgraphs:  x=(out=2 in=0 LeftOnly) y=(out=0 in=1 RightOnly) loc=(1,0,0,0)
+  [data-only] 1 edges / 1 subgraphs:  x=(out=2 in=0 LeftOnly) y=(out=1 in=1 Both) loc=(1,0,1,0)
+  [data-only] 3 edges / 1 subgraphs:  x=(out=3 in=0 LeftOnly) y=(out=0 in=1 RightOnly) loc=(2,0,0,0)
+
+========================================
+ POST-NAMING — ADR 0010 recordings present
+========================================
+RSet size: 49 edges  (originally 14; added 35 meta-R entries)
+meta-R identifier count: 14
+
+compound classes: 22
+subgraph instances: 31
+edges across all subgraphs: 49
+class sizes (by total edges, desc): [6, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+per-class kind:
+  [data-only] 1 edges / 1 subgraphs:  x=(Both-1-1) y=(RightOnly-0-2) loc=(0,1,0,1)
+  [data-only] 1 edges / 1 subgraphs:  x=(Both-1-1) y=(Both-1-3)     loc=(0,2,1,1)
+  [meta-only] 2 edges / 2 subgraphs:  x=(Both-1-1) y=(Both-3-1)     loc=(0,0,3,1)
+  [meta-only] 1 edges / 1 subgraphs:  x=(Both-1-1) y=(Both-4-1)     loc=(0,0,4,1)
+  [data-only] 3 edges / 1 subgraphs:  x=(Both-1-2) y=(Both-1-2)     loc=(0,1,1,2)
+  [data-only] 1 edges / 1 subgraphs:  x=(Both-1-2) y=(Both-1-3)     loc=(0,2,1,2)
+  [data-only] 2 edges / 2 subgraphs:  x=(Both-1-3) y=(RightOnly-0-2) loc=(0,1,0,3)
+  [data-only] 1 edges / 1 subgraphs:  x=(Both-1-3) y=(Both-1-2)     loc=(0,1,1,3)
+  [mixed-only] 4 edges / 4 subgraphs: x=(Both-2-1) y=(RightOnly-0-2) loc=(1,1,0,1)
+  [mixed-only] 2 edges / 2 subgraphs: x=(Both-2-1) y=(Both-1-1)     loc=(1,0,1,1)
+  [mixed-only] 4 edges / 3 subgraphs: x=(Both-2-1) y=(Both-1-3)     loc=(1,2,1,1)
+  [mixed-only] 2 edges / 1 subgraphs: x=(Both-2-1) y=(Both-2-2)     loc=(1,1,2,1)
+  [data-only] 1 edges / 1 subgraphs:  x=(Both-2-2) y=(RightOnly-0-2) loc=(1,1,0,2)
+  [data-only] 1 edges / 1 subgraphs:  x=(Both-2-2) y=(Both-1-3)     loc=(1,2,1,2)
+  [data-only] 3 edges / 1 subgraphs:  x=(Both-3-1) y=(RightOnly-0-2) loc=(2,1,0,1)
+  [mixed-only] 4 edges / 2 subgraphs: x=(Both-3-1) y=(Both-1-2)     loc=(2,1,1,1)
+  [mixed-only] 2 edges / 1 subgraphs: x=(Both-3-1) y=(Both-1-3)     loc=(2,2,1,1)
+  [meta-only] 3 edges / 1 subgraphs:  x=(LeftOnly-4-0) y=(Both-1-1) loc=(3,0,1,0)
+  [meta-only] 1 edges / 1 subgraphs:  x=(LeftOnly-4-0) y=(Both-6-1) loc=(3,0,6,0)
+  [mixed-only] 3 edges / 1 subgraphs: x=(Both-4-1) y=(RightOnly-0-2) loc=(3,1,0,1)
+  [mixed-only] 1 edges / 1 subgraphs: x=(Both-4-1) y=(Both-3-1)     loc=(3,0,3,1)
+  [meta-only] 6 edges / 1 subgraphs:  x=(Both-6-1) y=(Both-2-1)     loc=(5,0,2,1)
+
+========================================
+ PER-CLASS SUBGRAPH + CANONICAL SUMMARY
+========================================
+compound classes with >1 subgraph instance (candidate patterns-of-patterns):
+  [meta-only] x=(Both-1-1) y=(Both-3-1)     subgraphs=2
+    canonical [(1, 0)]  x 2
+  [data-only] x=(Both-1-3) y=(RightOnly-0-2) subgraphs=2
+    canonical [(1, 0)]  x 2
+  [mixed-only] x=(Both-2-1) y=(RightOnly-0-2) subgraphs=4
+    canonical [(1, 0)]  x 4
+  [mixed-only] x=(Both-2-1) y=(Both-1-1)     subgraphs=2
+    canonical [(1, 0)]  x 2
+  [mixed-only] x=(Both-2-1) y=(Both-1-3)     subgraphs=3
+    canonical [(1, 0)]  x 2
+    canonical [(1, 0), (1, 0)]  x 1
+  [mixed-only] x=(Both-3-1) y=(Both-1-2)     subgraphs=2
+    canonical [(1, 0)]  x 1
+    canonical [(1, 0), (1, 0), (1, 0)]  x 1
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Compound classes grow from 7 to 22 (3.1×). Edges grow 3.5×.**
+   The 35 meta-R additions interact with the 14 data edges through
+   profile shifts: every participant identifier now has one or more
+   extra in-edges (from instance tokens), so its profile changes, so
+   the compound classes containing its edges change too. The growth
+   is therefore mostly "profile churn" and encoding artifacts, not
+   new discovery.
+
+2. **Class kinds split three ways: data-only, meta-only, mixed.**
+   10 data-only, 5 meta-only, 7 mixed. Data-only classes represent
+   the same original 14 edges, but partitioned by NEW fingerprints
+   (because participant profiles shifted). Meta-only classes are
+   registry / ownership internal to the pattern subsystem. Mixed are
+   participant edges crossing the data/meta boundary.
+
+3. **Meta-only structural repetition is real but predictable.**
+   - Class `(Both-1-1, Both-3-1)` with 2 members. These are
+     `R(p_0, p_0_i_0)` and `R(p_3, p_3_i_0)` — the ownership edges
+     of the two single-instance patterns whose instances happen to
+     have 3 participants (cycle, chain). Structurally the same edge
+     kind: a pattern token pointing to its singleton instance where
+     that instance has 3 participants.
+   - The biggest meta-only class (6 edges, 1 subgraph) is
+     `R(p_1, p_1_i_*)` — the 6-star rooted at p_1. This is p_1's
+     ownership tree made visible as one compound class.
+   - The class at `(LeftOnly-4-0, Both-1-1)` with 3 edges is
+     `R(__pattern__, p_N)` for the three single-instance patterns —
+     the top-level registry slice for "pattern with 1 instance."
+     `R(__pattern__, p_1)` is alone in its own class because p_1 has
+     6 instances and therefore a different profile.
+
+4. **Mixed repetition is dominated by the "single edge" canonical
+   form P2.** Of the six post-naming classes with >1 subgraph
+   instance, five have canonical form `[(1, 0)]` as a dominant
+   shape — i.e., "single directed edge" recurs across many contexts
+   at the mixed boundary, driven by participant edges of p_1.
+   This tells us that ADR 0009's P2 finding ("single edge is
+   trivial but dominant") propagates into the meta-R layer too: the
+   encoding itself produces lots of single-edge structural shapes.
+
+5. **One emergent subgraph pattern is genuinely new.**
+   The mixed class `(Both-3-1, Both-1-2)` contains 2 subgraphs.
+   One has canonical `[(1, 0)]` (a single edge), the other has
+   `[(1, 0), (1, 0), (1, 0)]` (a 3-spoke out-star). The star is the
+   subgraph formed by p_0_i_0 → {k1, k2, k3} — i.e., the instance's
+   participant tree for the 3-cycle pattern. This is a shape that
+   *was not present in the original graph*: the 3-cycle became a
+   3-spoke when re-encoded through its instance. Same cardinality
+   (3 participants), different structure.
+   Similarly, the class `(Both-2-1, Both-1-3)` contains a subgraph
+   with canonical `[(1, 0), (1, 0)]` — a 2-spoke out-star. These
+   are the instance-to-participants trees in meta-R.
+
+====================================================================
+KEY INTERPRETATION FOR γ (ADR 0012)
+====================================================================
+
+The feedback loop DOES produce novel structure — but most of the
+novelty is *predictable from the encoding convention*, not emergent
+insight. Specifically:
+
+  - `R(__pattern__, p_N)` as a 4-spoke out-star rooted at the marker.
+  - `R(p_N, p_N_i_M)` ownership edges as out-stars rooted at each pattern.
+  - `R(p_N_i_M, participant)` edges as out-stars rooted at each instance.
+
+These are all "trees of the pattern encoding." They recur because
+the encoding convention produces them — not because the underlying
+data has a new shape. Naming them as patterns would re-discover the
+encoding, which is circular.
+
+A small amount of genuinely new structure DOES appear: the
+reinterpretation of data patterns (e.g., 3-cycle, 3-chain) as
+instance-participant trees creates new canonical forms (stars of
+various sizes). But these too are derivative of the encoding.
+
+**Recommendation for γ (ADR 0012) iteration policy:**
+
+- **Default: no iteration.** Re-running the pipeline against the
+  enlarged RSet re-discovers encoding artifacts, not new phenomena.
+- **Optional: scoped iteration** restricted to *data-only* and
+  *meta-only* classes, with a rule that excludes any canonical form
+  reducible to "k-spoke star" (which is the generic shape the
+  encoding produces). This would let γ surface only structures that
+  can't be explained by the encoding.
+- **Or: iterate but with an explicit "artifact filter"** — a set of
+  known canonical forms produced by the encoding. Any class whose
+  canonical matches the artifact filter is skipped. The filter list
+  is bounded and enumerable from the encoding convention itself:
+  k-spoke stars for k ∈ {1, ..., max_instance_count}.
+- **Independent of iteration, γ should still apply the relevance
+  filter** it needs to suppress trivial patterns (ADR 0009's P2)
+  even on the first pass. That is the primary γ job; iteration is
+  optional sugar.
+
+Also worth recording: the probe shows the *shape of the encoding*
+concretely. If a future ADR considers changing the encoding (e.g.,
+to something other than the three-shape convention), the tradeoff
+involves these feedback-loop artifacts as well as the raw encoding
+cost.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0011 probe complete. Findings recorded. γ (ADR 0012) can now be
+scoped with concrete knowledge of what the feedback loop produces.
+
+γ's minimum-viable scope (preliminary, to be finalized in ADR 0012):
+
+  1. Relevance filter for pattern naming — at minimum, suppress
+     canonical forms with ≤ 1 edge (the P2 "single edge" class)
+     unless an explicit override is requested. Optionally a minimum
+     instance-count threshold.
+  2. Trigger policy — explicit manual for now; deferred automation
+     until there is a use case requiring it.
+  3. Iteration policy — default off. Document the artifact filter
+     as a future option if iteration is ever enabled.
+  4. Integrity — document but do not enforce the
+     "participants-don't-gain-edges-among-themselves" invariant.
+     Relax to opt-in if a use case requires it.
+
+With these four scoped, γ closes the β layer. No β-internal
+questions remain open at that point.
