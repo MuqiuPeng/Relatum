@@ -1,0 +1,86 @@
+Date: 2026-04-23
+Descriptor: cross_graph_transfer (validates ADR 0023)
+Purpose:
+    Demonstrate patterns-as-portable-artifacts. Learn on graph A,
+    export the canonical library, apply to an independent graph B
+    (no shared identifiers). B receives the patterns it actually
+    contains, skips those it doesn't.
+
+Mechanism version:
+    ADR 0023 (RSet::canonical_library, RSet::attach_canonicals).
+    Runner: v2/examples/cross_graph_transfer.rs.
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Graph A — learn patterns ===
+patterns in A: 4
+library size: 4
+  canonical [(0, 0), (0, 0), (0, 0)]
+  canonical [(1, 3), (2, 0), (3, 2)]
+  canonical [(1, 0), (1, 0), (1, 0)]
+  canonical [(2, 0), (3, 1), (3, 2)]
+
+=== Graph B — apply library ===
+B size before: 9 edges, patterns: 0
+  NewPattern(p_0)  1 instances  canonical=[(0, 0), (0, 0), (0, 0)]
+  NewPattern(p_1)  2 instances  canonical=[(1, 3), (2, 0), (3, 2)]
+  Skipped  reason=NoCleanInstance  canonical=[(1, 0), (1, 0), (1, 0)]
+  Skipped  reason=NoCleanInstance  canonical=[(2, 0), (3, 1), (3, 2)]
+
+B size after: 25 edges, patterns: 2
+  p_0  instances=1
+  p_1  instances=2
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Canonicals transfer across identifier spaces.** Graph A's
+   patterns were named on identifiers like `k1..k3`, `c1..c5`. The
+   library holds only their WL canonical forms — integer-labeled,
+   identifier-free. Applying the library to graph B (completely
+   different identifiers `x1..x4`, `y1..y4`, `z1..z3`) correctly
+   matches structure:
+   - 3-cycle canonical `[(0,0),(0,0),(0,0)]` matches B's `{z1,z2,z3}`.
+   - 3-chain canonical `[(1,3),(2,0),(3,2)]` matches B's two chains.
+
+2. **Patterns B doesn't contain are cleanly skipped.** Graph B has
+   no star and no tree-branch structure; the corresponding
+   canonicals return `NoCleanInstance`. No false-positive naming;
+   no error. The pattern library describes what *could* be
+   recognized, and `attach_canonicals` honestly reports what
+   actually *is* recognizable in the target.
+
+3. **Instance counts reflect B's own data.** 3-chain appears twice
+   in B (`{x1..x4}` and `{y1..y4}`), so `p_1` in B has 2 instances
+   — not tied to however many instances A had.
+
+4. **Pattern ids are re-minted in B.** A's registry used p_0
+   (3-chain in A) onward; B's registry is independent and starts
+   from p_0 too. Transfer is structural, not referential.
+
+5. **B's RSet grows from 9 to 25 edges.** The 16-edge delta is the
+   meta-R encoding of two named patterns and three instances
+   (1 cycle + 2 chains), participant edges included. Consistent
+   with prior examples.
+
+====================================================================
+WHAT THIS ENABLES
+====================================================================
+
+- **Transfer learning.** Learn in a rich source graph; apply to a
+  sparse target.
+- **Hypothesis testing.** Build a library by hand (a few
+  curated canonicals), apply to a target, see which hypothesized
+  structures exist.
+- **Library persistence.** `Vec<CanonicalForm>` is
+  `Vec<Vec<(u32, u32)>>` — plain data, trivially serializable by
+  any format. This ADR doesn't add a serialization method because
+  any format works.
+
+## DECISION / NEXT
+
+ADR 0023 validated. Proceeding to ADR 0024 (sampling-based
+find_instances_of).

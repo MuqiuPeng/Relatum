@@ -736,6 +736,85 @@ impl RSet {
         induced == sg.len()
     }
 
+    /// All named canonical forms in this RSet, recovered via each
+    /// pattern's first instance. ADR 0023. Canonicals are portable
+    /// (identifier-free) — applying the library to a different RSet
+    /// is semantically meaningful.
+    pub fn canonical_library(&self) -> Vec<CanonicalForm> {
+        let mut library = Vec::new();
+        let patterns: Vec<String> = self
+            .patterns()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        for pattern_id in patterns {
+            if let Some(first_inst) = self.instances_of(&pattern_id).first() {
+                let canon = self.instance_subgraph(first_inst).canonicalize();
+                library.push(canon);
+            }
+        }
+        library
+    }
+
+    /// Apply a pattern library to this RSet. ADR 0023. For each
+    /// canonical: if already named, report Existing; else find
+    /// clean instances and run the naming policy. Same per-canonical
+    /// outcomes as `autonomous_pass` returns.
+    pub fn attach_canonicals(
+        &mut self,
+        library: &[CanonicalForm],
+        policy: &NamingPolicy,
+    ) -> Vec<AutonomousOutcome> {
+        let mut outcomes = Vec::with_capacity(library.len());
+        for canonical in library {
+            if canonical.is_empty() {
+                outcomes.push(AutonomousOutcome::Skipped {
+                    canonical: canonical.clone(),
+                    reason: AutonomousSkip::NoCleanInstance,
+                });
+                continue;
+            }
+            if let Some(existing) = self.find_pattern_matching(canonical) {
+                outcomes.push(AutonomousOutcome::Existing {
+                    pattern_id: existing.to_string(),
+                    canonical: canonical.clone(),
+                });
+                continue;
+            }
+            let instances = self.find_instances_of(canonical);
+            if instances.is_empty() {
+                outcomes.push(AutonomousOutcome::Skipped {
+                    canonical: canonical.clone(),
+                    reason: AutonomousSkip::NoCleanInstance,
+                });
+                continue;
+            }
+            let count = instances.len();
+            match self.consider_naming(&instances, policy) {
+                Ok(NamingDecision::Named(pid)) => {
+                    outcomes.push(AutonomousOutcome::NewPattern {
+                        pattern_id: pid,
+                        instance_count: count,
+                        canonical: canonical.clone(),
+                    });
+                }
+                Ok(NamingDecision::Skipped(reason)) => {
+                    outcomes.push(AutonomousOutcome::Skipped {
+                        canonical: canonical.clone(),
+                        reason: AutonomousSkip::PolicyFiltered(reason),
+                    });
+                }
+                Err(_) => {
+                    outcomes.push(AutonomousOutcome::Skipped {
+                        canonical: canonical.clone(),
+                        reason: AutonomousSkip::NoCleanInstance,
+                    });
+                }
+            }
+        }
+        outcomes
+    }
+
     /// Run `autonomous_pass` (discovers novel canonicals) then
     /// `run_naming_pass(attach_only=true)` (extends pre-existing
     /// canonicals with new instances). The natural incremental-data
@@ -3361,6 +3440,81 @@ mod tests {
         rs.autonomous_and_attach(&config);
         assert_eq!(rs.len(), size_before);
         assert_eq!(rs.patterns().len(), patterns_before);
+    }
+
+    #[test]
+    fn canonical_library_round_trip_is_all_existing() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let library = rs.canonical_library();
+        assert!(!library.is_empty());
+
+        // Re-applying the same library to the same RSet → all Existing.
+        let outcomes = rs.attach_canonicals(&library, &NamingPolicy::default());
+        assert_eq!(outcomes.len(), library.len());
+        assert!(outcomes
+            .iter()
+            .all(|o| matches!(o, AutonomousOutcome::Existing { .. })));
+    }
+
+    #[test]
+    fn attach_canonicals_skips_when_no_clean_instance_in_target() {
+        // Source: 3-cycle named as p_0.
+        let mut source = RSet::new();
+        source.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "a")]);
+        source.run_naming_pass(&NamingPolicy::default());
+        let library = source.canonical_library();
+
+        // Target: a graph with no 3-cycle (just a chain).
+        let mut target = RSet::new();
+        target.extend([R::new("p", "q"), R::new("q", "r")]);
+        let outcomes = target.attach_canonicals(&library, &NamingPolicy::default());
+        assert_eq!(outcomes.len(), library.len());
+        assert!(outcomes.iter().all(|o| matches!(
+            o,
+            AutonomousOutcome::Skipped { reason: AutonomousSkip::NoCleanInstance, .. }
+        )));
+        assert!(target.patterns().is_empty());
+    }
+
+    #[test]
+    fn attach_canonicals_names_patterns_when_target_matches() {
+        // Source: a 3-cycle. Target: has another 3-cycle with different ids.
+        let mut source = RSet::new();
+        source.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "a")]);
+        source.run_naming_pass(&NamingPolicy::default());
+        let library = source.canonical_library();
+
+        let mut target = RSet::new();
+        target.extend([R::new("m1", "m2"), R::new("m2", "m3"), R::new("m3", "m1")]);
+
+        let outcomes = target.attach_canonicals(&library, &NamingPolicy::default());
+        let named: usize = outcomes
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        assert_eq!(named, 1);
+        assert_eq!(target.patterns().len(), 1);
+    }
+
+    #[test]
+    fn attach_canonicals_is_idempotent() {
+        let mut source = build_mixed_graph();
+        source.run_naming_pass(&NamingPolicy::default());
+        let library = source.canonical_library();
+
+        let mut target = build_mixed_graph();
+        target.attach_canonicals(&library, &NamingPolicy::default());
+        let size_after_first = target.len();
+        let patterns_after_first = target.patterns().len();
+
+        // Second application should be all-Existing, no delta.
+        let outcomes = target.attach_canonicals(&library, &NamingPolicy::default());
+        assert!(outcomes
+            .iter()
+            .all(|o| matches!(o, AutonomousOutcome::Existing { .. })));
+        assert_eq!(target.len(), size_after_first);
+        assert_eq!(target.patterns().len(), patterns_after_first);
     }
 
     #[test]

@@ -62,3 +62,4 @@ Commit hash(es), file pointers.
 - [0020](0020-pattern-retraction.md) — Pattern retraction (remove named patterns)
 - [0021](0021-autonomous-sweep.md) — Multi-size autonomous sweep
 - [0022](0022-autonomous-and-attach.md) — Autonomous + attach composition (incremental workflow)
+- [0023](0023-cross-graph-transfer.md) — Cross-graph pattern transfer (canonical library)

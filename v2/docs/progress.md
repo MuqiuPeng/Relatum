@@ -690,3 +690,21 @@ autonomous_and_attach → attach phase adds 1 new p_0 instance
 
 Decision: [0022-autonomous-and-attach](decisions/0022-autonomous-and-attach.md).
 Log: [logs/2026-04-23_autonomous_and_attach.log](../logs/2026-04-23_autonomous_and_attach.log).
+
+Commit: `795262e`.
+
+### Cross-graph pattern transfer (ADR 0023)
+Patterns become portable. `RSet::canonical_library()` extracts all
+named canonicals as an identifier-free `Vec<CanonicalForm>`.
+`RSet::attach_canonicals(library, policy)` applies them to any
+target RSet — named if the target contains them, skipped with
+`NoCleanInstance` if not. Same `AutonomousOutcome` enum as
+`autonomous_pass`. 4 new tests; 116 total pass.
+
+Demonstrated with graph A (mixed, 4 patterns) → graph B (two chains
++ a cycle, no shared identifiers). B receives 2 patterns (cycle,
+3-chain) with correct instance counts for its own data; star and
+tree canonicals skip with `NoCleanInstance` because B has neither.
+
+Decision: [0023-cross-graph-transfer](decisions/0023-cross-graph-transfer.md).
+Log: [logs/2026-04-23_cross_graph_transfer.log](../logs/2026-04-23_cross_graph_transfer.log).
