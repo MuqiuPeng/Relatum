@@ -1,0 +1,176 @@
+Date: 2026-04-23
+Descriptor: autonomous_pass (validates ADR 0018)
+Purpose:
+    Demonstrate that a single `autonomous_pass` call — given only a
+    config, no canonical forms, no instance lists, no user hints —
+    proposes and names pattern types directly from R data. Confirm
+    idempotence on a second pass.
+
+Mechanism version:
+    ADR 0018 (AutonomousConfig, AutonomousOutcome, AutonomousSkip,
+    autonomous_pass) composing discover_motifs (0016) +
+    refine_candidates (0017) + find_instances_of (0015) +
+    name_pattern_instances (0010).
+    Source: v2/src/lib.rs at the commit implementing 0018.
+    Runner: v2/examples/autonomous_pass.rs.
+
+Command:
+    cargo run --example autonomous_pass
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Before autonomous_pass ===
+RSet size: 14 edges
+patterns registered: 0
+
+=== Pass 1 — autonomous discovery on fresh RSet ===
+4 outcomes:
+  NewPattern(p_0)  2 instances  canonical=[(1, 3), (2, 0), (3, 2)]
+  NewPattern(p_1)  1 instances  canonical=[(0, 0), (0, 0), (0, 0)]
+  NewPattern(p_2)  1 instances  canonical=[(2, 0), (3, 1), (3, 2)]
+  NewPattern(p_3)  1 instances  canonical=[(1, 0), (1, 0), (1, 0)]
+
+RSet size: 42 edges (delta 28)
+patterns registered: 4
+  p_0  2 instance(s)
+  p_1  1 instance(s)
+  p_2  1 instance(s)
+  p_3  1 instance(s)
+
+=== Pass 2 — idempotence ===
+4 outcomes:
+  Existing(p_0)    canonical=[(1, 3), (2, 0), (3, 2)]
+  Existing(p_1)    canonical=[(0, 0), (0, 0), (0, 0)]
+  Existing(p_2)    canonical=[(2, 0), (3, 1), (3, 2)]
+  Existing(p_3)    canonical=[(1, 0), (1, 0), (1, 0)]
+
+RSet size: 42 → 42  (delta 0)
+patterns: 4 → 4
+
+====================================================================
+INTERPRETING THE OUTCOMES
+====================================================================
+
+Pass 1 identified four distinct structural types at target_size=3:
+
+- **p_0**  canonical `[(1, 3), (2, 0), (3, 2)]`  — **3-chain**
+  2 clean instances: `{c1, c2, c3, c4}` and `{c2, c3, c4, c5}`.
+  The 5-chain data contains three overlapping 3-chain subgraphs,
+  two of which are clean (the middle three-edge stretch
+  `{c2,c3,c4,c5}`? No — `{c2,c3,c4,c5}` has participants whose
+  induced edges are R(c2,c3) R(c3,c4) R(c4,c5) = exactly 3 edges,
+  clean. And `{c1,c2,c3,c4}` — induced R(c1,c2) R(c2,c3) R(c3,c4)
+  = 3 edges, clean).
+  The third possible 3-edge stretch spans `{c1,c2,c3,c4,c5}` as
+  participants — 5 identifiers, participants induce all 4 chain
+  edges > 3, not a clean 3-edge subgraph.
+
+- **p_1**  canonical `[(0, 0), (0, 0), (0, 0)]`  — **3-cycle**
+  1 clean instance: `{k1, k2, k3}`.
+
+- **p_2**  canonical `[(2, 0), (3, 1), (3, 2)]`  — **3-tree**
+  1 clean instance: `{t1, t2, t3, t4}`. This is the asymmetric
+  motif ADR 0015 flagged as unreachable by compound-class
+  discovery. Autonomous-pass finds and names it.
+
+- **p_3**  canonical `[(1, 0), (1, 0), (1, 0)]`  — **3-spoke star**
+  1 clean instance: `{s, sa, sb, sc}`.
+
+**The asymmetric tree is named autonomously.** This is the
+demonstration that the 0015 residual limit is resolvable — not
+through more enumeration, but through sample-score-refine-and-name.
+
+====================================================================
+COST ACCOUNTING
+====================================================================
+
+Pass 1 added 28 meta-R edges. Breakdown:
+
+- 4 registry edges `R(__pattern__, p_N)` — one per named pattern.
+- 5 ownership edges `R(p_N, p_N_i_M)` — 2 for p_0 + 1 each for
+  p_1, p_2, p_3.
+- 19 participant edges `R(p_N_i_M, id)` — 4 for each p_0 instance,
+  3 for p_1, 4 for p_2 (t1, t2, t3, t4), 4 for p_3 (s, sa, sb, sc).
+
+  4 + 4 + 3 + 4 + 4 = 19. Total 4 + 5 + 19 = 28. Matches.
+
+RSet ratio after autonomous_pass: 14 data edges + 28 meta-R = 42
+total. Meta-R is 2× the data edge count. Expected given that three
+of four patterns are singletons; richer data would push the ratio
+toward data-dominant.
+
+====================================================================
+IDEMPOTENCE
+====================================================================
+
+Pass 2 on the same config returns exactly four `Existing` outcomes,
+one per pattern. RSet size unchanged (42 → 42). Pattern count
+unchanged (4 → 4). This is the expected composition of:
+
+- Determinism in discover_motifs / refine_candidates (both
+  deterministic under sorted-data + fixed seed per ADR 0017).
+- Dedup in name_pattern_instances via participant-set comparison
+  (ADR 0012).
+- "Existing" outcomes for known canonicals (ADR 0018 branch).
+
+Running autonomous_pass repeatedly on unchanged data is a no-op.
+The system does not re-discover what it already knows.
+
+====================================================================
+PHILOSOPHICAL NOTE
+====================================================================
+
+This is the first run where v2 *does* what the design notes describe
+as the goal. No user provided canonical forms. No user supplied
+instance lists. No discovery heuristic was pre-pointed at symmetric
+structures. The system:
+
+1. Sampled from its own data (200 random walks).
+2. Scored candidates by their own canonical-form frequency.
+3. Refined representatives against its own cleanness criterion.
+4. Named the novel canonicals as meta-R instances.
+
+And the set of patterns it named *includes a structure
+(the 3-tree) that the original deterministic discovery pipeline
+could not reach*. Autonomous abstraction is not merely "equivalent
+to" compound-class discovery — it extends what discovery can reach,
+in the right direction.
+
+The commitments hold:
+- Only R. Every added edge is plain R.
+- Direction preserved.
+- Types are meta-R instances (the four new `p_N`).
+- Identity is token-based (pattern ids are fresh strings that
+  cannot collide with existing user tokens thanks to ADR 0010's
+  minting guard).
+- Similarity is structural (WL canonicalization).
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0018 is validated. The autonomous abstraction loop closes at a
+minimum-viable scale.
+
+Open directions remain largely the same as before:
+
+- **Multi-size autonomous passes.** One call currently fixes
+  `target_size`. Natural extension: iterate over a size range
+  (e.g., 2..=5) in one pass. Trivial wrapper; may be the next
+  ADR if needed.
+- **Attach-only integration.** After autonomous_pass creates new
+  patterns, calling `run_naming_pass(attach_only)` would pick up
+  clean instances of those patterns that the random-walk sampling
+  missed. The two compose naturally; whether to bundle them is a
+  policy question.
+- **MDL / compression-gain scoring.** Still open; would refine
+  which motifs are worth naming beyond pure frequency.
+- **Replace `find_instances_of` internals with sampling.** Still
+  philosophically at odds with v2_search_mode. Not blocking.
+- **Pattern retraction / forgetting.** Not yet designed.
+- **Cross-graph pattern transfer.** Not yet designed.
+
+The core autonomous loop is operational. Further ADRs are
+refinements, not completions of the original goal.

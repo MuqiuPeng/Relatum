@@ -673,6 +673,80 @@ impl RSet {
         induced == sg.len()
     }
 
+    /// Autonomous abstraction pass. ADR 0018.
+    ///
+    /// Composes `discover_motifs` (sample candidates) + `refine_candidates`
+    /// (polish representatives) + `find_instances_of` (enumerate clean
+    /// instances) + `name_pattern_instances` (record as meta-R) into a
+    /// single pipeline. One outcome per discovered canonical.
+    ///
+    /// No user-supplied canonical forms or instance lists; the system
+    /// samples, scores, refines, and names on its own. Attach-only (for
+    /// extending existing named patterns with more instances) is a
+    /// separate concern — run `run_naming_pass` with `attach_only = true`
+    /// if wanted.
+    pub fn autonomous_pass(
+        &mut self,
+        config: &AutonomousConfig,
+    ) -> Vec<AutonomousOutcome> {
+        let raw = self.discover_motifs(&config.discovery);
+        let refined = self.refine_candidates(raw, &config.refinement);
+
+        let mut outcomes = Vec::with_capacity(refined.len());
+        for candidate in refined {
+            let canon = candidate.canonical.clone();
+
+            // 1. Is this canonical already named?
+            if let Some(existing) = self.find_pattern_matching(&canon) {
+                outcomes.push(AutonomousOutcome::Existing {
+                    pattern_id: existing.to_string(),
+                    canonical: canon,
+                });
+                continue;
+            }
+
+            // 2. Novel canonical. Collect clean instances.
+            let instances = self.find_instances_of(&canon);
+            if instances.is_empty() {
+                outcomes.push(AutonomousOutcome::Skipped {
+                    canonical: canon,
+                    reason: AutonomousSkip::NoCleanInstance,
+                });
+                continue;
+            }
+
+            // 3. Apply naming policy.
+            let count = instances.len();
+            match self.consider_naming(&instances, &config.naming) {
+                Ok(NamingDecision::Named(pid)) => {
+                    outcomes.push(AutonomousOutcome::NewPattern {
+                        pattern_id: pid,
+                        instance_count: count,
+                        canonical: canon,
+                    });
+                }
+                Ok(NamingDecision::Skipped(reason)) => {
+                    outcomes.push(AutonomousOutcome::Skipped {
+                        canonical: canon,
+                        reason: AutonomousSkip::PolicyFiltered(reason),
+                    });
+                }
+                Err(_) => {
+                    // consider_naming errors require invalid input (empty
+                    // list, empty subgraph, non-isomorphic). By construction
+                    // find_instances_of returns non-empty isomorphic
+                    // instances, so this branch is unreachable in well-
+                    // formed flows. Conservatively skip.
+                    outcomes.push(AutonomousOutcome::Skipped {
+                        canonical: canon,
+                        reason: AutonomousSkip::NoCleanInstance,
+                    });
+                }
+            }
+        }
+        outcomes
+    }
+
     /// Refine a set of motif candidates. ADR 0017.
     ///
     /// For each candidate whose representative is not clean (embedded
@@ -1121,6 +1195,47 @@ pub struct RefinementConfig {
     /// Per-candidate re-sampling budget.
     pub max_tries: usize,
     pub rng_seed: u64,
+}
+
+/// Configuration for the autonomous abstraction pass. ADR 0018.
+#[derive(Debug, Clone)]
+pub struct AutonomousConfig {
+    pub discovery: DiscoveryConfig,
+    pub refinement: RefinementConfig,
+    pub naming: NamingPolicy,
+}
+
+/// Why a candidate was skipped by the autonomous pass. ADR 0018.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AutonomousSkip {
+    /// No clean instance of this canonical exists in the current data.
+    NoCleanInstance,
+    /// Naming policy (min_edges / min_instances / attach_only) filtered
+    /// the candidate out.
+    PolicyFiltered(SkipReason),
+}
+
+/// Outcome of a single candidate in an autonomous pass. ADR 0018.
+#[derive(Debug, Clone)]
+pub enum AutonomousOutcome {
+    /// A new pattern was created from a novel canonical.
+    NewPattern {
+        pattern_id: String,
+        instance_count: usize,
+        canonical: CanonicalForm,
+    },
+    /// The candidate's canonical matches an already-named pattern;
+    /// autonomous pass reports but takes no action. Use
+    /// `run_naming_pass` with `attach_only = true` to extend it.
+    Existing {
+        pattern_id: String,
+        canonical: CanonicalForm,
+    },
+    /// The candidate was rejected.
+    Skipped {
+        canonical: CanonicalForm,
+        reason: AutonomousSkip,
+    },
 }
 
 /// Inline xorshift64 — deterministic PRNG. ADR 0016.
@@ -2569,6 +2684,104 @@ mod tests {
             assert_eq!(a.representative, b.representative);
             assert_eq!(a.canonical, b.canonical);
         }
+    }
+
+    fn default_autonomous_config() -> AutonomousConfig {
+        AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig {
+                max_tries: 200,
+                rng_seed: 999,
+            },
+            naming: NamingPolicy::default(),
+        }
+    }
+
+    #[test]
+    fn autonomous_pass_empty_rset_returns_empty() {
+        let mut rs = RSet::new();
+        let outcomes = rs.autonomous_pass(&default_autonomous_config());
+        assert!(outcomes.is_empty());
+    }
+
+    #[test]
+    fn autonomous_pass_names_patterns_on_mixed_graph() {
+        let mut rs = build_mixed_graph();
+        let outcomes = rs.autonomous_pass(&default_autonomous_config());
+        let new_count = outcomes
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        assert!(
+            new_count > 0,
+            "autonomous_pass should name at least one new pattern on the mixed graph"
+        );
+        // Registry should reflect the new patterns.
+        assert_eq!(rs.patterns().len(), new_count);
+    }
+
+    #[test]
+    fn autonomous_pass_is_idempotent() {
+        let mut rs = build_mixed_graph();
+        let config = default_autonomous_config();
+        let first = rs.autonomous_pass(&config);
+        let first_new: usize = first
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        assert!(first_new > 0);
+
+        let pattern_count_after_first = rs.patterns().len();
+        let rset_size_after_first = rs.len();
+
+        let second = rs.autonomous_pass(&config);
+        let second_new: usize = second
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        let second_existing: usize = second
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::Existing { .. }))
+            .count();
+        assert_eq!(second_new, 0, "no new patterns on second pass");
+        assert!(second_existing > 0, "existing canonicals should be reported");
+        assert_eq!(rs.patterns().len(), pattern_count_after_first);
+        assert_eq!(rs.len(), rset_size_after_first);
+    }
+
+    #[test]
+    fn autonomous_pass_respects_policy() {
+        // Raise min_instances so every single-instance motif (tree,
+        // cycle, star at target_size=3) is filtered out. Only canonicals
+        // with ≥ 2 clean instances survive — the 3-chain has 3 clean
+        // instances in the 5-chain data.
+        let mut rs = build_mixed_graph();
+        let mut config = default_autonomous_config();
+        config.naming.min_instances = 2;
+        let outcomes = rs.autonomous_pass(&config);
+        let named_count = outcomes
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        let filtered_count = outcomes
+            .iter()
+            .filter(|o| matches!(
+                o,
+                AutonomousOutcome::Skipped {
+                    reason: AutonomousSkip::PolicyFiltered(
+                        SkipReason::BelowMinInstances { .. }
+                    ),
+                    ..
+                }
+            ))
+            .count();
+        assert_eq!(named_count, 1, "expected only the 3-chain to be named");
+        assert!(filtered_count >= 2, "expected single-instance candidates filtered");
     }
 
     #[test]

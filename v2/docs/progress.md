@@ -531,3 +531,49 @@ Sample-score-refine is now complete:
 
 Decision: [0017-representative-refinement](decisions/0017-representative-refinement.md).
 Log: [logs/2026-04-23_motif_refinement.log](../logs/2026-04-23_motif_refinement.log).
+
+Commit: `766817e`.
+
+### Autonomous pass — abstraction loop closes (ADR 0018)
+Composes `discover_motifs` → `refine_candidates` → `find_instances_of`
+→ `name_pattern_instances` into a single entry point.
+`AutonomousConfig` bundles the three sub-configs. Per-candidate
+`AutonomousOutcome` is one of: `NewPattern`, `Existing`, `Skipped
+{ NoCleanInstance | PolicyFiltered }`. 4 new unit tests; 96 total pass.
+
+**Key result — first full autonomous run on the mixed graph:**
+
+```
+Pass 1 (fresh RSet, target_size=3, 200 samples):
+  NewPattern p_0  3-chain   [(1,3),(2,0),(3,2)]   2 instances
+  NewPattern p_1  3-cycle   [(0,0),(0,0),(0,0)]   1 instance
+  NewPattern p_2  3-tree    [(2,0),(3,1),(3,2)]   1 instance  <-- asymmetric
+  NewPattern p_3  3-star    [(1,0),(1,0),(1,0)]   1 instance
+
+  14 data edges + 28 meta-R added = 42 total.
+
+Pass 2 (same config): 4 × Existing, zero deltas. Idempotent.
+```
+
+The asymmetric 3-tree — flagged by ADR 0015 as unreachable by
+compound-class discovery — is named autonomously. The autonomous
+loop is not just "equivalent to" deterministic discovery; it
+*extends* what discovery can reach, in the direction
+design-notes asked for.
+
+The system:
+1. Sampled from its own data (random walks).
+2. Scored candidates by their own canonical-form frequency.
+3. Refined representatives against its own cleanness criterion.
+4. Named the novel canonicals as meta-R instances.
+
+All five commitments hold: only R; direction preserved; types as
+meta-R instances; token-based identity; structural similarity.
+
+**Autonomous abstraction loop is operational at a minimum-viable
+scale.** Remaining open directions (multi-size passes, attach-only
+integration, MDL scoring, cross-graph transfer, pattern retraction)
+are refinements rather than completions.
+
+Decision: [0018-autonomous-pass](decisions/0018-autonomous-pass.md).
+Log: [logs/2026-04-23_autonomous_pass.log](../logs/2026-04-23_autonomous_pass.log).

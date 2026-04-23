@@ -57,3 +57,4 @@ Commit hash(es), file pointers.
 - [0015](0015-subgraph-matching.md) — Subgraph matching against named patterns (fixes fragmentation)
 - [0016](0016-motif-discovery-via-sampling.md) — Motif discovery via sample-score-select (first non-enumeration search)
 - [0017](0017-representative-refinement.md) — Representative refinement via targeted re-sampling
+- [0018](0018-autonomous-pass.md) — Autonomous pass: compose discover + refine + name to close the abstraction loop

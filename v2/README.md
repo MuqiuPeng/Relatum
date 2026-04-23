@@ -58,13 +58,22 @@ Three search primitives cover different jobs:
   cannot.
 - `refine_candidates` (0017): targeted re-sampling to promote
   embedded motif representatives to clean ones.
+- `autonomous_pass` (0018): composes the above with naming into a
+  single "sample → score → refine → name" loop. The system
+  proposes and records new pattern types without any external
+  canonical or instance hints.
 
 Plus `is_clean_subgraph` (0017) exposed as a public helper; sorted
 data-edge enumeration keeps all sampling / matching deterministic
 across process runs.
 
-Post-β open directions: motif-to-pattern pipeline closing
-autonomous abstraction (next), MDL-based scoring, cross-graph
-pattern transfer, pattern retraction.
+**Autonomous abstraction loop operational.** On the canonical mixed
+graph at target_size=3, one `autonomous_pass` names four distinct
+structural types — 3-chain, 3-cycle, 3-star, and the 3-tree that
+compound-class discovery could not reach.
+
+Open directions (refinements, not completions): multi-size
+autonomous passes, attach-only integration, MDL-based scoring,
+cross-graph pattern transfer, pattern retraction.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.
