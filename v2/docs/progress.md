@@ -118,3 +118,40 @@ Context to avoid later confusion about why γ was postponed this long.
 
 Decision: [0006-locality-profile](decisions/0006-locality-profile.md).
 Log: [logs/2026-04-23_locality.log](../logs/2026-04-23_locality.log).
+
+Commit: `1cbcf5f`.
+
+### Compound signature probe (0007) — observation before β
+Added `EdgeFingerprint = (RSignature, LocalityProfile)` and
+`edge_fingerprint()` as a small probe utility. Ran on a mixed 14-edge
+graph (5-chain + 3-cycle + 3-spoke star + 3-edge tree + 1 isolated edge)
+to see what compound classes fall out.
+
+Result: 14 edges partition into 7 compound classes, with sizes
+`{5, 3, 2, 1, 1, 1, 1}`.
+
+Key findings:
+- **Biggest class (5) is the predicted 1-hop collision** — 2 chain-middle
+  edges merged with all 3 cycle edges. Naive "name the biggest class"
+  would pick the known false-merge.
+- **Genuine cross-structure merge (size 2)** — chain-tail `R(c4,c5)` and
+  tree-leaf-edge `R(t2,t4)` share a signature. Structurally both are
+  "edge descending into a terminal node"; naming this would abstract
+  "terminal descent." Likely a legitimate pattern.
+- **Star spokes (size 3)** form a clean same-component class — the most
+  textbook repetition.
+- **4 of 7 classes are singletons.** Chain head and tree edges don't
+  repeat; "pattern from size-1 classes" is not free.
+
+β question (ii) answered empirically: **size > 1 is necessary but not
+sufficient**. The biggest candidate is a false merge. A sanity filter is
+needed. Two forms identified:
+- (a) **2-hop tie-breaker** — cheap, breaks the specific collision.
+- (b) **Subgraph coherence check** — closer to the design-notes goal of
+  naming whole structures (like "integer chain").
+
+γ also takes concrete shape for the first time: its first real job is
+applying this sanity filter.
+
+Decision: [0007-compound-signature-probe](decisions/0007-compound-signature-probe.md).
+Log: [logs/2026-04-23_compound_signature.log](../logs/2026-04-23_compound_signature.log).

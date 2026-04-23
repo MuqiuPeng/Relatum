@@ -1,0 +1,240 @@
+Date: 2026-04-23
+Descriptor: compound_signature (ADR 0007 probe)
+Purpose:
+    Probe whether EdgeFingerprint = (RSignature, LocalityProfile) on a
+    single mixed graph already produces natural pattern-repetition
+    candidates, informing β's question (ii): "what counts as a
+    nameable pattern?"
+
+Mechanism version:
+    ADR 0007 (edge_fingerprint = compound of ADR 0005 + ADR 0006).
+    Source: v2/src/lib.rs at the commit implementing 0007.
+    Runner: v2/examples/compound_signature.rs.
+
+Input graph:
+    Disjoint union of five canonical structures:
+    - 5-chain     c1 -> c2 -> c3 -> c4 -> c5         (4 edges)
+    - 3-cycle     k1 -> k2 -> k3 -> k1               (3 edges)
+    - out-star    s -> {sa, sb, sc}                  (3 edges)
+    - tree        t1 -> t2, t1 -> t3, t2 -> t4       (3 edges)
+    - isolated    ie1 -> ie2                         (1 edge)
+    Total: 14 edges.
+
+Command:
+    cargo run --example compound_signature
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+Total edges:           14
+Total compound classes: 7
+
+class |1|:
+  endpoint x: out=1 in=0 LeftOnly
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=0 co_right=0 forward=0 reverse=0
+  members:
+    R(ie1, ie2)
+
+class |1|:
+  endpoint x: out=1 in=0 LeftOnly
+  endpoint y: out=1 in=1 Both
+  locality   co_left=0 co_right=0 forward=1 reverse=0
+  members:
+    R(c1, c2)
+
+class |2|:
+  endpoint x: out=1 in=1 Both
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=0 co_right=0 forward=0 reverse=1
+  members:
+    R(c4, c5)
+    R(t2, t4)
+
+class |5|:
+  endpoint x: out=1 in=1 Both
+  endpoint y: out=1 in=1 Both
+  locality   co_left=0 co_right=0 forward=1 reverse=1
+  members:
+    R(c2, c3)
+    R(c3, c4)
+    R(k1, k2)
+    R(k2, k3)
+    R(k3, k1)
+
+class |1|:
+  endpoint x: out=2 in=0 LeftOnly
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=1 co_right=0 forward=0 reverse=0
+  members:
+    R(t1, t3)
+
+class |1|:
+  endpoint x: out=2 in=0 LeftOnly
+  endpoint y: out=1 in=1 Both
+  locality   co_left=1 co_right=0 forward=1 reverse=0
+  members:
+    R(t1, t2)
+
+class |3|:
+  endpoint x: out=3 in=0 LeftOnly
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=2 co_right=0 forward=0 reverse=0
+  members:
+    R(s, sa)
+    R(s, sb)
+    R(s, sc)
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. Class size distribution (7 classes):  { 5, 3, 2, 1, 1, 1, 1 }
+   The long tail of singletons is nearly half the classes.
+
+2. Biggest class (5) is the predicted 1-hop collision.
+   Chain-middle edges `R(c2,c3)`, `R(c3,c4)` merge with all three
+   cycle edges into one class. From this class's perspective, a
+   chain and a cycle are indistinguishable. The largest "pattern
+   candidate" on raw class size is a known false-merge.
+
+3. Genuine cross-structure merge at size 2: chain tail + tree leaf.
+   `R(c4,c5)` and `R(t2,t4)` share the compound class
+   ((Both-1-1, RightOnly-0-1), (0,0,0,1)).
+   Structurally: "an edge whose left endpoint has one predecessor
+   and right endpoint is terminal." This IS a real structural
+   similarity — both are "the edge entering a leaf from a
+   non-leaf." Calling this a pattern would capture the abstraction
+   "terminal descent," which seems legitimate.
+
+4. Star spokes form a clean within-component class (size 3).
+   Three edges, all in the star, all with identical compound
+   signatures. This is the most straightforward pattern candidate:
+   clear repetition, confined to one component, no confusion with
+   other structures.
+
+5. Tree's three edges split into three classes.
+   Despite being visually a small tree, the tree's edges end up in
+   three different singleton classes (R(t1,t2), R(t1,t3), R(t2,t4)).
+   The first two share identifier x = t1 but differ in y's profile;
+   the third has reverse neighborhood. The 1-hop compound signature
+   is fine-grained enough to split a small tree into each edge
+   being a "kind of its own." A pattern-mining layer that requires
+   class size > 1 would find no pattern in this tree.
+
+6. Chain head is a singleton.
+   `R(c1,c2)` is alone in its class — no other edge has the
+   "LeftOnly source + Both-middle target + forward=1 only" profile.
+   This is correct (it is genuinely unique in the graph) but it
+   means "chain head" is not a reusable pattern candidate unless
+   we see more chains or relax the criterion.
+
+====================================================================
+READING THIS AGAINST (ii) — WHAT COUNTS AS A NAMEABLE PATTERN
+====================================================================
+
+The probe was set up to help β answer: "what counts as a nameable
+pattern?" The results suggest a concrete answer with caveats:
+
+A minimum-viable criterion for the first β mechanism:
+  - A compound class with size ≥ 2 is a *candidate* pattern.
+  - Candidate is promoted to *named pattern* only if a sanity-check
+    passes.
+
+The probe shows that size alone is insufficient because:
+  - The biggest candidate (size 5) is a known 1-hop false merge.
+  - Several real patterns (star, "terminal descent") are size 2–3.
+
+The sanity check needs to filter the known collisions. Two forms
+available without new machinery:
+
+  (a) **2-hop tie-breaker.** For every class with size > 1, verify
+      that the class's members agree at 2-hop neighborhood
+      (forward-of-forward, reverse-of-reverse, etc.) before naming.
+      This resolves chain-vs-cycle: chain middles have no 2-hop
+      closure back; cycle edges do.
+
+  (b) **Subgraph coherence.** Rather than treating edges in a class
+      as independent, check whether their *connected span* is itself
+      a named candidate pattern. The 3 star spokes all share the
+      identifier `s`; the chain middles share a connected path; the
+      cycle edges share a closed loop. These are different graph-
+      level facts even when the edges individually have the same
+      fingerprint.
+
+Of the two, (b) is more aligned with the design-notes goal: naming
+patterns like "integer chain" requires subgraph-level thinking.
+(a) is a cheaper fix but addresses only the specific collision.
+
+The probe also surfaces a secondary insight: some patterns are
+"cross-structure" (chain tail + tree leaf), which means pattern
+naming is not always component-local. β should handle this case
+cleanly — possibly by keeping the compound class flat across
+components and only splitting into per-component subgraph instances
+when (b)'s subgraph-coherence check runs.
+
+====================================================================
+READING AGAINST (iii) — GAMMA STATUS
+====================================================================
+
+This probe is still deterministic derivation: given an RSet, the
+fingerprint and class assignment are fully determined. Drive (γ)
+is still dormant.
+
+But we now see the *first candidate* decision that drive will have
+to make: "of these 7 classes, which should become named patterns?"
+Naive policies ("name every size ≥ 2 class") would name the wrong
+things first (the 5-member false-merge). So γ can't be trivial.
+
+γ's first real job appears to be: apply some quality filter on
+candidate classes — minimally (a) or (b) above — and name only
+those that pass. γ therefore needs the filter to exist first, which
+means it must be scoped alongside β or directly after.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0007 probe is complete. Its findings give a concrete starting
+shape for β:
+
+  β layer = {
+      - candidate generation: compound class with size ≥ 2
+      - sanity filter: either 2-hop tie-breaker (cheap) or subgraph
+                       coherence check (closer to design-notes goal)
+      - naming: compound classes that pass the filter become named
+                patterns, encoded as meta-R instances (commitment 3)
+  }
+
+The three β sub-questions from earlier:
+  (i)  encoding shape — still open; depends on whether we pick
+       flat-class naming or subgraph naming.
+  (ii) what counts — answered: pass the candidate + filter pipeline
+       above, specifics in (a) vs (b).
+  (iii) drive — has first concrete role: run the filter on candidates
+       and choose what gets named.
+
+Recommendation for next step:
+
+  Do NOT jump to a full β yet. First decide between (a) and (b) —
+  they point to very different β shapes. A focused follow-up probe
+  or design discussion is warranted. Options for how to proceed:
+
+  Option 1: "Flat-class β." Implement (a), name compound classes
+    directly as meta-R instances. Simpler; patterns are edge-kinds.
+    Closer to the current code's grain.
+
+  Option 2: "Subgraph β." Implement (b), name connected subgraph
+    instances. Closer to design-notes' integer-chain target.
+    Requires new machinery (connected-span detection, subgraph
+    canonicalization).
+
+  Option 3: "Staged β." Option 1 first (names edge-kinds), then
+    Option 2 on top (names subgraph kinds). Incremental, but spends
+    effort on Option 1 that might not be reused by Option 2.
+
+Leaning toward Option 2: it directly addresses the design-notes
+goal and avoids committing effort to edge-kind naming that
+subgraph-kind naming would subsume. But this is a scope choice
+the user should make before β starts.

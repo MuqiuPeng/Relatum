@@ -28,11 +28,13 @@ cargo test
 
 ## Status
 
-Observation, 0-hop signatures, and 1-hop locality layers in place:
-`R`, `RSet`, `IdentifierProfile`, `Signature`, `equivalence_classes()`,
-`RSignature`, `r_equivalence_classes()`, `LocalityProfile`,
-`locality_profile()`.
+Observation, 0-hop signatures, 1-hop locality, and compound-signature
+probe in place: `R`, `RSet`, `IdentifierProfile`, `Signature`,
+`equivalence_classes()`, `RSignature`, `r_equivalence_classes()`,
+`LocalityProfile`, `locality_profile()`, `EdgeFingerprint`,
+`edge_fingerprint()`.
 
-Not yet implemented: compound pattern naming (meta-R, ADR 0007+),
-self-driven triggering, evaluation. See [docs/progress.md](docs/progress.md)
-for the current frontier.
+Not yet implemented: compound pattern naming (meta-R, β), self-driven
+triggering (γ), evaluation. See [docs/progress.md](docs/progress.md)
+for the current frontier and the ADR 0007 probe findings for β's
+starting shape.

@@ -46,3 +46,4 @@ Commit hash(es), file pointers.
 - [0004](0004-signature-is-profile.md) — Signature = IdentifierProfile (0-hop, first pass)
 - [0005](0005-r-instance-signature.md) — R-instance signature (edge-level, endpoint profile pair)
 - [0006](0006-locality-profile.md) — Locality profile: co-left / co-right / forward / reverse neighbor counts
+- [0007](0007-compound-signature-probe.md) — Compound signature probe (edge_fingerprint = RSignature + LocalityProfile)

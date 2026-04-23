@@ -137,6 +137,14 @@ impl RSet {
         classes
     }
 
+    /// Compound fingerprint combining the edge-level signature (ADR 0005)
+    /// and the locality profile (ADR 0006). ADR 0007 probe — observation
+    /// layer used to study what the current signals produce as compound
+    /// classes before committing to β (compound pattern naming).
+    pub fn edge_fingerprint(&self, r: &R) -> EdgeFingerprint {
+        (self.r_signature(r), self.locality_profile(r))
+    }
+
     /// Locality profile: four counts of how this edge connects to others
     /// via shared identifiers. ADR 0006. All counts exclude `r` itself.
     pub fn locality_profile(&self, r: &R) -> LocalityProfile {
@@ -203,6 +211,11 @@ impl LocalityProfile {
         self.co_left + self.co_right + self.forward + self.reverse
     }
 }
+
+/// Compound edge observation: endpoint-pair signature paired with
+/// 1-hop locality. ADR 0007. The "fingerprint" name is deliberate —
+/// this is an observational composition, not a new commitment.
+pub type EdgeFingerprint = (RSignature, LocalityProfile);
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
@@ -682,6 +695,42 @@ mod tests {
         rs.add(R::new("a", "a"));
         let p = rs.locality_profile(&R::new("a", "a"));
         assert_eq!(p.total(), 0);
+    }
+
+    #[test]
+    fn edge_fingerprint_composes_existing_signals() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let r = R::new("a", "b");
+        let fp = rs.edge_fingerprint(&r);
+        assert_eq!(fp.0, rs.r_signature(&r));
+        assert_eq!(fp.1, rs.locality_profile(&r));
+    }
+
+    #[test]
+    fn edge_fingerprint_merges_star_spokes() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("h", "a"), R::new("h", "b"), R::new("h", "c")]);
+        let fa = rs.edge_fingerprint(&R::new("h", "a"));
+        let fb = rs.edge_fingerprint(&R::new("h", "b"));
+        let fc = rs.edge_fingerprint(&R::new("h", "c"));
+        assert_eq!(fa, fb);
+        assert_eq!(fb, fc);
+    }
+
+    #[test]
+    fn edge_fingerprint_inherits_1hop_chain_cycle_collision() {
+        // Documented in ADR 0006 and 0007: compound fingerprint does not
+        // break the chain-middle / cycle-edge collision because both
+        // its components are 1-hop.
+        let mut chain = RSet::new();
+        chain.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "d")]);
+        let mut cycle = RSet::new();
+        cycle.extend([R::new("x", "y"), R::new("y", "z"), R::new("z", "x")]);
+        assert_eq!(
+            chain.edge_fingerprint(&R::new("b", "c")),
+            cycle.edge_fingerprint(&R::new("x", "y"))
+        );
     }
 
     #[test]
