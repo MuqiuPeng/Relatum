@@ -136,6 +136,33 @@ impl RSet {
         }
         classes
     }
+
+    /// Locality profile: four counts of how this edge connects to others
+    /// via shared identifiers. ADR 0006. All counts exclude `r` itself.
+    pub fn locality_profile(&self, r: &R) -> LocalityProfile {
+        let mut co_left = 0;
+        let mut co_right = 0;
+        let mut forward = 0;
+        let mut reverse = 0;
+        for other in self.instances.iter() {
+            if other == r {
+                continue;
+            }
+            if other.x == r.x {
+                co_left += 1;
+            }
+            if other.y == r.y {
+                co_right += 1;
+            }
+            if other.x == r.y {
+                forward += 1;
+            }
+            if other.y == r.x {
+                reverse += 1;
+            }
+        }
+        LocalityProfile { co_left, co_right, forward, reverse }
+    }
 }
 
 /// Structural signature of an identifier.
@@ -152,6 +179,30 @@ pub type Signature = IdentifierProfile;
 /// because direction is commitment-level. Later upgrades can replace the
 /// component type or extend it; the pair shape is the stable surface.
 pub type RSignature = (Signature, Signature);
+
+/// Locality profile of an R instance — 1-hop connectivity via shared
+/// identifiers, split by direction-preserving position. ADR 0006.
+///
+/// `co_left` and `co_right` capture co-occurrence at an endpoint (two
+/// edges sharing left / sharing right). `forward` and `reverse` capture
+/// directed chaining (this edge flows into another / another flows into
+/// this).
+///
+/// Known 1-hop collision: chain-middle edges and cycle edges both have
+/// `(0, 0, 1, 1)`. Distinguishing them requires 2-hop context (deferred).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LocalityProfile {
+    pub co_left: usize,
+    pub co_right: usize,
+    pub forward: usize,
+    pub reverse: usize,
+}
+
+impl LocalityProfile {
+    pub fn total(&self) -> usize {
+        self.co_left + self.co_right + self.forward + self.reverse
+    }
+}
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
@@ -536,6 +587,101 @@ mod tests {
         let mut sizes: Vec<usize> = classes.values().map(|c| c.len()).collect();
         sizes.sort();
         assert_eq!(sizes, vec![2, 2, 2]);
+    }
+
+    #[test]
+    fn locality_of_absent_edge_is_zero() {
+        let rs = RSet::new();
+        let p = rs.locality_profile(&R::new("a", "b"));
+        assert_eq!(p.co_left, 0);
+        assert_eq!(p.co_right, 0);
+        assert_eq!(p.forward, 0);
+        assert_eq!(p.reverse, 0);
+    }
+
+    #[test]
+    fn locality_separates_cycle_from_star() {
+        let mut cycle = RSet::new();
+        cycle.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "a")]);
+        let loc_cycle = cycle.locality_profile(&R::new("a", "b"));
+        assert_eq!(
+            loc_cycle,
+            LocalityProfile { co_left: 0, co_right: 0, forward: 1, reverse: 1 }
+        );
+
+        let mut star = RSet::new();
+        star.extend([R::new("hub", "a"), R::new("hub", "b"), R::new("hub", "c")]);
+        let loc_star = star.locality_profile(&R::new("hub", "a"));
+        assert_eq!(
+            loc_star,
+            LocalityProfile { co_left: 2, co_right: 0, forward: 0, reverse: 0 }
+        );
+
+        // The motivating distinction: these profiles differ.
+        assert_ne!(loc_cycle, loc_star);
+    }
+
+    #[test]
+    fn locality_chain_positions() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "d")]);
+
+        // head edge: only a forward neighbor
+        assert_eq!(
+            rs.locality_profile(&R::new("a", "b")),
+            LocalityProfile { co_left: 0, co_right: 0, forward: 1, reverse: 0 }
+        );
+        // middle edge: one forward, one reverse
+        assert_eq!(
+            rs.locality_profile(&R::new("b", "c")),
+            LocalityProfile { co_left: 0, co_right: 0, forward: 1, reverse: 1 }
+        );
+        // tail edge: only a reverse neighbor
+        assert_eq!(
+            rs.locality_profile(&R::new("c", "d")),
+            LocalityProfile { co_left: 0, co_right: 0, forward: 0, reverse: 1 }
+        );
+    }
+
+    #[test]
+    fn locality_known_chain_cycle_collision() {
+        // Recorded limitation: chain-middle edge and any cycle edge have
+        // the same 1-hop locality profile (0, 0, 1, 1). This test locks
+        // the behavior so we notice when a future upgrade (2-hop) breaks
+        // the collision.
+        let mut chain = RSet::new();
+        chain.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "d")]);
+
+        let mut cycle = RSet::new();
+        cycle.extend([R::new("x", "y"), R::new("y", "z"), R::new("z", "x")]);
+
+        assert_eq!(
+            chain.locality_profile(&R::new("b", "c")),
+            cycle.locality_profile(&R::new("x", "y"))
+        );
+    }
+
+    #[test]
+    fn locality_in_star_puts_co_right() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "sink"), R::new("b", "sink"), R::new("c", "sink")]);
+        let p = rs.locality_profile(&R::new("a", "sink"));
+        assert_eq!(p.co_left, 0);
+        assert_eq!(p.co_right, 2);
+        assert_eq!(p.forward, 0);
+        assert_eq!(p.reverse, 0);
+    }
+
+    #[test]
+    fn locality_excludes_self() {
+        // a self-loop R(a, a): when asked about itself, all four counts
+        // should be zero because the only candidate neighbor (itself) is
+        // excluded. (The self-loop character is visible via profile
+        // slots, not locality.)
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "a"));
+        let p = rs.locality_profile(&R::new("a", "a"));
+        assert_eq!(p.total(), 0);
     }
 
     #[test]

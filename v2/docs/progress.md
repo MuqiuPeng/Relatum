@@ -85,3 +85,36 @@ All six ADR-0005 predictions verified. Key findings:
 
 Decision: [0005-r-instance-signature](decisions/0005-r-instance-signature.md).
 Log: [logs/2026-04-23_edge_equivalence.log](../logs/2026-04-23_edge_equivalence.log).
+
+Commit: `5b8d116`.
+
+### Locality profile (α)
+Added `LocalityProfile { co_left, co_right, forward, reverse }` and
+`locality_profile(&R)` on `RSet`. Counts of four kinds of 1-hop neighbor
+relations: share left endpoint, share right endpoint, forward chain
+(this.y == other.x), reverse chain (this.x == other.y). Directional by
+design per commitment 2. 6 new unit tests; `examples/locality.rs` covers
+the six canonical graphs plus an explicit chain-middle / cycle-edge
+collision check.
+
+All ADR 0006 predictions matched. Principal result:
+
+- **Cycle vs star separated.** Cycle edge: `(0,0,1,1)`. Out-star spoke:
+  `(2,0,0,0)`. In-star spoke: `(0,2,0,0)`. Three distinct locality
+  fingerprints where the edge signature (0005) saw only "one class per graph."
+- **Bidirectional chain structure becomes visible.** Endpoint edges and
+  interior edges have different locality profiles, separating them
+  cleanly where 0005's edge classes only grouped them by direction.
+- **Known 1-hop collision locked.** Chain-middle and cycle-edge both have
+  `(0,0,1,1)` — deferred, with a test that fails if the collision is ever
+  intentionally broken by a 2-hop upgrade.
+
+### Note on γ's dormancy (observation, not decision)
+Every mechanism in v2 so far is deterministic derivation from the RSet:
+there are no choice points, so self-driven triggering (γ) has nothing to
+trigger. γ becomes load-bearing at β (compound pattern naming), where
+"which patterns to name" is genuinely a choice. Captured in ADR 0006's
+Context to avoid later confusion about why γ was postponed this long.
+
+Decision: [0006-locality-profile](decisions/0006-locality-profile.md).
+Log: [logs/2026-04-23_locality.log](../logs/2026-04-23_locality.log).

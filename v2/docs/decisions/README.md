@@ -45,3 +45,4 @@ Commit hash(es), file pointers.
 - [0003](0003-identifier-profile.md) — IdentifierProfile as first-pass structural observation
 - [0004](0004-signature-is-profile.md) — Signature = IdentifierProfile (0-hop, first pass)
 - [0005](0005-r-instance-signature.md) — R-instance signature (edge-level, endpoint profile pair)
+- [0006](0006-locality-profile.md) — Locality profile: co-left / co-right / forward / reverse neighbor counts

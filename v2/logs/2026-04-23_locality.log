@@ -1,0 +1,186 @@
+Date: 2026-04-23
+Descriptor: locality (validates ADR 0006)
+Purpose:
+    Confirm that 1-hop locality profiles distinguish the cycle/star
+    collision flagged in the ADR 0005 experiment log. Record the
+    behavior on the full six-graph suite and lock the known chain-middle
+    / cycle-edge 1-hop collision.
+
+Mechanism version:
+    ADR 0006 (LocalityProfile: co_left / co_right / forward / reverse
+    counts; 1-hop, direction-preserving).
+    Source: v2/src/lib.rs at the commit implementing 0006.
+    Runner: v2/examples/locality.rs.
+
+Command:
+    cargo run --example locality
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== forward chain a1 -> a2 -> a3 -> a4 -> a5 ===
+  R(a1, a2):  co_left=0 co_right=0 forward=1 reverse=0
+  R(a2, a3):  co_left=0 co_right=0 forward=1 reverse=1
+  R(a3, a4):  co_left=0 co_right=0 forward=1 reverse=1
+  R(a4, a5):  co_left=0 co_right=0 forward=0 reverse=1
+
+=== bidirectional chain over {a1..a4} ===
+  R(a1, a2):  co_left=0 co_right=1 forward=2 reverse=1
+  R(a2, a1):  co_left=1 co_right=0 forward=1 reverse=2
+  R(a2, a3):  co_left=1 co_right=1 forward=2 reverse=2
+  R(a3, a2):  co_left=1 co_right=1 forward=2 reverse=2
+  R(a3, a4):  co_left=1 co_right=0 forward=1 reverse=2
+  R(a4, a3):  co_left=0 co_right=1 forward=2 reverse=1
+
+=== 3-cycle a -> b -> c -> a ===
+  R(a, b):  co_left=0 co_right=0 forward=1 reverse=1
+  R(b, c):  co_left=0 co_right=0 forward=1 reverse=1
+  R(c, a):  co_left=0 co_right=0 forward=1 reverse=1
+
+=== out-star: hub -> {a, b, c} ===
+  R(hub, a):  co_left=2 co_right=0 forward=0 reverse=0
+  R(hub, b):  co_left=2 co_right=0 forward=0 reverse=0
+  R(hub, c):  co_left=2 co_right=0 forward=0 reverse=0
+
+=== in-star: {a, b, c} -> sink ===
+  R(a, sink):  co_left=0 co_right=2 forward=0 reverse=0
+  R(b, sink):  co_left=0 co_right=2 forward=0 reverse=0
+  R(c, sink):  co_left=0 co_right=2 forward=0 reverse=0
+
+=== two disjoint chains ===
+  R(p1, p2):  co_left=0 co_right=0 forward=1 reverse=0
+  R(p2, p3):  co_left=0 co_right=0 forward=0 reverse=1
+  R(q1, q2):  co_left=0 co_right=0 forward=1 reverse=0
+  R(q2, q3):  co_left=0 co_right=0 forward=0 reverse=1
+
+--- Collision check: chain-middle vs cycle-edge ---
+  chain-middle R(b,c):  co_left=0 co_right=0 forward=1 reverse=1
+  cycle-edge  R(x,y):   co_left=0 co_right=0 forward=1 reverse=1
+  equal? true  (1-hop collision, deferred per ADR 0006)
+
+====================================================================
+ORACLE vs OBSERVED
+====================================================================
+
+ADR 0006 motivating predictions:
+
+  3-cycle any edge        (0, 0, 1, 1)                  ✓
+  out-star spoke          (2, 0, 0, 0)                  ✓
+  in-star spoke           (0, 2, 0, 0)                  ✓
+  4-chain head R(a,b)     (0, 0, 1, 0)                  ✓
+  4-chain middle R(b,c)   (0, 0, 1, 1)                  ✓
+  4-chain tail R(c,d)     (0, 0, 0, 1)                  ✓
+
+Plus the predicted limitation:
+
+  chain-middle == cycle-edge at 1-hop                   ✓ (collides as expected)
+
+All predictions match.
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. Cycle and star are separated.
+   The cycle collapses locality to `(0, 0, 1, 1)` for every edge; the
+   out-star to `(2, 0, 0, 0)`, the in-star to `(0, 2, 0, 0)`. Three
+   distinct locality fingerprints where ADR 0005's edge signature saw
+   only "one class." The motivation for this ADR is resolved.
+
+2. Locality is directional and asymmetric in the way commitment 2
+   requires.
+   Out-star and in-star differ only in which slot the hub occupies;
+   their locality profiles differ correspondingly (`co_left` vs
+   `co_right`). No information is lost to a "share an endpoint"
+   collapse.
+
+3. Bidirectional chain reveals a richer structure than the unidirectional
+   one.
+   Every edge has non-trivial counts in multiple categories because
+   each node is involved in forward and reverse edges. The endpoint
+   edges (`R(a1,a2)`, `R(a4,a3)`) and the interior edges (`R(a2,a3)`,
+   `R(a3,a2)`) are now visibly different: endpoints have
+   `(0,1,2,1)` or `(1,0,1,2)` (depending on direction); middles have
+   `(1,1,2,2)`. Locality separates them in a way endpoint-profile
+   pairs (ADR 0005) did not — there all three classes had equal size 2.
+
+4. Disjoint-union behavior is consistent.
+   Locality of edges in the two disjoint 3-chains matches position-wise
+   across components. `R(p1,p2)` and `R(q1,q2)` both get `(0,0,1,0)`;
+   `R(p2,p3)` and `R(q2,q3)` both get `(0,0,0,1)`. The "same role in
+   different locations" property carries from the identifier layer
+   through the edge layer to the locality layer.
+
+5. The chain-middle / cycle-edge 1-hop collision is present as
+   predicted.
+   Both land at `(0, 0, 1, 1)`. The structural difference — cycle
+   closes back, chain doesn't — is a 2-hop property. Recorded in a
+   test (`locality_known_chain_cycle_collision`) so we notice when
+   this collision is intentionally broken.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Separating cycle from star (the stated motivation).
+  - Locality-based fingerprinting of edges with direction preserved.
+  - A signal richer than `RSignature` alone: combining `RSignature`
+    with `LocalityProfile` gives a compound "edge structural type"
+    that starts to capture what an edge is by both its endpoints'
+    roles and its immediate neighborhood structure.
+
+Does NOT enable:
+  - Distinguishing chain-middle from cycle-edge. Known 1-hop
+    limitation. Remedied only by 2-hop context (deferred).
+  - Naming a pattern. Locality is still an observation, not a
+    first-class entity. The jump to naming requires β: compound
+    pattern as meta-R instance.
+  - Any sense of compositionality. Locality tells us about immediate
+    neighbors, not about "this is a chain of length three." That
+    requires either (i) aggregating locality into pattern tokens
+    (a compression step toward β), or (ii) multi-hop locality to
+    see further.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+α (this ADR) is validated. Its scope is complete: locality profiles
+are computable, deterministic, and distinguish the examples we need
+at this stage.
+
+Next layer: β — compound pattern as a meta-R instance.
+
+Open questions β must resolve (carried from ADR 0005's log):
+  (i)  What shape connects a pattern-name identifier to its members?
+       Most direct: `R(pattern_name, member_r_identifier)` for each
+       member — but R instances are not themselves identifiers, so
+       some encoding is needed. Options:
+         - Give each R instance a synthetic identifier (e.g.,
+           "e(x,y)" or a hash) and use that in meta-R instances.
+         - Treat each endpoint of the pattern's instances as meta-R
+           targets (loses the "which pair?" information).
+         - Introduce a two-relation convention (pattern_has_x,
+           pattern_has_y) per member — more R instances, but all
+           within the single-R primitive (commitment 1 intact).
+
+  (ii) What counts as a nameable pattern?
+       Candidates: an RSignature class with size > threshold; a
+       (RSignature × LocalityProfile) compound class with a
+       repetition pattern; a locality-class that spans multiple
+       edges through shared identifiers (an actual subgraph).
+
+  (iii) Drive (γ). Once the naming mechanism exists, deciding which
+        patterns to actually name requires a policy. Candidates:
+        MDL compression gain; stability under perturbation; rarity
+        within the class lattice. This is where γ moves from
+        dormant to load-bearing.
+
+Before writing ADR 0007 (β), it's worth one more observation pass:
+what does the cross-product of identifier-signature × edge-signature
+× locality-profile look like on a mildly larger graph? If those
+compound signatures already produce useful pattern groupings, (ii)
+has its answer for free. Candidate for the next experiment after β
+is scoped.
