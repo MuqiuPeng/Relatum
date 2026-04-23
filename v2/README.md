@@ -48,13 +48,17 @@ matching in ADR 0015 (replaces the attach path with direct
 enumeration, fixes compound-class fragmentation on asymmetric
 structures).
 
-Pipeline shape: discovery uses compound-class enumeration; attach
-uses subgraph matching against known patterns. Two primitives for
-two distinct jobs.
+Three search primitives cover different jobs:
+- `compound_class_subgraphs` (0007): discovery heuristic via
+  structural grouping — efficient for symmetric recurrent motifs.
+- `find_instances_of` (0015): exhaustive matching against a known
+  canonical — for attach verification; cleanness-filtered.
+- `discover_motifs` (0016): sample-score-select — the first
+  non-enumeration search, finds asymmetric motifs the other two
+  cannot.
 
-Post-β directions (partially scoped): subgraph-motif discovery
-for asymmetric novel structures, prediction / completion,
-cross-graph pattern transfer, MDL-based relevance refinement,
-pattern retraction.
+Post-β open directions: refinement step for 0016, MDL-based
+scoring, motif-to-pattern pipeline closing autonomous abstraction,
+cross-graph pattern transfer, pattern retraction.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.

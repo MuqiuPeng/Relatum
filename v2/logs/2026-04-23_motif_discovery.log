@@ -1,0 +1,139 @@
+Date: 2026-04-23
+Descriptor: motif_discovery (validates ADR 0016)
+Purpose:
+    Confirm that sample-score-select finds dominant structural motifs
+    on the canonical mixed graph — including the asymmetric tree
+    structure that ADR 0015's residual note flagged as unreachable
+    via compound-class discovery.
+
+Mechanism version:
+    ADR 0016 (DiscoveryConfig, MotifCandidate, discover_motifs,
+    xorshift64 PRNG, random-walk sampling).
+    Source: v2/src/lib.rs at the commit implementing 0016.
+    Runner: v2/examples/motif_discovery.rs.
+
+Command:
+    cargo run --example motif_discovery
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+RSet: 14 edges
+
+=== discover_motifs  target_size=2  sample_count=200  top_m=5  seed=2024 ===
+2 candidate(s) returned:
+  #1  freq=127  canonical=[(1, 2), (2, 0)]
+          rep: {R(k1,k2), R(k3,k1)}
+  #2  freq=65  canonical=[(1, 0), (1, 0)]
+          rep: {R(t1,t2), R(t1,t3)}
+
+=== discover_motifs  target_size=3  sample_count=200  top_m=5  seed=2024 ===
+4 candidate(s) returned:
+  #1  freq=70  canonical=[(1, 3), (2, 0), (3, 2)]
+          rep: {R(c1,c2), R(c2,c3), R(c3,c4)}
+  #2  freq=42  canonical=[(1, 0), (1, 0), (1, 0)]
+          rep: {R(s,sa), R(s,sb), R(s,sc)}
+  #3  freq=37  canonical=[(2, 0), (3, 1), (3, 2)]
+          rep: {R(t1,t2), R(t1,t3), R(t2,t4)}
+  #4  freq=34  canonical=[(0, 0), (0, 0), (0, 0)]
+          rep: {R(k1,k2), R(k2,k3), R(k3,k1)}
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Sampling finds the asymmetric tree motif.**
+   At target_size=3, candidate #3 is the canonical `[(2,0), (3,1),
+   (3,2)]` — the structural shape of the `{t1→t2, t1→t3, t2→t4}`
+   tree branch. This is precisely the kind of asymmetric structure
+   ADR 0015's log called out as beyond compound-class discovery's
+   reach. Sample-score-select reaches it.
+
+   Frequency: 37 / 200 samples (18.5%). Not the plurality but
+   clearly above noise. Top position would require more samples
+   heavily biased toward tree seeds, but the structure is surfaced
+   even at 200 draws from a 14-edge graph.
+
+2. **All four "natural" motifs surface at size 3.**
+   - 3-chain (from the 5-chain data):  70/200 = 35%
+   - 3-star (from the out-star):       42/200 = 21%
+   - 3-tree-branch (from the tree):    37/200 = 18.5%
+   - 3-cycle (from the 3-cycle data):  34/200 = 17%
+   Single-motif frequencies roughly match the proportion of seed
+   edges that belong to each substructure. The 5-chain has 4 data
+   edges, the star has 3, the tree has 3, the cycle has 3 — 4/14 >
+   3/14, consistent with chain-dominance in sampling outcomes.
+
+3. **Representative for the 2-chain canonical is non-clean.**
+   The representative `{R(k1,k2), R(k3,k1)}` at size=2 is a 2-chain
+   structurally (ends a → b → c when WL canonicalized), but its
+   participants `{k1, k2, k3}` induce 3 edges in the RSet (the full
+   cycle). It is the "embedded 2-chain in cycle" case that ADR 0015's
+   cleanness filter rejects for *instance recording*.
+   `discover_motifs` reports it as a motif candidate because
+   frequency-wise it is common — but a caller that wants to name it
+   as a pattern should verify cleanness via ADR 0015's
+   `find_instances_of` before recording. This separation of
+   *discovery* from *cleanness* is intentional: motifs describe
+   structure the system is noticing, which may or may not be clean.
+
+4. **Determinism works.** Running the example twice with the same
+   seed produces bit-identical output. Tests pin seeds to lock
+   specific cases.
+
+5. **The output has the shape propose-score-select promised.**
+   - Proposed 200 random-walk subgraphs per call.
+   - Scored by canonical-form frequency among the sample.
+   - Selected top 5 (fewer if distinct canonicals ≤ 5).
+   No exhaustive enumeration of k-subgraphs happened.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Motif discovery without enumeration — philosophically aligned
+    with the `v2_search_mode` memory.
+  - Asymmetric novel motifs (trees, forks, irregular structures)
+    now reachable by discovery, not just attach.
+  - A foundation for downstream selection: a caller takes the
+    top-scoring candidate, optionally verifies via
+    `find_instances_of`, optionally names via
+    `name_pattern_instances`.
+
+Does NOT enable (deferred):
+  - Refinement step — no local-move improvement loop yet. Per
+    ADR 0016's Decision section, refinement is left to 0017 if
+    needed.
+  - Score beyond sample-frequency. MDL, cross-graph repetition,
+    compression-gain criteria all deferred.
+  - Automatic motif naming. The pipeline stops at candidates; the
+    caller decides whether to invoke naming.
+  - Cleanness guarantee on representatives. As observed, a motif
+    candidate's representative may be structurally valid but
+    embedded in a larger structure. This is intended (motif ≠
+    clean instance), but a future ADR may add an opt-in clean
+    filter for callers who want only fresh motifs.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0016 is validated. Sample-score-select is operational and
+surfaces the asymmetric-motif gap that discovery previously missed.
+
+Natural follow-ups:
+  - **ADR 0017 (refine)** — perturb top candidates by local edge
+    swaps, re-score, keep if improved. Only worth scoping if we
+    see "top candidate almost right, one edge off" in experiments.
+  - **ADR 0018 (motif → pattern)** — a pipeline that calls
+    `discover_motifs`, picks the top candidate whose canonical is
+    not already a named pattern, verifies via `find_instances_of`,
+    and invokes `name_pattern_instances`. This closes the loop on
+    "autonomous abstraction from R(x, y)" — the system itself
+    proposing new types from the data.
+  - **Replace `find_instances_of`'s enumeration with sampling** —
+    long-term, but consistent with the memory. Not urgent because
+    cleanness verification has a different character (needs
+    exhaustive coverage for correctness, not heuristic matching).

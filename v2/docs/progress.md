@@ -463,3 +463,39 @@ future probe. 83 tests pass.
 
 Decision: [0015-subgraph-matching](decisions/0015-subgraph-matching.md).
 Log: [logs/2026-04-23_subgraph_matching.log](../logs/2026-04-23_subgraph_matching.log).
+
+Commit: `6148efb`.
+
+### Motif discovery via sample-score-select (ADR 0016)
+First non-enumeration search mechanism in v2, per the
+`v2_search_mode` memory principle. Added `DiscoveryConfig`,
+`MotifCandidate`, and `RSet::discover_motifs`. Random-walk
+sampling from data edges (inline xorshift64 PRNG for determinism,
+no external crate), scoring by canonical-form frequency among the
+sample, top-M selection.
+
+Results on the canonical mixed graph at size 3 (200 samples):
+- 3-chain canonical `[(1,3),(2,0),(3,2)]`: 70 samples (35%)
+- 3-star `[(1,0),(1,0),(1,0)]`: 42 samples (21%)
+- **3-tree-branch `[(2,0),(3,1),(3,2)]`: 37 samples (18.5%)** —
+  the asymmetric motif ADR 0015 flagged as unreachable by
+  compound-class discovery
+- 3-cycle `[(0,0),(0,0),(0,0)]`: 34 samples (17%)
+
+The asymmetric tree motif surfaces naturally through random-walk
+sampling — propose-score-select reaches shapes that the
+deterministic grouping pipeline fragments. 5 new unit tests;
+88 total pass.
+
+Kept explicitly deferred: refinement step (ADR 0017 territory if
+needed), MDL scoring, automatic motif-to-pattern naming
+pipeline.
+
+Known caveat: motif representatives may be non-clean (e.g., the
+2-chain representative at size=2 was `{R(k1,k2), R(k3,k1)}` which
+is embedded in the 3-cycle). Discovery reports structural
+recurrence; cleanness verification remains `find_instances_of`'s
+job, by design — motif ≠ clean instance.
+
+Decision: [0016-motif-discovery-via-sampling](decisions/0016-motif-discovery-via-sampling.md).
+Log: [logs/2026-04-23_motif_discovery.log](../logs/2026-04-23_motif_discovery.log).

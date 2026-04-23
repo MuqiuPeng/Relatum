@@ -549,6 +549,78 @@ impl RSet {
         decisions
     }
 
+    /// Sample-score-select motif discovery. ADR 0016.
+    ///
+    /// Propose N connected subgraphs of `config.target_size` via
+    /// random-walk sampling from data edges; score each distinct
+    /// canonical form by how many samples produced it; return the
+    /// top-M canonicals as `MotifCandidate`s. The first v2 search
+    /// mechanism that makes an explicit *choice* rather than
+    /// enumerating every possibility.
+    ///
+    /// Deterministic given `config.rng_seed`. Stochastic otherwise.
+    pub fn discover_motifs(&self, config: &DiscoveryConfig) -> Vec<MotifCandidate> {
+        if config.target_size == 0 || config.sample_count == 0 {
+            return Vec::new();
+        }
+        let meta = self.collect_meta_ids();
+        let data: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .cloned()
+            .collect();
+        if data.is_empty() {
+            return Vec::new();
+        }
+
+        let mut rng_state = if config.rng_seed == 0 {
+            0x9E3779B97F4A7C15
+        } else {
+            config.rng_seed
+        };
+
+        let mut samples: Vec<Subgraph> = Vec::with_capacity(config.sample_count);
+        for _ in 0..config.sample_count {
+            if let Some(sg) =
+                sample_connected_subgraph(&data, config.target_size, &mut rng_state)
+            {
+                samples.push(sg);
+            }
+        }
+
+        // Score: count canonical-form frequency across samples; keep a
+        // representative for each distinct canonical.
+        let mut by_canon: HashMap<CanonicalForm, (usize, Subgraph)> = HashMap::new();
+        for sg in samples {
+            let canon = sg.canonicalize();
+            by_canon
+                .entry(canon)
+                .and_modify(|(c, _)| *c += 1)
+                .or_insert((1, sg));
+        }
+
+        let mut ranked: Vec<MotifCandidate> = by_canon
+            .into_iter()
+            .map(|(canonical, (freq, representative))| MotifCandidate {
+                canonical,
+                representative,
+                sample_frequency: freq,
+                score: freq as f64,
+            })
+            .collect();
+        // Sort by score desc, then by canonical form asc for determinism
+        // among ties.
+        ranked.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.canonical.cmp(&b.canonical))
+        });
+        ranked.truncate(config.top_m);
+        ranked
+    }
+
     /// Enumerate every connected data subgraph whose canonical form
     /// equals `target`, filtered to "clean" instances. ADR 0015.
     ///
@@ -957,6 +1029,79 @@ fn rank_labels<T: Ord + Clone>(sigs: &[T]) -> Vec<u32> {
 /// Canonical form of a subgraph: sorted edge list over stable labels.
 /// See `Subgraph::canonicalize`. ADR 0009.
 pub type CanonicalForm = Vec<(u32, u32)>;
+
+/// Configuration for motif discovery. ADR 0016.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryConfig {
+    /// Edge count of each candidate subgraph.
+    pub target_size: usize,
+    /// Number of random-walk candidates to propose.
+    pub sample_count: usize,
+    /// Keep the top-M distinct canonical forms by score.
+    pub top_m: usize,
+    /// Seed for the inline xorshift64 PRNG. Zero is replaced with a
+    /// non-zero default internally so that sampling always runs.
+    pub rng_seed: u64,
+}
+
+/// A motif candidate found by `discover_motifs`. ADR 0016.
+#[derive(Debug, Clone)]
+pub struct MotifCandidate {
+    pub canonical: CanonicalForm,
+    pub representative: Subgraph,
+    pub sample_frequency: usize,
+    pub score: f64,
+}
+
+/// Inline xorshift64 — deterministic PRNG. ADR 0016.
+fn next_xorshift64(state: &mut u64) -> u64 {
+    let mut x = *state;
+    if x == 0 {
+        x = 0x9E3779B97F4A7C15;
+    }
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *state = x;
+    x
+}
+
+/// Random walk: seed an edge, grow by adjacent edges until reaching
+/// `target_size`. Returns None if the seed's connected component is
+/// too small. ADR 0016.
+fn sample_connected_subgraph(
+    data: &[R],
+    target_size: usize,
+    rng: &mut u64,
+) -> Option<Subgraph> {
+    if data.is_empty() || target_size == 0 {
+        return None;
+    }
+    let seed_idx = (next_xorshift64(rng) as usize) % data.len();
+    let mut current: HashSet<R> = HashSet::new();
+    current.insert(data[seed_idx].clone());
+
+    while current.len() < target_size {
+        let current_ids: HashSet<&str> = current
+            .iter()
+            .flat_map(|r| [r.x.as_str(), r.y.as_str()])
+            .collect();
+        let adjacent: Vec<&R> = data
+            .iter()
+            .filter(|r| {
+                !current.contains(r)
+                    && (current_ids.contains(r.x.as_str())
+                        || current_ids.contains(r.y.as_str()))
+            })
+            .collect();
+        if adjacent.is_empty() {
+            return None;
+        }
+        let pick = (next_xorshift64(rng) as usize) % adjacent.len();
+        current.insert(adjacent[pick].clone());
+    }
+    Some(Subgraph::from_edges(current))
+}
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
@@ -2186,6 +2331,89 @@ mod tests {
         rs.run_naming_pass(&policy);
         assert_eq!(rs.len(), size_after_first);
         assert_eq!(rs.patterns().len(), patterns_after);
+    }
+
+    #[test]
+    fn discover_motifs_empty_rset_returns_empty() {
+        let rs = RSet::new();
+        let config = DiscoveryConfig {
+            target_size: 2,
+            sample_count: 20,
+            top_m: 5,
+            rng_seed: 42,
+        };
+        assert!(rs.discover_motifs(&config).is_empty());
+    }
+
+    #[test]
+    fn discover_motifs_is_deterministic_under_fixed_seed() {
+        let rs = build_mixed_graph();
+        let config = DiscoveryConfig {
+            target_size: 3,
+            sample_count: 30,
+            top_m: 5,
+            rng_seed: 12345,
+        };
+        let first: Vec<CanonicalForm> =
+            rs.discover_motifs(&config).into_iter().map(|c| c.canonical).collect();
+        let second: Vec<CanonicalForm> =
+            rs.discover_motifs(&config).into_iter().map(|c| c.canonical).collect();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn discover_motifs_respects_target_size() {
+        let rs = build_mixed_graph();
+        let config = DiscoveryConfig {
+            target_size: 3,
+            sample_count: 30,
+            top_m: 5,
+            rng_seed: 7,
+        };
+        let candidates = rs.discover_motifs(&config);
+        for c in &candidates {
+            assert_eq!(c.representative.len(), 3);
+            // canonical edge count equals subgraph edge count
+            assert_eq!(c.canonical.len(), 3);
+        }
+    }
+
+    #[test]
+    fn discover_motifs_respects_top_m() {
+        let rs = build_mixed_graph();
+        let config = DiscoveryConfig {
+            target_size: 2,
+            sample_count: 50,
+            top_m: 2,
+            rng_seed: 99,
+        };
+        let candidates = rs.discover_motifs(&config);
+        assert!(candidates.len() <= 2);
+    }
+
+    #[test]
+    fn discover_motifs_finds_two_chain_on_mixed_graph() {
+        // At target_size=2, the 5-chain alone contributes 3 structurally
+        // isomorphic 2-chains (c1-c2-c3, c2-c3-c4, c3-c4-c5), plus one
+        // more in the tree branch t1-t2-t4 and one via the T-fork if
+        // applicable. Sampling with enough draws should find the
+        // 2-chain canonical with high frequency.
+        let rs = build_mixed_graph();
+        let config = DiscoveryConfig {
+            target_size: 2,
+            sample_count: 200,
+            top_m: 5,
+            rng_seed: 2024,
+        };
+        let candidates = rs.discover_motifs(&config);
+        assert!(!candidates.is_empty());
+        // The 2-chain canonical is [(1, 2), (2, 0)].
+        let two_chain_canonical: CanonicalForm = vec![(1, 2), (2, 0)];
+        assert!(
+            candidates.iter().any(|c| c.canonical == two_chain_canonical),
+            "expected to discover the 2-chain canonical among candidates: {:?}",
+            candidates.iter().map(|c| &c.canonical).collect::<Vec<_>>()
+        );
     }
 
     #[test]

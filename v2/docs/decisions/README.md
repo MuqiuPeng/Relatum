@@ -55,3 +55,4 @@ Commit hash(es), file pointers.
 - [0013](0013-pattern-query-api.md) — Pattern query API (first use of named meta-R)
 - [0014](0014-attach-only-mode.md) — Attach-only mode for naming pass
 - [0015](0015-subgraph-matching.md) — Subgraph matching against named patterns (fixes fragmentation)
+- [0016](0016-motif-discovery-via-sampling.md) — Motif discovery via sample-score-select (first non-enumeration search)
