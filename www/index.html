@@ -1204,6 +1204,7 @@ header h1 {
       <button class="btn" id="btn-clear" onclick="clearAll()" style="display:none">Clear All</button>
       <button class="btn" id="btn-save" onclick="saveCurrentTab()" style="display:none">Save</button>
       <button class="btn" onclick="toggleDocPanel()">Doc</button>
+      <button class="btn" onclick="toggleDiscovery()">Discovery</button>
     </div>
   </header>
   <div id="tab-bar"></div>
@@ -5271,6 +5272,252 @@ async function wsUnlinkFolder() {
   await showWorkspace();
   renderTabBar();
 })();
+</script>
+
+<!-- Discovery Mode -->
+<style>
+#discovery-overlay {
+  display: none; position: fixed; inset: 0; z-index: 2000;
+  background: var(--bg); overflow-y: auto;
+}
+#discovery-overlay.active { display: flex; flex-direction: column; }
+.disc-header {
+  display: flex; align-items: center; gap: 12px; padding: 12px 20px;
+  border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.disc-header h2 { margin: 0; font-size: 16px; }
+.disc-close { cursor: pointer; font-size: 20px; margin-left: auto; color: var(--dim); }
+.disc-close:hover { color: var(--text); }
+.disc-body { display: flex; flex: 1; min-height: 0; }
+.disc-input { width: 380px; padding: 16px; border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }
+.disc-output { flex: 1; padding: 16px; overflow-y: auto; }
+.disc-input label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 4px; }
+.disc-input textarea {
+  width: 100%; height: 200px; font-family: var(--mono); font-size: 13px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px; resize: vertical;
+}
+.disc-input input[type=text] {
+  width: 100%; font-family: var(--mono); font-size: 13px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 8px; margin-bottom: 8px;
+}
+.disc-run { margin-top: 12px; }
+.disc-preset { margin-bottom: 12px; }
+.disc-preset select {
+  font-size: 13px; padding: 4px 8px; background: var(--surface);
+  color: var(--text); border: 1px solid var(--border); border-radius: 4px;
+}
+.disc-section { margin-bottom: 16px; }
+.disc-section h3 { font-size: 14px; margin: 0 0 8px; color: var(--accent); }
+.disc-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 10px; margin-bottom: 8px; font-size: 13px;
+}
+.disc-card .label { color: var(--dim); font-size: 11px; }
+.disc-card .value { font-family: var(--mono); }
+.disc-tag {
+  display: inline-block; padding: 2px 6px; border-radius: 3px;
+  font-size: 11px; font-weight: 600;
+}
+.disc-tag.identity { background: #2d4a2d; color: #8f8; }
+.disc-tag.verified { background: #2d3a4a; color: #8cf; }
+.disc-tag.chain { background: #4a3a2d; color: #fc8; }
+.disc-tag.skip { background: #333; color: #888; }
+.disc-spinner { color: var(--dim); font-style: italic; }
+</style>
+
+<div id="discovery-overlay">
+  <div class="disc-header">
+    <h2>Discovery Mode</h2>
+    <span style="color:var(--dim);font-size:12px">Autonomous structure discovery via WASM engine</span>
+    <span class="disc-close" onclick="toggleDiscovery()">&times;</span>
+  </div>
+  <div class="disc-body">
+    <div class="disc-input">
+      <div class="disc-preset">
+        <label>Preset</label>
+        <select id="disc-preset-select" onchange="discLoadPreset()">
+          <option value="">— custom —</option>
+          <option value="z3" selected>Z3 (cyclic, order 3)</option>
+          <option value="s3">S3 (symmetric, order 6)</option>
+          <option value="v4">V4 (Klein four-group)</option>
+        </select>
+      </div>
+      <label>Structure name</label>
+      <input type="text" id="disc-name" value="Z3">
+      <label>Elements (comma-separated)</label>
+      <input type="text" id="disc-elements" value="e0, e1, e2">
+      <label>Cayley table (one "a b = c" per line)</label>
+      <textarea id="disc-table">e0 e0 = e0
+e0 e1 = e1
+e0 e2 = e2
+e1 e0 = e1
+e1 e1 = e2
+e1 e2 = e0
+e2 e0 = e2
+e2 e1 = e0
+e2 e2 = e1</textarea>
+      <button class="btn btn-run disc-run" onclick="discRun()">Run Discovery</button>
+    </div>
+    <div class="disc-output" id="disc-output">
+      <p style="color:var(--dim)">Press "Run Discovery" to start autonomous analysis.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import init, { discover } from './pkg/relatum.js';
+
+const PRESETS = {
+  z3: {
+    name: 'Z3', elements: 'e0, e1, e2',
+    table: `e0 e0 = e0\ne0 e1 = e1\ne0 e2 = e2\ne1 e0 = e1\ne1 e1 = e2\ne1 e2 = e0\ne2 e0 = e2\ne2 e1 = e0\ne2 e2 = e1`
+  },
+  s3: {
+    name: 'S3', elements: 'e, a, b, c, d, f',
+    table: `e e = e\ne a = a\ne b = b\ne c = c\ne d = d\ne f = f
+a e = a\na a = e\na b = d\na c = f\na d = b\na f = c
+b e = b\nb a = f\nb b = e\nb c = d\nb d = c\nb f = a
+c e = c\nc a = d\nc b = f\nc c = e\nc d = a\nc f = b
+d e = d\nd a = c\nd b = a\nd c = b\nd d = f\nd f = e
+f e = f\nf a = b\nf b = c\nf c = a\nf d = e\nf f = d`
+  },
+  v4: {
+    name: 'V4', elements: 'e, a, b, c',
+    table: `e e = e\ne a = a\ne b = b\ne c = c\na e = a\na a = e\na b = c\na c = b\nb e = b\nb a = c\nb b = e\nb c = a\nc e = c\nc a = b\nc b = a\nc c = e`
+  }
+};
+
+let wasmReady = false;
+
+async function initWasm() {
+  try {
+    await init();
+    wasmReady = true;
+  } catch (e) {
+    console.warn('WASM init failed:', e);
+  }
+}
+initWasm();
+
+window.toggleDiscovery = function() {
+  document.getElementById('discovery-overlay').classList.toggle('active');
+};
+
+window.discLoadPreset = function() {
+  const key = document.getElementById('disc-preset-select').value;
+  if (!key || !PRESETS[key]) return;
+  const p = PRESETS[key];
+  document.getElementById('disc-name').value = p.name;
+  document.getElementById('disc-elements').value = p.elements;
+  document.getElementById('disc-table').value = p.table;
+};
+
+window.discRun = async function() {
+  const out = document.getElementById('disc-output');
+  if (!wasmReady) {
+    out.innerHTML = '<p style="color:var(--red)">WASM engine not loaded. Check console.</p>';
+    return;
+  }
+
+  out.innerHTML = '<p class="disc-spinner">Running discovery...</p>';
+
+  const name = document.getElementById('disc-name').value.trim();
+  const elements = document.getElementById('disc-elements').value.split(',').map(s => s.trim()).filter(Boolean);
+  const tableText = document.getElementById('disc-table').value.trim();
+  const opTable = [];
+  for (const line of tableText.split('\n')) {
+    const m = line.trim().match(/^(\S+)\s+(\S+)\s*=\s*(\S+)$/);
+    if (m) opTable.push([m[1], m[2], m[3]]);
+  }
+
+  const input = JSON.stringify({ name, elements, op_table: opTable, rounds: 2, min_support: 2 });
+
+  // Run in next frame to let spinner render
+  await new Promise(r => setTimeout(r, 10));
+
+  try {
+    const resultJson = discover(input);
+    const result = JSON.parse(resultJson);
+    out.innerHTML = renderDiscoveryResult(result);
+  } catch (e) {
+    out.innerHTML = `<p style="color:var(--red)">Error: ${e}</p>`;
+  }
+};
+
+function renderDiscoveryResult(r) {
+  let html = '';
+
+  // Initial state
+  html += `<div class="disc-section"><h3>Initial Conditions</h3>`;
+  html += `<div class="disc-card">`;
+  html += `<span class="label">Structure:</span> <strong>${r.structure_name}</strong><br>`;
+  html += `<span class="label">Elements:</span> ${r.initial.elements.join(', ')}<br>`;
+  html += `<span class="label">Facts:</span> ${r.initial.op_facts} op + ${r.initial.distinct_facts} distinct<br>`;
+  html += `<span class="label">Relations:</span> ${r.initial.relations.join(', ')}`;
+  html += `</div></div>`;
+
+  // Rounds
+  for (const round of r.rounds) {
+    html += `<div class="disc-section"><h3>Round ${round.round}</h3>`;
+
+    // Concepts
+    if (round.concepts.length > 0) {
+      html += `<div class="label" style="margin-bottom:4px">Concepts promoted: ${round.concepts.length}</div>`;
+      for (const c of round.concepts) {
+        const tag = c.instances.length === 1
+          ? '<span class="disc-tag identity">identity-like</span> '
+          : '';
+        html += `<div class="disc-card">`;
+        html += `${tag}<strong>${c.name}</strong><br>`;
+        html += `<span class="label">Pattern:</span> <span class="value">${esc(c.signature)}</span><br>`;
+        html += `<span class="label">Instances:</span> <span class="value">{${c.instances.join(', ')}}</span>`;
+        html += `</div>`;
+      }
+    } else {
+      html += `<div class="disc-card"><span class="disc-tag skip">no new concepts</span></div>`;
+    }
+
+    // Verification rules
+    if (round.verification_rules.length > 0) {
+      html += `<div class="label" style="margin:8px 0 4px">Verification rules: ${round.verification_rules.length}</div>`;
+      for (const vr of round.verification_rules) {
+        html += `<div class="disc-card"><span class="value">${esc(vr)}</span></div>`;
+      }
+    }
+
+    // Chain identities
+    if (round.chain_identities.length > 0) {
+      html += `<div class="label" style="margin:8px 0 4px">Chain identities: ${round.chain_identities.length}</div>`;
+      for (const ci of round.chain_identities) {
+        html += `<div class="disc-card"><span class="disc-tag chain">associativity</span> `;
+        html += `<span class="value">${esc(ci.path_a)} = ${esc(ci.path_b)}</span></div>`;
+      }
+    }
+
+    // Beam
+    if (round.beam) {
+      const b = round.beam;
+      const tag = b.injected
+        ? '<span class="disc-tag verified">injected</span>'
+        : '<span class="disc-tag skip">not injected</span>';
+      html += `<div class="disc-card">${tag} `;
+      html += `<span class="label">Beam:</span> score=${b.score.toFixed(2)}, derived=${b.derived}`;
+      if (b.inconsistencies > 0) html += `, <span style="color:var(--red)">incon=${b.inconsistencies}</span>`;
+      html += `</div>`;
+    } else {
+      html += `<div class="disc-card"><span class="disc-tag skip">beam skipped</span> (no new facts)</div>`;
+    }
+
+    html += `<div style="font-size:11px;color:var(--dim);margin-top:4px">${round.total_facts} facts, ${round.total_relations} relations</div>`;
+    html += `</div>`;
+  }
+
+  return html;
+}
+
+function esc(s) { return s.replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 </script>
 </body>
 </html>

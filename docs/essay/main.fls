@@ -165,8 +165,8 @@ INPUT sections\introduction.tex
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecrm1440.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecbx1440.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecti1095.tfm
-INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecbx1200.tfm
 INPUT C:\Users\guans\AppData\Local\MiKTeX\fonts\map\pdftex\pdftex.map
+INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecbx1200.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\jknappen\ec\ecbx1095.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\public\cm\cmmi10.tfm
 INPUT D:\ProgramFiles\MikTex\fonts\tfm\public\cm\cmsy10.tfm
