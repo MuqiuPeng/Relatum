@@ -563,13 +563,7 @@ impl RSet {
         if config.target_size == 0 || config.sample_count == 0 {
             return Vec::new();
         }
-        let meta = self.collect_meta_ids();
-        let data: Vec<R> = self
-            .instances
-            .iter()
-            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
-            .cloned()
-            .collect();
+        let data = self.data_edges_sorted();
         if data.is_empty() {
             return Vec::new();
         }
@@ -637,13 +631,7 @@ impl RSet {
         if k == 0 {
             return Vec::new();
         }
-        let meta = self.collect_meta_ids();
-        let data: Vec<R> = self
-            .instances
-            .iter()
-            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
-            .cloned()
-            .collect();
+        let data = self.data_edges_sorted();
         if k > data.len() {
             return Vec::new();
         }
@@ -659,18 +647,76 @@ impl RSet {
 
         // Cleanness filter — keep only subgraphs whose participants
         // induce exactly k data edges in the RSet.
-        results.retain(|sg| {
-            let parts: HashSet<&str> = sg.identifiers();
-            let induced_count = data
-                .iter()
-                .filter(|r| {
-                    parts.contains(r.x.as_str()) && parts.contains(r.y.as_str())
-                })
-                .count();
-            induced_count == k
-        });
+        results.retain(|sg| self.is_clean_subgraph(sg));
 
         results
+    }
+
+    /// A subgraph is "clean" in this RSet iff its participants induce
+    /// exactly `sg.len()` data edges (meta-R excluded). Non-clean
+    /// subgraphs are embedded in larger structures, which violates the
+    /// ADR 0010 canonical-recovery invariant. Exposed as a helper for
+    /// ADR 0017 refinement and downstream callers.
+    pub fn is_clean_subgraph(&self, sg: &Subgraph) -> bool {
+        let meta = self.collect_meta_ids();
+        let parts: HashSet<&str> = sg.identifiers();
+        let induced: usize = self
+            .instances
+            .iter()
+            .filter(|r| {
+                !meta.contains(&r.x)
+                    && !meta.contains(&r.y)
+                    && parts.contains(r.x.as_str())
+                    && parts.contains(r.y.as_str())
+            })
+            .count();
+        induced == sg.len()
+    }
+
+    /// Refine a set of motif candidates. ADR 0017.
+    ///
+    /// For each candidate whose representative is not clean (embedded
+    /// in a larger structure), try up to `config.max_tries` new
+    /// random-walk samples of the same target size. Accept the first
+    /// sample whose canonical form matches the candidate's AND which
+    /// is clean. If no clean alternative is found within the budget,
+    /// leave the representative unchanged.
+    ///
+    /// Deterministic under `config.rng_seed`.
+    pub fn refine_candidates(
+        &self,
+        candidates: Vec<MotifCandidate>,
+        config: &RefinementConfig,
+    ) -> Vec<MotifCandidate> {
+        let data = self.data_edges_sorted();
+        if data.is_empty() {
+            return candidates;
+        }
+
+        let mut rng_state = if config.rng_seed == 0 {
+            0x9E3779B97F4A7C15
+        } else {
+            config.rng_seed
+        };
+
+        candidates
+            .into_iter()
+            .map(|mut c| {
+                if self.is_clean_subgraph(&c.representative) {
+                    return c;
+                }
+                let k = c.canonical.len();
+                for _ in 0..config.max_tries {
+                    if let Some(sg) = sample_connected_subgraph(&data, k, &mut rng_state) {
+                        if sg.canonicalize() == c.canonical && self.is_clean_subgraph(&sg) {
+                            c.representative = sg;
+                            break;
+                        }
+                    }
+                }
+                c
+            })
+            .collect()
     }
 
     /// Drop any candidate whose participant set already matches an existing
@@ -703,6 +749,22 @@ impl RSet {
                 !known_sets.iter().any(|k| k == &this_set)
             })
             .collect()
+    }
+
+    /// Data edges (meta-R excluded) in a deterministic order.
+    /// Sorted lexicographically by `(x, y)` so sampling and matching
+    /// are reproducible across process runs, not just within one
+    /// process. ADR 0017.
+    fn data_edges_sorted(&self) -> Vec<R> {
+        let meta = self.collect_meta_ids();
+        let mut data: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .cloned()
+            .collect();
+        data.sort_by(|a, b| (a.x.as_str(), a.y.as_str()).cmp(&(b.x.as_str(), b.y.as_str())));
+        data
     }
 
     /// Collect every identifier currently marked as pattern registry,
@@ -1051,6 +1113,14 @@ pub struct MotifCandidate {
     pub representative: Subgraph,
     pub sample_frequency: usize,
     pub score: f64,
+}
+
+/// Configuration for representative refinement. ADR 0017.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefinementConfig {
+    /// Per-candidate re-sampling budget.
+    pub max_tries: usize,
+    pub rng_seed: u64,
 }
 
 /// Inline xorshift64 — deterministic PRNG. ADR 0016.
@@ -2414,6 +2484,91 @@ mod tests {
             "expected to discover the 2-chain canonical among candidates: {:?}",
             candidates.iter().map(|c| &c.canonical).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn refine_preserves_already_clean_representative() {
+        let rs = build_mixed_graph();
+        // Manually construct a clean 2-chain candidate.
+        let rep = Subgraph::from_edges([R::new("c1", "c2"), R::new("c2", "c3")]);
+        let canon = rep.canonicalize();
+        assert!(rs.is_clean_subgraph(&rep));
+        let input = vec![MotifCandidate {
+            canonical: canon.clone(),
+            representative: rep.clone(),
+            sample_frequency: 1,
+            score: 1.0,
+        }];
+        let refined = rs.refine_candidates(
+            input,
+            &RefinementConfig { max_tries: 50, rng_seed: 7 },
+        );
+        assert_eq!(refined[0].representative, rep);
+    }
+
+    #[test]
+    fn refine_replaces_nonclean_rep_when_clean_alternative_exists() {
+        let rs = build_mixed_graph();
+        // Construct a 2-chain candidate with a non-clean representative
+        // (embedded in the 3-cycle {k1, k2, k3}).
+        let embedded = Subgraph::from_edges([R::new("k1", "k2"), R::new("k3", "k1")]);
+        let canon = embedded.canonicalize();
+        assert!(!rs.is_clean_subgraph(&embedded));
+        let input = vec![MotifCandidate {
+            canonical: canon.clone(),
+            representative: embedded.clone(),
+            sample_frequency: 100,
+            score: 100.0,
+        }];
+        let refined = rs.refine_candidates(
+            input,
+            &RefinementConfig { max_tries: 200, rng_seed: 2024 },
+        );
+        // A clean 2-chain exists in the 5-chain data; refinement should
+        // find one within the budget.
+        assert!(rs.is_clean_subgraph(&refined[0].representative));
+        assert_eq!(refined[0].canonical, canon);
+    }
+
+    #[test]
+    fn refine_is_noop_when_no_clean_alternative() {
+        // A graph consisting only of a single 3-cycle. The 2-chain
+        // canonical has NO clean instance anywhere (every 2-chain is
+        // embedded in the cycle). Refinement must leave rep unchanged.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "a")]);
+        let embedded = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let canon = embedded.canonicalize();
+        let input = vec![MotifCandidate {
+            canonical: canon,
+            representative: embedded.clone(),
+            sample_frequency: 1,
+            score: 1.0,
+        }];
+        let refined = rs.refine_candidates(
+            input,
+            &RefinementConfig { max_tries: 100, rng_seed: 42 },
+        );
+        assert_eq!(refined[0].representative, embedded);
+    }
+
+    #[test]
+    fn refine_is_deterministic_under_fixed_seed() {
+        let rs = build_mixed_graph();
+        let config_disc = DiscoveryConfig {
+            target_size: 2,
+            sample_count: 50,
+            top_m: 3,
+            rng_seed: 11,
+        };
+        let cands = rs.discover_motifs(&config_disc);
+        let cfg = RefinementConfig { max_tries: 100, rng_seed: 999 };
+        let r1 = rs.refine_candidates(cands.clone(), &cfg);
+        let r2 = rs.refine_candidates(cands, &cfg);
+        for (a, b) in r1.iter().zip(r2.iter()) {
+            assert_eq!(a.representative, b.representative);
+            assert_eq!(a.canonical, b.canonical);
+        }
     }
 
     #[test]

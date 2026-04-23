@@ -1,0 +1,141 @@
+Date: 2026-04-23
+Descriptor: motif_refinement (validates ADR 0017)
+Purpose:
+    Verify that representative refinement replaces embedded
+    representatives with clean ones when a clean alternative exists
+    in the data. Also confirm the determinism fix (sorted data edges)
+    produces stable output across process runs.
+
+Mechanism version:
+    ADR 0017 (RefinementConfig, refine_candidates,
+    is_clean_subgraph public helper, data_edges_sorted for
+    cross-run determinism).
+    Source: v2/src/lib.rs at the commit implementing 0017.
+    Runner: v2/examples/motif_refinement.rs.
+
+Command:
+    cargo run --example motif_refinement
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+RSet: 14 edges
+
+=== target_size=2  sample_count=200  top_m=5  seeds: disc=2024 refine=999 ===
+  canonical [(1, 2), (2, 0)]  freq=127
+    raw rep      clean  :  {R(c2,c3), R(c3,c4)}
+    refined rep  clean  :  {R(c2,c3), R(c3,c4)}
+  canonical [(1, 0), (1, 0)]  freq=60
+    raw rep      clean  :  {R(s,sa), R(s,sb)}
+    refined rep  clean  :  {R(s,sa), R(s,sb)}
+
+=== target_size=3  sample_count=200  top_m=5  seeds: disc=2024 refine=999 ===
+  canonical [(1, 3), (2, 0), (3, 2)]  freq=67
+    raw rep      clean  :  {R(c1,c2), R(c2,c3), R(c3,c4)}
+    refined rep  clean  :  {R(c1,c2), R(c2,c3), R(c3,c4)}
+  canonical [(0, 0), (0, 0), (0, 0)]  freq=51
+    raw rep      clean  :  {R(k1,k2), R(k2,k3), R(k3,k1)}
+    refined rep  clean  :  {R(k1,k2), R(k2,k3), R(k3,k1)}
+  canonical [(2, 0), (3, 1), (3, 2)]  freq=44
+    raw rep      clean  :  {R(t1,t2), R(t1,t3), R(t2,t4)}
+    refined rep  clean  :  {R(t1,t2), R(t1,t3), R(t2,t4)}
+  canonical [(1, 0), (1, 0), (1, 0)]  freq=27
+    raw rep      clean  :  {R(s,sa), R(s,sb), R(s,sc)}
+    refined rep  clean  :  {R(s,sa), R(s,sb), R(s,sc)}
+
+=== Explicit refinement on a non-clean 2-chain rep ===
+  before:  clean=false  rep={R(k1,k2), R(k3,k1)}
+  after:   clean=true  rep={R(c2,c3), R(c3,c4)}
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Determinism fix is live.**
+   `data_edges_sorted` replaced the HashSet-iteration data-collection
+   in `discover_motifs`, `find_instances_of`, and
+   `refine_candidates`. Output is now stable across process runs,
+   not merely within one run. Previously, the same seed with the
+   same data produced different outputs between runs because
+   `HashSet<R>` iteration order is randomized per-HashMap. The
+   sorted data makes the PRNG's selection deterministic end-to-end.
+
+2. **On the canonical mixed graph with seed 2024, discover_motifs
+   happens to produce all-clean representatives.**
+   The representatives picked (first-sample-per-canonical) are:
+   - 2-chain → `{R(c2,c3), R(c3,c4)}`  (clean chain interior)
+   - 2-star → `{R(s,sa), R(s,sb)}`      (clean star subset)
+   - 3-chain → `{R(c1,c2), R(c2,c3), R(c3,c4)}`  (clean)
+   - 3-cycle → `{R(k1,k2), R(k2,k3), R(k3,k1)}`  (clean, because
+     participants induce exactly the cycle)
+   - 3-tree → `{R(t1,t2), R(t1,t3), R(t2,t4)}`  (clean tree)
+   - 3-star → `{R(s,sa), R(s,sb), R(s,sc)}`      (clean star)
+   Refinement is therefore a no-op on all of them — each candidate's
+   `is_clean_subgraph(representative) == true`, so the early-exit
+   branch in `refine_candidates` fires.
+   This is the expected outcome when sampling happens to hit clean
+   instances first. It's not a bug — it's why the explicit demo
+   below exists.
+
+3. **Explicit demo confirms refinement works when needed.**
+   Constructed a 2-chain `MotifCandidate` with representative
+   `{R(k1,k2), R(k3,k1)}` — structurally a 2-chain (canonicalizes
+   to `[(1, 2), (2, 0)]`) but participants `{k1, k2, k3}` induce
+   3 data edges (the full 3-cycle), not 2 — so not clean.
+   `refine_candidates` with `max_tries = 200` returned
+   `{R(c2,c3), R(c3,c4)}` — a clean 2-chain in the 5-chain data.
+   Refinement worked.
+
+4. **Refinement is bounded.**
+   A graph consisting only of a 3-cycle (no chain) offers no clean
+   2-chain anywhere. The corresponding unit test
+   `refine_is_noop_when_no_clean_alternative` locks the behavior:
+   refine returns the original representative unchanged after
+   exhausting the budget. Users who need a guarantee can check
+   `is_clean_subgraph` on the output.
+
+5. **Composition with `discover_motifs` is straightforward.**
+   `rs.refine_candidates(rs.discover_motifs(&disc_config), &refine_config)`
+   is a one-liner. The RefinementConfig is small enough to pass
+   inline. The two functions use separate RNG seeds (one for
+   sampling, one for refinement) so the randomness is
+   orthogonally controllable.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Motif candidates carry clean representatives whenever the data
+    supports them.
+  - The future 0018 motif → pattern pipeline can call refine
+    before name_pattern_instances and get correct ADR 0010
+    canonical-recovery behavior for free.
+  - Cross-run reproducibility of all sampling-based mechanisms.
+
+Does NOT enable (still deferred):
+  - Local edge-swap hill climbing. ADR 0017 explicitly chose
+    targeted re-sampling; a future ADR could add swap-based
+    refinement when a specific use case needs it.
+  - Canonical-level refinement (drift to nearby canonicals with
+    better score). Still out of scope.
+  - Automatic motif naming. Caller still composes explicitly.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0017 is validated. The sample-score-refine loop is now
+complete enough for 0018:
+
+  discover_motifs(config_d)        # propose + score + select
+    → refine_candidates(config_r)  # polish representatives
+    → for each candidate:
+         if canonical unseen in registry AND rep is clean:
+             name_pattern_instances(&[rep])     # record as pattern
+
+That is ADR 0018: the motif → pattern pipeline. It closes the
+autonomous-abstraction loop — the system's own sampling proposes
+structural types and its own cleanness check decides which ones
+become first-class.

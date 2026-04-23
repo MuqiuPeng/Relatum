@@ -56,9 +56,15 @@ Three search primitives cover different jobs:
 - `discover_motifs` (0016): sample-score-select — the first
   non-enumeration search, finds asymmetric motifs the other two
   cannot.
+- `refine_candidates` (0017): targeted re-sampling to promote
+  embedded motif representatives to clean ones.
 
-Post-β open directions: refinement step for 0016, MDL-based
-scoring, motif-to-pattern pipeline closing autonomous abstraction,
-cross-graph pattern transfer, pattern retraction.
+Plus `is_clean_subgraph` (0017) exposed as a public helper; sorted
+data-edge enumeration keeps all sampling / matching deterministic
+across process runs.
+
+Post-β open directions: motif-to-pattern pipeline closing
+autonomous abstraction (next), MDL-based scoring, cross-graph
+pattern transfer, pattern retraction.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.

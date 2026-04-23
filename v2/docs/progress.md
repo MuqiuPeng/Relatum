@@ -499,3 +499,35 @@ job, by design — motif ≠ clean instance.
 
 Decision: [0016-motif-discovery-via-sampling](decisions/0016-motif-discovery-via-sampling.md).
 Log: [logs/2026-04-23_motif_discovery.log](../logs/2026-04-23_motif_discovery.log).
+
+Commit: `3a702af`.
+
+### Representative refinement (ADR 0017)
+Added `RefinementConfig`, `RSet::refine_candidates`, and the public
+helper `RSet::is_clean_subgraph`. Refinement strategy: for each
+motif candidate whose representative is embedded (not clean), do
+targeted re-sampling within a tries-budget and accept the first
+clean alternative with the same canonical form. Re-sampling rather
+than edge-swap hill-climb because single-edge swaps cannot escape
+tight structural neighborhoods (e.g., 2-chains inside cycles).
+
+Also **fixed a determinism bug**: `discover_motifs`,
+`find_instances_of`, and `refine_candidates` now use
+`data_edges_sorted` (lexicographic by (x, y)) instead of
+HashSet-iteration order. Before: same seed + same RSet produced
+different output across process runs. After: cross-run
+reproducible. The pipeline's promised determinism now holds in
+full.
+
+4 new unit tests; 92 total pass. Explicit demo in
+`motif_refinement.rs` constructs a non-clean 2-chain (embedded in
+the 3-cycle `{k1,k2,k3}`) and refines it to a clean 2-chain in
+the 5-chain data `{c2,c3,c4}`.
+
+Sample-score-refine is now complete:
+  `discover_motifs` → propose + score + select
+  `refine_candidates` → polish representatives
+  (next in 0018) → name as pattern when clean + novel
+
+Decision: [0017-representative-refinement](decisions/0017-representative-refinement.md).
+Log: [logs/2026-04-23_motif_refinement.log](../logs/2026-04-23_motif_refinement.log).
