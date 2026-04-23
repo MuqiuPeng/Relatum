@@ -1,0 +1,177 @@
+Date: 2026-04-24
+Descriptor: intension_extension (ADR 0029)
+Purpose:
+    Verify the intension/extension split implementation on the
+    canonical ADR 0007 mixed graph. Measure meta-R growth under each
+    of the three policies and cross-check that the property layer
+    (Layer A) is correctly stored and queryable independently of
+    instance records.
+
+Mechanism version:
+    ADR 0029 on top of ADR 0010. Backward compatible:
+    `name_pattern_instances` defaults to `FullBindings`, matching
+    0010 semantics for every legacy call.
+
+====================================================================
+EXAMPLE OUTPUT — examples/intension_extension_demo.rs
+====================================================================
+
+Input graph: ADR 0007 mixed graph, 14 data edges.
+
+policy = Intensional
+  meta-R added: 37    patterns: 4    roles: 12    instances: 0
+policy = InstancesOnly
+  meta-R added: 46    patterns: 4    roles: 12    instances: 9
+policy = FullBindings
+  meta-R added: 68    patterns: 4    roles: 12    instances: 9
+
+====================================================================
+BREAKDOWN BY LAYER
+====================================================================
+
+The four named types and their first-instance sizes:
+
+  p_0: 3-cycle      k=3 participants, e=3 edges
+  p_1: single edge  k=2, e=1 (appears 6 times — the graph has many
+                              single-edge instances)
+  p_2: 3-star       k=4, e=3
+  p_3: 2-chain      k=3, e=2
+
+Layer A cost per type is `1 + 2k + e` (1 pattern registry + k role
+registry + k pattern→role + e structural).
+
+  p_0:  1 + 6 + 3 = 10
+  p_1:  1 + 4 + 1 =  6
+  p_2:  1 + 8 + 3 = 12
+  p_3:  1 + 6 + 2 =  9
+  ─────────────────────
+  Total Layer A:   37
+
+Layer B under each policy:
+
+  Intensional:     0
+  InstancesOnly:   9 (ownership edges, one per instance)
+  FullBindings:   31 (9 ownership + 22 participants — ADR 0010 shape)
+
+Total meta-R = 37 + Layer B = 37, 46, 68 respectively. Matches the
+example output exactly.
+
+====================================================================
+SCALING INTUITION
+====================================================================
+
+Layer A is constant per-type: for a graph with T types, total Layer A
+is `Σ(1 + 2k_i + e_i)` — independent of instance count N_i. Layer B
+under FullBindings grows as `Σ N_i · (1 + k_i)` — linear in total
+witnesses.
+
+On this graph, Intensional already costs slightly more than the
+ADR 0010 FullBindings shape did historically (37 vs 31 — because the
+old encoding had no Layer A at all). But the scaling reverses fast:
+
+  Same 4 types, 10 instances each (40 total witnesses):
+    ADR 0010:        1·4 + 40 + ~120 participants ≈ 164
+    0029 Intensional: 37
+    0029 FullBindings: 37 + 40 + ~120 ≈ 197 (pays Layer A overhead)
+
+  Same 4 types, 1000 instances each (4000 total witnesses):
+    ADR 0010:        ≈ 16,000
+    0029 Intensional:       37
+    0029 FullBindings:      ≈ 16,037
+
+For graphs that revisit the same type many times, the Intensional
+dial is dramatic. For small one-off graphs (like this demo)
+FullBindings is the sensible default and is what the backward-compat
+path picks.
+
+====================================================================
+PROPERTY-LAYER QUERIES WITHOUT INSTANCES
+====================================================================
+
+Under Intensional mode, `rs.instances_of(p)` returns an empty vector
+for every pattern — by design — but every other property-layer query
+still works:
+
+  pattern_roles(p)       → list of k role ids
+  pattern_structure(p)   → Option<CanonicalForm> (always Some, populated
+                          from Layer A)
+  find_pattern_matching  → still finds matches for newly-observed
+                          subgraphs, via Layer A canonicalization
+  roles()                → full set of 12 role ids
+  is_role(id)            → correctly classifies roles and non-roles
+
+A 3-chain matches the same pattern id regardless of whether
+instances were stored; the type itself is persistent in R.
+
+====================================================================
+LEGACY FALLBACK CHECK
+====================================================================
+
+An RSet created before ADR 0029 has only the three-shape encoding
+from ADR 0010. `find_pattern_matching` on such an RSet:
+
+  1. `pattern_structure(p)` returns `None` (no Layer A present).
+  2. Fallback path takes the pattern's first instance, restricts
+     edges to its participants, canonicalizes, compares — the
+     original ADR 0010 recovery.
+
+Synthesized a fake legacy RSet by calling the private writes through
+the test harness (ADR 0029 tests cover this path explicitly):
+  `adr0029_find_pattern_matching_uses_layer_a_without_instances`
+and the round-trip tests in the 0010 test suite (all still pass
+because FullBindings is the default).
+
+====================================================================
+SANITY
+====================================================================
+
+- All 143 tests pass (134 prior + 9 new for ADR 0029).
+- `cargo run --example axiom_rigorous_test` output is byte-identical
+  to the 0028 run; axiom discovery ignores meta-R, so Layer A is
+  invisible to it.
+- `cargo run --example pattern_naming` (ADR 0010's demo) shows
+  "added 68 meta-R entries" vs the historical 31. The extra 37 is
+  exactly Layer A.
+- `cargo run --example pattern_queries` — all pattern_of,
+  memberships_of, participants_of, find_pattern_matching demos
+  return the expected shape; roles are correctly excluded from
+  instance / membership queries.
+
+====================================================================
+COMMITMENT CHECK
+====================================================================
+
+- **Commitment 1 (only R):** all new entries are R instances. ✓
+- **Commitment 2 (R is binary):** same; Layer A and B are all
+  two-slot edges. ✓
+- **Commitment 3 (types are meta-R):** now fully expressed. Prior
+  to this ADR the intension was not materialized; now the four
+  intension edge families make the type's definition inspectable
+  directly from R. ✓
+- **Commitment 4 (token-based identity):** role ids use the
+  `__pattern__`/`__role__` double-underscore naming scheme;
+  collision-guard discipline is the same as ADR 0010's — token
+  identity is preserved. ✓
+- **Commitment 5 (similarity is structural):** nothing in the new
+  encoding introduces a non-structural similarity; role ids are
+  assigned by sorted-identifier indices of the first instance, not
+  by any external labeling. ✓
+
+====================================================================
+NEXT
+====================================================================
+
+Left open (none scoped into this ADR):
+
+  1. **Automorphism-quotient roles.** A 3-star currently has 4
+     roles (center + three indistinguishable leaves). A future
+     refinement could fold the three leaves into one role with a
+     "multiplicity 3" annotation.
+  2. **Role-filler bindings in Layer B.** Currently
+     `R(instance, participant)` loses "which role this token
+     fills." A filler marker (`__filler__`) could add it on demand.
+  3. **Default policy revisit.** After real usage surfaces a
+     dominant pattern (many types, many instances each, or few
+     types, few instances), switching the default to
+     `InstancesOnly` or `Intensional` becomes a judgment call with
+     data behind it.

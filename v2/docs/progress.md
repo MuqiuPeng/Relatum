@@ -883,3 +883,53 @@ subsumption, premise weakening, and per-case minimal output).
 
 Decision: [0028-axiom-subsumption](decisions/0028-axiom-subsumption.md).
 Log: [logs/2026-04-24_axiom_subsumption.log](../logs/2026-04-24_axiom_subsumption.log).
+
+### Intension vs extension split (ADR 0029)
+Audit triggered by the "property relations, not fact relations"
+feedback. Found that ADR 0010's three-shape encoding was dominated
+by extension (N instance registrations + N·k participant bindings),
+with the type's intension implicit (canonical form recovered at
+query time from the first instance). Commitment 3 ("types are
+meta-R") was therefore only half-expressed in the code.
+
+Added Layer A — pattern intension — always written on first mint:
+- `R(__pattern__, p_N)` — registry (existing)
+- `R(__role__, p_N_role_i)` × k — role registry (new `__role__` marker)
+- `R(p_N, p_N_role_i)` × k — pattern owns its roles
+- `R(p_N_role_i, p_N_role_j)` × e — structural edges over roles,
+  using the first instance's sorted-id-index mapping (preserves
+  multiplicity; canonical form of the role-subgraph equals the
+  pattern's canonical form)
+
+Added `PatternRecordingPolicy` enum:
+- `Intensional` — Layer A only; no instance records
+- `InstancesOnly` — Layer A + `R(p_N, p_N_i_M)` per instance
+- `FullBindings` — Layer A + instances + participant edges
+  (ADR 0010 legacy; default)
+
+Added queries: `roles()`, `pattern_roles(p)`, `pattern_structure(p)
+-> Option<CanonicalForm>`, `is_role(id)`. `find_pattern_matching`
+reads Layer A first, falls back to 0010's first-instance recovery
+for legacy RSets. `retract_pattern` tears down all four layer-A
+edge families. `instances_of` and `memberships_of` now filter role
+ids (they share the `R(p, *)` shape).
+
+Meta-R cost on the ADR 0007 mixed graph (4 types, 9 instances, 22
+total participants):
+- Intensional: 37 edges (Layer A only)
+- InstancesOnly: 46 edges
+- FullBindings: 68 edges
+
+Layer A is constant per-type (≈ 2k + e + 1 per pattern). Scales
+much better than 0010 when the same type is revisited many times:
+same 4 types with 1000 instances each = 37 vs ~16k.
+
+Constitution updated with a clarifying footnote on commitment 3
+(intension = meta-R, extension = instrumentation policy).
+Commitment text itself unchanged.
+
+Tests: 134 → 143 (9 new covering Layer A writes, each policy mode,
+legacy fallback, retraction, meta-id collection).
+
+Decision: [0029-intension-extension-split](decisions/0029-intension-extension-split.md).
+Log: [logs/2026-04-24_intension_extension.log](../logs/2026-04-24_intension_extension.log).

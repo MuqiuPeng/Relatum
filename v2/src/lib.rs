@@ -29,6 +29,41 @@ impl R {
 /// as the same object.
 pub const PATTERN_MARKER: &str = "__pattern__";
 
+/// Reserved registry marker for role identifiers in a pattern's
+/// *intension* (ADR 0029). `R(ROLE_MARKER, p_N_role_i)` declares
+/// `p_N_role_i` as a role in pattern `p_N`; the structural edges among
+/// roles then encode the pattern's canonical form explicitly. Same
+/// collision-guard caveats as `PATTERN_MARKER`.
+pub const ROLE_MARKER: &str = "__role__";
+
+/// Policy for what meta-R to write when naming pattern instances
+/// (ADR 0029).
+///
+/// All modes write the pattern **intension** (type registry, roles,
+/// and structural edges among roles — "Layer A"). They differ only in
+/// whether and how much per-instance extension data is also written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternRecordingPolicy {
+    /// Layer A only. No per-instance records. The pattern's structure
+    /// is persisted; instances are recomputable on demand via
+    /// `find_instances_of`. Minimum fact-layer footprint.
+    Intensional,
+    /// Layer A + `R(p_N, p_N_i_M)` per instance. Instances are
+    /// registered but their participant bindings are not stored; if
+    /// someone needs bindings they re-match at query time.
+    InstancesOnly,
+    /// Layer A + instances + `R(p_N_i_M, participant)` per participant.
+    /// This is the behavior inherited from ADR 0010 and remains the
+    /// default for backward compatibility.
+    FullBindings,
+}
+
+impl Default for PatternRecordingPolicy {
+    fn default() -> Self {
+        PatternRecordingPolicy::FullBindings
+    }
+}
+
 /// Errors from pattern-naming operations. ADR 0010.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PatternError {
@@ -294,6 +329,24 @@ impl RSet {
         &mut self,
         instances: &[Subgraph],
     ) -> Result<String, PatternError> {
+        self.name_pattern_instances_with_policy(
+            instances,
+            PatternRecordingPolicy::default(),
+        )
+    }
+
+    /// Name a set of isomorphic subgraphs with an explicit recording
+    /// policy. ADR 0029.
+    ///
+    /// Always writes the **intension** of the pattern (registry, roles,
+    /// structural edges among roles) on the first mint, regardless of
+    /// policy. Policy only controls the extent of per-instance
+    /// extension writes (`Intensional`, `InstancesOnly`, `FullBindings`).
+    pub fn name_pattern_instances_with_policy(
+        &mut self,
+        instances: &[Subgraph],
+        policy: PatternRecordingPolicy,
+    ) -> Result<String, PatternError> {
         if instances.is_empty() {
             return Err(PatternError::EmptyInstanceList);
         }
@@ -314,18 +367,59 @@ impl RSet {
             Some(existing) => existing.to_string(),
             None => {
                 let new_id = self.mint_pattern_id();
+                // Layer A: registry + role set + structural edges.
+                // Roles are indexed by the sorted identifiers of the
+                // first instance, not by WL canonical labels — this
+                // preserves edge multiplicity (symmetric nodes do NOT
+                // collapse in the stored meta-R). The canonical form of
+                // the resulting role-subgraph equals `canon` by
+                // construction.
                 self.add(R::new(PATTERN_MARKER, new_id.clone()));
+                let mut sorted_ids: Vec<String> = first
+                    .identifiers()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                sorted_ids.sort();
+                let id_to_role_idx: HashMap<&str, usize> = sorted_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (s.as_str(), i))
+                    .collect();
+                let k = sorted_ids.len();
+                let role_ids: Vec<String> = (0..k)
+                    .map(|i| format!("{}_role_{}", new_id, i))
+                    .collect();
+                for role_id in &role_ids {
+                    self.add(R::new(ROLE_MARKER, role_id.clone()));
+                    self.add(R::new(new_id.clone(), role_id.clone()));
+                }
+                for edge in first.edges() {
+                    let x_idx = id_to_role_idx[edge.x.as_str()];
+                    let y_idx = id_to_role_idx[edge.y.as_str()];
+                    self.add(R::new(
+                        role_ids[x_idx].clone(),
+                        role_ids[y_idx].clone(),
+                    ));
+                }
                 new_id
             }
         };
 
+        // Layer B: extension, subject to policy.
+        if matches!(policy, PatternRecordingPolicy::Intensional) {
+            return Ok(pattern_id);
+        }
+
         for inst in instances {
             let inst_id = self.mint_instance_id(&pattern_id);
             self.add(R::new(pattern_id.clone(), inst_id.clone()));
-            let participants: Vec<String> =
-                inst.identifiers().into_iter().map(str::to_owned).collect();
-            for participant in participants {
-                self.add(R::new(inst_id.clone(), participant));
+            if matches!(policy, PatternRecordingPolicy::FullBindings) {
+                let participants: Vec<String> =
+                    inst.identifiers().into_iter().map(str::to_owned).collect();
+                for participant in participants {
+                    self.add(R::new(inst_id.clone(), participant));
+                }
             }
         }
 
@@ -341,11 +435,21 @@ impl RSet {
             .collect()
     }
 
-    /// Instance identifiers owned by a pattern. ADR 0010.
+    /// Instance identifiers owned by a pattern. ADR 0010, refined by
+    /// ADR 0029 to exclude role identifiers (which share the
+    /// `R(pattern, *)` shape but are part of the intension, not the
+    /// extension).
     pub fn instances_of(&self, pattern: &str) -> Vec<&str> {
         self.left_of(pattern)
             .iter()
-            .map(|r| r.y.as_str())
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if self.is_role(y) {
+                    None
+                } else {
+                    Some(y)
+                }
+            })
             .collect()
     }
 
@@ -355,6 +459,60 @@ impl RSet {
             .iter()
             .map(|r| r.y.as_str())
             .collect()
+    }
+
+    /// All role identifiers currently registered (any pattern). ADR 0029.
+    pub fn roles(&self) -> Vec<&str> {
+        self.left_of(ROLE_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Role identifiers owned by `pattern`, in sorted order. ADR 0029.
+    /// A pattern created before ADR 0029 (Layer A absent) returns an
+    /// empty vector.
+    pub fn pattern_roles(&self, pattern: &str) -> Vec<&str> {
+        let role_set: HashSet<&str> = self.roles().into_iter().collect();
+        let mut out: Vec<&str> = self
+            .left_of(pattern)
+            .into_iter()
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if role_set.contains(y) {
+                    Some(y)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Is `id` a role identifier in some pattern's intension? ADR 0029.
+    pub fn is_role(&self, id: &str) -> bool {
+        self.instances.contains(&R::new(ROLE_MARKER, id))
+    }
+
+    /// Read the stored pattern intension and return its canonical form.
+    /// ADR 0029. Returns `None` if Layer A is absent for this pattern
+    /// (legacy RSets from before ADR 0029).
+    pub fn pattern_structure(&self, pattern: &str) -> Option<CanonicalForm> {
+        let roles = self.pattern_roles(pattern);
+        if roles.is_empty() {
+            return None;
+        }
+        let role_set: HashSet<&str> = roles.iter().copied().collect();
+        let edges: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| {
+                role_set.contains(r.x.as_str()) && role_set.contains(r.y.as_str())
+            })
+            .cloned()
+            .collect();
+        Some(Subgraph::from_edges(edges).canonicalize())
     }
 
     /// Classify a subgraph against the named-pattern registry. ADR 0013.
@@ -382,14 +540,17 @@ impl RSet {
     }
 
     /// Every (pattern_id, instance_id) pair in which `id` is recorded as
-    /// a participant. ADR 0013.
+    /// a participant. ADR 0013; refined by ADR 0029 to skip role ids in
+    /// the "is this an instance?" check (Layer A introduces
+    /// `R(pattern, role)` edges that otherwise look like ownership).
     pub fn memberships_of(&self, id: &str) -> Vec<(&str, &str)> {
         let pattern_set: HashSet<&str> = self.patterns().into_iter().collect();
         let mut out = Vec::new();
         for r in self.right_of(id) {
             let inst = r.x.as_str();
-            // `inst` is an instance iff some R(pattern, inst) exists where
-            // pattern belongs to pattern_set.
+            if self.is_role(inst) {
+                continue;
+            }
             for parent in self.right_of(inst) {
                 if pattern_set.contains(parent.x.as_str()) {
                     out.push((parent.x.as_str(), inst));
@@ -417,13 +578,24 @@ impl RSet {
         Subgraph::from_edges(edges)
     }
 
-    /// Look up an existing pattern whose recovered canonical form equals
-    /// `canon`. ADR 0010. Recovery works by taking the pattern's first
-    /// instance, collecting RSet edges among its participants, and
-    /// canonicalizing that subgraph — see the recovery invariant in
-    /// ADR 0010's Consequences.
+    /// Look up an existing pattern whose stored structural canonical
+    /// form equals `canon`. ADR 0029 (upgraded from ADR 0010).
+    ///
+    /// Primary path reads the pattern's **intension** (Layer A: role
+    /// set + role-role structural edges) and computes its canonical
+    /// form directly. Fallback path, used only when Layer A is absent
+    /// (legacy RSets created before ADR 0029), reconstructs the
+    /// canonical from the first instance's participants + RSet edges,
+    /// the original ADR 0010 recovery.
     pub fn find_pattern_matching(&self, canon: &CanonicalForm) -> Option<&str> {
         for pattern in self.patterns() {
+            if let Some(stored) = self.pattern_structure(pattern) {
+                if stored == *canon {
+                    return Some(pattern);
+                }
+                continue;
+            }
+            // Fallback: legacy (pre-0029) pattern with no Layer A.
             let instance_ids = self.instances_of(pattern);
             let Some(first_inst) = instance_ids.first() else {
                 continue;
@@ -1278,11 +1450,16 @@ impl RSet {
     }
 
     /// Collect every identifier currently marked as pattern registry,
-    /// a pattern, or an instance. Used by `run_naming_pass` for the
-    /// meta-subgraph skip. ADR 0012.
+    /// a pattern, an instance, a role marker, or a role. Used by
+    /// `run_naming_pass` for the meta-subgraph skip. ADR 0012,
+    /// extended by ADR 0029 to include the intension layer.
     fn collect_meta_ids(&self) -> HashSet<String> {
         let mut s = HashSet::new();
         s.insert(PATTERN_MARKER.to_string());
+        s.insert(ROLE_MARKER.to_string());
+        for role in self.roles() {
+            s.insert(role.to_string());
+        }
         for p in self.patterns() {
             s.insert(p.to_string());
             for inst in self.instances_of(p) {
@@ -1314,10 +1491,15 @@ impl RSet {
             .map(str::to_owned)
             .collect();
         let instances_count = instance_ids.len();
+        let role_ids: Vec<String> = self
+            .pattern_roles(pattern_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
 
         let mut removed: usize = 0;
 
-        // (1) Remove every R(instance_id, participant) edge.
+        // (1) Remove every R(instance_id, participant) edge (Layer B).
         for inst in &instance_ids {
             let participants: Vec<String> = self
                 .left_of(inst)
@@ -1331,14 +1513,45 @@ impl RSet {
             }
         }
 
-        // (2) Remove every R(pattern_id, instance_id) ownership edge.
+        // (2) Remove every R(pattern_id, instance_id) ownership edge (Layer B).
         for inst in &instance_ids {
             if self.remove(&R::new(pattern_id_owned.clone(), inst.clone())) {
                 removed += 1;
             }
         }
 
-        // (3) Remove the registry edge R(PATTERN_MARKER, pattern_id).
+        // (3) Remove every Layer A structural edge R(role_i, role_j).
+        //     ADR 0029.
+        let role_set: HashSet<String> = role_ids.iter().cloned().collect();
+        let structural_edges: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| role_set.contains(&r.x) && role_set.contains(&r.y))
+            .cloned()
+            .collect();
+        for e in structural_edges {
+            if self.remove(&e) {
+                removed += 1;
+            }
+        }
+
+        // (4) Remove every R(pattern_id, role_i) (Layer A pattern→role).
+        //     ADR 0029.
+        for role in &role_ids {
+            if self.remove(&R::new(pattern_id_owned.clone(), role.clone())) {
+                removed += 1;
+            }
+        }
+
+        // (5) Remove every R(ROLE_MARKER, role_i) (Layer A registry).
+        //     ADR 0029.
+        for role in &role_ids {
+            if self.remove(&R::new(ROLE_MARKER, role.clone())) {
+                removed += 1;
+            }
+        }
+
+        // (6) Remove the registry edge R(PATTERN_MARKER, pattern_id).
         if self.remove(&R::new(PATTERN_MARKER, pattern_id_owned.clone())) {
             removed += 1;
         }
@@ -4657,5 +4870,161 @@ mod tests {
         // chain endpoints
         assert_eq!(rs.right_of("a1").len(), 0);
         assert_eq!(rs.left_of("a5").len(), 0);
+    }
+
+    // ADR 0029 — intension vs extension layering tests.
+
+    fn mk_two_chain(a: &str, b: &str, c: &str) -> Subgraph {
+        Subgraph::from_edges([R::new(a, b), R::new(b, c)])
+    }
+
+    #[test]
+    fn adr0029_layer_a_written_on_first_mint() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = mk_two_chain("a", "b", "c");
+        let p = rs.name_pattern_instances(&[sg]).unwrap();
+        // Intension: three roles registered.
+        assert_eq!(rs.pattern_roles(&p).len(), 3);
+        for role in rs.pattern_roles(&p) {
+            assert!(rs.is_role(role));
+        }
+        // Intension: stored canonical form equals the subgraph's.
+        let stored = rs.pattern_structure(&p).unwrap();
+        let sg2 = mk_two_chain("a", "b", "c");
+        assert_eq!(stored, sg2.canonicalize());
+    }
+
+    #[test]
+    fn adr0029_intensional_policy_writes_no_instance_edges() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = mk_two_chain("a", "b", "c");
+        let pre = rs.len();
+        let p = rs
+            .name_pattern_instances_with_policy(
+                &[sg],
+                PatternRecordingPolicy::Intensional,
+            )
+            .unwrap();
+        // Layer A was written; Layer B was not.
+        assert!(rs.pattern_roles(&p).len() == 3);
+        assert_eq!(rs.instances_of(&p).len(), 0);
+        // Growth = Layer A only: 1 (registry) + 3 (role registry) + 3
+        // (pattern→role) + 2 (structural edges) = 9 edges.
+        let layer_a_count = 1 + 3 + 3 + 2;
+        assert_eq!(rs.len() - pre, layer_a_count);
+    }
+
+    #[test]
+    fn adr0029_instances_only_policy_writes_no_participants() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = mk_two_chain("a", "b", "c");
+        let p = rs
+            .name_pattern_instances_with_policy(
+                &[sg],
+                PatternRecordingPolicy::InstancesOnly,
+            )
+            .unwrap();
+        assert_eq!(rs.instances_of(&p).len(), 1);
+        let inst = rs.instances_of(&p)[0].to_string();
+        // No participant edges were written for this instance.
+        assert_eq!(rs.participants_of(&inst).len(), 0);
+    }
+
+    #[test]
+    fn adr0029_full_bindings_preserves_0010_semantics() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = mk_two_chain("a", "b", "c");
+        let p = rs.name_pattern_instances(&[sg]).unwrap(); // default = FullBindings
+        let inst = rs.instances_of(&p)[0].to_string();
+        let parts = rs.participants_of(&inst);
+        assert_eq!(parts.len(), 3);
+        assert!(parts.contains("a"));
+        assert!(parts.contains("b"));
+        assert!(parts.contains("c"));
+    }
+
+    #[test]
+    fn adr0029_find_pattern_matching_uses_layer_a_without_instances() {
+        // Intensional-only naming: no instances are persisted. But the
+        // pattern must still be findable by canonical form via Layer A.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = mk_two_chain("a", "b", "c");
+        let p = rs
+            .name_pattern_instances_with_policy(
+                &[sg.clone()],
+                PatternRecordingPolicy::Intensional,
+            )
+            .unwrap();
+        // Second identical structure should match the same pattern,
+        // relying on Layer A (no instances to fall back on).
+        let canon = sg.canonicalize();
+        assert_eq!(rs.find_pattern_matching(&canon).unwrap(), p.as_str());
+    }
+
+    #[test]
+    fn adr0029_collect_meta_ids_includes_roles() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = mk_two_chain("a", "b", "c");
+        let p = rs.name_pattern_instances(&[sg]).unwrap();
+        let meta = rs.collect_meta_ids();
+        assert!(meta.contains(ROLE_MARKER));
+        for role in rs.pattern_roles(&p) {
+            assert!(meta.contains(role));
+        }
+    }
+
+    #[test]
+    fn adr0029_retract_removes_layer_a() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let pre = rs.len();
+        let sg = mk_two_chain("a", "b", "c");
+        let p = rs.name_pattern_instances(&[sg]).unwrap();
+        let _ = rs.retract_pattern(&p).unwrap();
+        assert_eq!(rs.len(), pre);
+        assert!(rs.pattern_structure(&p).is_none());
+        assert!(rs.roles().is_empty());
+        assert!(!rs.instances.iter().any(|r| r.x == ROLE_MARKER));
+    }
+
+    #[test]
+    fn adr0029_reuse_pattern_id_across_policies() {
+        // FullBindings then Intensional on a structurally identical
+        // instance — should reuse the same pattern id, not mint a
+        // second. Layer A is written once on first mint.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let p1 = rs
+            .name_pattern_instances(&[mk_two_chain("a", "b", "c")])
+            .unwrap();
+        rs.extend([R::new("p", "q"), R::new("q", "r")]);
+        let p2 = rs
+            .name_pattern_instances_with_policy(
+                &[mk_two_chain("p", "q", "r")],
+                PatternRecordingPolicy::Intensional,
+            )
+            .unwrap();
+        assert_eq!(p1, p2);
+        assert_eq!(rs.pattern_roles(&p1).len(), 3);
+    }
+
+    #[test]
+    fn adr0029_instances_of_excludes_roles() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let p = rs
+            .name_pattern_instances(&[mk_two_chain("a", "b", "c")])
+            .unwrap();
+        let insts = rs.instances_of(&p);
+        assert_eq!(insts.len(), 1);
+        for inst in &insts {
+            assert!(!rs.is_role(inst));
+        }
     }
 }

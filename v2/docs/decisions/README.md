@@ -68,3 +68,4 @@ Commit hash(es), file pointers.
 - [0026](0026-gradient-refine-probe.md) — Gradient-descent refinement probe
 - [0027](0027-axiom-discovery-probe.md) — Axiom discovery probe (extensional → intensional)
 - [0028](0028-axiom-subsumption.md) — Axiom subsumption (structural canonicalization + redundancy filters)
+- [0029](0029-intension-extension-split.md) — Intension vs extension for pattern naming (partial supersession of 0010)

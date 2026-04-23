@@ -37,6 +37,14 @@ Single-layer ontology. No separate type system above R.
 **Enforcement:** type-of / membership / schema relations are all expressed
 as R instances. No separate data structure for "the type registry."
 
+**Clarification (ADR 0029):** commitment 3 is about the type's *intension*
+— its structural definition — being expressible in meta-R. It is not a
+claim about the type's *extension* (the set of observed instances and their
+token bindings). Extensional records are a matter of instrumentation policy:
+they may be written, partially written, or not written, without violating
+this commitment. What commitment 3 does require is that the intension —
+what makes T the type it is — be present as meta-R whenever T is named.
+
 ## 4. Identity is token-based
 
 Two appearances of the same identifier denote the same object.

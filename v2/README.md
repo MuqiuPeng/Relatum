@@ -105,6 +105,19 @@ variant). Exposed as `RSet::discover_axioms_minimal`. On the rigorous
 8-case blind battery: 45 → 5 on equivalence, 37 → 1 on tolerance,
 25 → 1 on total order; other cases unchanged or clean already.
 
+ADR 0029 made commitment 3 land properly by adding an **intension /
+extension split** to pattern naming. Layer A (always written) stores
+the type itself — registry, roles, structural edges among roles —
+so a type's definition is fully present in meta-R without depending
+on any surviving instance. Layer B (configurable via
+`PatternRecordingPolicy::{Intensional, InstancesOnly, FullBindings}`)
+controls how much per-instance extension data is also written.
+`FullBindings` remains the default for backward compatibility.
+`find_pattern_matching` now reads Layer A directly; legacy RSets
+still work via the old first-instance recovery fallback.
+Constitution gained a clarifying footnote: commitment 3 is about the
+type's *intension*, extension is instrumentation policy.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,
