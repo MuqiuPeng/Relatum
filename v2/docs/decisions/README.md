@@ -51,3 +51,4 @@ Commit hash(es), file pointers.
 - [0009](0009-subgraph-canonicalization.md) — Subgraph canonicalization via Weisfeiler–Lehman refinement
 - [0010](0010-pattern-naming-as-meta-r.md) — Pattern naming as meta-R instances (three-shape encoding)
 - [0011](0011-meta-r-feedback-probe.md) — Meta-R feedback probe (observation before γ)
+- [0012](0012-gamma-naming-pass.md) — γ naming-pass driver and relevance filter (closes β)

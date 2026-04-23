@@ -1,0 +1,165 @@
+Date: 2026-04-23
+Descriptor: gamma_naming_pass (validates ADR 0012)
+Purpose:
+    Run γ's naming-pass driver on the canonical ADR 0007 mixed graph
+    across four scenarios: default policy, idempotent second call,
+    tighter policy (min_instances=2), permissive policy (min_edges=1).
+    Confirm relevance filter and dedup both work as specified.
+
+Mechanism version:
+    ADR 0012 (NamingPolicy, NamingDecision, SkipReason,
+    RSet::consider_naming, RSet::run_naming_pass, dedup via
+    filter_known_instances).
+    Source: v2/src/lib.rs at the commit implementing 0012.
+    Runner: v2/examples/gamma_naming_pass.rs.
+
+Command:
+    cargo run --example gamma_naming_pass
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Pass 1 — default policy on fresh RSet ===
+policy: min_edges=2 min_instances=1 skip_meta=true
+RSet size before: 14
+  canonical [(0, 0), (0, 0), (0, 0)]  ->  Named(p_0)
+  canonical [(1, 0)]  ->  Skipped(BelowMinEdges edges=1 min=2)
+  canonical [(1, 0), (1, 0), (1, 0)]  ->  Named(p_1)
+  canonical [(1, 2), (2, 0)]  ->  Named(p_2)
+RSet size after:  30
+Patterns registered: 3
+
+=== Pass 2 — same policy on the enlarged RSet ===
+(should dedup: no new patterns, no new instances)
+  canonical [(0, 0), (0, 0), (0, 0)]  ->  Skipped(AlreadyKnown)
+  canonical [(1, 0)]  ->  Skipped(BelowMinEdges edges=1 min=2)
+  canonical [(1, 0), (1, 0), (1, 0)]  ->  Skipped(AlreadyKnown)
+  canonical [(1, 2), (2, 0)]  ->  Skipped(AlreadyKnown)
+RSet size delta: 30 -> 30
+Patterns delta:  3 -> 3
+
+=== Pass 3 — tighter policy on fresh RSet ===
+policy: min_edges=2 min_instances=2 skip_meta=true
+  canonical [(0, 0), (0, 0), (0, 0)]  ->  Skipped(BelowMinInstances instances=1 min=2)
+  canonical [(1, 0)]  ->  Skipped(BelowMinEdges edges=1 min=2)
+  canonical [(1, 0), (1, 0), (1, 0)]  ->  Skipped(BelowMinInstances instances=1 min=2)
+  canonical [(1, 2), (2, 0)]  ->  Skipped(BelowMinInstances instances=1 min=2)
+Patterns registered: 0
+
+=== Pass 4 — permissive policy (min_edges=1) on fresh RSet ===
+policy: min_edges=1 min_instances=1 skip_meta=true
+  canonical [(0, 0), (0, 0), (0, 0)]  ->  Named(p_0)
+  canonical [(1, 0)]  ->  Named(p_1)
+  canonical [(1, 0), (1, 0), (1, 0)]  ->  Named(p_2)
+  canonical [(1, 2), (2, 0)]  ->  Named(p_3)
+Patterns registered: 4
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. Default policy enforces the ADR 0009 P2 filter.
+   Single-edge canonical `[(1, 0)]` is rejected with
+   `BelowMinEdges{edges=1, min=2}`. The three substantive patterns
+   (3-cycle p_0, 3-star p_1, 2-chain p_2) are named. RSet size
+   grows from 14 → 30 (16 meta-R entries added — 3 registry + 3
+   ownership + 10 participants across the three patterns).
+
+   Compared to ADR 0010's unfiltered naming:
+   - Unfiltered: 4 patterns, 35 meta-R added, 14 → 49.
+   - Default γ: 3 patterns, 16 meta-R added, 14 → 30.
+   The difference (35 − 16 = 19) is the meta-R overhead avoided by
+   not naming the trivial single-edge pattern with its 6 instances.
+
+2. Second pass with the same policy is genuinely idempotent.
+   Three `Skipped(AlreadyKnown)` decisions (cycle, star, chain —
+   dedup hits) plus one `Skipped(BelowMinEdges)` (single edge still
+   fails the threshold). RSet size unchanged (30 → 30), pattern
+   count unchanged (3 → 3). This is the dedup behavior from ADR
+   0012's *Idempotence* section working as designed.
+
+   Without dedup, the second pass would have added duplicate
+   instance records for the three named patterns. With dedup, the
+   participant-set check catches them cleanly.
+
+3. Tighter policy can name nothing without retracting any rule.
+   Setting `min_instances=2` alongside the default `min_edges=2`
+   produces zero Named decisions on this graph — because every
+   pattern with ≥ 2 edges has exactly 1 instance, and the only
+   high-instance-count pattern (single edge, 6 instances) is below
+   `min_edges`. Both filters are independent; neither is
+   contradictory. The output makes the rationale for each skip
+   explicit in its `SkipReason`.
+
+4. Permissive policy reproduces ADR 0010's unfiltered output.
+   `min_edges=1, min_instances=1` names all four canonical groups,
+   matching exactly what ADR 0010's `examples/pattern_naming.rs`
+   produced. Permissive γ is a valid configuration — γ's policy
+   spans from "name nothing" to "name everything," and the default
+   is a principled midpoint.
+
+5. Policy semantics are observable.
+   Every skipped decision carries enough metadata (the threshold
+   and the actual value) to explain *why* it was skipped. A caller
+   that wants to raise or lower a threshold can read the decisions
+   and decide without re-running the pipeline.
+
+====================================================================
+β LAYER NOW COMPLETE
+====================================================================
+
+With ADR 0012 merged, all four β steps are in place:
+
+  - ADR 0008  subgraph representation + extraction
+  - ADR 0009  WL canonicalization
+  - ADR 0010  pattern naming as meta-R
+  - ADR 0012  γ relevance filter + naming-pass driver
+
+The end-to-end sequence from a raw RSet to named patterns is:
+
+  RSet
+   → compound_class_subgraphs                (0007)
+   → Subgraph::connected_components_of       (0008)
+   → Subgraph::canonicalize                  (0009)
+   → run_naming_pass(policy)                 (0012 drives 0010)
+
+At each step a specific guarantee holds:
+  - 0008 dissolves the 1-hop false merges (cycle vs chain at the
+    compound layer).
+  - 0009 collapses isomorphic subgraphs across compound classes
+    into one pattern identity.
+  - 0010 encodes the discovered patterns as plain R instances per
+    commitment 3.
+  - 0012 filters triviality before naming, and dedups on re-run.
+
+What remains open (not β, not γ):
+
+  - MDL-based relevance scoring. `min_edges` / `min_instances` are
+    crude. A future ADR can add scoring without changing the API.
+  - Automatic trigger. γ still runs on explicit invocation. Moving
+    it to a hook (e.g., run after every N adds) is a separate
+    design choice.
+  - Cross-graph patterns. All work so far is single-RSet. Whether
+    named patterns transfer across experiments / graphs is a
+    future question.
+  - Pattern retraction. Once named, patterns persist. ADR 0011
+    noted this; no current mechanism to remove a pattern.
+  - Exploitation of named patterns by later mechanisms. The RSet
+    now contains meta-R that captures structure — but nothing yet
+    *uses* this to do anything (e.g., suggest abstractions,
+    generate new instances, answer structural queries). That is the
+    next frontier past β.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0012 validated. β closes.
+
+Recommended next direction (for discussion, not yet an ADR):
+  - Consume named patterns downstream. If a new R instance is
+    added that lies in a subgraph isomorphic to an existing named
+    pattern, the system could propose attaching it to the pattern
+    automatically. This is "named patterns as queryable types," and
+    it is the first place where meta-R starts paying rent.

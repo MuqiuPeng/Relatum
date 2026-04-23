@@ -28,7 +28,7 @@ cargo test
 
 ## Status
 
-Observation through pattern naming in place:
+Full autonomous-abstraction pipeline in place:
 `R`, `RSet`, `IdentifierProfile`, `Signature`, `equivalence_classes()`,
 `RSignature`, `r_equivalence_classes()`, `LocalityProfile`,
 `locality_profile()`, `EdgeFingerprint`, `edge_fingerprint()`,
@@ -36,10 +36,16 @@ Observation through pattern naming in place:
 `compound_class_subgraphs()`, `Subgraph::canonicalize()`,
 `Subgraph::is_isomorphic_to()`, `CanonicalForm`, `PATTERN_MARKER`,
 `PatternError`, `name_pattern_instances()`, `patterns()`,
-`instances_of()`, `participants_of()`, `find_pattern_matching()`.
+`instances_of()`, `participants_of()`, `find_pattern_matching()`,
+`NamingPolicy`, `SkipReason`, `NamingDecision`, `consider_naming()`,
+`run_naming_pass()`.
 
-β is underway in four ADRs: 0008 (subgraph representation — done),
-0009 (canonicalization / isomorphism — done), 0010 (pattern naming as
-meta-R per commitment 3 — done), 0011 (γ drive policy — next).
+β closed: 0008 (subgraph extraction), 0009 (canonicalization), 0010
+(pattern naming as meta-R), 0012 (γ policy + driver). Probe ADRs
+0007 and 0011 recorded the observations that informed β's shape.
+
+Post-β directions (not yet scoped): MDL-based relevance, automatic
+triggers, cross-graph patterns, pattern retraction, downstream use
+of named patterns.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.

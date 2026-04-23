@@ -5,7 +5,7 @@
 //!
 //! Ontological commitments: see `docs/constitution.md`.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 /// The sole primitive. Direction is intrinsic; meaning is not.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -38,6 +38,47 @@ pub enum PatternError {
     EmptyInstance,
     /// Instances are not all isomorphic under ADR 0009 canonicalization.
     NotIsomorphic,
+}
+
+/// Policy governing `consider_naming` and `run_naming_pass`. ADR 0012.
+///
+/// Default: `min_edges = 2`, `min_instances = 1`, `skip_meta_subgraphs = true`.
+/// That combination suppresses ADR 0009's trivial single-edge pattern,
+/// allows singleton instances, and keeps `run_naming_pass` idempotent by
+/// skipping subgraphs that touch meta-R tokens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamingPolicy {
+    pub min_edges: usize,
+    pub min_instances: usize,
+    pub skip_meta_subgraphs: bool,
+}
+
+impl Default for NamingPolicy {
+    fn default() -> Self {
+        NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+        }
+    }
+}
+
+/// Why a candidate pattern group was not named under the current policy.
+/// ADR 0012.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkipReason {
+    BelowMinEdges { edges: usize, min: usize },
+    BelowMinInstances { instances: usize, min: usize },
+    /// Every candidate in the group was already recorded as an instance
+    /// of an existing pattern (dedup by participant set).
+    AlreadyKnown,
+}
+
+/// Outcome of a single naming attempt under policy. ADR 0012.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NamingDecision {
+    Named(String),
+    Skipped(SkipReason),
 }
 
 /// A set of R instances — the only state v2 accumulates at the primitive layer.
@@ -319,6 +360,127 @@ impl RSet {
             }
         }
         None
+    }
+
+    /// Apply a policy filter to a candidate group and, if it passes,
+    /// invoke `name_pattern_instances`. ADR 0012.
+    pub fn consider_naming(
+        &mut self,
+        instances: &[Subgraph],
+        policy: &NamingPolicy,
+    ) -> Result<NamingDecision, PatternError> {
+        if instances.is_empty() {
+            return Err(PatternError::EmptyInstanceList);
+        }
+        let sample = &instances[0];
+        let edges = sample.len();
+        if edges < policy.min_edges {
+            return Ok(NamingDecision::Skipped(SkipReason::BelowMinEdges {
+                edges,
+                min: policy.min_edges,
+            }));
+        }
+        let count = instances.len();
+        if count < policy.min_instances {
+            return Ok(NamingDecision::Skipped(SkipReason::BelowMinInstances {
+                instances: count,
+                min: policy.min_instances,
+            }));
+        }
+        let pid = self.name_pattern_instances(instances)?;
+        Ok(NamingDecision::Named(pid))
+    }
+
+    /// γ driver — run one naming pass. ADR 0012.
+    ///
+    /// Collects compound-class subgraphs, groups them by canonical form,
+    /// applies the policy (including the meta-subgraph skip when set),
+    /// and records a decision per canonical form. Deterministic
+    /// iteration via `BTreeMap` over canonical forms.
+    pub fn run_naming_pass(
+        &mut self,
+        policy: &NamingPolicy,
+    ) -> Vec<(CanonicalForm, NamingDecision)> {
+        let meta_ids = if policy.skip_meta_subgraphs {
+            self.collect_meta_ids()
+        } else {
+            HashSet::new()
+        };
+
+        let class_subs = self.compound_class_subgraphs();
+        let mut by_canon: BTreeMap<CanonicalForm, Vec<Subgraph>> = BTreeMap::new();
+        for (_fp, subs) in class_subs {
+            for sub in subs {
+                if policy.skip_meta_subgraphs
+                    && sub
+                        .edges()
+                        .any(|r| meta_ids.contains(&r.x) || meta_ids.contains(&r.y))
+                {
+                    continue;
+                }
+                by_canon.entry(sub.canonicalize()).or_default().push(sub);
+            }
+        }
+
+        let mut decisions = Vec::with_capacity(by_canon.len());
+        for (canon, subs) in by_canon {
+            let fresh = self.filter_known_instances(subs);
+            let decision = if fresh.is_empty() {
+                NamingDecision::Skipped(SkipReason::AlreadyKnown)
+            } else {
+                self.consider_naming(&fresh, policy)
+                    .expect("well-formed candidate groups produced by the pipeline")
+            };
+            decisions.push((canon, decision));
+        }
+        decisions
+    }
+
+    /// Drop any candidate whose participant set already matches an existing
+    /// instance of a pattern with the same canonical form. ADR 0012 dedup.
+    /// Keeps `run_naming_pass` idempotent: a second call on an unchanged
+    /// RSet adds no new instances.
+    fn filter_known_instances(&self, subs: Vec<Subgraph>) -> Vec<Subgraph> {
+        if subs.is_empty() {
+            return subs;
+        }
+        let canon = subs[0].canonicalize();
+        let existing_pattern = match self.find_pattern_matching(&canon) {
+            Some(p) => p.to_string(),
+            None => return subs,
+        };
+        let known_sets: Vec<HashSet<String>> = self
+            .instances_of(&existing_pattern)
+            .iter()
+            .map(|inst| {
+                self.participants_of(inst)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .collect();
+        subs.into_iter()
+            .filter(|sub| {
+                let this_set: HashSet<String> =
+                    sub.identifiers().into_iter().map(str::to_owned).collect();
+                !known_sets.iter().any(|k| k == &this_set)
+            })
+            .collect()
+    }
+
+    /// Collect every identifier currently marked as pattern registry,
+    /// a pattern, or an instance. Used by `run_naming_pass` for the
+    /// meta-subgraph skip. ADR 0012.
+    fn collect_meta_ids(&self) -> HashSet<String> {
+        let mut s = HashSet::new();
+        s.insert(PATTERN_MARKER.to_string());
+        for p in self.patterns() {
+            s.insert(p.to_string());
+            for inst in self.instances_of(p) {
+                s.insert(inst.to_string());
+            }
+        }
+        s
     }
 
     /// Pick the next free pattern id. Monotone scan from current count,
@@ -1452,6 +1614,126 @@ mod tests {
         let pid = rs.name_pattern_instances(&instances).unwrap();
         assert_eq!(rs.patterns().len(), 1);
         assert_eq!(rs.instances_of(&pid).len(), 6);
+    }
+
+    fn build_mixed_graph() -> RSet {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("c1", "c2"), R::new("c2", "c3"),
+            R::new("c3", "c4"), R::new("c4", "c5"),
+        ]);
+        rs.extend([
+            R::new("k1", "k2"), R::new("k2", "k3"), R::new("k3", "k1"),
+        ]);
+        rs.extend([
+            R::new("s", "sa"), R::new("s", "sb"), R::new("s", "sc"),
+        ]);
+        rs.extend([
+            R::new("t1", "t2"), R::new("t1", "t3"), R::new("t2", "t4"),
+        ]);
+        rs.add(R::new("ie1", "ie2"));
+        rs
+    }
+
+    #[test]
+    fn default_policy_skips_single_edge() {
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        let sg = Subgraph::from_edges([R::new("a", "b")]);
+        let decision = rs.consider_naming(&[sg], &NamingPolicy::default()).unwrap();
+        assert!(matches!(
+            decision,
+            NamingDecision::Skipped(SkipReason::BelowMinEdges { edges: 1, min: 2 })
+        ));
+        assert!(rs.patterns().is_empty());
+    }
+
+    #[test]
+    fn lowering_min_edges_allows_single_edge() {
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        let sg = Subgraph::from_edges([R::new("a", "b")]);
+        let policy = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true };
+        let decision = rs.consider_naming(&[sg], &policy).unwrap();
+        assert!(matches!(decision, NamingDecision::Named(_)));
+        assert_eq!(rs.patterns().len(), 1);
+    }
+
+    #[test]
+    fn min_instances_threshold_skips_singleton() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let policy = NamingPolicy { min_edges: 1, min_instances: 2, skip_meta_subgraphs: true };
+        let decision = rs.consider_naming(&[sg], &policy).unwrap();
+        assert!(matches!(
+            decision,
+            NamingDecision::Skipped(SkipReason::BelowMinInstances { instances: 1, min: 2 })
+        ));
+    }
+
+    #[test]
+    fn default_pass_on_mixed_graph_names_three_skips_one() {
+        let mut rs = build_mixed_graph();
+        let decisions = rs.run_naming_pass(&NamingPolicy::default());
+
+        let named: usize = decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        let skipped: usize = decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Skipped(_)))
+            .count();
+        assert_eq!(named, 3, "cycle, star, chain named");
+        assert_eq!(skipped, 1, "single-edge pattern P2 skipped by default min_edges=2");
+        assert_eq!(rs.patterns().len(), 3);
+    }
+
+    #[test]
+    fn pass_with_min_instances_two_names_nothing_on_mixed_graph() {
+        // On the mixed graph, every non-trivial pattern has exactly 1 instance
+        // (3-cycle, 3-star, 2-chain all singletons). P2 single-edge has 6
+        // instances but is filtered by min_edges=2. So nothing is named.
+        let mut rs = build_mixed_graph();
+        let policy = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true };
+        let decisions = rs.run_naming_pass(&policy);
+        let named: usize = decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        assert_eq!(named, 0);
+        assert!(rs.patterns().is_empty());
+    }
+
+    #[test]
+    fn naming_pass_is_idempotent_under_default_policy() {
+        let mut rs = build_mixed_graph();
+        let first_decisions = rs.run_naming_pass(&NamingPolicy::default());
+        let named_first = first_decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        let pattern_count_before = rs.patterns().len();
+
+        // Re-run: data subgraphs are still there (connected components of
+        // the original data edges ignore meta-R), but dedup via
+        // filter_known_instances catches them — their participant sets
+        // already match the instance records. Result: AlreadyKnown skips,
+        // no new patterns, no new instances.
+        let second_decisions = rs.run_naming_pass(&NamingPolicy::default());
+        let named_second = second_decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        let already_known: usize = second_decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Skipped(SkipReason::AlreadyKnown)))
+            .count();
+        assert_eq!(named_first, 3);
+        assert_eq!(named_second, 0);
+        assert_eq!(already_known, 3);
+        assert_eq!(rs.patterns().len(), pattern_count_before);
     }
 
     #[test]

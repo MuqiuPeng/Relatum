@@ -299,3 +299,49 @@ job is the relevance filter for naming — suppressing ADR 0009's P2
 
 Decision: [0011-meta-r-feedback-probe](decisions/0011-meta-r-feedback-probe.md).
 Log: [logs/2026-04-23_meta_feedback_probe.log](../logs/2026-04-23_meta_feedback_probe.log).
+
+Commit: `a6e6326`.
+
+### γ naming-pass driver and relevance filter (β step 4 / 4 — ADR 0012)
+Closes the β layer. Added `NamingPolicy { min_edges, min_instances,
+skip_meta_subgraphs }`, `SkipReason` (with `BelowMinEdges`,
+`BelowMinInstances`, `AlreadyKnown`), `NamingDecision`, and two new
+methods on `RSet`: `consider_naming` (one-shot policy wrapper) and
+`run_naming_pass` (the γ driver). Private helpers
+`filter_known_instances` and `collect_meta_ids`. Default policy
+`min_edges=2, min_instances=1, skip_meta_subgraphs=true` suppresses
+ADR 0009's trivial single-edge P2 pattern, allows singleton
+instances, and keeps iteration dormant.
+
+6 new unit tests — default suppresses single edge, lowering
+min_edges allows it, min_instances threshold, mixed-graph full pass
+names 3 / skips 1, tighter policy names 0, and idempotence under
+default via participant-set dedup.
+
+On the mixed graph:
+- Default: 3 patterns named (cycle, star, chain), 1 skipped (single
+  edge). 14 → 30 edges (vs 14 → 49 in ADR 0010's unfiltered naming).
+- Second pass idempotent: 3 AlreadyKnown + 1 BelowMinEdges, zero
+  new entries.
+- Tighter policy (`min_instances=2`): 0 patterns named.
+- Permissive policy (`min_edges=1`): 4 patterns named, matches ADR
+  0010's baseline.
+
+**β layer now complete** — extraction (0008), canonicalization
+(0009), naming (0010), and γ (0012) together implement the
+minimum-viable autonomous-abstraction path from the design notes.
+Full sequence:
+  RSet → compound_class_subgraphs (0007) →
+  connected_components_of (0008) → canonicalize (0009) →
+  run_naming_pass (0012 driving 0010).
+
+Known open directions (post-β, not next-ADR material):
+- MDL-based relevance scoring (alternative to min_edges / min_instances).
+- Automatic trigger (γ on every add, rather than explicit).
+- Cross-graph patterns.
+- Pattern retraction.
+- Downstream exploitation — consuming named patterns to suggest
+  attachments, answer structural queries, etc.
+
+Decision: [0012-gamma-naming-pass](decisions/0012-gamma-naming-pass.md).
+Log: [logs/2026-04-23_gamma_naming_pass.log](../logs/2026-04-23_gamma_naming_pass.log).
