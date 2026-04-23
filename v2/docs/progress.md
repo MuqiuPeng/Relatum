@@ -618,3 +618,36 @@ realize. Documented as such in the ADR.
 
 Decision: [0019-mdl-scoring](decisions/0019-mdl-scoring.md).
 Log: [logs/2026-04-23_mdl_scoring.log](../logs/2026-04-23_mdl_scoring.log).
+
+Commit: `cfea4cf`.
+
+### Pattern retraction (ADR 0020)
+The registry is now bidirectional. Added `RSet::remove` (single-edge
+removal, dual of `add`), `RetractionError`, `RetractionSummary`, and
+`RSet::retract_pattern` which removes exactly the meta-R edges
+belonging to a named pattern (registry entry + ownership edges +
+participant edges) and leaves data edges untouched. 5 new unit tests;
+106 total pass.
+
+On the canonical mixed graph (autonomous_pass already named 4
+patterns, RSet size 42):
+
+- `retract_pattern("p_1")` (the 3-cycle) removed 5 meta-R edges
+  (1 instance × 3 participants + 1 ownership + 1 registry).
+  RSet: 42 → 37.
+- All 5 sampled data edges still present afterward.
+- Unknown pattern errors with `RetractionError::UnknownPattern`.
+- Re-running autonomous_pass after retraction re-discovers the
+  3-cycle and mints it as p_4 (not p_1 — mint_pattern_id walks
+  forward from current count rather than filling gaps). The
+  retracted slot stays vacant. ID gaps are acceptable because
+  pattern identifiers are opaque tokens.
+- `find_pattern_matching` returns None for the retracted
+  canonical, which is the correctness guarantee we need.
+
+Enables experimentation loops: try a naming, inspect, roll back.
+Does not yet support cascading retraction or soft delete; those
+are future concerns if they surface.
+
+Decision: [0020-pattern-retraction](decisions/0020-pattern-retraction.md).
+Log: [logs/2026-04-23_pattern_retraction.log](../logs/2026-04-23_pattern_retraction.log).

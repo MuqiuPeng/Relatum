@@ -1,0 +1,137 @@
+Date: 2026-04-23
+Descriptor: pattern_retraction (validates ADR 0020)
+Purpose:
+    Verify that `retract_pattern` removes exactly the meta-R edges
+    belonging to a named pattern, leaves data edges and other
+    patterns intact, and that a subsequent autonomous_pass can
+    re-discover the retracted canonical.
+
+Mechanism version:
+    ADR 0020 (RSet::remove, RetractionError, RetractionSummary,
+    RSet::retract_pattern).
+    Source: v2/src/lib.rs at the commit implementing 0020.
+    Runner: v2/examples/pattern_retraction.rs.
+
+Command:
+    cargo run --example pattern_retraction
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+RSet before anything: 14 edges
+
+=== Step 1 — autonomous_pass names patterns ===
+patterns: 4
+  p_0  instances=2  participants=["c1", "c2", "c3", "c4", "c5"]
+  p_1  instances=1  participants=["k1", "k2", "k3"]
+  p_2  instances=1  participants=["t1", "t2", "t3", "t4"]
+  p_3  instances=1  participants=["s", "sa", "sb", "sc"]
+RSet size: 42
+
+=== Step 2 — retract p_1 (3-cycle) ===
+  pattern_id=p_1  instances_removed=1  meta_edges_removed=5
+patterns remaining: 3
+  p_0
+  p_2
+  p_3
+RSet size: 37  (delta -5)
+
+=== Step 3 — data edges intact? ===
+  5 / 5 sampled data edges still present
+
+=== Step 4 — trying to retract something unknown ===
+  retract_pattern("p_999") → Err(UnknownPattern)
+
+=== Step 5 — rediscover after retraction ===
+patterns: 3 → 4
+  p_0  instances=2
+  p_2  instances=1
+  p_3  instances=1
+  p_4  instances=1
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Meta-R edge accounting is correct.**
+   Retracting p_1 removed 5 edges:
+   - 3 participant edges: `R(p_1_i_0, k1)`, `R(p_1_i_0, k2)`,
+     `R(p_1_i_0, k3)`.
+   - 1 ownership edge: `R(p_1, p_1_i_0)`.
+   - 1 registry edge: `R(__pattern__, p_1)`.
+   RSet size shrinks from 42 to 37 — matches.
+
+2. **Data edges are untouched.**
+   Step 3 confirms the 5 sampled data edges are all still there.
+   Retraction operates purely on meta-R; the underlying R data
+   substrate is unaffected. Retract is "undo the naming" not "undo
+   the observation."
+
+3. **Unknown pattern errors cleanly.**
+   `retract_pattern("p_999")` returns `Err(UnknownPattern)` without
+   modifying state. There is no such pattern, so there is nothing
+   to touch.
+
+4. **ID gaps appear after retraction.**
+   After retracting p_1, the re-run produces p_4 for the rediscovered
+   3-cycle — not p_1. `mint_pattern_id` starts its scan from
+   `self.patterns().len()` and walks upward past any taken id. With
+   three patterns remaining (p_0, p_2, p_3), the scan starts at 3,
+   finds p_3 taken, increments to 4, and mints p_4. The slot p_1 is
+   simply left vacant. IDs are tokens; gaps are harmless. If
+   contiguity ever matters, `mint_pattern_id` can be changed to fill
+   gaps in a future ADR — nothing depends on it today.
+
+5. **Classification correctly flips to None for the retracted
+   canonical.**
+   The unit test `retract_clears_classification` locks this:
+   after retraction, `find_pattern_matching(canon)` returns None
+   for the retracted pattern's canonical.
+   (Retraction cleanly removes the meta-R; a re-run can rename if
+   it chooses to.)
+
+6. **Re-discovery reinstates the pattern as a fresh entry.**
+   The autonomous_pass in step 5 sampled the 3-cycle again,
+   identified it as a novel canonical (since p_1's registry entry
+   was gone), and minted p_4 to hold it. Instance count 1 —
+   consistent with there being exactly one clean 3-cycle in the
+   data.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Experimentation loops: try a naming, inspect, roll back if not
+    useful. The registry is now editable in both directions.
+  - Running autonomous_pass or run_naming_pass with one policy,
+    inspecting outcomes, retracting unwanted names, re-running with
+    tighter policy.
+
+Does NOT enable (deferred):
+  - Cascading retraction. No patterns currently depend on other
+    patterns, so retraction has no dependencies to cascade. If
+    hierarchical patterns are introduced, a follow-up ADR will need
+    to specify whether retraction propagates.
+  - Gap-filling in mint_pattern_id. IDs after retraction have
+    holes; acceptable because ids are opaque tokens.
+  - Soft-delete / undo-retraction. A retract_pattern call is final.
+    Restoring a retracted pattern requires rediscovery or manual
+    name_pattern_instances.
+  - Bulk retraction (e.g., "retract all patterns with min_mdl_gain
+    below X"). Callable as a loop by the user.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0020 validated. The registry is now bidirectional.
+
+Open directions unchanged from after 0019:
+  - Multi-size autonomous sweep
+  - autonomous_pass + attach-only composition
+  - Cross-graph pattern transfer
+  - Sampling-based replacement for `find_instances_of`
+  - Hierarchical / composed patterns (would require cascading
+    retraction)

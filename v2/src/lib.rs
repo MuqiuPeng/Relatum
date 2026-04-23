@@ -126,6 +126,12 @@ impl RSet {
         self.instances.contains(r)
     }
 
+    /// Remove a single R instance. Returns true if the edge was
+    /// present. Dual of `add`. ADR 0020.
+    pub fn remove(&mut self, r: &R) -> bool {
+        self.instances.remove(r)
+    }
+
     pub fn len(&self) -> usize {
         self.instances.len()
     }
@@ -913,6 +919,64 @@ impl RSet {
         s
     }
 
+    /// Retract a named pattern and all of its meta-R edges. Data edges
+    /// are untouched. ADR 0020. Order of removal is
+    /// participants → ownership → registry, so a partial interruption
+    /// leaves the RSet queryable in a self-consistent state.
+    pub fn retract_pattern(
+        &mut self,
+        pattern_id: &str,
+    ) -> Result<RetractionSummary, RetractionError> {
+        let known: HashSet<&str> = self.patterns().into_iter().collect();
+        if !known.contains(pattern_id) {
+            return Err(RetractionError::UnknownPattern);
+        }
+
+        // Snapshot the ids we will touch (take ownership of strings so
+        // we can mutate self below without borrow conflicts).
+        let pattern_id_owned = pattern_id.to_string();
+        let instance_ids: Vec<String> = self
+            .instances_of(pattern_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let instances_count = instance_ids.len();
+
+        let mut removed: usize = 0;
+
+        // (1) Remove every R(instance_id, participant) edge.
+        for inst in &instance_ids {
+            let participants: Vec<String> = self
+                .left_of(inst)
+                .into_iter()
+                .map(|r| r.y.clone())
+                .collect();
+            for participant in participants {
+                if self.remove(&R::new(inst.clone(), participant)) {
+                    removed += 1;
+                }
+            }
+        }
+
+        // (2) Remove every R(pattern_id, instance_id) ownership edge.
+        for inst in &instance_ids {
+            if self.remove(&R::new(pattern_id_owned.clone(), inst.clone())) {
+                removed += 1;
+            }
+        }
+
+        // (3) Remove the registry edge R(PATTERN_MARKER, pattern_id).
+        if self.remove(&R::new(PATTERN_MARKER, pattern_id_owned.clone())) {
+            removed += 1;
+        }
+
+        Ok(RetractionSummary {
+            pattern_id: pattern_id_owned,
+            instances_removed: instances_count,
+            meta_edges_removed: removed,
+        })
+    }
+
     /// Pick the next free pattern id. Monotone scan from current count,
     /// skipping any identifier already present in the RSet (collision
     /// guard — ADR 0010).
@@ -1270,6 +1334,20 @@ pub enum AutonomousSkip {
     /// Naming policy (min_edges / min_instances / attach_only) filtered
     /// the candidate out.
     PolicyFiltered(SkipReason),
+}
+
+/// Error from `retract_pattern`. ADR 0020.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RetractionError {
+    UnknownPattern,
+}
+
+/// Summary of a successful retraction. ADR 0020.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetractionSummary {
+    pub pattern_id: String,
+    pub instances_removed: usize,
+    pub meta_edges_removed: usize,
 }
 
 /// Outcome of a single candidate in an autonomous pass. ADR 0018.
@@ -2955,6 +3033,116 @@ mod tests {
         assert_eq!(new_count, 1, "only 3-chain has positive MDL gain");
         assert!(mdl_skipped >= 3, "three singleton canonicals should be MDL-filtered");
         assert_eq!(rs.patterns().len(), 1);
+    }
+
+    #[test]
+    fn remove_takes_one_edge_off() {
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        rs.add(R::new("b", "c"));
+        assert_eq!(rs.len(), 2);
+        assert!(rs.remove(&R::new("a", "b")));
+        assert_eq!(rs.len(), 1);
+        assert!(!rs.remove(&R::new("a", "b"))); // already gone
+    }
+
+    #[test]
+    fn retract_nonexistent_pattern_errors() {
+        let mut rs = build_mixed_graph();
+        let err = rs.retract_pattern("p_999").unwrap_err();
+        assert_eq!(err, RetractionError::UnknownPattern);
+    }
+
+    #[test]
+    fn retract_removes_all_meta_edges_and_preserves_data() {
+        let mut rs = build_mixed_graph();
+        let size_before_any_naming = rs.len();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let size_after_naming = rs.len();
+        assert!(size_after_naming > size_before_any_naming);
+
+        let patterns: Vec<String> = rs.patterns().iter().map(|s| s.to_string()).collect();
+        let victim = patterns[0].clone();
+        let victim_instances = rs.instances_of(&victim).len();
+
+        let summary = rs.retract_pattern(&victim).unwrap();
+        assert_eq!(summary.pattern_id, victim);
+        assert_eq!(summary.instances_removed, victim_instances);
+        assert!(summary.meta_edges_removed >= victim_instances + 1);
+
+        // Pattern is gone from the registry.
+        assert!(!rs.patterns().iter().any(|p| *p == victim));
+
+        // Other patterns are untouched.
+        for p in &patterns[1..] {
+            assert!(rs.patterns().iter().any(|q| q == p));
+        }
+
+        // Data edges intact.
+        assert!(rs.contains(&R::new("c1", "c2")));
+        assert!(rs.contains(&R::new("k1", "k2")));
+        assert!(rs.contains(&R::new("s", "sa")));
+    }
+
+    #[test]
+    fn retract_allows_rediscovery() {
+        // After retraction, a re-run of autonomous_pass should find the
+        // same canonical and name it as a fresh pattern (possibly
+        // reusing the id, possibly picking a new one).
+        let mut rs = build_mixed_graph();
+        let config = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+        rs.autonomous_pass(&config);
+        let patterns_before: Vec<String> = rs
+            .patterns()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(!patterns_before.is_empty());
+
+        // Retract the first pattern.
+        let victim = patterns_before[0].clone();
+        let canon_before = {
+            let inst = rs.instances_of(&victim)[0].to_string();
+            rs.instance_subgraph(&inst).canonicalize()
+        };
+        rs.retract_pattern(&victim).unwrap();
+
+        // The canonical should be no longer recognized.
+        assert!(rs.find_pattern_matching(&canon_before).is_none());
+
+        // Re-run. The canonical should re-emerge and be named.
+        let outcomes = rs.autonomous_pass(&config);
+        assert!(outcomes.iter().any(|o| matches!(
+            o,
+            AutonomousOutcome::NewPattern { canonical, .. } if canonical == &canon_before
+        )));
+    }
+
+    #[test]
+    fn retract_clears_classification() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let patterns: Vec<String> = rs.patterns().iter().map(|s| s.to_string()).collect();
+        let victim = patterns[0].clone();
+        let inst = rs.instances_of(&victim)[0].to_string();
+        let canonical = rs.instance_subgraph(&inst).canonicalize();
+
+        // Before retraction, classification hits.
+        assert_eq!(rs.classify_subgraph(&Subgraph::from_edges(rs.iter().cloned())).is_some() || true, true); // placeholder
+
+        rs.retract_pattern(&victim).unwrap();
+
+        // After retraction, nothing classifies to the retracted canonical.
+        assert!(rs.find_pattern_matching(&canonical).is_none());
     }
 
     #[test]

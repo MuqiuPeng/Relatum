@@ -59,3 +59,4 @@ Commit hash(es), file pointers.
 - [0017](0017-representative-refinement.md) — Representative refinement via targeted re-sampling
 - [0018](0018-autonomous-pass.md) — Autonomous pass: compose discover + refine + name to close the abstraction loop
 - [0019](0019-mdl-scoring.md) — MDL-gain scoring (opt-in reusability filter)
+- [0020](0020-pattern-retraction.md) — Pattern retraction (remove named patterns)

@@ -76,8 +76,14 @@ Naming policy includes a **MDL-gain filter** (ADR 0019) — opt-in
 reusability threshold via `NamingPolicy::min_mdl_gain`. Zero-gain
 singletons are automatically excluded when the threshold is set.
 
+Registry is **bidirectional** (ADR 0020): `RSet::retract_pattern`
+removes a named pattern and all of its meta-R while leaving data
+edges intact. Enables experimentation loops (try naming, roll back,
+try different policy).
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
-transfer, pattern retraction.
+transfer, sampling-based `find_instances_of` replacement,
+hierarchical / composed patterns.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.
