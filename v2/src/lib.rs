@@ -981,6 +981,80 @@ impl RSet {
         outcomes
     }
 
+    /// Gradient-descent refinement probe (ADR 0026).
+    ///
+    /// Parameterizes edge selection as sigmoid(w_i) per data edge.
+    /// Objective: `(Σp - k)² + α · Σ (1 - p_j) π(x_j) π(y_j)` where π
+    /// is a soft-participant indicator. Rounds to top-k by probability,
+    /// canonicalizes, accepts if canonical matches target AND clean.
+    /// Returns the original candidate unchanged if no improvement.
+    pub fn gradient_refine_candidate(
+        &self,
+        candidate: &MotifCandidate,
+        config: &GradientRefineConfig,
+    ) -> MotifCandidate {
+        let target = candidate.canonical.clone();
+        let k = target.len();
+        if k == 0 {
+            return candidate.clone();
+        }
+        let data = self.data_edges_sorted();
+        if k > data.len() {
+            return candidate.clone();
+        }
+
+        // Build identifier → edge-indices map.
+        let mut id_to_touching: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, r) in data.iter().enumerate() {
+            id_to_touching.entry(r.x.clone()).or_default().push(i);
+            if r.x != r.y {
+                id_to_touching.entry(r.y.clone()).or_default().push(i);
+            }
+        }
+
+        // Initialize weights from current representative.
+        let rep_edges: HashSet<R> = candidate.representative.edges().cloned().collect();
+        let mut w: Vec<f64> = data
+            .iter()
+            .map(|r| {
+                if rep_edges.contains(r) {
+                    config.init_scale
+                } else {
+                    -config.init_scale
+                }
+            })
+            .collect();
+
+        for _ in 0..config.steps {
+            let (_loss, grad) =
+                compute_gradient_refine(&w, &data, &id_to_touching, k, config.cleanness_weight);
+            for i in 0..w.len() {
+                w[i] -= config.learning_rate * grad[i];
+            }
+        }
+
+        // Round: top-k by sigmoid(w).
+        let mut indexed: Vec<(usize, f64)> = w
+            .iter()
+            .enumerate()
+            .map(|(i, &wi)| (i, sigmoid(wi)))
+            .collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let selected: Vec<R> = indexed.iter().take(k).map(|(i, _)| data[*i].clone()).collect();
+        let refined = Subgraph::from_edges(selected);
+
+        if refined.canonicalize() == target && self.is_clean_subgraph(&refined) {
+            MotifCandidate {
+                canonical: target,
+                representative: refined,
+                sample_frequency: candidate.sample_frequency,
+                score: candidate.score,
+            }
+        } else {
+            candidate.clone()
+        }
+    }
+
     /// Refine a set of motif candidates. ADR 0017.
     ///
     /// For each candidate whose representative is not clean (embedded
@@ -1403,6 +1477,90 @@ fn shares_identifier(a: &R, b: &R) -> bool {
     a.x == b.x || a.x == b.y || a.y == b.x || a.y == b.y
 }
 
+fn sigmoid(x: f64) -> f64 {
+    if x >= 0.0 {
+        1.0 / (1.0 + (-x).exp())
+    } else {
+        let ex = x.exp();
+        ex / (1.0 + ex)
+    }
+}
+
+/// Compute the gradient-refine objective and its gradient.
+/// Objective: (Σp - k)² + α · Σ_j (1 - p_j) · π(x_j) · π(y_j),
+/// where π(v) = sigmoid((Σ p_i over edges touching v) − 0.5).
+/// ADR 0026.
+fn compute_gradient_refine(
+    w: &[f64],
+    data: &[R],
+    id_to_touching: &HashMap<String, Vec<usize>>,
+    k: usize,
+    alpha: f64,
+) -> (f64, Vec<f64>) {
+    let n = w.len();
+    let p: Vec<f64> = w.iter().map(|&wi| sigmoid(wi)).collect();
+    // dp_i/dw_i = p_i (1 - p_i)
+    let dp_dw: Vec<f64> = p.iter().map(|&pi| pi * (1.0 - pi)).collect();
+
+    // Edge-count term.
+    let e_sum: f64 = p.iter().sum();
+    let diff = e_sum - (k as f64);
+    let count_loss = diff * diff;
+    let count_grad_coeff = 2.0 * diff; // factor applied to dp_dw[i]
+
+    // Participant weights: for each identifier v, pre = Σ p_i (touching),
+    // π(v) = sigmoid(pre - 0.5).
+    let mut id_pre: HashMap<String, f64> = HashMap::new();
+    let mut id_pi: HashMap<String, f64> = HashMap::new();
+    for (id, touching) in id_to_touching {
+        let pre: f64 = touching.iter().map(|&i| p[i]).sum();
+        let pi_v = sigmoid(pre - 0.5);
+        id_pre.insert(id.clone(), pre);
+        id_pi.insert(id.clone(), pi_v);
+    }
+
+    // Cleanness term.
+    let mut leak_total = 0.0;
+    let mut leak_grad: Vec<f64> = vec![0.0; n];
+
+    for (j, edge) in data.iter().enumerate() {
+        let px = *id_pi.get(&edge.x).unwrap_or(&0.0);
+        let py = *id_pi.get(&edge.y).unwrap_or(&0.0);
+        let leak_j = (1.0 - p[j]) * px * py;
+        leak_total += leak_j;
+
+        // d(leak_j)/d(w_j) = -dp_dw[j] * px * py (from -p_j term)
+        leak_grad[j] += -dp_dw[j] * px * py;
+
+        // d(leak_j)/d(w_i) via px's dependence on p_i (for i in touching[x])
+        // px = sigmoid(pre_x - 0.5); d(px)/d(p_i) = px*(1-px) for i ∈ touching[x]
+        // Contribution: (1 - p_j) * d(px)/d(w_i) * py
+        let px_slope = px * (1.0 - px);
+        if let Some(touching_x) = id_to_touching.get(&edge.x) {
+            for &i in touching_x {
+                let dpx_dwi = px_slope * dp_dw[i];
+                leak_grad[i] += (1.0 - p[j]) * dpx_dwi * py;
+            }
+        }
+        let py_slope = py * (1.0 - py);
+        if edge.x != edge.y {
+            if let Some(touching_y) = id_to_touching.get(&edge.y) {
+                for &i in touching_y {
+                    let dpy_dwi = py_slope * dp_dw[i];
+                    leak_grad[i] += (1.0 - p[j]) * px * dpy_dwi;
+                }
+            }
+        }
+    }
+
+    let total_loss = count_loss + alpha * leak_total;
+    let mut total_grad: Vec<f64> = (0..n).map(|i| count_grad_coeff * dp_dw[i]).collect();
+    for i in 0..n {
+        total_grad[i] += alpha * leak_grad[i];
+    }
+    (total_loss, total_grad)
+}
+
 /// BFS-style enumeration of connected k-edge subgraphs with canonical-form
 /// match. ADR 0015 `find_instances_of` helper. Dedups edge sets via a
 /// sorted-tuple key so each connected set is visited once, regardless of
@@ -1493,6 +1651,26 @@ pub struct MotifCandidate {
     pub representative: Subgraph,
     pub sample_frequency: usize,
     pub score: f64,
+}
+
+/// Configuration for the gradient-descent refinement probe. ADR 0026.
+#[derive(Debug, Clone)]
+pub struct GradientRefineConfig {
+    pub steps: usize,
+    pub learning_rate: f64,
+    pub cleanness_weight: f64,
+    pub init_scale: f64,
+}
+
+impl Default for GradientRefineConfig {
+    fn default() -> Self {
+        GradientRefineConfig {
+            steps: 300,
+            learning_rate: 0.5,
+            cleanness_weight: 1.0,
+            init_scale: 3.0,
+        }
+    }
 }
 
 /// Configuration for sampling-based `sample_instances_of`. ADR 0024.
@@ -3724,6 +3902,70 @@ mod tests {
             has_meta_candidate,
             "flag-on probe should surface at least one candidate touching meta-R"
         );
+    }
+
+    #[test]
+    fn gradient_refine_noop_on_clean_candidate() {
+        let rs = build_mixed_graph();
+        let rep = Subgraph::from_edges([R::new("c1", "c2"), R::new("c2", "c3")]);
+        let canon = rep.canonicalize();
+        let input = MotifCandidate {
+            canonical: canon,
+            representative: rep.clone(),
+            sample_frequency: 1,
+            score: 1.0,
+        };
+        let out = rs.gradient_refine_candidate(&input, &GradientRefineConfig::default());
+        // Output is clean (input was clean); canonical unchanged.
+        assert!(rs.is_clean_subgraph(&out.representative));
+        assert_eq!(out.canonical, input.canonical);
+    }
+
+    #[test]
+    fn gradient_refine_produces_valid_output_if_any() {
+        // If the refine returns a different representative, it must at
+        // least be clean and match the target canonical — guaranteed by
+        // the accept-only-on-improvement branch.
+        let rs = build_mixed_graph();
+        let embedded = Subgraph::from_edges([R::new("k1", "k2"), R::new("k3", "k1")]);
+        let canon = embedded.canonicalize();
+        let input = MotifCandidate {
+            canonical: canon.clone(),
+            representative: embedded.clone(),
+            sample_frequency: 1,
+            score: 1.0,
+        };
+        let out = rs.gradient_refine_candidate(&input, &GradientRefineConfig::default());
+        assert_eq!(out.canonical, canon);
+        // Either the output is the original embedded rep, or it's a
+        // clean alternative. Both are valid.
+        let is_original = out.representative == embedded;
+        let is_clean = rs.is_clean_subgraph(&out.representative);
+        assert!(is_original || is_clean);
+    }
+
+    #[test]
+    fn gradient_refine_runs_without_panic_on_various_inputs() {
+        let rs = build_mixed_graph();
+        // Empty canonical
+        let empty = MotifCandidate {
+            canonical: vec![],
+            representative: Subgraph::new(),
+            sample_frequency: 0,
+            score: 0.0,
+        };
+        let _ = rs.gradient_refine_candidate(&empty, &GradientRefineConfig::default());
+
+        // Target too large
+        let too_big_target: CanonicalForm =
+            (0..100).map(|i| (i, (i + 1) % 100)).collect();
+        let placeholder = MotifCandidate {
+            canonical: too_big_target,
+            representative: Subgraph::new(),
+            sample_frequency: 0,
+            score: 0.0,
+        };
+        let _ = rs.gradient_refine_candidate(&placeholder, &GradientRefineConfig::default());
     }
 
     #[test]

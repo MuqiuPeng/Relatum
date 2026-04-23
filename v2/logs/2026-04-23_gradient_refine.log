@@ -1,0 +1,155 @@
+Date: 2026-04-23
+Descriptor: gradient_refine (ADR 0026 probe)
+Purpose:
+    Test whether gradient descent over a continuous relaxation of
+    edge selection can escape a local minimum that random resample
+    (ADR 0017) does escape: a 2-chain representative embedded in a
+    3-cycle, with a clean 2-chain available elsewhere in the data.
+
+Mechanism version:
+    ADR 0026 (GradientRefineConfig, gradient_refine_candidate,
+    sigmoid-gated continuous relaxation, analytical gradient).
+    Runner: v2/examples/gradient_refine.rs.
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Input (embedded 2-chain inside 3-cycle) ===
+  canonical: [(1, 2), (2, 0)]
+  representative: ["R(k1,k2)", "R(k3,k1)"]  clean=false
+
+=== ADR 0017 random refine ===
+  representative: ["R(c2,c3)", "R(c3,c4)"]  clean=true
+
+=== ADR 0026 gradient refine — default (steps=300, lr=0.5, α=1.0) ===
+  representative: ["R(k1,k2)", "R(k3,k1)"]  clean=false  canonical_match=true
+
+=== ADR 0026 gradient refine — heavier cleanness weight (α=5.0) ===
+  representative: ["R(k1,k2)", "R(k3,k1)"]  clean=false  canonical_match=true
+
+=== ADR 0026 gradient refine — more steps (1000) ===
+  representative: ["R(k1,k2)", "R(k3,k1)"]  clean=false  canonical_match=true
+
+=== ADR 0026 gradient refine — low init_scale (0.5, softer start) ===
+  representative: ["R(k1,k2)", "R(k3,k1)"]  clean=false  canonical_match=true
+
+====================================================================
+VERDICT — HONEST
+====================================================================
+
+On the canonical hard case, **gradient descent stays stuck at the
+embedded local minimum under every configuration tried.** Random
+re-sample (ADR 0017) escapes to a clean 2-chain at `{c2, c3, c4}`.
+
+====================================================================
+WHY IT FAILS (ANALYSIS)
+====================================================================
+
+The gradient landscape around the initialization looks like this:
+
+- Initial state: p_i ≈ 0.95 for the two embedded edges
+  `R(k1,k2)` and `R(k3,k1)`; p_i ≈ 0.05 for all others.
+- Edge-count loss `(Σp - k)²` is small (≈ 0.01) because Σp ≈ 1.9
+  and k = 2.
+- Cleanness loss: the third cycle edge `R(k2,k3)` has (1 - p) ≈
+  0.95 and both its endpoints are "participants"
+  (π(k2), π(k3) are high because the embedded edges touch them).
+  Leak term `leak_j = 0.95 * π(k2) * π(k3) ≈ 0.6`.
+
+Gradient options at this point:
+1. Increase p of the third cycle edge → reduces leak term (because
+   `(1-p_j)` drops). But this raises edge count Σp above k → edge-
+   count loss increases.
+2. Decrease p of embedded edges → reduces π(k2) and π(k3) → reduces
+   leak. But Σp drops → edge-count loss rises.
+3. Increase p of a DISTANT edge, e.g., `R(c2,c3)`. Gradient
+   magnitude is tiny here because sigmoid at p ≈ 0.05 gives very
+   small p(1-p) ≈ 0.05, so all partial derivatives through these
+   edges are attenuated.
+
+Options 1 and 2 are "retreat into cycle." Option 3 is "escape to
+chain" but gradient is vanishing there. The optimizer rationally
+picks a middle ground that doesn't change the top-k rounding.
+
+After rounding: top-2 by p_i is still the original pair. Canonical
+matches, but cleanness fails. Accept-only-on-improvement branch
+rejects; original returned.
+
+**This is the vanishing-gradient / poor-initialization failure
+mode, standard in continuous optimization.**
+
+====================================================================
+IS THIS FATAL FOR GRADIENT DESCENT AS A TECHNIQUE?
+====================================================================
+
+Not universally. What it does tell us:
+
+- **Naive gradient descent from "near the current answer"
+  initialization cannot escape structural local minima.** This is a
+  well-known limit of local continuous optimization.
+- The right comparators are techniques that add *jumps* to
+  gradient descent: basin hopping, simulated annealing, momentum
+  with high temperature, stochastic gradient with periodic
+  restarts. Random re-sample (ADR 0017) is essentially a
+  zero-gradient, all-jumps strategy — and on this problem, that's
+  the right trade-off.
+- **For problems where "good" answers are close to the starting
+  point**, gradient could still help. For example, refining a
+  candidate that's already almost clean but has a suboptimal edge
+  pick; gradient could nudge toward the nearby clean alternative.
+  This probe does not demonstrate that use case but it remains
+  plausible.
+
+====================================================================
+WHAT WORKED, WHAT DID NOT
+====================================================================
+
+Worked:
+  - The continuous relaxation (sigmoid-gated edge selection).
+  - The differentiable cleanness objective
+    `(1 - p_j) · π(x_j) · π(y_j)`.
+  - Analytical gradient (no autodiff crate, no numerical errors).
+  - The accept-only-on-improvement guard — the refine never
+    returns worse output than input.
+
+Did not work:
+  - Escaping local minima from an initialization that pre-commits
+    to the non-clean representative.
+  - Any of the four tried hyperparameter settings (defaults, heavy
+    α, more steps, soft init).
+
+====================================================================
+DECISION — WHETHER TO PROMOTE
+====================================================================
+
+**Do not promote gradient_refine_candidate to production.** On the
+one concrete hard case we targeted, it does not help. Random
+re-sample handles the hard case fine and is already shipped as
+ADR 0017.
+
+The probe is left in the codebase as a reference implementation
+of:
+  - Sigmoid-gated edge relaxation.
+  - Analytical gradient over a cleanness-penalty objective.
+  - Accept-only-on-improvement discretization.
+
+Anyone who later wants to revisit (e.g., with momentum, restart,
+or a different objective) has a working starting point.
+
+====================================================================
+RESIDUAL HYPOTHESIS
+====================================================================
+
+The "continuous optimization of structural choices" idea is not
+dead — it is just too narrow in this form to beat random re-sample
+on structurally-remote local minima. If future v2 work deals with
+**many interdependent small continuous choices** (e.g., pattern
+scoring weights, relevance thresholds), gradient descent in those
+domains could be very useful. It is the *discrete structural
+choices* where it stumbles.
+
+## DECISION / NEXT
+
+ADR 0026 probe recorded with negative verdict on the targeted
+case. No API change, no removal. Moving on.
