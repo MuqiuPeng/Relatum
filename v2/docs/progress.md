@@ -708,3 +708,19 @@ tree canonicals skip with `NoCleanInstance` because B has neither.
 
 Decision: [0023-cross-graph-transfer](decisions/0023-cross-graph-transfer.md).
 Log: [logs/2026-04-23_cross_graph_transfer.log](../logs/2026-04-23_cross_graph_transfer.log).
+
+### Sampling-based `sample_instances_of` (ADR 0024)
+Philosophical-alignment companion to `find_instances_of`. Uses
+`sample_connected_subgraph` random walks, filters to canonical-
+matched clean subgraphs, dedups by participant set. Never
+over-returns; may under-return. Deterministic under fixed seed.
+`find_instances_of` unchanged — callers needing exhaustiveness
+(attach, transfer, MDL) keep it. 4 new tests; 120 total pass.
+
+On the mixed graph, at N=50 the sampled count equals exhaustive
+for all six target canonicals (2-chain, 2-star, 3-chain, 3-cycle,
+3-star, 3-tree). Small graphs saturate quickly; large-graph
+demonstrations of under-counting not needed for β.
+
+Decision: [0024-sample-instances](decisions/0024-sample-instances.md).
+Log: [logs/2026-04-23_sample_instances.log](../logs/2026-04-23_sample_instances.log).

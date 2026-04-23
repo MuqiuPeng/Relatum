@@ -736,6 +736,54 @@ impl RSet {
         induced == sg.len()
     }
 
+    /// Sampling variant of `find_instances_of`. Runs `sample_count`
+    /// random walks of length `target.len()` over data edges, keeps
+    /// those whose canonical matches `target` and which are clean,
+    /// dedups by participant set. Never over-returns; may
+    /// under-return. Deterministic under `rng_seed`. ADR 0024.
+    pub fn sample_instances_of(
+        &self,
+        target: &CanonicalForm,
+        config: &SamplingMatchConfig,
+    ) -> Vec<Subgraph> {
+        let k = target.len();
+        if k == 0 || config.sample_count == 0 {
+            return Vec::new();
+        }
+        let data = self.data_edges_sorted();
+        if k > data.len() {
+            return Vec::new();
+        }
+
+        let mut rng_state = if config.rng_seed == 0 {
+            0x9E3779B97F4A7C15
+        } else {
+            config.rng_seed
+        };
+        let mut seen_participants: HashSet<Vec<String>> = HashSet::new();
+        let mut results: Vec<Subgraph> = Vec::new();
+
+        for _ in 0..config.sample_count {
+            let Some(sg) = sample_connected_subgraph(&data, k, &mut rng_state) else {
+                continue;
+            };
+            if sg.canonicalize() != *target {
+                continue;
+            }
+            if !self.is_clean_subgraph(&sg) {
+                continue;
+            }
+            // Dedup by participant set (sorted for determinism).
+            let mut parts: Vec<String> =
+                sg.identifiers().into_iter().map(str::to_owned).collect();
+            parts.sort();
+            if seen_participants.insert(parts) {
+                results.push(sg);
+            }
+        }
+        results
+    }
+
     /// All named canonical forms in this RSet, recovered via each
     /// pattern's first instance. ADR 0023. Canonicals are portable
     /// (identifier-free) — applying the library to a different RSet
@@ -1427,6 +1475,13 @@ pub struct MotifCandidate {
     pub representative: Subgraph,
     pub sample_frequency: usize,
     pub score: f64,
+}
+
+/// Configuration for sampling-based `sample_instances_of`. ADR 0024.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SamplingMatchConfig {
+    pub sample_count: usize,
+    pub rng_seed: u64,
 }
 
 /// Configuration for representative refinement. ADR 0017.
@@ -3515,6 +3570,70 @@ mod tests {
             .all(|o| matches!(o, AutonomousOutcome::Existing { .. })));
         assert_eq!(target.len(), size_after_first);
         assert_eq!(target.patterns().len(), patterns_after_first);
+    }
+
+    #[test]
+    fn sample_instances_empty_canonical_returns_empty() {
+        let rs = build_mixed_graph();
+        let got = rs.sample_instances_of(
+            &vec![],
+            &SamplingMatchConfig { sample_count: 100, rng_seed: 1 },
+        );
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn sample_instances_with_no_matches_returns_empty() {
+        let rs = build_mixed_graph();
+        // A canonical the graph does not contain.
+        let impossible: CanonicalForm = vec![(5, 5), (5, 5), (5, 5), (5, 5)];
+        let got = rs.sample_instances_of(
+            &impossible,
+            &SamplingMatchConfig { sample_count: 100, rng_seed: 1 },
+        );
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn sample_instances_deterministic_under_fixed_seed() {
+        let rs = build_mixed_graph();
+        let target: CanonicalForm = vec![(1, 2), (2, 0)];
+        let config = SamplingMatchConfig { sample_count: 100, rng_seed: 42 };
+        let a = rs.sample_instances_of(&target, &config);
+        let b = rs.sample_instances_of(&target, &config);
+        assert_eq!(a.len(), b.len());
+        // Each entry matches by participant set (sort-compare)
+        let key = |v: &[Subgraph]| -> Vec<Vec<String>> {
+            let mut out: Vec<Vec<String>> = v
+                .iter()
+                .map(|s| {
+                    let mut p: Vec<String> =
+                        s.identifiers().into_iter().map(str::to_owned).collect();
+                    p.sort();
+                    p
+                })
+                .collect();
+            out.sort();
+            out
+        };
+        assert_eq!(key(&a), key(&b));
+    }
+
+    #[test]
+    fn sample_instances_approximates_find_instances_with_enough_budget() {
+        let rs = build_mixed_graph();
+        let target: CanonicalForm = vec![(1, 2), (2, 0)]; // 2-chain
+        let exhaustive = rs.find_instances_of(&target);
+        // Generous budget — small graph, sampling should hit all.
+        let sampled = rs.sample_instances_of(
+            &target,
+            &SamplingMatchConfig { sample_count: 500, rng_seed: 7 },
+        );
+        // Never over-returns.
+        assert!(sampled.len() <= exhaustive.len());
+        // With 500 samples on a 14-edge graph, expect all 4 clean
+        // 2-chain instances to be hit (verified empirically).
+        assert_eq!(sampled.len(), exhaustive.len());
     }
 
     #[test]

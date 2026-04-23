@@ -1,0 +1,71 @@
+Date: 2026-04-23
+Descriptor: sample_instances (validates ADR 0024)
+Purpose:
+    Confirm sampling-based `sample_instances_of` agrees with
+    `find_instances_of` on small graphs where sampling is effectively
+    complete, and that its guarantees (never over-returns, may
+    under-return) are correctly upheld.
+
+Mechanism version:
+    ADR 0024 (RSet::sample_instances_of, SamplingMatchConfig).
+    Runner: v2/examples/sample_instances.rs.
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+target               exact       N=50      N=200     N=1000
+2-chain                4          4          4          4
+2-star                 4          4          4          4
+3-chain                2          2          2          2
+3-cycle                1          1          1          1
+3-star                 1          1          1          1
+3-tree                 1          1          1          1
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **At N ≥ 50 on a 14-edge graph, sampling matches exhaustive.**
+   Every target at every budget reaches the exact instance count.
+   This is expected: on a small graph, even a modest sample budget
+   saturates the space of connected k-subgraphs.
+
+2. **No over-returns.** For every target, every budget, the sampled
+   count is ≤ exact. Correctness guarantee upheld. The ADR's
+   "never over-returns; may under-return" contract holds.
+
+3. **Convergence is rapid at small scale.** The demo does not show
+   under-counting because the graph is small. To see under-
+   counting the user would run on a larger graph (hundreds of
+   edges) with low sample budgets (< 20) — not demonstrated here
+   because the unit cost is high and β doesn't need it.
+
+4. **Philosophical alignment.** `sample_instances_of` is the first
+   matching primitive that does not enumerate. For callers where
+   exhaustive is unaffordable, this gives a v2_search_mode-aligned
+   alternative without regressing existing correctness-sensitive
+   users of `find_instances_of`.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Large-RSet matching at bounded cost.
+  - Sampling-based frequency estimation (count `.len()` of result).
+  - A non-enumeration path for any downstream that accepts
+    approximate counts (e.g., a future MDL variant that uses
+    sampled counts).
+
+Does NOT:
+  - Replace `find_instances_of`. Attach-only correctness and
+    `canonical_library` transfer still rely on exhaustive matching.
+  - Provide theoretical completeness guarantees. Users wanting
+    completeness bumps `sample_count` empirically.
+
+## DECISION / NEXT
+
+ADR 0024 validated. Proceeding to ADR 0025 (hierarchical /
+composed patterns — stretch goal; may ship a minimal shape-only
+version).
