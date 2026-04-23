@@ -229,3 +229,41 @@ first variant. Multi-start flips the answer from "useless" to
 right methodological move. Future probes should include
 multi-start / random restart variants by default before declaring
 a technique dead.
+
+====================================================================
+FINAL RESOLUTION — IMPLEMENTATION REMOVED
+====================================================================
+
+User asked the follow-up: "引入这个变体带来了什么价值" — what value
+did the multi-start variant actually bring?
+
+Honest answer on v2's scale:
+- Methodological value: confirmed that single-start failure was
+  init-driven, not fundamental (saved into memory as
+  `v2_probe_methodology`).
+- Reference-implementation value: zero unless the hypothetical
+  "large graph, low random-walk hit rate" scenario materializes,
+  which this probe did not construct or test.
+- Practical value: zero on tested cases. Random re-sample is ~45×
+  cheaper for the same result.
+
+Under v2's minimum-first policy (no unused primitives), the
+gradient refinement implementation was removed:
+- `GradientRefineConfig`, `gradient_refine_candidate`,
+  `gradient_refine_from_init`, `gradient_refine_from_uniform`,
+  `gradient_refine_multistart`, `sigmoid`, `compute_gradient_refine`
+  deleted from `lib.rs`.
+- `examples/gradient_refine.rs` deleted.
+- Associated unit tests deleted.
+- Test count 127 → 122.
+
+What persists:
+- This log (entire history above).
+- ADR 0026 (decision, alternatives, consequences, both updates).
+- Memory entry `v2_probe_methodology.md`.
+- Git commit `4fc8b67` with the full working implementation,
+  reachable if someone revisits the direction.
+
+Net value delivered by the probe:
+- **Strong**: the methodological rule and the memory lock-in.
+- **Weak**: the code itself, now archived in git not carried.

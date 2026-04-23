@@ -157,3 +157,35 @@ codebase:
 
 Random re-sample (ADR 0017) remains the default for production
 refinement pipelines.
+
+## Second update — implementation removed per minimum-first policy
+
+After the revised verdict, user asked "what value did this actually
+bring" — honest answer: no demonstrated production value, ~45× more
+expensive than random re-sample on β-scale graphs, and no use case
+in the current pipeline exercises it. Under v2's minimum-first
+discipline, the primitives were removed from the code:
+
+- `GradientRefineConfig`, `gradient_refine_candidate`,
+  `gradient_refine_from_init`, `gradient_refine_from_uniform`,
+  `gradient_refine_multistart`, and the private helpers `sigmoid`
+  and `compute_gradient_refine` were removed from `v2/src/lib.rs`.
+- `v2/examples/gradient_refine.rs` was deleted.
+- Unit tests for the above were removed.
+
+What stays:
+- This ADR with the decision / algorithm / verdict.
+- The experiment log `2026-04-23_gradient_refine.log` with all
+  observations including the multi-start revised verdict.
+- The memory entry `v2_probe_methodology.md` with the
+  methodological lesson (run multi-start before declaring a
+  technique dead).
+- Git history at commit `4fc8b67` contains the reference
+  implementation; anyone revisiting this direction can start
+  from there rather than rewriting.
+
+Rationale: v2's "only what earns its place" posture (practices.md).
+An unused primitive that serves no pipeline is deadweight; the
+ADR + log + memory carry forward all the design value without the
+code cost. Reinstating the implementation when a concrete use case
+emerges is a small paste-back from git.

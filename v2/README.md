@@ -81,6 +81,12 @@ removes a named pattern and all of its meta-R while leaving data
 edges intact. Enables experimentation loops (try naming, roll back,
 try different policy).
 
+ADR 0026 probed gradient-descent refinement (sigmoid-gated edge
+selection + analytical gradient + multi-start). Verdict: usable
+but not cheaper than random re-sample on β-scale graphs;
+implementation was removed per minimum-first, ADR and log retained
+as record.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,

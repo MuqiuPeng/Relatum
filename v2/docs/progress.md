@@ -747,31 +747,33 @@ Decision: [0025-hierarchical-discovery-probe](decisions/0025-hierarchical-discov
 Log: [logs/2026-04-23_hierarchical_probe.log](../logs/2026-04-23_hierarchical_probe.log).
 
 ### Gradient-descent refinement probe (ADR 0026)
-User asked whether continuous quantization + gradient descent could
-help. Only "decision relaxation" (option C) survives the commitment
-check. Added `gradient_refine_candidate` with analytical gradient
-over a sigmoid-gated edge selection, objective combining
-edge-count target and a differentiable cleanness penalty.
+Three passes of investigation:
 
-**Initial verdict (premature): negative.** Single-start from the
-current representative stuck in local minimum across 4 config
-variants.
+1. **Initial probe (negative).** Single-start gradient descent from
+   the current representative stuck in a local minimum across 4
+   config variants. Concluded "don't promote."
+2. **Follow-up probes (revised: usable).** Added
+   `gradient_refine_from_uniform` (stuck) and
+   `gradient_refine_multistart` (finds clean chain at 30+ random
+   starts). Revised verdict: usable with budget, just ~45× more
+   expensive than random re-sample (ADR 0017) on β-scale graphs.
+   Methodological lesson saved to memory:
+   `v2_probe_methodology.md` — run multi-start variants before
+   declaring a technique dead.
+3. **Value assessment & removal.** User asked "what did this bring"
+   — honest answer: methodological value is real (saved to memory),
+   code value on β-scale graphs is zero. Under minimum-first,
+   removed the implementation. `GradientRefineConfig`, the four
+   `gradient_refine_*` methods, the sigmoid / gradient helpers,
+   the example, and the five unit tests all deleted. Test count
+   127 → 122.
 
-**Revised verdict after follow-ups** (user asked to confirm): two
-new primitives exposed —
-- `gradient_refine_from_uniform` (w = 0 init, deterministic): also
-  stuck on the hard case.
-- `gradient_refine_multistart(n_starts, seed)`: finds a clean
-  2-chain at n_starts = 30 on the embedded-in-cycle hard case.
-
-Gradient descent is usable with enough random restarts. It is not
-clearly cheaper than random re-sample on small graphs (~9000
-gradient ops vs ~200 random walks for the hard case), but it is
-not useless either. Kept as alternative primitive. Random
-re-sample (ADR 0017) stays the default. 127 tests pass total.
-
-Methodological note from the update: the "first negative result is
-final" reflex was wrong here; multi-start changed the answer.
+What persists:
+- ADR 0026 (three-phase history inside).
+- Experiment log with all observations.
+- Memory entry `v2_probe_methodology.md`.
+- Git commit `4fc8b67` contains the working reference
+  implementation if anyone revisits.
 
 Decision: [0026-gradient-refine-probe](decisions/0026-gradient-refine-probe.md).
 Log: [logs/2026-04-23_gradient_refine.log](../logs/2026-04-23_gradient_refine.log).
