@@ -1,0 +1,185 @@
+Date: 2026-04-23
+Descriptor: edge_equivalence (validates ADR 0005)
+Purpose:
+    Run edge-level (R-instance) equivalence classification on the same six
+    canonical graphs used for ADR 0004's identifier-level demo. Check that
+    the predicted class counts match the oracle in ADR 0005. Note any
+    surprises worth logging for the next layer's design.
+
+Mechanism version:
+    ADR 0005 (RSignature = pair of endpoint 0-hop signatures).
+    Source: v2/src/lib.rs at the commit implementing 0005.
+    Runner: v2/examples/edge_equivalence.rs.
+
+Command:
+    cargo run --example edge_equivalence
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== forward chain a1 -> a2 -> a3 -> a4 -> a5 ===
+R-equivalence classes (3):
+  class (out=1 in=0 LeftOnly) -> (out=1 in=1 Both):
+    R(a1, a2)
+  class (out=1 in=1 Both) -> (out=0 in=1 RightOnly):
+    R(a4, a5)
+  class (out=1 in=1 Both) -> (out=1 in=1 Both):
+    R(a2, a3)
+    R(a3, a4)
+
+=== bidirectional chain over {a1..a4} ===
+R-equivalence classes (3):
+  class (out=1 in=1 Both) -> (out=2 in=2 Both):
+    R(a1, a2)
+    R(a4, a3)
+  class (out=2 in=2 Both) -> (out=1 in=1 Both):
+    R(a2, a1)
+    R(a3, a4)
+  class (out=2 in=2 Both) -> (out=2 in=2 Both):
+    R(a2, a3)
+    R(a3, a2)
+
+=== 3-cycle a -> b -> c -> a ===
+R-equivalence classes (1):
+  class (out=1 in=1 Both) -> (out=1 in=1 Both):
+    R(a, b)
+    R(b, c)
+    R(c, a)
+
+=== out-star: hub -> {a, b, c} ===
+R-equivalence classes (1):
+  class (out=3 in=0 LeftOnly) -> (out=0 in=1 RightOnly):
+    R(hub, a)
+    R(hub, b)
+    R(hub, c)
+
+=== in-star: {a, b, c} -> sink ===
+R-equivalence classes (1):
+  class (out=1 in=0 LeftOnly) -> (out=0 in=3 RightOnly):
+    R(a, sink)
+    R(b, sink)
+    R(c, sink)
+
+=== two disjoint chains ===
+R-equivalence classes (2):
+  class (out=1 in=0 LeftOnly) -> (out=1 in=1 Both):
+    R(p1, p2)
+    R(q1, q2)
+  class (out=1 in=1 Both) -> (out=0 in=1 RightOnly):
+    R(p2, p3)
+    R(q2, q3)
+
+====================================================================
+ORACLE vs OBSERVED
+====================================================================
+
+ADR 0005 predictions for each graph (classes / non-trivial merges):
+
+  5-chain               3 classes, middle-middle class has 2 edges      ✓
+  bidirectional (n=4)   3 classes, each with 2 edges                    ✓
+  3-cycle               1 class with 3 edges                            ✓
+  out-star (3 spokes)   1 class with 3 edges                            ✓
+  in-star (3 spokes)    1 class with 3 edges                            ✓
+  disjoint 2×3-chain    2 classes, each with 2 edges (cross-component)  ✓
+
+All six predictions match. ADR 0005 is validated on this suite.
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. The first appearance of "repetition inside a single graph."
+   Identifier-level equivalence (ADR 0004) showed repetition only for
+   graphs with inherent symmetry (cycles, stars). The 5-chain's three
+   middle nodes also collapsed, but the edges between them did not —
+   until now. Edge-level signatures produce the {R(a2,a3), R(a3,a4)}
+   merge, which is the first case where a *single* graph contributes
+   a multi-member class from the "interior" rather than from pure
+   symmetry. This is the signal a later pattern-mining layer can use:
+   "when |class| > 1, there is repetition; repetition is the footprint
+   of a recurring local structure."
+
+2. Direction is preserved, as required.
+   The bidirectional chain produces three distinct classes:
+     out-from-end  = (Both-1-1, Both-2-2)
+     in-to-end     = (Both-2-2, Both-1-1)
+     middle-middle = (Both-2-2, Both-2-2)
+   The first two have the same endpoint-profile *multiset* but differ in
+   order, which the ordered pair preserves. Commitment 2 is intact.
+
+3. Stars become "one edge type repeated k times."
+   Both the out-star and in-star collapse to a single class containing
+   every spoke. The whole "star-ness" is reducible (at this layer) to
+   "many copies of one edge type." A compound-pattern mechanism could
+   pick this up as: "star of size k = k instances of edge class C, all
+   sharing endpoint x with signature σ_hub and disjoint endpoints with
+   signature σ_leaf." This hints at how compound pattern *definitions*
+   might be built.
+
+4. Disjoint unions merge for edges too.
+   The two disjoint 3-chains produce exactly the same class structure
+   as one 3-chain would, but with each class populated twice. This
+   keeps the "same structural role across locations" property consistent
+   with the identifier layer, which is good for downstream mining.
+
+5. The 3-cycle is indistinguishable from "three copies of a single
+   edge type" on this layer.
+   The cycle and an out-star share no structural similarity, yet each
+   collapses to a one-class situation at this layer. The difference is
+   visible only when we consider *which* nodes the edges connect — i.e.,
+   when we look at *co-occurrence* of edge instances at shared
+   identifiers. This is a concrete motivation for the next step.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Edge-level role clustering — foundational for mining.
+  - "Repetition inside a single graph" becomes visible as class size > 1.
+  - Stars and chains have different class-size signatures (star: one
+    big class; chain: one small merge class between two singletons),
+    providing a coarse graph-level fingerprint even before pattern
+    naming.
+
+Does NOT enable (yet):
+  - Naming the compound pattern as a first-class unit. Per commitment 3
+    this must happen as a meta-R instance, but we have no mechanism
+    yet to *create* that meta-R.
+  - Distinguishing "one long chain" from "many short ones sharing no
+    identifiers" — both produce the same edge-class structure (modulo
+    class sizes). Needs co-occurrence / locality.
+  - Distinguishing cycles from stars at this layer — both collapse to
+    one class. Needs the locality signal above.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0005 edge-level signature is sufficient for the immediate purpose:
+it produces the "repetition in a single graph" signal that pattern
+mining needs.
+
+Next layer candidates, roughly in increasing ambition:
+
+  (α) Locality / co-occurrence structure:
+      "Which edge classes share an identifier?" An adjacency over edge
+      classes, naturally derivable from the existing machinery. Would
+      distinguish cycle from star (cycle: same class chains end-to-end
+      via shared identifiers; star: all edges share exactly the hub).
+
+  (β) Compound pattern as a named meta-R instance (commitment 3):
+      A pattern P is a new identifier in the R space. The pattern's
+      "instances" are encoded by new R instances, e.g., R(P, R_i) for
+      each member R_i. Open: what shape connects the pattern to its
+      structural definition (the member-edge-class vocabulary).
+
+  (γ) Self-drive: what triggers trying to name a pattern?
+      Candidates: class size exceeding a threshold; a locality cluster
+      that repeats; a compression (MDL) gain from replacing raw edges
+      with a single pattern token.
+
+Recommendation: go with (α) first. It is cheap, completes the
+"locality" axis that this ADR identified as missing, and provides the
+raw structural signal (β) will need to attach names to.

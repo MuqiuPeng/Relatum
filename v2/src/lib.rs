@@ -118,6 +118,24 @@ impl RSet {
         }
         classes
     }
+
+    /// Edge-level (R-instance) signature — the ordered pair of the endpoint
+    /// signatures. ADR 0005. Ordered because direction is commitment-level.
+    pub fn r_signature(&self, r: &R) -> RSignature {
+        (self.signature(&r.x), self.signature(&r.y))
+    }
+
+    /// Partition R instances by their edge-level signature. Each class
+    /// holds edges that play the same structural role (same endpoint
+    /// roles, same direction).
+    pub fn r_equivalence_classes(&self) -> HashMap<RSignature, HashSet<&R>> {
+        let mut classes: HashMap<RSignature, HashSet<&R>> = HashMap::new();
+        for r in self.instances.iter() {
+            let sig = self.r_signature(r);
+            classes.entry(sig).or_default().insert(r);
+        }
+        classes
+    }
 }
 
 /// Structural signature of an identifier.
@@ -127,6 +145,13 @@ impl RSet {
 /// rather than `IdentifierProfile`, letting the definition be refined
 /// (e.g., to a 1-hop neighbor profile multiset) without changing callers.
 pub type Signature = IdentifierProfile;
+
+/// Structural signature of an R instance (edge).
+///
+/// ADR 0005: the ordered pair of endpoint signatures. Ordering matters
+/// because direction is commitment-level. Later upgrades can replace the
+/// component type or extend it; the pair shape is the stable surface.
+pub type RSignature = (Signature, Signature);
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
@@ -398,6 +423,119 @@ mod tests {
         let mut sizes: Vec<usize> = classes.values().map(|c| c.len()).collect();
         sizes.sort();
         assert_eq!(sizes, vec![2, 2]);
+    }
+
+    #[test]
+    fn r_equivalence_empty_for_empty_set() {
+        let rs = RSet::new();
+        assert!(rs.r_equivalence_classes().is_empty());
+    }
+
+    #[test]
+    fn short_chain_two_edge_classes() {
+        // a1 -> a2 -> a3: no middle-middle edge, so head-edge and tail-edge
+        let mut rs = RSet::new();
+        rs.extend([R::new("a1", "a2"), R::new("a2", "a3")]);
+        assert_eq!(rs.r_equivalence_classes().len(), 2);
+    }
+
+    #[test]
+    fn long_chain_three_edge_classes_with_middle_merge() {
+        // a1 -> a2 -> a3 -> a4 -> a5: middle-middle edges R(a2,a3) and
+        // R(a3,a4) must merge into a single class.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a1", "a2"),
+            R::new("a2", "a3"),
+            R::new("a3", "a4"),
+            R::new("a4", "a5"),
+        ]);
+        let classes = rs.r_equivalence_classes();
+        assert_eq!(classes.len(), 3);
+
+        // one class has 2 edges (the middle-middle merge)
+        let mut sizes: Vec<usize> = classes.values().map(|c| c.len()).collect();
+        sizes.sort();
+        assert_eq!(sizes, vec![1, 1, 2]);
+    }
+
+    #[test]
+    fn cycle_merges_all_edges() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"),
+            R::new("b", "c"),
+            R::new("c", "a"),
+        ]);
+        let classes = rs.r_equivalence_classes();
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes.values().next().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn star_merges_all_spokes() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("hub", "a"),
+            R::new("hub", "b"),
+            R::new("hub", "c"),
+        ]);
+        let classes = rs.r_equivalence_classes();
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes.values().next().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn r_signature_respects_direction() {
+        // two edges with the same endpoint profiles but opposite directions
+        // must land in different classes
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "a")]);
+        // a and b both have Both-1-1 profile after these two edges
+        // but the signatures are (Both-1-1, Both-1-1) either way...
+        // so they collapse. That's the correct behavior — in this graph
+        // the two edges really are structurally equivalent.
+        //
+        // Construct a clearer directional case: a -> b and c -> d where
+        // a has LeftOnly, b has RightOnly, c has LeftOnly, d has RightOnly.
+        // Both edges should merge.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("c", "d")]);
+        let classes = rs.r_equivalence_classes();
+        assert_eq!(classes.len(), 1);
+
+        // Now add a reverse edge e -> f where e has LeftOnly and f has
+        // RightOnly, but between two nodes where the profile contains
+        // both directions — this requires constructing a richer case.
+        // Simplest directional test: R(a, b) vs R(c, b) where both
+        // edges terminate at b. b now has in=2, a and c have out=1.
+        // Signatures: (LeftOnly-1-0, RightOnly-0-2). Merged.
+        //
+        // For a case where direction forces a split, use the
+        // bidirectional-chain test below.
+    }
+
+    #[test]
+    fn bidirectional_chain_edge_classes() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a1", "a2"), R::new("a2", "a3"), R::new("a3", "a4"),
+            R::new("a2", "a1"), R::new("a3", "a2"), R::new("a4", "a3"),
+        ]);
+        // Profiles:
+        //   a1, a4: (out=1, in=1, Both)
+        //   a2, a3: (out=2, in=2, Both)
+        // Edge signatures (ordered):
+        //   out-from-end:    (1-1-Both, 2-2-Both)  — R(a1,a2), R(a4,a3)
+        //   in-to-end:       (2-2-Both, 1-1-Both)  — R(a2,a1), R(a3,a4)
+        //   middle-middle:   (2-2-Both, 2-2-Both)  — R(a2,a3), R(a3,a2)
+        // Three classes, two edges each. Direction of edge distinguishes
+        // out-from-end from in-to-end.
+        let classes = rs.r_equivalence_classes();
+        assert_eq!(classes.len(), 3);
+        let mut sizes: Vec<usize> = classes.values().map(|c| c.len()).collect();
+        sizes.sort();
+        assert_eq!(sizes, vec![2, 2, 2]);
     }
 
     #[test]

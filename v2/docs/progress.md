@@ -59,3 +59,29 @@ detection) are listed at the end of the experiment log.
 
 Decision: [0004-signature-is-profile](decisions/0004-signature-is-profile.md).
 Log: [logs/2026-04-23_structural_equivalence.log](../logs/2026-04-23_structural_equivalence.log).
+
+Commit: `1437569`.
+
+### R-instance signature — edge-level (first pass)
+Lifted the signature machinery one level: `RSignature = (Signature, Signature)`
+(ordered endpoint profiles), with `r_signature(&R)` and
+`r_equivalence_classes()` on `RSet`. 6 new unit tests plus an
+`edge_equivalence.rs` example covering the same six canonical graphs as
+the identifier-level demo.
+
+All six ADR-0005 predictions verified. Key findings:
+- **First "repetition inside a single graph."** The 5-chain's middle-middle
+  edges `R(a2,a3)` and `R(a3,a4)` merge into one class — the first
+  single-graph-derived multi-member class not caused by pure symmetry.
+  This is the signal a later pattern-mining layer can mine.
+- **Direction is preserved.** Bidirectional chain produces three distinct
+  classes (out-from-end, in-to-end, middle-middle) because pair order matters.
+- **Stars reduce to "one edge type repeated."** Both out-star and in-star
+  collapse their spokes; shape of the compound-pattern definition starts
+  to come into view.
+- **Cycles and stars collide at this layer** — both go to a single class.
+  Distinguishing them requires a locality / co-occurrence signal, which
+  is the motivation for the next ADR.
+
+Decision: [0005-r-instance-signature](decisions/0005-r-instance-signature.md).
+Log: [logs/2026-04-23_edge_equivalence.log](../logs/2026-04-23_edge_equivalence.log).

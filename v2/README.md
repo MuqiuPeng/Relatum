@@ -28,9 +28,10 @@ cargo test
 
 ## Status
 
-Observation layer + 0-hop structural signature in place:
-`R`, `RSet`, `IdentifierProfile`, `Signature`, `equivalence_classes()`.
+Observation and 0-hop signature layers in place:
+`R`, `RSet`, `IdentifierProfile`, `Signature`, `equivalence_classes()`,
+`RSignature`, `r_equivalence_classes()`.
 
-Not yet implemented: compound pattern detection, type naming, self-driven
-triggering, evaluation. See [docs/progress.md](docs/progress.md) for the
-current frontier.
+Not yet implemented: locality / co-occurrence, compound pattern naming
+(meta-R), self-driven triggering, evaluation. See
+[docs/progress.md](docs/progress.md) for the current frontier.
