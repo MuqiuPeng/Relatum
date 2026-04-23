@@ -1,0 +1,316 @@
+Date: 2026-04-24
+Descriptor: axiom_rigorous_test (ADR 0027 follow-up)
+Purpose:
+    Blind-test `discover_axioms` across 8 mathematically well-defined
+    inputs. The library code was NOT modified for this test — all
+    test data is supplied externally by `axiom_rigorous_test.rs`.
+    Analysis of whether the system's discoveries align with
+    mathematical ground truth is done post-hoc in this log, not in
+    the code.
+
+Methodology:
+    Each case has a known mathematical identity and known axiom set
+    (documented per-case below). The system is given only the R
+    instances. The experimenter (human, post-hoc) checks each output
+    against the expected axioms.
+
+====================================================================
+CASE-BY-CASE RESULTS AND GROUND-TRUTH COMPARISON
+====================================================================
+
+─────────────────────────────────────────────────────────────────────
+CASE 1. Transitive closure of linear chain a<b<c<d<e
+─────────────────────────────────────────────────────────────────────
+Input: 10 edges (every pair i<j from a..e), no self-loops.
+Expected axioms:
+  - Transitivity: HOLDS
+  - Reflexivity: FAILS (no self-loops)
+  - Antisymmetry: HOLDS (DAG, no reverse edges)
+
+Discovered:
+  2 axioms, both rate=1.0:
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)          bindings=10   ← Transitivity ✓
+    [R(0,1) ∧ R(2,0)] ⇒ R(2,1)          bindings=10   ← Transitivity (relabeled)
+  check_reflexivity: 0/5 (0%)             ← correctly fails
+  check_antisymmetry: holds=true           ← correctly holds
+  check_poset: false                       ← correctly false (needs reflexive)
+
+Verdict: CORRECT. Transitivity discovered. Checks all agree with
+ground truth.
+
+Noise: the second discovered template is transitivity under a
+different variable-to-slot assignment. My canonicalizer normalizes
+by first-use ordering but doesn't reach structural-equivalence
+canonicalization. Post-hoc observation.
+
+─────────────────────────────────────────────────────────────────────
+CASE 2. Equivalence relation (3 classes {a,b}, {c,d,e}, {f})
+─────────────────────────────────────────────────────────────────────
+Input: 14 edges — all within-class edges in each of 3 classes.
+Expected axioms:
+  - Reflexivity: HOLDS (each class includes self-loops)
+  - Symmetry: HOLDS
+  - Transitivity: HOLDS
+  - Antisymmetry: FAILS (many R(x,y) have R(y,x) with x ≠ y)
+
+Discovered:
+  45 axioms at rate 1.0. Among them:
+    [R(0,1)] ⇒ R(1,0)                    bindings=14   ← Symmetry ✓
+    [R(0,1)] ⇒ R(0,0)                    bindings=14   ← "every source has a self-loop"
+    [R(0,1)] ⇒ R(1,1)                    bindings=14   ← "every target has a self-loop"
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)           bindings=36   ← Transitivity ✓
+  check_reflexivity: 6/6 (100%)            ← correctly holds
+  check_antisymmetry: holds=false, 8 violations  ← correctly fails
+  check_poset: false                       ← correctly false
+
+Verdict: CORRECT semantics. Symmetry and transitivity both found.
+
+Noise level: 45/45 axioms are formally at rate 1.0, but humanly
+the only "interesting" independent facts are symmetry, transitivity,
+and (separately via check_reflexivity) reflexivity. The remaining
+42 axioms are consequences of universal reflexivity + symmetry, e.g.
+"if R(x,y), then R(x,x)" is true only because every x has a
+self-loop.
+
+─────────────────────────────────────────────────────────────────────
+CASE 3. Strict partial order (diamond, no self-loops)
+─────────────────────────────────────────────────────────────────────
+Input: 5 edges — a<b, a<c, a<d, b<d, c<d (a<d already transitively).
+Expected axioms:
+  - Transitivity: HOLDS
+  - Reflexivity: FAILS
+  - Antisymmetry: HOLDS
+  - Poset (reflexive form): FAILS (strict order lacks reflexivity)
+
+Discovered:
+  2 axioms:
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)           bindings=2    ← Transitivity ✓
+    [R(0,1) ∧ R(2,0)] ⇒ R(2,1)           bindings=2    ← Transitivity (relabel)
+  check_reflexivity: 0/4 (0%)              ← correctly fails
+  check_antisymmetry: holds=true           ← correctly holds
+  check_poset: false                       ← correctly false
+
+Verdict: CORRECT. Clean low-noise output — only 2 axioms because
+no reflexivity to leak into "P(x) ⇒ Q(x,x)" style derivatives.
+
+─────────────────────────────────────────────────────────────────────
+CASE 4. Almost-transitive: transitive closure of 4-chain with ONE
+         violation (R(b,d) removed)
+─────────────────────────────────────────────────────────────────────
+Input: 5 edges = {a<b, a<c, a<d, b<c, c<d}. Transitivity is violated
+at (b, c, d): R(b,c) ∧ R(c,d) hold but R(b,d) is missing.
+Expected:
+  - Transitivity: FAILS (one violating binding)
+  - Reflexivity: FAILS
+  - Antisymmetry: HOLDS
+
+Discovered:
+  0 axioms at rate=1.0. (Transitivity would have shown a violation
+  and dropped below 1.0.)
+  check_reflexivity: 0/4 (0%)
+  check_antisymmetry: holds=true
+  check_poset: false
+
+Verdict: CORRECT, and a strong no-false-positive test. A single
+missing closure edge is enough to suppress the transitivity
+report. The strict rate==1.0 criterion is unforgiving in the
+right direction.
+
+─────────────────────────────────────────────────────────────────────
+CASE 5. Random sparse graph — no designed structure
+─────────────────────────────────────────────────────────────────────
+Input: 7 edges constructed by hand, no algebraic property intended.
+Expected:
+  - No axiom should hold universally.
+
+Discovered:
+  0 axioms. check_reflexivity: 0%. check_antisymmetry: true.
+  check_poset: false.
+
+Verdict: CORRECT. No false positives on unstructured input.
+Antisymmetry holds here by accident (no pair of mutual edges
+was constructed), which is consistent with the graph as built.
+
+─────────────────────────────────────────────────────────────────────
+CASE 6. Tolerance: reflexive + symmetric, NOT transitive
+─────────────────────────────────────────────────────────────────────
+Input: 7 edges on {a, b, c}: all self-loops + R(a,b) R(b,a) R(b,c)
+R(c,b). No R(a,c) nor R(c,a).
+Expected:
+  - Reflexivity: HOLDS
+  - Symmetry: HOLDS
+  - Transitivity: FAILS (a~b and b~c but not a~c)
+
+Discovered:
+  37 axioms at rate=1.0. Among them:
+    [R(0,1)] ⇒ R(1,0)                    bindings=7    ← Symmetry ✓
+    [R(0,1)] ⇒ R(0,0), R(1,1)            bindings=7    ← reflexivity consequences
+    (no conclusion `R(0,2)` anywhere with premise `R(0,1) ∧ R(1,2)`)
+  check_reflexivity: 3/3 (100%)            ← correctly holds
+  check_antisymmetry: false (4 violations) ← correctly fails
+  check_poset: false                       ← correctly false
+
+**Key observation:** among all discovered templates with premise
+[R(0,1) ∧ R(1,2)], the conclusion R(0,2) is MISSING from the
+output. That is the transitivity conclusion; its absence is
+exactly what we want — tolerance is not transitive.
+
+Verdict: CORRECT. The system detected symmetry and was
+unambiguous about NOT detecting transitivity.
+
+Noise: 37 axioms is high. Most are reflexivity+symmetry
+consequences. An eventual subsumption filter would reduce this
+dramatically.
+
+─────────────────────────────────────────────────────────────────────
+CASE 7. Total order on {1..5} with self-loops
+─────────────────────────────────────────────────────────────────────
+Input: 15 edges — full transitive closure of 1 ≤ 2 ≤ 3 ≤ 4 ≤ 5
+plus 5 self-loops.
+Expected (as a poset):
+  - Reflexivity: HOLDS
+  - Antisymmetry: HOLDS
+  - Transitivity: HOLDS
+  - Totality (∀ x,y: R(x,y) ∨ R(y,x)): HOLDS but inexpressible in
+    our template (disjunction in conclusion).
+
+Discovered:
+  25 axioms at rate 1.0. Including:
+    [R(0,1) ∧ R(1,2)] ⇒ R(0,2)                          ← Transitivity ✓
+    [R(0,1)] ⇒ R(0,0), R(1,1)                           ← reflexivity consequences
+  check_reflexivity: 5/5 (100%), check_antisymmetry: true,
+  check_poset: TRUE
+
+Verdict: CORRECT. Poset ground truth is recovered. Totality is NOT
+discovered (expected — it's a disjunction, outside our template
+form).
+
+─────────────────────────────────────────────────────────────────────
+CASE 8. Complete bipartite (all edges A→B, no reverse, no same-side)
+─────────────────────────────────────────────────────────────────────
+Input: 9 edges (3×3) — each of {a1,a2,a3} → each of {b1,b2,b3}.
+Expected:
+  - No B→X edges means all chain premises R(x,y) ∧ R(y,z) have
+    vacuous bindings. Filter min_evidence ≥ 1 drops vacuous
+    "truths."
+  - Symmetry: FAILS (no reverse edges)
+  - Reflexivity: FAILS (no self-loops)
+  - Antisymmetry: trivially holds (no mutual pairs)
+
+Discovered:
+  0 axioms. check_reflexivity: 0%. check_antisymmetry: true.
+
+Verdict: CORRECT. The min_evidence filter correctly suppressed
+vacuous-truth reports. This is the desired behavior — the system
+only reports non-vacuously-satisfied axioms.
+
+====================================================================
+AGGREGATE VERDICT
+====================================================================
+
+On 8 blind test cases, `discover_axioms` and the associated checks
+produced mathematically consistent outputs:
+
+| Case | Expected axioms            | Discovered                | Correct? |
+|------|----------------------------|---------------------------|----------|
+| 1    | transitive, antisymm       | trans ✓                   | ✓        |
+| 2    | refl, symm, trans (eqv)    | symm ✓, trans ✓           | ✓        |
+| 3    | trans, antisymm            | trans ✓                   | ✓        |
+| 4    | NONE (broken transitivity) | none                      | ✓        |
+| 5    | NONE (random)              | none                      | ✓        |
+| 6    | refl, symm (not trans)     | symm ✓, trans correctly   | ✓        |
+|      |                            | ABSENT                    |          |
+| 7    | refl, antisymm, trans      | trans ✓                   | ✓        |
+| 8    | NONE (vacuous)             | none (min_evidence=1)     | ✓        |
+
+**No false positives. No false negatives.** Every discoverable
+axiom (those expressible in the ≤2-edge-premise ≤3-var positive-
+implication template form) was found on inputs where it holds and
+was absent on inputs where it doesn't.
+
+The one axiom always absent is **totality** (for Case 7) — it
+requires disjunctive conclusions, outside this template form. A
+correctly-scoped limitation.
+
+====================================================================
+NOISE ANALYSIS (the honest part)
+====================================================================
+
+Axiom count per case:
+  1 (TC chain):      2
+  2 (equivalence):  45  ← noisy
+  3 (strict partial): 2
+  4 (broken trans):  0
+  5 (random):        0
+  6 (tolerance):    37  ← noisy
+  7 (total order):  25  ← noisy
+  8 (bipartite):     0
+
+**The high counts come when reflexivity holds universally.** In
+cases 2, 6, 7 every identifier has a self-loop, so ANY template of
+the form `premise ⇒ R(x,x)` trivially holds whenever `x` is in any
+premise binding. This causes "reflexivity-downstream" axioms to
+flood the output.
+
+The "real" axioms in each noisy case, once reflexivity is factored
+out:
+  Case 2: symmetry, transitivity (and reflexivity, via separate check).
+  Case 6: symmetry (no transitivity — correctly absent).
+  Case 7: transitivity (and reflexivity, via separate check).
+
+**Subsumption — "if axiom X is derivable from axiom Y given
+reflexivity, drop X" — would collapse the 45 / 37 / 25 numbers
+to the handful of genuinely independent axioms.** This is not
+implemented; noted as the obvious next improvement.
+
+====================================================================
+A SECOND, STRUCTURAL NOTE
+====================================================================
+
+In cases 1, 3, and 7 the output contains two templates both of
+which humans recognize as "transitivity," just with different
+variable-to-position assignments:
+  [R(0,1) ∧ R(1,2)] ⇒ R(0,2)      ← the "standard" form
+  [R(0,1) ∧ R(2,0)] ⇒ R(2,1)      ← the "rotated" form
+
+My `canonicalize_template` normalizes by first-use variable
+ordering, which DOES NOT reach "canonical under variable
+permutation" in the constraint-graph sense. A full canonical form
+would require running WL-style canonicalization over the
+template's own constraint graph (variables as nodes, premise
+edges as edges). Noted as a follow-up.
+
+====================================================================
+FINAL VERDICT
+====================================================================
+
+`discover_axioms` is **semantically correct on every rigorous
+test case**, including adversarial ones (random, bipartite,
+broken-transitivity) where the right answer is "none." It is
+noisy where reflexivity + symmetry interact with the template
+space, but the noise is predictable and reducible.
+
+For the specific question that started this thread — "can v2
+construct the poset concept?" — the answer is:
+
+  · v2 cannot "learn that a relation is a poset" directly
+    (poset is a conjunction of three axioms, and the system
+    reports axioms individually, not their conjunctive names).
+  · v2 CAN verify, given a relation, whether the three poset
+    axioms hold, entirely from first principles (rate-1.0
+    template evaluation + the two edge-template-unfriendly
+    checks for reflexivity and antisymmetry).
+  · `check_poset` composes the three into a yes/no, which is
+    where the name "poset" lives as human-level labeling.
+
+The system is doing **"given a relation, tell me what universal
+first-order rules it obeys in a bounded space."** That's the
+honest characterization of where we've reached.
+
+Follow-ups that would tighten the probe (for future work):
+  1. Subsumption under reflexivity to collapse the noisy cases.
+  2. Structural canonicalization of templates so relabeled
+     transitivity forms merge.
+  3. Extending templates to cover reflexivity and totality
+     (disjunctive conclusions), though these break the current
+     "single edge conclusion" discipline.
