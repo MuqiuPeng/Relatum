@@ -736,6 +736,31 @@ impl RSet {
         induced == sg.len()
     }
 
+    /// Run `autonomous_pass` once per `target_size` in `sizes`. Per-size
+    /// config is the base with `discovery.target_size` overridden and
+    /// `discovery.rng_seed` offset by the size so sampling differs
+    /// between sizes. Earlier sizes' named patterns persist, so later
+    /// sizes naturally return `Existing` for canonicals already
+    /// registered. ADR 0021.
+    pub fn autonomous_sweep(
+        &mut self,
+        base: &AutonomousConfig,
+        sizes: &[usize],
+    ) -> Vec<(usize, Vec<AutonomousOutcome>)> {
+        let mut results = Vec::with_capacity(sizes.len());
+        for &size in sizes {
+            let mut cfg = base.clone();
+            cfg.discovery.target_size = size;
+            cfg.discovery.rng_seed = base
+                .discovery
+                .rng_seed
+                .wrapping_add(size as u64);
+            let outcomes = self.autonomous_pass(&cfg);
+            results.push((size, outcomes));
+        }
+        results
+    }
+
     /// Autonomous abstraction pass. ADR 0018.
     ///
     /// Composes `discover_motifs` (sample candidates) + `refine_candidates`
@@ -3143,6 +3168,86 @@ mod tests {
 
         // After retraction, nothing classifies to the retracted canonical.
         assert!(rs.find_pattern_matching(&canonical).is_none());
+    }
+
+    #[test]
+    fn sweep_with_empty_sizes_returns_empty() {
+        let mut rs = build_mixed_graph();
+        let base = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 100,
+                top_m: 5,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 100, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+        let results = rs.autonomous_sweep(&base, &[]);
+        assert!(results.is_empty());
+        assert!(rs.patterns().is_empty());
+    }
+
+    #[test]
+    fn sweep_with_single_size_matches_direct_pass() {
+        let base = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 100,
+                top_m: 5,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 100, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+
+        // Path A: sweep with a single size — seed is offset by the size.
+        let mut rs_sweep = build_mixed_graph();
+        let sweep_results = rs_sweep.autonomous_sweep(&base, &[3]);
+        assert_eq!(sweep_results.len(), 1);
+
+        // Path B: call autonomous_pass with the equivalent offset seed.
+        let mut rs_direct = build_mixed_graph();
+        let mut direct_cfg = base.clone();
+        direct_cfg.discovery.rng_seed = base.discovery.rng_seed.wrapping_add(3);
+        let direct_outcomes = rs_direct.autonomous_pass(&direct_cfg);
+
+        assert_eq!(sweep_results[0].0, 3);
+        // Same number of outcomes; same registered pattern count.
+        assert_eq!(sweep_results[0].1.len(), direct_outcomes.len());
+        assert_eq!(rs_sweep.patterns().len(), rs_direct.patterns().len());
+    }
+
+    #[test]
+    fn sweep_accumulates_patterns_across_sizes() {
+        let base = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+
+        let mut rs = build_mixed_graph();
+        let results = rs.autonomous_sweep(&base, &[2, 3]);
+        assert_eq!(results.len(), 2);
+        // Patterns exist at both sizes.
+        let patterns_after = rs.patterns().len();
+        assert!(patterns_after >= 2);
+
+        // Second sweep on identical sizes — all Existing, no new
+        // patterns.
+        let second = rs.autonomous_sweep(&base, &[2, 3]);
+        let any_new: usize = second
+            .iter()
+            .flat_map(|(_, outs)| outs.iter())
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        assert_eq!(any_new, 0);
+        assert_eq!(rs.patterns().len(), patterns_after);
     }
 
     #[test]

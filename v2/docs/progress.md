@@ -651,3 +651,24 @@ are future concerns if they surface.
 
 Decision: [0020-pattern-retraction](decisions/0020-pattern-retraction.md).
 Log: [logs/2026-04-23_pattern_retraction.log](../logs/2026-04-23_pattern_retraction.log).
+
+Commit: `8b0809c`.
+
+### Multi-size autonomous sweep (ADR 0021)
+`RSet::autonomous_sweep(base, sizes)` runs `autonomous_pass` once
+per target size, each with `target_size` overridden and `rng_seed`
+offset by the size so sizes sample independently. Later sizes see
+earlier-named patterns in the registry, producing `Existing`
+outcomes for already-registered canonicals. 3 new unit tests;
+109 total pass.
+
+Sweep over `[2, 3, 4]` on the mixed graph produced 7 distinct
+patterns:
+  size 2: 2-chain (4 inst), 2-star (4 inst)
+  size 3: 3-chain (2), 3-tree (1), 3-star (1), 3-cycle (1)
+  size 4: 4-chain (1, the whole 5-node chain as a 4-edge motif)
+RSet 14 → 83 edges. Second sweep on same sizes: zero new
+patterns, idempotent.
+
+Decision: [0021-autonomous-sweep](decisions/0021-autonomous-sweep.md).
+Log: [logs/2026-04-23_autonomous_sweep.log](../logs/2026-04-23_autonomous_sweep.log).

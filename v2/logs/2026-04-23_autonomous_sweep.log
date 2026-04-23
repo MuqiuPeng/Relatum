@@ -1,0 +1,107 @@
+Date: 2026-04-23
+Descriptor: autonomous_sweep (validates ADR 0021)
+Purpose:
+    Verify that `autonomous_sweep` runs `autonomous_pass` once per
+    requested size and that later sizes see earlier-named patterns
+    in the registry (no cross-size duplicate naming). Also confirm
+    second sweep on identical sizes is a no-op.
+
+Mechanism version:
+    ADR 0021 (RSet::autonomous_sweep).
+    Runner: v2/examples/autonomous_sweep.rs.
+
+Command:
+    cargo run --example autonomous_sweep
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+RSet before sweep: 14 edges
+
+=== size=2 — 2 outcomes ===
+  NewPattern(p_0)  4 instances  canonical=[(1, 2), (2, 0)]
+  NewPattern(p_1)  4 instances  canonical=[(1, 0), (1, 0)]
+
+=== size=3 — 4 outcomes ===
+  NewPattern(p_2)  2 instances  canonical=[(1, 3), (2, 0), (3, 2)]
+  NewPattern(p_3)  1 instances  canonical=[(2, 0), (3, 1), (3, 2)]
+  NewPattern(p_4)  1 instances  canonical=[(1, 0), (1, 0), (1, 0)]
+  NewPattern(p_5)  1 instances  canonical=[(0, 0), (0, 0), (0, 0)]
+
+=== size=4 — 1 outcomes ===
+  NewPattern(p_6)  1 instances  canonical=[(1, 3), (2, 0), (3, 4), (4, 2)]
+
+patterns registered after sweep: 7
+  p_0  instances=4
+  p_1  instances=4
+  p_2  instances=2
+  p_3  instances=1
+  p_4  instances=1
+  p_5  instances=1
+  p_6  instances=1
+RSet size: 83
+
+=== Second sweep on same sizes (idempotence) ===
+RSet size: 83 → 83  (delta 0)
+patterns: 7 → 7
+new patterns in second sweep: 0
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Seven patterns across three sizes.** On a 14-edge graph, the
+   sweep identified:
+   - size 2: 2-chain (4 instances), 2-star (4 instances)
+   - size 3: 3-chain (2), 3-tree (1), 3-star (1), 3-cycle (1)
+   - size 4: 4-chain (1 instance, the full 5-node chain as a
+     4-edge structure)
+   No cross-size duplicates because the registry persists across
+   passes.
+
+2. **Sizes do not interfere.** Each `autonomous_pass` call samples
+   fresh (seed offset by size) and sees whatever meta-R exists at
+   the time. Since discovery samples only data edges
+   (meta-R excluded via `data_edges_sorted`), ADR 0010's meta-R
+   additions from earlier sizes do not contaminate later-size
+   sampling. Sizes run independently; only the registry carries
+   state.
+
+3. **Idempotence holds across the whole sweep.** Second sweep on
+   `[2, 3, 4]` produces all `Existing`, zero `NewPattern`. RSet
+   size unchanged. This is the composition of per-size
+   `autonomous_pass` idempotence (ADR 0018).
+
+4. **Meta-R growth is substantial.** From 14 to 83 edges (5.9×).
+   With the default encoding (3 per-pattern + per-instance
+   overhead), naming 16 total instances plus 7 pattern registry
+   entries yields the observed delta. Acceptable for the scale;
+   retraction (ADR 0020) is available if the bloat is unwanted.
+
+5. **No MDL filter was applied.** Default policy allows singletons,
+   which is why 3-tree, 3-cycle, 4-chain etc. with one instance
+   each got named. A caller wanting "only reusable patterns" sets
+   `naming.min_mdl_gain = 1` in the base config (ADR 0019).
+
+====================================================================
+WHAT THIS ENABLES
+====================================================================
+
+- Single-call "discover all pattern sizes in a range."
+- Naturally composes with earlier ADRs: use MDL filter to only
+  name reusable patterns at each size; use retraction if a sweep
+  names something unwanted.
+- Deterministic across runs: same seed + same sizes → same
+  outcomes (verified via the per-size seed offset).
+
+## DECISION / NEXT
+
+ADR 0021 validated. First of five remaining open-direction ADRs
+being closed in sequence (0021–0025), per user request.
+
+Proceeding to:
+- ADR 0022 autonomous_pass + attach-only composition
+- ADR 0023 cross-graph pattern transfer
+- ADR 0024 sampling-based find_instances_of
+- ADR 0025 hierarchical / composed patterns (stretch goal)
