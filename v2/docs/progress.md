@@ -748,28 +748,30 @@ Log: [logs/2026-04-23_hierarchical_probe.log](../logs/2026-04-23_hierarchical_pr
 
 ### Gradient-descent refinement probe (ADR 0026)
 User asked whether continuous quantization + gradient descent could
-help. The only interpretation compatible with v2's commitments is
-option C — decision relaxation (edge selection softened to a
-sigmoid-gated continuous weight, discrete output after rounding).
+help. Only "decision relaxation" (option C) survives the commitment
+check. Added `gradient_refine_candidate` with analytical gradient
+over a sigmoid-gated edge selection, objective combining
+edge-count target and a differentiable cleanness penalty.
 
-Added `RSet::gradient_refine_candidate`, parameterizing edge
-selection as `p_i = sigmoid(w_i)`, with objective
-`(Σp − k)² + α·Σ(1 − p_j)·π(x_j)·π(y_j)` where `π` is a soft
-participant indicator. Analytical gradient, no autodiff crate.
-3 new unit tests; 125 total pass.
+**Initial verdict (premature): negative.** Single-start from the
+current representative stuck in local minimum across 4 config
+variants.
 
-**Probe verdict: negative.** On the canonical hard case (2-chain
-embedded in 3-cycle), four config variants all failed to escape
-the local minimum. Vanishing gradient at distant "clean" edges +
-retreat into cycle vs. edge-count violation = stuck. Random
-re-sample (ADR 0017) handles this case easily.
+**Revised verdict after follow-ups** (user asked to confirm): two
+new primitives exposed —
+- `gradient_refine_from_uniform` (w = 0 init, deterministic): also
+  stuck on the hard case.
+- `gradient_refine_multistart(n_starts, seed)`: finds a clean
+  2-chain at n_starts = 30 on the embedded-in-cycle hard case.
 
-Interpretation: gradient descent from near-commit initialization
-cannot escape structural local minima. A later pass with momentum,
-simulated annealing, or restarts might; those are out of scope.
+Gradient descent is usable with enough random restarts. It is not
+clearly cheaper than random re-sample on small graphs (~9000
+gradient ops vs ~200 random walks for the hard case), but it is
+not useless either. Kept as alternative primitive. Random
+re-sample (ADR 0017) stays the default. 127 tests pass total.
 
-Probe kept as reference code, NOT promoted. Random refine remains
-the production path.
+Methodological note from the update: the "first negative result is
+final" reflex was wrong here; multi-start changed the answer.
 
 Decision: [0026-gradient-refine-probe](decisions/0026-gradient-refine-probe.md).
 Log: [logs/2026-04-23_gradient_refine.log](../logs/2026-04-23_gradient_refine.log).

@@ -153,3 +153,79 @@ choices* where it stumbles.
 
 ADR 0026 probe recorded with negative verdict on the targeted
 case. No API change, no removal. Moving on.
+
+====================================================================
+UPDATE (later in the same session)
+====================================================================
+
+User asked to try more variants before fully concluding. Added two
+follow-up probes:
+
+1. **Uniform initialization** (`gradient_refine_from_uniform`):
+   start with w = 0 everywhere (p = 0.5). Deterministic.
+2. **Multi-start** (`gradient_refine_multistart`): try N random
+   initializations, return first clean match.
+
+Results on the same "embedded 2-chain inside 3-cycle" case:
+
+```
+=== Follow-up 1: gradient from uniform (w=0) ===
+  not found (rounded result does not match or is not clean)
+
+=== Follow-up 2: multi-start ===
+  n_starts=  3   not found
+  n_starts= 10   not found
+  n_starts= 30   found  {R(c1,c2), R(c2,c3)}  clean=true
+  n_starts=100   found  {R(c1,c2), R(c2,c3)}  clean=true
+```
+
+**Verdict: REVISED.** Multi-start DOES find a clean solution with
+enough random restarts (30+ on this case). The single-start
+failure was due to initialization landing in a local minimum;
+enough restarts escape it.
+
+### Cost comparison vs random re-sample
+
+- Random re-sample (ADR 0017) `max_tries=200`: typically succeeds
+  on first few tries (budget ~200 random-walk samples).
+- Multi-start gradient: n_starts=30 × steps=300 = 9 000 gradient
+  evaluations. Each gradient step costs O(|data| + |id| · avg
+  touching). For a 14-edge graph: roughly comparable per-op cost,
+  so 9 000 gradient steps vs 200 random walks is a ~45× cost ratio
+  in favor of random re-sample on this size.
+- Uniform init is deterministic but finds nothing — the objective's
+  landscape from the symmetric midpoint (p = 0.5) has no natural
+  gradient toward the clean chain.
+
+### Revised assessment
+
+- The "fundamental dead end" conclusion was too strong. Gradient
+  descent can find clean answers *given enough random restarts*.
+- On this specific structure (small graph, clear discrete
+  neighborhoods), random re-sample is cheaper per successful
+  attempt — gradient needs thousands of gradient evaluations vs
+  hundreds of random walks.
+- Gradient's potential use case remains plausible but unproven
+  here: **large graphs where random walks have low hit rates, and
+  the smooth objective can guide the search efficiently**. Not
+  demonstrated in this probe.
+
+### What to promote
+
+- `gradient_refine_candidate` (single-start from rep): unchanged,
+  still stuck on this case, still useful only as reference.
+- `gradient_refine_from_uniform`: kept as primitive for future
+  experimentation; doesn't help on this case.
+- `gradient_refine_multistart`: **kept and tested**. Not the
+  default production path, but a genuine option for callers that
+  want gradient-based search with enough budget.
+- Random re-sample (ADR 0017): remains the default refinement.
+
+### Deeper takeaway
+
+The initial negative verdict was premature — I stopped at the
+first variant. Multi-start flips the answer from "useless" to
+"usable with budget." The user's prompt to "再试试其他方案" was the
+right methodological move. Future probes should include
+multi-start / random restart variants by default before declaring
+a technique dead.

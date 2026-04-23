@@ -981,6 +981,104 @@ impl RSet {
         outcomes
     }
 
+    /// Gradient refinement from a user-supplied initial weight vector.
+    /// ADR 0026 internal — exposed so multistart / uniform variants
+    /// can reuse the same gradient loop. Returns the rounded Subgraph
+    /// if it matches `target` AND is clean; otherwise None.
+    pub fn gradient_refine_from_init(
+        &self,
+        target: &CanonicalForm,
+        init_w: Vec<f64>,
+        config: &GradientRefineConfig,
+    ) -> Option<Subgraph> {
+        let k = target.len();
+        if k == 0 {
+            return None;
+        }
+        let data = self.data_edges_sorted();
+        if k > data.len() || init_w.len() != data.len() {
+            return None;
+        }
+
+        let mut id_to_touching: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, r) in data.iter().enumerate() {
+            id_to_touching.entry(r.x.clone()).or_default().push(i);
+            if r.x != r.y {
+                id_to_touching.entry(r.y.clone()).or_default().push(i);
+            }
+        }
+
+        let mut w = init_w;
+        for _ in 0..config.steps {
+            let (_loss, grad) =
+                compute_gradient_refine(&w, &data, &id_to_touching, k, config.cleanness_weight);
+            for i in 0..w.len() {
+                w[i] -= config.learning_rate * grad[i];
+            }
+        }
+
+        let mut indexed: Vec<(usize, f64)> = w
+            .iter()
+            .enumerate()
+            .map(|(i, &wi)| (i, sigmoid(wi)))
+            .collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let selected: Vec<R> = indexed.iter().take(k).map(|(i, _)| data[*i].clone()).collect();
+        let refined = Subgraph::from_edges(selected);
+
+        if refined.canonicalize() == *target && self.is_clean_subgraph(&refined) {
+            Some(refined)
+        } else {
+            None
+        }
+    }
+
+    /// Gradient refinement starting from uniform (w = 0, p = 0.5).
+    /// ADR 0026 follow-up probe. No bias from a prior representative;
+    /// the objective alone directs the search. Deterministic.
+    pub fn gradient_refine_from_uniform(
+        &self,
+        target: &CanonicalForm,
+        config: &GradientRefineConfig,
+    ) -> Option<Subgraph> {
+        let data = self.data_edges_sorted();
+        self.gradient_refine_from_init(target, vec![0.0; data.len()], config)
+    }
+
+    /// Multi-start gradient refinement: try `n_starts` random
+    /// initializations, return the first one that produces a clean,
+    /// canonical-matching subgraph. ADR 0026 follow-up probe.
+    pub fn gradient_refine_multistart(
+        &self,
+        target: &CanonicalForm,
+        config: &GradientRefineConfig,
+        n_starts: usize,
+        rng_seed: u64,
+    ) -> Option<Subgraph> {
+        let data = self.data_edges_sorted();
+        if data.is_empty() || target.is_empty() {
+            return None;
+        }
+        let mut rng_state = if rng_seed == 0 {
+            0x9E3779B97F4A7C15
+        } else {
+            rng_seed
+        };
+        for _ in 0..n_starts {
+            let init_w: Vec<f64> = (0..data.len())
+                .map(|_| {
+                    // Uniform in [-init_scale, init_scale].
+                    let u = next_xorshift64(&mut rng_state) as f64 / u64::MAX as f64;
+                    (u * 2.0 - 1.0) * config.init_scale
+                })
+                .collect();
+            if let Some(sg) = self.gradient_refine_from_init(target, init_w, config) {
+                return Some(sg);
+            }
+        }
+        None
+    }
+
     /// Gradient-descent refinement probe (ADR 0026).
     ///
     /// Parameterizes edge selection as sigmoid(w_i) per data edge.
@@ -3966,6 +4064,40 @@ mod tests {
             score: 0.0,
         };
         let _ = rs.gradient_refine_candidate(&placeholder, &GradientRefineConfig::default());
+    }
+
+    #[test]
+    fn gradient_refine_multistart_finds_clean_chain_with_enough_starts() {
+        // Hard case: 2-chain canonical, data contains both an embedded
+        // (cycle) form and a clean chain form. From uniform-random init,
+        // multi-start should eventually hit the clean basin.
+        let rs = build_mixed_graph();
+        let target: CanonicalForm = vec![(1, 2), (2, 0)];
+        let cfg = GradientRefineConfig {
+            steps: 300,
+            learning_rate: 0.5,
+            cleanness_weight: 2.0,
+            init_scale: 2.0,
+        };
+        // With 100 starts, empirically finds a clean chain.
+        let out = rs.gradient_refine_multistart(&target, &cfg, 100, 2024);
+        let Some(sg) = out else {
+            panic!("multi-start failed to find any clean 2-chain with 100 starts");
+        };
+        assert_eq!(sg.canonicalize(), target);
+        assert!(rs.is_clean_subgraph(&sg));
+    }
+
+    #[test]
+    fn gradient_refine_from_uniform_is_deterministic() {
+        // Uniform init (w=0) is deterministic. Run twice, expect same
+        // outcome (Some with same rep, or None both times).
+        let rs = build_mixed_graph();
+        let target: CanonicalForm = vec![(1, 2), (2, 0)];
+        let cfg = GradientRefineConfig::default();
+        let a = rs.gradient_refine_from_uniform(&target, &cfg);
+        let b = rs.gradient_refine_from_uniform(&target, &cfg);
+        assert_eq!(a.map(|s| s.canonicalize()), b.map(|s| s.canonicalize()));
     }
 
     #[test]

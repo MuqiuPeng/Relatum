@@ -60,6 +60,45 @@ fn main() {
         );
         println!();
     }
+
+    // Follow-up: try uniform init + multi-start.
+    println!("=== Follow-up 1: gradient from uniform (w=0) ===");
+    let uniform_cfg = GradientRefineConfig {
+        steps: 500,
+        learning_rate: 0.5,
+        cleanness_weight: 2.0,
+        init_scale: 1.0,
+    };
+    let uniform_result = rs.gradient_refine_from_uniform(&canon, &uniform_cfg);
+    match uniform_result {
+        Some(sg) => println!(
+            "  found clean  {:?}  clean={}",
+            edges_of(&sg),
+            rs.is_clean_subgraph(&sg)
+        ),
+        None => println!("  not found (rounded result does not match or is not clean)"),
+    }
+    println!();
+
+    println!("=== Follow-up 2: multi-start ({n} starts) ===", n = 3);
+    let ms_cfg = GradientRefineConfig {
+        steps: 300,
+        learning_rate: 0.5,
+        cleanness_weight: 2.0,
+        init_scale: 2.0,
+    };
+    for n_starts in [3usize, 10, 30, 100] {
+        let out = rs.gradient_refine_multistart(&canon, &ms_cfg, n_starts, 2024);
+        match out {
+            Some(sg) => println!(
+                "  n_starts={:3}  found  {:?}  clean={}",
+                n_starts,
+                edges_of(&sg),
+                rs.is_clean_subgraph(&sg)
+            ),
+            None => println!("  n_starts={:3}  not found", n_starts),
+        }
+    }
 }
 
 fn edges_of(sg: &Subgraph) -> Vec<String> {

@@ -122,3 +122,38 @@ Otherwise return the input unchanged.
   outcomes alongside random refine.
 - Experiment log: `v2/logs/2026-04-23_gradient_refine.log` with
   honest verdict.
+
+## Update (follow-up probes in the same session)
+
+User pressed for more variants before concluding. Added two:
+
+- `gradient_refine_from_uniform` — deterministic start at w = 0.
+  Result on the hard case: no clean match found.
+- `gradient_refine_multistart(n_starts, seed)` — N random
+  initializations, first valid match wins. Result: **clean
+  2-chain found at n_starts = 30+**.
+
+**Verdict revised.** The single-start failure was initialization-
+driven, not fundamental. Multi-start works with sufficient budget
+(~30 random starts × 300 gradient steps on this case).
+
+Cost comparison: multi-start cost (~9 000 gradient ops) is
+significantly higher than random re-sample's (~200 walks) on this
+small graph — random re-sample remains the cheaper path. Gradient
+multi-start is kept as a legitimate alternative for cases where
+smooth-objective search has real advantages (e.g., large graphs
+where random walk hit rates are low). That hypothesis is not
+demonstrated by this probe but is no longer invalidated.
+
+Methodological note: the original "do not promote" conclusion was
+premature — it stopped at the first variant. This update records
+the corrected verdict.
+
+The three gradient refinement primitives all remain in the
+codebase:
+- `gradient_refine_candidate` (from-rep init)
+- `gradient_refine_from_uniform` (w = 0 init)
+- `gradient_refine_multistart` (N random inits, first match)
+
+Random re-sample (ADR 0017) remains the default for production
+refinement pipelines.
