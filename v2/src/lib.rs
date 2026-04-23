@@ -40,17 +40,24 @@ pub enum PatternError {
     NotIsomorphic,
 }
 
-/// Policy governing `consider_naming` and `run_naming_pass`. ADR 0012.
+/// Policy governing `consider_naming` and `run_naming_pass`. ADR 0012,
+/// extended by ADR 0014 with `attach_only`.
 ///
-/// Default: `min_edges = 2`, `min_instances = 1`, `skip_meta_subgraphs = true`.
-/// That combination suppresses ADR 0009's trivial single-edge pattern,
-/// allows singleton instances, and keeps `run_naming_pass` idempotent by
-/// skipping subgraphs that touch meta-R tokens.
+/// Default: `min_edges = 2`, `min_instances = 1`, `skip_meta_subgraphs = true`,
+/// `attach_only = false`. That combination suppresses ADR 0009's trivial
+/// single-edge pattern, allows singleton instances, keeps
+/// `run_naming_pass` idempotent by skipping subgraphs that touch meta-R,
+/// and permits new-pattern discovery.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamingPolicy {
     pub min_edges: usize,
     pub min_instances: usize,
     pub skip_meta_subgraphs: bool,
+    /// When true, `run_naming_pass` only adds instances to existing
+    /// named patterns. Candidate groups whose canonical form does not
+    /// match any named pattern are reported as
+    /// `SkipReason::NoMatchingPattern`. ADR 0014.
+    pub attach_only: bool,
 }
 
 impl Default for NamingPolicy {
@@ -59,6 +66,7 @@ impl Default for NamingPolicy {
             min_edges: 2,
             min_instances: 1,
             skip_meta_subgraphs: true,
+            attach_only: false,
         }
     }
 }
@@ -72,6 +80,9 @@ pub enum SkipReason {
     /// Every candidate in the group was already recorded as an instance
     /// of an existing pattern (dedup by participant set).
     AlreadyKnown,
+    /// `attach_only` was set and the candidate's canonical form does
+    /// not match any existing named pattern. ADR 0014.
+    NoMatchingPattern,
 }
 
 /// Outcome of a single naming attempt under policy. ADR 0012.
@@ -487,6 +498,8 @@ impl RSet {
             let fresh = self.filter_known_instances(subs);
             let decision = if fresh.is_empty() {
                 NamingDecision::Skipped(SkipReason::AlreadyKnown)
+            } else if policy.attach_only && self.find_pattern_matching(&canon).is_none() {
+                NamingDecision::Skipped(SkipReason::NoMatchingPattern)
             } else {
                 self.consider_naming(&fresh, policy)
                     .expect("well-formed candidate groups produced by the pipeline")
@@ -1713,7 +1726,7 @@ mod tests {
         let mut rs = RSet::new();
         rs.add(R::new("a", "b"));
         let sg = Subgraph::from_edges([R::new("a", "b")]);
-        let policy = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true };
+        let policy = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true, attach_only: false };
         let decision = rs.consider_naming(&[sg], &policy).unwrap();
         assert!(matches!(decision, NamingDecision::Named(_)));
         assert_eq!(rs.patterns().len(), 1);
@@ -1724,7 +1737,7 @@ mod tests {
         let mut rs = RSet::new();
         rs.extend([R::new("a", "b"), R::new("b", "c")]);
         let sg = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
-        let policy = NamingPolicy { min_edges: 1, min_instances: 2, skip_meta_subgraphs: true };
+        let policy = NamingPolicy { min_edges: 1, min_instances: 2, skip_meta_subgraphs: true, attach_only: false };
         let decision = rs.consider_naming(&[sg], &policy).unwrap();
         assert!(matches!(
             decision,
@@ -1756,7 +1769,7 @@ mod tests {
         // (3-cycle, 3-star, 2-chain all singletons). P2 single-edge has 6
         // instances but is filtered by min_edges=2. So nothing is named.
         let mut rs = build_mixed_graph();
-        let policy = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true };
+        let policy = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true, attach_only: false };
         let decisions = rs.run_naming_pass(&policy);
         let named: usize = decisions
             .iter()
@@ -1887,6 +1900,93 @@ mod tests {
                 assert_eq!(sg.canonicalize(), expected);
             }
         }
+    }
+
+    #[test]
+    fn attach_only_rejects_novel_canonical() {
+        // No existing patterns yet — every candidate is "novel."
+        let mut rs = build_mixed_graph();
+        let policy = NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+            attach_only: true,
+        };
+        let decisions = rs.run_naming_pass(&policy);
+        let novel: usize = decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Skipped(SkipReason::NoMatchingPattern)))
+            .count();
+        let named: usize = decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        assert!(novel > 0, "attach-only should reject some novel groups");
+        assert_eq!(named, 0, "attach-only must not create new patterns");
+        assert!(rs.patterns().is_empty());
+    }
+
+    #[test]
+    fn attach_only_admits_matching_canonical_after_discovery() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default()); // discovery
+        let pattern_count_before = rs.patterns().len();
+        let instance_total_before: usize = rs
+            .patterns()
+            .iter()
+            .map(|p| rs.instances_of(p).len())
+            .sum();
+
+        // Add a fresh 3-cycle on new identifiers. Its canonical form
+        // should match the existing p_0 cycle pattern.
+        rs.extend([
+            R::new("m1", "m2"),
+            R::new("m2", "m3"),
+            R::new("m3", "m1"),
+        ]);
+
+        let policy = NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+            attach_only: true,
+        };
+        let decisions = rs.run_naming_pass(&policy);
+
+        let named: usize = decisions
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        assert!(named >= 1, "the fresh 3-cycle should attach to p_0");
+
+        // No new pattern created.
+        assert_eq!(rs.patterns().len(), pattern_count_before);
+        // At least one new instance recorded.
+        let instance_total_after: usize = rs
+            .patterns()
+            .iter()
+            .map(|p| rs.instances_of(p).len())
+            .sum();
+        assert!(instance_total_after > instance_total_before);
+    }
+
+    #[test]
+    fn attach_only_is_idempotent() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let policy = NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+            attach_only: true,
+        };
+        // First attach-only pass after discovery adds nothing (everything
+        // already known). Pattern and edge counts stay.
+        let size_before = rs.len();
+        let patterns_before = rs.patterns().len();
+        rs.run_naming_pass(&policy);
+        assert_eq!(rs.len(), size_before);
+        assert_eq!(rs.patterns().len(), patterns_before);
     }
 
     #[test]

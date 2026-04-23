@@ -374,3 +374,45 @@ recorded — the "meta-R pays rent" transition.
 
 Decision: [0013-pattern-query-api](decisions/0013-pattern-query-api.md).
 Log: [logs/2026-04-23_pattern_queries.log](../logs/2026-04-23_pattern_queries.log).
+
+Commit: `e9ff017`.
+
+### Attach-only mode for naming pass (ADR 0014)
+Added `attach_only: bool` to `NamingPolicy` (default false) and a new
+`SkipReason::NoMatchingPattern` variant. When `attach_only = true`,
+`run_naming_pass` rejects candidate groups whose canonical form
+doesn't match any existing named pattern, preserving the registry
+as a stable artifact. 3 new unit tests; 80 total pass.
+
+Two-phase workflow demonstrated in the example:
+1. Discovery pass (default policy) names p_0 cycle, p_1 star, p_2 chain.
+2. New data added: fresh 3-cycle {m1,m2,m3}, fresh 2-chain {u,v,w},
+   novel T-fork {q1,q2,q3,q4}.
+3. Attach-only pass → the fresh 3-cycle attaches to p_0 as a second
+   instance; nothing else is named.
+
+**Surfaced limitation — compound-class fragmentation.** The fresh
+2-chain `{u, v, w}` did not attach to p_2 even though it is
+structurally isomorphic. Root cause: `compound_class_subgraphs`
+groups edges by compound fingerprint, then extracts connected
+components per group. An asymmetric structure (like a 2-chain)
+whose edges have *different* compound fingerprints fragments across
+compound classes and cannot be reassembled as a single subgraph.
+
+- Cyclic / symmetric structures (cycles, stars) survive: every edge
+  has the same endpoint-profile pair, all land in one compound class.
+- Asymmetric structures (chains, trees) can fragment if the new
+  data's identifiers don't share profiles with already-named
+  participants.
+
+This is not a bug in 0014 but a pipeline-scope limit. It was
+implicit in the discovery pipeline too; 0014's attach experiment
+just constructed a case that makes it visible.
+
+Next ADR (0015, provisionally): introduce subgraph *matching* —
+enumerate connected subgraphs of a named pattern's size, canonicalize
+each, compare — to reach the asymmetric structures that
+fragmentation misses.
+
+Decision: [0014-attach-only-mode](decisions/0014-attach-only-mode.md).
+Log: [logs/2026-04-23_attach_only.log](../logs/2026-04-23_attach_only.log).

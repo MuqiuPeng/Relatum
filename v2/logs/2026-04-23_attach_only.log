@@ -1,0 +1,179 @@
+Date: 2026-04-23
+Descriptor: attach_only (validates ADR 0014 — and surfaces a
+            compound-class pipeline limitation)
+Purpose:
+    Demonstrate the two-phase discovery/attach workflow on the
+    canonical mixed graph with new data added. Verify attach-only
+    mode rejects novel canonical forms cleanly. Observe what
+    happens to fresh data that *should* attach but doesn't.
+
+Mechanism version:
+    ADR 0014 (NamingPolicy.attach_only, SkipReason::NoMatchingPattern).
+    Source: v2/src/lib.rs at the commit implementing 0014.
+    Runner: v2/examples/attach_only.rs.
+
+Command:
+    cargo run --example attach_only
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Phase 1 — discovery pass (default policy) ===
+  canonical [(0, 0), (0, 0), (0, 0)]  ->  Named(p_0)
+  canonical [(1, 0)]  ->  Skipped(BelowMinEdges 1<2)
+  canonical [(1, 0), (1, 0), (1, 0)]  ->  Named(p_1)
+  canonical [(1, 2), (2, 0)]  ->  Named(p_2)
+patterns registered: 3
+RSet size: 30
+
+=== Phase 2 — new data arrives ===
+  added R(m1, m2)
+  added R(m2, m3)
+  added R(m3, m1)
+  added R(u, v)
+  added R(v, w)
+  added R(q1, q2)
+  added R(q1, q3)
+  added R(q3, q4)
+RSet size: 38
+
+=== Phase 3 — attach-only pass ===
+  canonical [(0, 0), (0, 0), (0, 0)]  ->  Named(p_0)
+  canonical [(1, 0)]  ->  Skipped(NoMatchingPattern)
+  canonical [(1, 0), (1, 0), (1, 0)]  ->  Skipped(AlreadyKnown)
+  canonical [(1, 2), (2, 0)]  ->  Skipped(AlreadyKnown)
+
+patterns registered: 3  (must equal phase-1 count)
+total named instances: 4
+
+=== Per-pattern instance counts ===
+  p_0  instances = 2
+  p_1  instances = 1
+  p_2  instances = 1
+
+====================================================================
+WHAT LANDED / WHAT DID NOT
+====================================================================
+
+Landed:
+  - `p_0` (3-cycle) absorbed the new {m1,m2,m3} cycle as a second
+    instance. Instance count goes 1 → 2. ADR 0014's intent is
+    satisfied for this input.
+  - `p_1` (3-star) and `p_2` (2-chain) are AlreadyKnown because the
+    original instance's participants re-match on the dedup check.
+  - Everything with canonical [(1, 0)] is rejected with
+    NoMatchingPattern — attach-only correctly refuses to mint a new
+    pattern for single-edge canonical.
+  - No new patterns created. Registry count stays at 3. The
+    attach-only guarantee is upheld.
+
+**Did NOT land as intended:**
+
+  The fresh 2-chain `{u, v, w}` — structurally isomorphic to p_2 —
+  was *not* recorded as a new p_2 instance. After phase 3, p_2
+  still has 1 instance. The `{q1, q2, q3, q4}` T-fork, whose
+  canonical form `[(2,0), (3,1), (3,2)]` is genuinely novel, was
+  also not surfaced as a `NoMatchingPattern` rejection of that
+  canonical form — it is silently absorbed into the `[(1, 0)]`
+  single-edge bucket.
+
+====================================================================
+ROOT CAUSE: COMPOUND-CLASS FRAGMENTATION
+====================================================================
+
+The pipeline (`run_naming_pass`) uses `compound_class_subgraphs`,
+which groups edges by their compound fingerprint
+(endpoint-profile-pair × locality) and then runs connected-
+component extraction *per group*. A connected structure can only
+materialize as a single subgraph if all its edges share a compound
+fingerprint.
+
+The original 2-chain `{c2, c3, c4}` does:
+  - c2/c3/c4 all have the same profile post-naming
+    (Both-out=1-in=2), so every edge shares the same endpoint-pair
+    and locality profile. All edges land in one compound class,
+    connected-component extraction yields the 2-chain subgraph.
+
+The *new* 2-chain `{u, v, w}` does NOT:
+  - u has LeftOnly-out=1-in=0 (chain head, never named).
+  - v has Both-out=1-in=1 (middle, never named).
+  - w has RightOnly-out=0-in=1 (tail, never named).
+  - R(u,v) endpoint pair is (LeftOnly-1-0, Both-1-1).
+  - R(v,w) endpoint pair is (Both-1-1, RightOnly-0-1).
+  - DIFFERENT compound fingerprints. They land in different
+    compound classes. Each class has one edge. Each connected
+    component is a single-edge subgraph. The 2-chain structure is
+    fragmented and cannot be detected.
+
+In other words: **cyclic / symmetric structures survive, asymmetric
+structures fragment.** The 3-cycle worked because every cycle edge
+has identical endpoint profile pairs. The 3-star works for the same
+reason (spokes identical from the hub's perspective). The 2-chain
+fails because its head-edge, middle-edge, and tail-edge are all
+distinct compound fingerprints.
+
+Put differently still: two subgraphs with the same canonical form
+will generate matching pattern instances only if (a) both are
+cyclic / symmetric, or (b) the new data's endpoint profiles happen
+to line up with what compound fingerprints the original data
+produces.
+
+This is not a bug in ADR 0014. It is a structural limitation of
+using `compound_class_subgraphs` as the enumeration strategy. The
+same limitation applies to the discovery pass; discovery simply
+happens to name the symmetric patterns that do emerge and misses
+the asymmetric ones that don't.
+
+====================================================================
+IMPLICATIONS
+====================================================================
+
+1. **ADR 0014's attach-only mode works correctly on every pattern
+   that is discoverable by the current pipeline.** Anything
+   `compound_class_subgraphs` surfaces can be attached or rejected
+   by the attach-only flag. The three guarantees — no new patterns,
+   instance dedup, NoMatchingPattern for unmatched canonicals — all
+   hold within that scope.
+
+2. **A separate ADR is needed to handle asymmetric structures.** The
+   right direction is subgraph *matching* rather than subgraph
+   *discovery*: given a named pattern's canonical form, enumerate
+   connected subgraphs of the right size and check canonical
+   equality. That is a distinct mechanism (subgraph homomorphism
+   search) and its own tradeoff (combinatorial blowup on large
+   graphs, small-graph cheap).
+
+3. **Discovery's miss on the original input already demonstrated
+   this.** Default γ on the unfiltered mixed graph named three
+   patterns. If the original had contained a second 3-chain whose
+   internal nodes had different degrees than `{c2, c3, c4}` (e.g.,
+   extra unrelated edges on the middle node), the second chain
+   would not have been recognized as an instance. The attach-only
+   experiment just makes the limit visible by constructing the
+   case deliberately.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0014 merges as-is. Its scope is the attach-only policy knob on
+`run_naming_pass`; it is correct within the scope.
+
+The fragmentation finding is the important output. A follow-up ADR
+(0015, provisionally) should introduce **subgraph matching against
+named patterns**:
+
+  - Input: a named pattern's canonical form and the current RSet.
+  - Output: all connected subgraphs of the RSet whose canonical
+    form equals the pattern's.
+  - Strategy (minimum first): enumerate connected subgraphs of
+    `|canonical|` edges among the data identifiers, canonicalize
+    each, compare. Prune via endpoint-profile sketch filters.
+  - Wires into `run_naming_pass` as an alternative enumeration path
+    when `attach_only=true` (and potentially also when `false`).
+
+Until that ADR lands, attach-only is honest about its constraint:
+it attaches every structure the current pipeline can enumerate,
+and no more. The T-fork and asymmetric 2-chain cases should be
+understood as waypoints for the matching ADR, not as silent misses.
