@@ -66,3 +66,4 @@ Commit hash(es), file pointers.
 - [0024](0024-sample-instances.md) — Sampling-based `sample_instances_of`
 - [0025](0025-hierarchical-discovery-probe.md) — Hierarchical discovery probe (opt-in meta inclusion)
 - [0026](0026-gradient-refine-probe.md) — Gradient-descent refinement probe
+- [0027](0027-axiom-discovery-probe.md) — Axiom discovery probe (extensional → intensional)

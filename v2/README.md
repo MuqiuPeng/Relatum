@@ -87,6 +87,15 @@ but not cheaper than random re-sample on β-scale graphs;
 implementation was removed per minimum-first, ADR and log retained
 as record.
 
+ADR 0027 added **axiom discovery** (intensional inference): from a
+bounded template space of positive-implication axioms
+(≤ 2-edge premise, 1-edge conclusion, ≤ 3 variables), enumerate
+and evaluate against the RSet. Discovers transitivity on a
+poset, symmetry on a symmetric relation. `check_poset()` returns
+a three-axiom verdict. First v2 mechanism that reaches first-order
+axiomatic properties; axioms live as Rust values, not yet encoded
+as meta-R.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,

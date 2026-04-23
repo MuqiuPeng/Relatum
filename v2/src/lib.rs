@@ -990,6 +990,159 @@ impl RSet {
     // more expensive than random re-sample on β-scale graphs).
     // Reference code is retrievable from git history at commit 4fc8b67.
 
+    /// Discover positive-implication axioms by enumerating templates
+    /// and evaluating them against the data portion of the RSet.
+    /// Returns templates that hold with rate == 1.0 and at least
+    /// `min_evidence` premise bindings. ADR 0027.
+    pub fn discover_axioms(
+        &self,
+        config: &AxiomDiscoveryConfig,
+    ) -> Vec<AxiomEvidence> {
+        let meta = self.collect_meta_ids();
+        let ids: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .filter(|id| !meta.contains(*id))
+            .map(str::to_owned)
+            .collect();
+        if ids.is_empty() {
+            return Vec::new();
+        }
+
+        let templates = enumerate_axiom_templates(config);
+        let mut results = Vec::new();
+        for template in templates {
+            let ev = self.evaluate_axiom_template(&template, &ids, &meta);
+            if ev.premise_bindings >= config.min_evidence && ev.rate == 1.0 {
+                results.push(ev);
+            }
+        }
+        results
+    }
+
+    /// Reflexivity: every data identifier has a self-loop `R(x, x)`.
+    /// ADR 0027.
+    pub fn check_reflexivity(&self) -> ReflexivityEvidence {
+        let meta = self.collect_meta_ids();
+        let ids: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .filter(|id| !meta.contains(*id))
+            .map(str::to_owned)
+            .collect();
+        let total = ids.len();
+        let present = ids
+            .iter()
+            .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+            .count();
+        let rate = if total == 0 { 1.0 } else { present as f64 / total as f64 };
+        ReflexivityEvidence {
+            identifiers_total: total,
+            self_loops_present: present,
+            rate,
+        }
+    }
+
+    /// Antisymmetry: no pair of distinct data identifiers (x, y) such
+    /// that both R(x, y) and R(y, x) exist. ADR 0027.
+    pub fn check_antisymmetry(&self) -> AntisymmetryEvidence {
+        let meta = self.collect_meta_ids();
+        let mut pairs_seen = 0;
+        let mut violations = 0;
+        for r in self.instances.iter() {
+            if meta.contains(&r.x) || meta.contains(&r.y) {
+                continue;
+            }
+            if r.x == r.y {
+                continue;
+            }
+            pairs_seen += 1;
+            let reverse = R::new(r.y.clone(), r.x.clone());
+            if self.instances.contains(&reverse) {
+                violations += 1;
+            }
+        }
+        AntisymmetryEvidence {
+            directed_pairs_checked: pairs_seen,
+            violations,
+            holds: violations == 0,
+        }
+    }
+
+    /// Combined poset check: reflexive ∧ antisymmetric ∧ transitive.
+    /// ADR 0027.
+    pub fn check_poset(&self) -> PosetCheck {
+        let reflexive = self.check_reflexivity();
+        let antisymmetric = self.check_antisymmetry();
+
+        let transitivity_template = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        let meta = self.collect_meta_ids();
+        let ids: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .filter(|id| !meta.contains(*id))
+            .map(str::to_owned)
+            .collect();
+        let transitive_ev = if ids.is_empty() {
+            None
+        } else {
+            Some(self.evaluate_axiom_template(&transitivity_template, &ids, &meta))
+        };
+        let transitive_holds = transitive_ev
+            .as_ref()
+            .map(|e| e.rate == 1.0)
+            .unwrap_or(true);
+        let is_poset =
+            reflexive.rate == 1.0 && antisymmetric.holds && transitive_holds;
+        PosetCheck {
+            reflexive,
+            antisymmetric,
+            transitive: transitive_ev,
+            is_poset,
+        }
+    }
+
+    /// Evaluate one axiom template: count premise bindings and
+    /// conclusion satisfactions over data-only identifiers. ADR 0027.
+    fn evaluate_axiom_template(
+        &self,
+        template: &AxiomTemplate,
+        ids: &[String],
+        meta: &HashSet<String>,
+    ) -> AxiomEvidence {
+        let mut binding: Vec<usize> = vec![0; template.num_vars];
+        let mut premise_bindings = 0usize;
+        let mut conclusion_satisfied = 0usize;
+        evaluate_template_recursive(
+            self,
+            template,
+            ids,
+            meta,
+            &mut binding,
+            0,
+            &mut premise_bindings,
+            &mut conclusion_satisfied,
+        );
+        let rate = if premise_bindings == 0 {
+            1.0
+        } else {
+            conclusion_satisfied as f64 / premise_bindings as f64
+        };
+        AxiomEvidence {
+            template: template.clone(),
+            premise_bindings,
+            conclusion_satisfied,
+            rate,
+        }
+    }
+
     /// Refine a set of motif candidates. ADR 0017.
     ///
     /// For each candidate whose representative is not clean (embedded
@@ -1417,6 +1570,146 @@ fn shares_identifier(a: &R, b: &R) -> bool {
 // and git history at commit 4fc8b67 for the reference
 // implementation.
 
+/// Enumerate axiom templates up to the config's limits. ADR 0027.
+/// Produces canonicalized templates (first-use variable ordering)
+/// so that symmetric-renaming duplicates are not generated.
+fn enumerate_axiom_templates(config: &AxiomDiscoveryConfig) -> Vec<AxiomTemplate> {
+    let v = config.max_vars;
+    let mut single_edges: Vec<EdgeTemplate> = Vec::new();
+    for x in 0..v {
+        for y in 0..v {
+            single_edges.push(EdgeTemplate { x_var: x, y_var: y });
+        }
+    }
+
+    let mut premises: Vec<Vec<EdgeTemplate>> = Vec::new();
+    for m in 1..=config.max_premise_edges {
+        if m == 1 {
+            for e in &single_edges {
+                premises.push(vec![e.clone()]);
+            }
+        } else {
+            // m = 2: unordered pairs (possibly equal, but skip equal to avoid trivial repeats)
+            for i in 0..single_edges.len() {
+                for j in i..single_edges.len() {
+                    if i == j {
+                        continue;
+                    }
+                    premises.push(vec![single_edges[i].clone(), single_edges[j].clone()]);
+                }
+            }
+        }
+    }
+
+    let mut templates: Vec<AxiomTemplate> = Vec::new();
+    let mut seen: HashSet<AxiomTemplate> = HashSet::new();
+
+    for premise in premises {
+        // Collect variables used in premise.
+        let mut used_vars: HashSet<usize> = HashSet::new();
+        for e in &premise {
+            used_vars.insert(e.x_var);
+            used_vars.insert(e.y_var);
+        }
+        for conclusion in &single_edges {
+            // Conclusion must use only variables used in premise.
+            if !used_vars.contains(&conclusion.x_var)
+                || !used_vars.contains(&conclusion.y_var)
+            {
+                continue;
+            }
+            // Conclusion must not be trivially one of the premise edges.
+            if premise.contains(conclusion) {
+                continue;
+            }
+            let tpl = canonicalize_template(AxiomTemplate {
+                num_vars: v,
+                premise: premise.clone(),
+                conclusion: conclusion.clone(),
+            });
+            if seen.insert(tpl.clone()) {
+                templates.push(tpl);
+            }
+        }
+    }
+    templates
+}
+
+/// Canonicalize an axiom template by renumbering variables in
+/// first-use order (over premise then conclusion). ADR 0027.
+fn canonicalize_template(mut tpl: AxiomTemplate) -> AxiomTemplate {
+    let mut remap: HashMap<usize, usize> = HashMap::new();
+    let mut next: usize = 0;
+    let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+        if let Some(&m) = remap.get(&v) {
+            m
+        } else {
+            let m = *next;
+            remap.insert(v, m);
+            *next += 1;
+            m
+        }
+    };
+    for e in &mut tpl.premise {
+        e.x_var = assign(e.x_var, &mut remap, &mut next);
+        e.y_var = assign(e.y_var, &mut remap, &mut next);
+    }
+    tpl.conclusion.x_var =
+        assign(tpl.conclusion.x_var, &mut remap, &mut next);
+    tpl.conclusion.y_var =
+        assign(tpl.conclusion.y_var, &mut remap, &mut next);
+    // Sort premise edges so conjunction order is canonical.
+    tpl.premise.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
+    tpl.num_vars = next;
+    tpl
+}
+
+/// Enumerate all bindings of `template.num_vars` variables to
+/// identifiers and accumulate counts of premise satisfactions and
+/// conclusion satisfactions. ADR 0027.
+#[allow(clippy::too_many_arguments)]
+fn evaluate_template_recursive(
+    rs: &RSet,
+    template: &AxiomTemplate,
+    ids: &[String],
+    _meta: &HashSet<String>,
+    binding: &mut [usize],
+    depth: usize,
+    premise_bindings: &mut usize,
+    conclusion_satisfied: &mut usize,
+) {
+    if depth == binding.len() {
+        // Check premise.
+        for e in &template.premise {
+            let x = &ids[binding[e.x_var]];
+            let y = &ids[binding[e.y_var]];
+            if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                return;
+            }
+        }
+        *premise_bindings += 1;
+        let cx = &ids[binding[template.conclusion.x_var]];
+        let cy = &ids[binding[template.conclusion.y_var]];
+        if rs.instances.contains(&R::new(cx.clone(), cy.clone())) {
+            *conclusion_satisfied += 1;
+        }
+        return;
+    }
+    for i in 0..ids.len() {
+        binding[depth] = i;
+        evaluate_template_recursive(
+            rs,
+            template,
+            ids,
+            _meta,
+            binding,
+            depth + 1,
+            premise_bindings,
+            conclusion_satisfied,
+        );
+    }
+}
+
 /// BFS-style enumeration of connected k-edge subgraphs with canonical-form
 /// match. ADR 0015 `find_instances_of` helper. Dedups edge sets via a
 /// sorted-tuple key so each connected set is visited once, regardless of
@@ -1511,6 +1804,80 @@ pub struct MotifCandidate {
 
 // GradientRefineConfig removed alongside the gradient refinement
 // primitives. See ADR 0026 and its log for rationale.
+
+/// Axiom discovery: template of a single edge with variable indices
+/// on both endpoints. ADR 0027.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EdgeTemplate {
+    pub x_var: usize,
+    pub y_var: usize,
+}
+
+/// Axiom discovery: a rule `premise ⇒ conclusion` where premise is a
+/// conjunction of edge templates and conclusion is a single edge.
+/// Variables are identified by small integer indices 0..num_vars.
+/// ADR 0027.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AxiomTemplate {
+    pub num_vars: usize,
+    pub premise: Vec<EdgeTemplate>,
+    pub conclusion: EdgeTemplate,
+}
+
+/// Axiom discovery: evidence for one template against an RSet.
+/// ADR 0027.
+#[derive(Debug, Clone)]
+pub struct AxiomEvidence {
+    pub template: AxiomTemplate,
+    pub premise_bindings: usize,
+    pub conclusion_satisfied: usize,
+    pub rate: f64,
+}
+
+/// Configuration for axiom discovery. ADR 0027.
+#[derive(Debug, Clone)]
+pub struct AxiomDiscoveryConfig {
+    pub max_premise_edges: usize,
+    pub max_vars: usize,
+    pub min_evidence: usize,
+}
+
+impl Default for AxiomDiscoveryConfig {
+    fn default() -> Self {
+        AxiomDiscoveryConfig {
+            max_premise_edges: 2,
+            max_vars: 3,
+            min_evidence: 1,
+        }
+    }
+}
+
+/// Reflexivity check result. ADR 0027. Does not fit the positive-
+/// implication template (premise "x is an identifier" has no edge).
+#[derive(Debug, Clone)]
+pub struct ReflexivityEvidence {
+    pub identifiers_total: usize,
+    pub self_loops_present: usize,
+    pub rate: f64,
+}
+
+/// Antisymmetry check result. ADR 0027. Does not fit the template
+/// (conclusion "x = y" is not an edge).
+#[derive(Debug, Clone)]
+pub struct AntisymmetryEvidence {
+    pub directed_pairs_checked: usize,
+    pub violations: usize,
+    pub holds: bool,
+}
+
+/// Combined poset check. ADR 0027.
+#[derive(Debug, Clone)]
+pub struct PosetCheck {
+    pub reflexive: ReflexivityEvidence,
+    pub antisymmetric: AntisymmetryEvidence,
+    pub transitive: Option<AxiomEvidence>,
+    pub is_poset: bool,
+}
 
 /// Configuration for sampling-based `sample_instances_of`. ADR 0024.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3744,6 +4111,124 @@ mod tests {
     }
 
     // ADR 0026 gradient refinement tests removed with the primitives.
+
+    // ADR 0027 axiom-discovery helpers for tests.
+
+    fn diamond_poset() -> RSet {
+        // Hasse-diagram-as-transitive-closure: a ≤ b, a ≤ c, b ≤ d, c ≤ d,
+        // a ≤ d (transitive closure), plus all self-loops.
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c", "d"];
+        for n in &nodes {
+            rs.add(R::new(*n, *n));
+        }
+        rs.extend([
+            R::new("a", "b"), R::new("a", "c"), R::new("a", "d"),
+            R::new("b", "d"), R::new("c", "d"),
+        ]);
+        rs
+    }
+
+    fn simple_symmetric_graph() -> RSet {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"), R::new("b", "a"),
+            R::new("b", "c"), R::new("c", "b"),
+        ]);
+        rs
+    }
+
+    #[test]
+    fn axiom_discovery_finds_transitivity_on_poset() {
+        let rs = diamond_poset();
+        let axioms = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        // Transitivity as canonicalized template: premise
+        // [R(0,1), R(1,2)], conclusion R(0,2), num_vars = 3.
+        let transitivity = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        let found = axioms.iter().any(|e| e.template == transitivity);
+        assert!(found, "expected transitivity among discovered axioms; got {:?}",
+            axioms.iter().map(|e| &e.template).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn axiom_discovery_rejects_transitivity_on_raw_chain() {
+        // Non-transitive: R(a,b), R(b,c). Transitivity demands R(a,c),
+        // which is absent → rate < 1.0 → NOT in strict-discover output.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let axioms = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        let transitivity = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        assert!(!axioms.iter().any(|e| e.template == transitivity));
+    }
+
+    #[test]
+    fn axiom_discovery_finds_symmetry_on_symmetric_graph() {
+        let rs = simple_symmetric_graph();
+        let axioms = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        // Symmetry: premise R(0,1), conclusion R(1,0).
+        let symmetry = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        assert!(axioms.iter().any(|e| e.template == symmetry));
+    }
+
+    #[test]
+    fn check_poset_accepts_diamond_and_rejects_chain() {
+        let rs = diamond_poset();
+        let pc = rs.check_poset();
+        assert!(pc.is_poset);
+        assert_eq!(pc.reflexive.rate, 1.0);
+        assert!(pc.antisymmetric.holds);
+        assert!(pc
+            .transitive
+            .as_ref()
+            .map(|e| e.rate == 1.0)
+            .unwrap_or(false));
+
+        // A chain {a→b, b→c}: not reflexive, not transitive.
+        let mut chain = RSet::new();
+        chain.extend([R::new("a", "b"), R::new("b", "c")]);
+        let pc2 = chain.check_poset();
+        assert!(!pc2.is_poset);
+    }
+
+    #[test]
+    fn check_reflexivity_empty_rset_is_vacuously_one() {
+        let rs = RSet::new();
+        let ev = rs.check_reflexivity();
+        assert_eq!(ev.rate, 1.0);
+        assert_eq!(ev.identifiers_total, 0);
+    }
+
+    #[test]
+    fn axiom_discovery_enumeration_is_deterministic() {
+        // Same RSet, two calls → same axioms in same order.
+        let rs = diamond_poset();
+        let a = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        let b = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        assert_eq!(a.len(), b.len());
+        for (ea, eb) in a.iter().zip(b.iter()) {
+            assert_eq!(ea.template, eb.template);
+            assert_eq!(ea.premise_bindings, eb.premise_bindings);
+            assert_eq!(ea.conclusion_satisfied, eb.conclusion_satisfied);
+        }
+    }
 
     #[test]
     fn chain_is_representable() {

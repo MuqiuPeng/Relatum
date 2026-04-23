@@ -1,0 +1,175 @@
+Date: 2026-04-24
+Descriptor: axiom_discovery (ADR 0027 probe)
+Purpose:
+    Test whether v2 can lift from extensional pattern finding
+    (finite canonical subgraphs) to intensional axiom discovery
+    (universally quantified implications). Specifically: can the
+    system, given a diamond poset's R instances, discover
+    transitivity as a rule?
+
+Mechanism version:
+    ADR 0027 (AxiomTemplate, AxiomEvidence, AxiomDiscoveryConfig,
+    discover_axioms, check_reflexivity, check_antisymmetry,
+    check_poset).
+    Runner: v2/examples/axiom_discovery.rs.
+
+====================================================================
+RAW OUTPUT (abbreviated — full output in terminal run)
+====================================================================
+
+=== Case 1: diamond poset ===
+discovered axioms (rate = 1.0, evidence ≥ 1): 25
+  (among them:)
+  num_vars=2  premise=[R(0,1)]             conclusion=R(0,0)    bindings=9
+  num_vars=3  premise=[R(0,1), R(1,2)]     conclusion=R(0,2)    bindings=16  ← TRANSITIVITY
+  num_vars=2  premise=[R(0,1)]             conclusion=R(1,1)    bindings=9
+  ... (22 more)
+check_poset:  is_poset=true  reflexive=100%(4/4)  antisymmetric=true  transitive=true
+
+=== Case 2: raw chain a → b → c ===
+discovered axioms: 0
+check_poset:  is_poset=false  reflexive=0%(0/3)  antisymmetric=true  transitive=false
+
+=== Case 3: symmetric graph ===
+discovered axioms: 9
+  num_vars=2  premise=[R(0,1)]             conclusion=R(1,0)    bindings=4   ← SYMMETRY
+  ... (8 more)
+check_poset:  is_poset=false  reflexive=0%(0/3)  antisymmetric=false  transitive=false
+
+====================================================================
+VERDICT: POSITIVE
+====================================================================
+
+**v2 can, for the first time, discover intensional axioms from a
+relation's extensional content.** The diamond poset input produced:
+
+- **Transitivity** as a discovered template: premise `[R(0,1),
+  R(1,2)]`, conclusion `R(0,2)`, 16 bindings satisfied at rate
+  100%. This is the canonical partial-order axiom, recovered
+  entirely from observing which edges exist.
+- **Symmetry** on the symmetric-graph input: premise `[R(0,1)]`,
+  conclusion `R(1,0)`, 4 bindings satisfied at rate 100%.
+- **check_poset** gives the correct boolean verdict on all three
+  cases (diamond true; chain false; symmetric false).
+
+The axiom-discovery probe crosses from extensional to intensional.
+It does not depend on pre-coded axiom templates; it *enumerates*
+templates in a bounded space and *evaluates* them against the data.
+
+====================================================================
+OBSERVATIONS ON THE RESULTS
+====================================================================
+
+1. **The headline axiom (transitivity) is among the results.** The
+   enumeration successfully generated `R(x,y) ∧ R(y,z) → R(x,z)`
+   as a template, evaluated it, and found rate = 1.0 on the
+   diamond poset. Same for symmetry on the symmetric graph.
+
+2. **The output has MANY redundant axioms (25 on the diamond).**
+   Most are consequences of reflexivity holding over all
+   identifiers. Examples:
+   - `R(0,1) → R(0,0)` — "any source has a self-loop" (true
+     because *every* identifier has a self-loop).
+   - `R(0,1), R(0,0) → R(1,1)` — same kind.
+   - `R(0,1), R(1,2) → R(0,0)` — again from universal reflexivity.
+
+   These are true-but-derivable. A future refinement would subsume
+   them under the stronger "∀x. R(x,x)" axiom (reflexivity proper,
+   which is a separate check in this ADR because its premise is
+   "x is an identifier," not an edge).
+
+3. **Subsumption / minimality is an open direction.** To get from
+   "25 redundant axioms" to "3 minimal axioms {reflexivity,
+   antisymmetry, transitivity}," we need:
+   - Subsumption detection: if axiom A implies axiom B, drop B.
+   - Possibly interaction with reflexivity: many discovered axioms
+     are trivial once you know all identifiers have self-loops.
+   - Possibly generalization: detect that the same template holds
+     for many structurally-similar inputs → generalize.
+   None of these is in scope for this ADR; recorded as future work.
+
+4. **The chain produces zero axioms.** An impoverished data graph
+   (two edges, no reflexivity, no transitivity) has no positive
+   implications at rate 1.0. This is the correct behavior — no
+   false positives emerge from noise.
+
+5. **The enumeration scales sharply.** At `max_vars=3, max_premise=2`
+   on the diamond (4 data identifiers), the evaluation was
+   instantaneous. At `max_vars=4` or more, bindings space is
+   `|ids|^vars`; for 17 identifiers at 4 vars that's 83k
+   bindings per template. Still bearable, but the right upper
+   bound depends on RSet size.
+
+====================================================================
+RELATIONSHIP TO v2's COMMITMENTS
+====================================================================
+
+- **Commitment 1 (only R):** This ADR introduces axioms as Rust
+  data structures, NOT as R instances. Commitment 1 is not
+  literally broken — the RSet itself still contains only R — but
+  the system's *outputs* now include structured data beyond R.
+  A future ADR could attempt to encode axioms as meta-R (variable
+  markers, premise/conclusion separators, ...). Design choice
+  deferred; the probe works with Rust-level axioms.
+
+- **Commitment 3 (types = meta-R):** Axioms are not "types" in the
+  same sense as pattern instances. They are *rules*. Whether rules
+  deserve meta-R encoding is an open question.
+
+- **Commitments 2, 4, 5:** Not affected. Edge direction is
+  preserved in templates (R(x,y) ≠ R(y,x) unless explicitly made
+  so); identity is still token-based when binding; similarity
+  doesn't enter the axiom-discovery layer.
+
+So: the probe is compatible with v2's ontology as long as we
+accept that *axioms live one level above the R space*. That is
+consistent with how v1 handled rules (separate structure with its
+own compilation); v2 just hadn't addressed it until now.
+
+====================================================================
+WHAT THIS ENABLES
+====================================================================
+
+- The system can now answer: "Is this RSet a poset?" as a property
+  verdict with full evidence breakdown.
+- More generally: for any "simple" axiom in the 3-var / 2-edge-
+  premise / 1-edge-conclusion space, the system can detect whether
+  it holds on a given RSet.
+- Foundation for future work: subsumption filtering, axiom
+  encoding as meta-R, discovery over larger template spaces,
+  defeasible (< 1.0 rate) rules.
+
+====================================================================
+WHAT IT DOES NOT ENABLE YET
+====================================================================
+
+- "∀ x, P(x)" axioms over plain identifiers without edge premises
+  (reflexivity is the canonical example; handled as a separate
+  check, not via the template enumeration).
+- Axioms involving equality or arithmetic over nodes.
+- Axioms larger than 2-edge premise without combinatorial blowup
+  mitigation.
+- Automatic minimization / subsumption.
+- Persistence in R space.
+
+## DECISION / NEXT
+
+ADR 0027 probe is a **success on its stated scope**: intensional
+axiom discovery is operational, and a poset is correctly
+identified as such. The probe elevates v2 from "finite-motif
+extensional pattern mining" into "first-order axiomatic
+property detection over R."
+
+Future directions (none of which are scoped into this ADR):
+- **Subsumption / minimality** — reduce redundant axioms to a
+  minimal set.
+- **Meta-R encoding** of axioms — make them first-class
+  persistent entities.
+- **Defeasible rules** — admit rate < 1.0 with a support metric.
+- **Extended template space** — larger premises, more variables,
+  with pruning.
+
+Of these, subsumption is the most immediate improvement: the 25
+→ 3 reduction on the diamond poset output would make the probe's
+findings much more interpretable. That could be ADR 0028 if the
+user wants.

@@ -777,3 +777,43 @@ What persists:
 
 Decision: [0026-gradient-refine-probe](decisions/0026-gradient-refine-probe.md).
 Log: [logs/2026-04-23_gradient_refine.log](../logs/2026-04-23_gradient_refine.log).
+
+### Axiom discovery probe: extensional → intensional (ADR 0027)
+User pointed out that v2's pattern machinery is extensional
+(finite motifs) and asked whether it can construct a poset
+(intensional axiom-level concept). Chose option C: system
+discovers axioms from data.
+
+Added:
+- `AxiomTemplate { num_vars, premise: Vec<EdgeTemplate>, conclusion }`
+- `AxiomEvidence`, `AxiomDiscoveryConfig`
+- `ReflexivityEvidence`, `AntisymmetryEvidence`, `PosetCheck`
+- `RSet::discover_axioms(config)` — enumerate template space
+  (max_vars=3, max_premise=2 by default), canonicalize variables,
+  evaluate each against data, return strict-rate-1.0 survivors
+- `RSet::check_reflexivity()`, `check_antisymmetry()`, `check_poset()`
+- 6 unit tests; 128 total pass
+
+**Verdict: POSITIVE.** On a diamond poset:
+- Transitivity discovered as template `[R(0,1), R(1,2)] → R(0,2)`
+  with 16 bindings at rate 1.0 ← canonical partial-order axiom,
+  recovered entirely from edge observations
+- `check_poset()` returns `is_poset=true` with full evidence
+- On a raw chain: 0 axioms + `is_poset=false` (correct)
+- On a symmetric graph: symmetry discovered as `[R(0,1)] → R(1,0)`
+
+Caveat: 25 axioms on diamond, most are consequences of universal
+reflexivity. Subsumption / minimization is an obvious next step
+but out of scope.
+
+Architecture note: axioms are Rust values, NOT meta-R instances.
+Encoding rules-with-variables in R is a bigger design question
+deferred to a future ADR.
+
+v2 now has a **first-order axiomatic inference primitive** on top
+of the extensional machinery. Posets, equivalence relations,
+symmetric relations can be detected as properties, not just as
+collections of motifs.
+
+Decision: [0027-axiom-discovery-probe](decisions/0027-axiom-discovery-probe.md).
+Log: [logs/2026-04-24_axiom_discovery.log](../logs/2026-04-24_axiom_discovery.log).
