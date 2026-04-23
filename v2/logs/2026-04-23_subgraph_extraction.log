@@ -1,0 +1,206 @@
+Date: 2026-04-23
+Descriptor: subgraph_extraction (validates ADR 0008)
+Purpose:
+    Apply connected-component extraction to every compound class on the
+    same mixed graph used by the ADR 0007 probe. Verify that known
+    1-hop false merges split into distinct subgraphs by connectivity,
+    completing sanity filter (b).
+
+Mechanism version:
+    ADR 0008 (Subgraph, Subgraph::connected_components_of,
+    RSet::compound_class_subgraphs).
+    Source: v2/src/lib.rs at the commit implementing 0008.
+    Runner: v2/examples/subgraph_extraction.rs.
+
+Command:
+    cargo run --example subgraph_extraction
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+Total edges:            14
+Total compound classes: 7
+Total subgraph instances: 9
+
+compound class  members=1  subgraphs=1
+  endpoint x: out=1 in=0 LeftOnly
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=0 co_right=0 forward=0 reverse=0
+  subgraph #1  (1 edges)
+    R(ie1, ie2)
+
+compound class  members=1  subgraphs=1
+  endpoint x: out=1 in=0 LeftOnly
+  endpoint y: out=1 in=1 Both
+  locality   co_left=0 co_right=0 forward=1 reverse=0
+  subgraph #1  (1 edges)
+    R(c1, c2)
+
+compound class  members=2  subgraphs=2
+  endpoint x: out=1 in=1 Both
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=0 co_right=0 forward=0 reverse=1
+  subgraph #1  (1 edges)
+    R(c4, c5)
+  subgraph #2  (1 edges)
+    R(t2, t4)
+
+compound class  members=5  subgraphs=2
+  endpoint x: out=1 in=1 Both
+  endpoint y: out=1 in=1 Both
+  locality   co_left=0 co_right=0 forward=1 reverse=1
+  subgraph #1  (3 edges)
+    R(k1, k2)
+    R(k2, k3)
+    R(k3, k1)
+  subgraph #2  (2 edges)
+    R(c2, c3)
+    R(c3, c4)
+
+compound class  members=1  subgraphs=1
+  endpoint x: out=2 in=0 LeftOnly
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=1 co_right=0 forward=0 reverse=0
+  subgraph #1  (1 edges)
+    R(t1, t3)
+
+compound class  members=1  subgraphs=1
+  endpoint x: out=2 in=0 LeftOnly
+  endpoint y: out=1 in=1 Both
+  locality   co_left=1 co_right=0 forward=1 reverse=0
+  subgraph #1  (1 edges)
+    R(t1, t2)
+
+compound class  members=3  subgraphs=1
+  endpoint x: out=3 in=0 LeftOnly
+  endpoint y: out=0 in=1 RightOnly
+  locality   co_left=2 co_right=0 forward=0 reverse=0
+  subgraph #1  (3 edges)
+    R(s, sa)
+    R(s, sb)
+    R(s, sc)
+
+====================================================================
+ORACLE vs OBSERVED
+====================================================================
+
+ADR 0008's predicted split of each compound class from the ADR 0007
+mixed graph:
+
+| Compound class | members | predicted subgraphs | observed |
+|---|---|---|---|
+| chain-middle + cycle (false merge) | 5 | 2 (3-edge cycle + 2-edge chain fragment) | ✓ |
+| star spokes | 3 | 1 (3-edge star) | ✓ |
+| chain-tail + tree-leaf (terminal descent) | 2 | 2 (single-edge each) | ✓ |
+| chain-head | 1 | 1 | ✓ |
+| tree branches (each) | 1 | 1 each | ✓ |
+| isolated edge | 1 | 1 | ✓ |
+
+All predictions match. Sanity filter (b) is operational on this graph.
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. The known false merge splits cleanly.
+   The compound class with 5 members — chain-middle edges plus all
+   three cycle edges — produces two subgraphs:
+     subgraph #1 (3 edges): R(k1,k2), R(k2,k3), R(k3,k1)  — the cycle
+     subgraph #2 (2 edges): R(c2,c3), R(c3,c4)            — a chain fragment
+   Size differs (3 vs 2), so these subgraphs cannot be the same pattern
+   under any reasonable definition. The 1-hop collision recorded in
+   ADR 0006 is no longer misleading at the β layer.
+
+2. "Terminal descent" separates into two isolated instances.
+   The compound class that merged R(c4,c5) and R(t2,t4) now produces
+   two disjoint single-edge subgraphs. They share a fingerprint but
+   no identifiers. If a later pattern-naming layer (ADR 0010) decides
+   these are "the same pattern," it will do so by isomorphism of
+   singleton subgraphs — not by simple fingerprint matching. This is
+   structurally a cleaner framing than the flat compound class
+   suggested.
+
+3. The star compound class stays as one subgraph.
+   Three edges, all sharing identifier `s`, form a single connected
+   component. Star-ness is preserved as a unit — exactly the outcome
+   β Option 2 was chosen to enable. A pattern-naming layer can point
+   to this one subgraph as the "star instance."
+
+4. Class-vs-subgraph ratio is informative.
+   - 14 edges
+   - 7 compound classes (from ADR 0007)
+   - 9 subgraph instances (this ADR)
+   The jump from 7 → 9 is where false merges broke. On a larger or
+   more tangled graph, the gap would be bigger. It's a cheap indicator
+   of "how much did the connectivity check add to raw compound
+   classification."
+
+5. Singletons stay singletons.
+   Four compound classes had size 1 (chain-head, both tree branches,
+   isolated edge). Each produces a single subgraph of 1 edge. The
+   subgraph layer doesn't invent repetition where none existed — it
+   just splits false over-merges.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Pattern instances are now subgraphs, not flat classes.
+  - The chain+cycle false merge is structurally dissolved: any
+    mechanism looking at "what subgraph instances exist under this
+    compound fingerprint" sees two shape-distinct groups, not one.
+  - The set of candidate pattern instances to reason about has
+    moved from "compound classes of edges" to "subgraph instances
+    within a compound class." The latter is the right unit.
+
+Does NOT enable (deferred):
+  - Decide whether two subgraphs represent the same pattern.
+    Subgraph equality at this ADR is set-of-edges equality; two
+    subgraphs with different identifiers are always unequal even if
+    isomorphic. That is ADR 0009's job.
+  - Name a pattern as a meta-R instance (commitment 3). ADR 0010.
+  - Decide which candidate patterns become named. ADR 0011 (γ's
+    first real task).
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0008 is validated. The subgraph abstraction is in place; sanity
+filter (b) is operational.
+
+Next ADR: 0009 — subgraph canonicalization.
+
+Core question: given two Subgraph values with (possibly) different
+identifiers, are they the same pattern?
+
+Minimum-first plan for 0009:
+  - Compute a canonical labeling of each subgraph (identifiers
+    re-mapped to stable abstract labels based on structural role).
+  - Two subgraphs are "the same pattern" iff their canonicalized
+    edge sets match.
+  - First-pass labeling candidate: Weisfeiler-Lehman-style refinement
+    using existing Signatures (ADR 0004), which is a known and
+    reasonable heuristic for graph isomorphism.
+
+Key questions to resolve when writing 0009:
+  - WL is a heuristic: for the small graphs we're mining now it is
+    effectively exact, but for larger cases false positives are
+    possible. Is that acceptable for the first β pass? (Likely yes —
+    the rare collisions can be filtered later by a more expensive
+    check.)
+  - Canonical form: returned as what? A sorted vector of edges over
+    relabeled identifiers is one option; a Merkle-style hash of
+    the WL-refined neighborhoods is another. Only one needs to
+    support equality.
+  - Cost: WL is linear in edges × iterations; subgraphs at our scale
+    are tiny, so this is not a performance concern.
+
+Follow-up probe worth considering before 0010: after 0009 runs, do
+distinct compound classes produce isomorphic subgraphs? (e.g., does
+the 3-edge star ever reappear somewhere under a different compound
+fingerprint that 0007 gave it?) If so, pattern identification at
+the subgraph level cuts *across* compound classes, which would be
+an important finding.

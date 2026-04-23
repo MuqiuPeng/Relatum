@@ -5,7 +5,7 @@
 //!
 //! Ontological commitments: see `docs/constitution.md`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// The sole primitive. Direction is intrinsic; meaning is not.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -145,6 +145,25 @@ impl RSet {
         (self.r_signature(r), self.locality_profile(r))
     }
 
+    /// For each compound fingerprint, split its member edges into
+    /// connected-component subgraphs. ADR 0008 — the first β-layer
+    /// operation. The split breaks known 1-hop false merges
+    /// (e.g., chain-middle + cycle-edge) because their members live
+    /// in different connected components of the R graph.
+    pub fn compound_class_subgraphs(&self) -> HashMap<EdgeFingerprint, Vec<Subgraph>> {
+        let mut classes: HashMap<EdgeFingerprint, Vec<R>> = HashMap::new();
+        for r in self.iter() {
+            classes
+                .entry(self.edge_fingerprint(r))
+                .or_default()
+                .push(r.clone());
+        }
+        classes
+            .into_iter()
+            .map(|(fp, members)| (fp, Subgraph::connected_components_of(members)))
+            .collect()
+    }
+
     /// Locality profile: four counts of how this edge connects to others
     /// via shared identifiers. ADR 0006. All counts exclude `r` itself.
     pub fn locality_profile(&self, r: &R) -> LocalityProfile {
@@ -216,6 +235,102 @@ impl LocalityProfile {
 /// 1-hop locality. ADR 0007. The "fingerprint" name is deliberate —
 /// this is an observational composition, not a new commitment.
 pub type EdgeFingerprint = (RSignature, LocalityProfile);
+
+/// A connected chunk of the R graph. ADR 0008.
+///
+/// Equality at this layer is trivial set-of-edges equality. Isomorphism
+/// (two subgraphs representing the same *pattern* despite different
+/// identifiers) is ADR 0009's concern.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Subgraph {
+    edges: HashSet<R>,
+}
+
+impl Subgraph {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_edges<I: IntoIterator<Item = R>>(edges: I) -> Self {
+        Subgraph { edges: edges.into_iter().collect() }
+    }
+
+    pub fn edges(&self) -> impl Iterator<Item = &R> {
+        self.edges.iter()
+    }
+
+    pub fn contains(&self, r: &R) -> bool {
+        self.edges.contains(r)
+    }
+
+    pub fn len(&self) -> usize {
+        self.edges.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.edges.is_empty()
+    }
+
+    /// All identifiers appearing in this subgraph.
+    pub fn identifiers(&self) -> HashSet<&str> {
+        self.edges
+            .iter()
+            .flat_map(|r| [r.x.as_str(), r.y.as_str()])
+            .collect()
+    }
+
+    /// Partition a set of edges into connected components. Two edges
+    /// are connected iff they share at least one identifier. The
+    /// relation is transitive; components are maximal connected sets.
+    pub fn connected_components_of<I: IntoIterator<Item = R>>(edges: I) -> Vec<Subgraph> {
+        let edges: Vec<R> = edges.into_iter().collect();
+        let n = edges.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        // adjacency[i] = indices of edges that share ≥ 1 identifier with edges[i]
+        let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if shares_identifier(&edges[i], &edges[j]) {
+                    adjacency[i].push(j);
+                    adjacency[j].push(i);
+                }
+            }
+        }
+
+        let mut visited = vec![false; n];
+        let mut components = Vec::new();
+
+        for start in 0..n {
+            if visited[start] {
+                continue;
+            }
+            let mut component: HashSet<R> = HashSet::new();
+            let mut queue = VecDeque::new();
+            queue.push_back(start);
+            visited[start] = true;
+
+            while let Some(i) = queue.pop_front() {
+                component.insert(edges[i].clone());
+                for &j in &adjacency[i] {
+                    if !visited[j] {
+                        visited[j] = true;
+                        queue.push_back(j);
+                    }
+                }
+            }
+            components.push(Subgraph { edges: component });
+        }
+
+        components
+    }
+}
+
+fn shares_identifier(a: &R, b: &R) -> bool {
+    a.x == b.x || a.x == b.y || a.y == b.x || a.y == b.y
+}
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
@@ -731,6 +846,121 @@ mod tests {
             chain.edge_fingerprint(&R::new("b", "c")),
             cycle.edge_fingerprint(&R::new("x", "y"))
         );
+    }
+
+    #[test]
+    fn subgraph_empty() {
+        let s = Subgraph::new();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert!(s.identifiers().is_empty());
+    }
+
+    #[test]
+    fn subgraph_from_edges_roundtrip() {
+        let s = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        assert_eq!(s.len(), 2);
+        assert!(s.contains(&R::new("a", "b")));
+        assert_eq!(s.identifiers().len(), 3);
+    }
+
+    #[test]
+    fn connected_components_empty_input() {
+        assert!(Subgraph::connected_components_of([] as [R; 0]).is_empty());
+    }
+
+    #[test]
+    fn connected_components_single_edge_single_component() {
+        let comps = Subgraph::connected_components_of([R::new("a", "b")]);
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].len(), 1);
+    }
+
+    #[test]
+    fn connected_components_disjoint_edges_split() {
+        let comps = Subgraph::connected_components_of([
+            R::new("a", "b"),
+            R::new("c", "d"), // shares no identifier with R(a, b)
+        ]);
+        assert_eq!(comps.len(), 2);
+    }
+
+    #[test]
+    fn connected_components_chain_is_single() {
+        let comps = Subgraph::connected_components_of([
+            R::new("a", "b"),
+            R::new("b", "c"),
+            R::new("c", "d"),
+        ]);
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].len(), 3);
+    }
+
+    #[test]
+    fn connected_components_cycle_is_single() {
+        let comps = Subgraph::connected_components_of([
+            R::new("a", "b"),
+            R::new("b", "c"),
+            R::new("c", "a"),
+        ]);
+        assert_eq!(comps.len(), 1);
+        assert_eq!(comps[0].len(), 3);
+    }
+
+    #[test]
+    fn compound_class_subgraphs_splits_chain_plus_cycle_false_merge() {
+        // Chain and cycle disjoint in the same RSet. Their interior
+        // edges share the 1-hop compound fingerprint, so they land in
+        // one compound class — but their connected components differ.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("c1", "c2"), R::new("c2", "c3"),
+            R::new("c3", "c4"), R::new("c4", "c5"),
+        ]);
+        rs.extend([
+            R::new("k1", "k2"), R::new("k2", "k3"), R::new("k3", "k1"),
+        ]);
+
+        let classes = rs.compound_class_subgraphs();
+        // Find the big class (5 members = chain-middle + cycle)
+        let big = classes
+            .values()
+            .find(|subgraphs| subgraphs.iter().map(|s| s.len()).sum::<usize>() == 5)
+            .expect("expected a 5-member compound class (chain-middle + cycle)");
+        assert_eq!(big.len(), 2);
+        // one subgraph of 2 edges (chain fragment), one of 3 (cycle)
+        let mut sizes: Vec<usize> = big.iter().map(|s| s.len()).collect();
+        sizes.sort();
+        assert_eq!(sizes, vec![2, 3]);
+    }
+
+    #[test]
+    fn compound_class_subgraphs_star_stays_unified() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("h", "a"),
+            R::new("h", "b"),
+            R::new("h", "c"),
+        ]);
+        let classes = rs.compound_class_subgraphs();
+        assert_eq!(classes.len(), 1);
+        let subgraphs = classes.values().next().unwrap();
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].len(), 3);
+    }
+
+    #[test]
+    fn compound_class_subgraphs_same_fingerprint_no_shared_id_splits() {
+        // Two single edges with the same endpoint profile pair but no
+        // identifier in common land in the same compound class yet
+        // produce two separate subgraphs.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("c", "d")]);
+        let classes = rs.compound_class_subgraphs();
+        assert_eq!(classes.len(), 1);
+        let subgraphs = classes.values().next().unwrap();
+        assert_eq!(subgraphs.len(), 2);
+        assert!(subgraphs.iter().all(|s| s.len() == 1));
     }
 
     #[test]

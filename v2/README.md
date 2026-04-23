@@ -28,13 +28,15 @@ cargo test
 
 ## Status
 
-Observation, 0-hop signatures, 1-hop locality, and compound-signature
-probe in place: `R`, `RSet`, `IdentifierProfile`, `Signature`,
-`equivalence_classes()`, `RSignature`, `r_equivalence_classes()`,
-`LocalityProfile`, `locality_profile()`, `EdgeFingerprint`,
-`edge_fingerprint()`.
+Observation through subgraph-extraction in place:
+`R`, `RSet`, `IdentifierProfile`, `Signature`, `equivalence_classes()`,
+`RSignature`, `r_equivalence_classes()`, `LocalityProfile`,
+`locality_profile()`, `EdgeFingerprint`, `edge_fingerprint()`,
+`Subgraph`, `Subgraph::connected_components_of`,
+`compound_class_subgraphs()`.
 
-Not yet implemented: compound pattern naming (meta-R, β), self-driven
-triggering (γ), evaluation. See [docs/progress.md](docs/progress.md)
-for the current frontier and the ADR 0007 probe findings for β's
-starting shape.
+β is underway in four ADRs: 0008 (subgraph representation — done),
+0009 (canonicalization / isomorphism — next), 0010 (pattern naming as
+meta-R per commitment 3), 0011 (γ drive policy).
+
+See [docs/progress.md](docs/progress.md) for the current frontier.

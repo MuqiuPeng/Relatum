@@ -155,3 +155,30 @@ applying this sanity filter.
 
 Decision: [0007-compound-signature-probe](decisions/0007-compound-signature-probe.md).
 Log: [logs/2026-04-23_compound_signature.log](../logs/2026-04-23_compound_signature.log).
+
+Commit: `ef6b332`.
+
+### Subgraph extraction (β step 1 — first of 4 planned ADRs)
+Added `Subgraph` struct and `Subgraph::connected_components_of` (plain
+BFS with identifier-sharing adjacency). Added `compound_class_subgraphs`
+on `RSet` for the common lift from compound fingerprint to subgraph
+instances.
+
+10 new tests. Applied to the ADR 0007 mixed graph:
+
+- 14 edges → 7 compound classes → **9 subgraph instances**.
+- The 5-member false-merge class (chain-middle + cycle) split into 2
+  subgraphs: a 3-edge cycle and a 2-edge chain fragment. Sanity filter
+  (b) is operational.
+- The 2-member "terminal descent" class split into 2 disjoint
+  single-edge subgraphs (chain-tail and tree-leaf share no identifiers).
+- Star spokes stayed as one 3-edge subgraph — star-ness preserved as a
+  unit.
+- Singletons stayed as singletons.
+
+β now has its pattern-instance unit: a Subgraph. Next ADR (0009) will
+define when two Subgraph values represent the same pattern
+(isomorphism via Weisfeiler-Lehman-style refinement, planned).
+
+Decision: [0008-subgraph-extraction](decisions/0008-subgraph-extraction.md).
+Log: [logs/2026-04-23_subgraph_extraction.log](../logs/2026-04-23_subgraph_extraction.log).
