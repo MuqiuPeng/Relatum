@@ -43,3 +43,4 @@ Commit hash(es), file pointers.
 - [0001](0001-project-restructure.md) — project restructure: v1 archived, v2 scaffolded
 - [0002](0002-rset-harness.md) — RSet as the observation harness
 - [0003](0003-identifier-profile.md) — IdentifierProfile as first-pass structural observation
+- [0004](0004-signature-is-profile.md) — Signature = IdentifierProfile (0-hop, first pass)

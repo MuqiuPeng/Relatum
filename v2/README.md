@@ -28,7 +28,9 @@ cargo test
 
 ## Status
 
-Observation layer in place: `R`, `RSet`, `IdentifierProfile`.
-Abstraction mechanisms (structural signature, pattern detection, type
-naming, self-driven triggering, evaluation) not yet implemented.
-See [docs/progress.md](docs/progress.md) for the current frontier.
+Observation layer + 0-hop structural signature in place:
+`R`, `RSet`, `IdentifierProfile`, `Signature`, `equivalence_classes()`.
+
+Not yet implemented: compound pattern detection, type naming, self-driven
+triggering, evaluation. See [docs/progress.md](docs/progress.md) for the
+current frontier.

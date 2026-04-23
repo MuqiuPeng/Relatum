@@ -35,3 +35,27 @@ Commit: `8886d53`.
 ### Traceability infrastructure
 Added `docs/practices.md`, `docs/decisions/` (with index), `docs/progress.md`,
 and `logs/` directory. Backfilled ADRs 0001–0003 to cover the work above.
+
+Commit: `6a1f4f9`.
+
+### Structural signature — first pass
+`signature(id)` aliased to `profile(id)`; added `equivalence_classes()` on
+`RSet`. Two identifiers are structurally equivalent iff their 0-hop profiles
+are equal. 6 new unit tests cover chain / cycle / star / disjoint-union
+collapse behavior.
+
+Ran the first v2 experiment (`examples/structural_equivalence.rs`) over
+six canonical small graphs. Findings:
+- Role classification works as intended — head/middle/tail in chains,
+  pivot-vs-leaves in stars, full collapse in cycles.
+- Disjoint unions merge equivalent roles across components without extra
+  machinery.
+- 0-hop is **not** sufficient for naming compound patterns (e.g., "this
+  is a chain of three"); that is a separate, later mechanism.
+
+0-hop signatures are adopted as the role-classification layer; no immediate
+upgrade to 1-hop needed. Open questions for the next layer (pattern
+detection) are listed at the end of the experiment log.
+
+Decision: [0004-signature-is-profile](decisions/0004-signature-is-profile.md).
+Log: [logs/2026-04-23_structural_equivalence.log](../logs/2026-04-23_structural_equivalence.log).

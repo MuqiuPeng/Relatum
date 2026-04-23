@@ -101,13 +101,38 @@ impl RSet {
             .map(|id| (id, self.profile(id)))
             .collect()
     }
+
+    /// Structural signature of an identifier. At the current granularity
+    /// (ADR 0004), this is the identifier's profile — 0-hop, no neighbors.
+    pub fn signature(&self, id: &str) -> Signature {
+        self.profile(id)
+    }
+
+    /// Partition identifiers by signature. Each class holds identifiers
+    /// that are structurally equivalent at the current granularity.
+    pub fn equivalence_classes(&self) -> HashMap<Signature, HashSet<&str>> {
+        let mut classes: HashMap<Signature, HashSet<&str>> = HashMap::new();
+        for id in self.identifiers() {
+            let sig = self.signature(id);
+            classes.entry(sig).or_default().insert(id);
+        }
+        classes
+    }
 }
+
+/// Structural signature of an identifier.
+///
+/// ADR 0004: the first-pass signature is the identifier's profile itself.
+/// The alias exists so later mechanisms can be written against `Signature`
+/// rather than `IdentifierProfile`, letting the definition be refined
+/// (e.g., to a 1-hop neighbor profile multiset) without changing callers.
+pub type Signature = IdentifierProfile;
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
 /// `Both` includes the self-loop case R(a, a) — `a` occupies both slots in
 /// the same instance. Self-loop detection itself is deferred (see below).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SlotPattern {
     None,
     LeftOnly,
@@ -126,7 +151,7 @@ pub enum SlotPattern {
 /// - self-loop flag (R(a, a))
 /// - co-occurrence with other identifiers across instances
 /// - multi-hop reachability profile
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IdentifierProfile {
     pub degree_out: usize,
     pub degree_in: usize,
@@ -282,6 +307,97 @@ mod tests {
         let mid = rs.profile("a2");
         assert_eq!(mid.degree_out, 1);
         assert_eq!(mid.degree_in, 1);
+    }
+
+    #[test]
+    fn equivalence_classes_are_empty_for_empty_set() {
+        let rs = RSet::new();
+        assert!(rs.equivalence_classes().is_empty());
+    }
+
+    #[test]
+    fn single_instance_produces_two_classes() {
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        let classes = rs.equivalence_classes();
+        // one LeftOnly (a), one RightOnly (b)
+        assert_eq!(classes.len(), 2);
+    }
+
+    #[test]
+    fn chain_produces_three_classes_head_middles_tail() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a1", "a2"),
+            R::new("a2", "a3"),
+            R::new("a3", "a4"),
+            R::new("a4", "a5"),
+        ]);
+        let classes = rs.equivalence_classes();
+        assert_eq!(classes.len(), 3);
+
+        // the middles collapse — three of them in one class
+        let (_, biggest) = classes.iter().max_by_key(|(_, v)| v.len()).unwrap();
+        assert_eq!(biggest.len(), 3);
+        assert!(biggest.contains("a2"));
+        assert!(biggest.contains("a3"));
+        assert!(biggest.contains("a4"));
+    }
+
+    #[test]
+    fn cycle_collapses_to_one_class() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"),
+            R::new("b", "c"),
+            R::new("c", "a"),
+        ]);
+        let classes = rs.equivalence_classes();
+        assert_eq!(classes.len(), 1);
+        let only = classes.values().next().unwrap();
+        assert_eq!(only.len(), 3);
+    }
+
+    #[test]
+    fn star_splits_hub_from_leaves() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("hub", "a"),
+            R::new("hub", "b"),
+            R::new("hub", "c"),
+        ]);
+        let classes = rs.equivalence_classes();
+        assert_eq!(classes.len(), 2);
+
+        // one singleton class (the hub), one class of three leaves
+        let sizes: Vec<usize> = {
+            let mut v: Vec<usize> = classes.values().map(|c| c.len()).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(sizes, vec![1, 3]);
+    }
+
+    #[test]
+    fn bidirectional_chain_collapses_endpoints() {
+        // forward + reverse: endpoints have (out=1, in=1, Both),
+        // same as each other; middles have (out=2, in=2, Both).
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a1", "a2"),
+            R::new("a2", "a3"),
+            R::new("a3", "a4"),
+            R::new("a2", "a1"),
+            R::new("a3", "a2"),
+            R::new("a4", "a3"),
+        ]);
+        let classes = rs.equivalence_classes();
+        assert_eq!(classes.len(), 2);
+
+        // endpoints a1 and a4 share a class; middles a2 and a3 share a class
+        let mut sizes: Vec<usize> = classes.values().map(|c| c.len()).collect();
+        sizes.sort();
+        assert_eq!(sizes, vec![2, 2]);
     }
 
     #[test]

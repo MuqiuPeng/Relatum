@@ -1,0 +1,181 @@
+Date: 2026-04-23
+Descriptor: structural_equivalence (first experiment — validates ADR 0004)
+Purpose:
+    Run 0-hop profile-based equivalence classification on six canonical
+    small graphs and record how identifiers partition. Purpose is to see
+    whether signature = profile is expressive enough to support the next
+    mechanism (pattern detection), or whether we need to upgrade to 1-hop.
+
+Mechanism version:
+    ADR 0004 (signature = IdentifierProfile, 0-hop).
+    Source: v2/src/lib.rs at commit <this commit>.
+    Runner: v2/examples/structural_equivalence.rs.
+
+Command:
+    cargo run --example structural_equivalence
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== forward chain a1 -> a2 -> a3 -> a4 -> a5 ===
+R instances (4):
+  R(a1, a2)
+  R(a2, a3)
+  R(a3, a4)
+  R(a4, a5)
+Profiles:
+  a1: out=1 in=0 LeftOnly
+  a2: out=1 in=1 Both
+  a3: out=1 in=1 Both
+  a4: out=1 in=1 Both
+  a5: out=0 in=1 RightOnly
+Equivalence classes (3):
+  (out=0 in=1 RightOnly): {a5}
+  (out=1 in=0 LeftOnly): {a1}
+  (out=1 in=1 Both): {a2, a3, a4}
+
+=== bidirectional chain over {a1..a4} ===
+R instances (6):
+  R(a1, a2)
+  R(a2, a1)
+  R(a2, a3)
+  R(a3, a2)
+  R(a3, a4)
+  R(a4, a3)
+Profiles:
+  a1: out=1 in=1 Both
+  a2: out=2 in=2 Both
+  a3: out=2 in=2 Both
+  a4: out=1 in=1 Both
+Equivalence classes (2):
+  (out=1 in=1 Both): {a1, a4}
+  (out=2 in=2 Both): {a2, a3}
+
+=== 3-cycle a -> b -> c -> a ===
+R instances (3):
+  R(a, b)
+  R(b, c)
+  R(c, a)
+Profiles:
+  a: out=1 in=1 Both
+  b: out=1 in=1 Both
+  c: out=1 in=1 Both
+Equivalence classes (1):
+  (out=1 in=1 Both): {a, b, c}
+
+=== out-star: hub -> {a, b, c} ===
+R instances (3):
+  R(hub, a)
+  R(hub, b)
+  R(hub, c)
+Profiles:
+  a: out=0 in=1 RightOnly
+  b: out=0 in=1 RightOnly
+  c: out=0 in=1 RightOnly
+  hub: out=3 in=0 LeftOnly
+Equivalence classes (2):
+  (out=0 in=1 RightOnly): {a, b, c}
+  (out=3 in=0 LeftOnly): {hub}
+
+=== in-star: {a, b, c} -> sink ===
+R instances (3):
+  R(a, sink)
+  R(b, sink)
+  R(c, sink)
+Profiles:
+  a: out=1 in=0 LeftOnly
+  b: out=1 in=0 LeftOnly
+  c: out=1 in=0 LeftOnly
+  sink: out=0 in=3 RightOnly
+Equivalence classes (2):
+  (out=0 in=3 RightOnly): {sink}
+  (out=1 in=0 LeftOnly): {a, b, c}
+
+=== two disjoint chains ===
+R instances (4):
+  R(p1, p2)
+  R(p2, p3)
+  R(q1, q2)
+  R(q2, q3)
+Profiles:
+  p1: out=1 in=0 LeftOnly
+  p2: out=1 in=1 Both
+  p3: out=0 in=1 RightOnly
+  q1: out=1 in=0 LeftOnly
+  q2: out=1 in=1 Both
+  q3: out=0 in=1 RightOnly
+Equivalence classes (3):
+  (out=0 in=1 RightOnly): {p3, q3}
+  (out=1 in=0 LeftOnly): {p1, q1}
+  (out=1 in=1 Both): {p2, q2}
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. Role classification works as predicted.
+   - Forward chain: 3 classes — head / middles / tail. Middle positions
+     correctly collapse.
+   - Out-star / in-star: 2 classes — pivot vs. leaves. Direction of the
+     star is reflected in which slot the pivot occupies.
+   - 3-cycle: 1 class. Rotational symmetry captured — consistent with
+     the graph's actual automorphism structure.
+
+2. Bidirectional chain collapses endpoints AND middles into a unified
+   "Both" structure.
+   - a1 and a4 share (out=1, in=1, Both) — the profile correctly sees
+     them as symmetric endpoints of a bidirectional structure, not as
+     a one-way "head" and "tail."
+   - a2 and a3 share (out=2, in=2, Both) — they are the "denser" middles.
+   - This is the first case where `SlotPattern::Both` hides meaningful
+     internal variation. `out=1 in=1 Both` covers both "bidirectional
+     endpoint" and "one-way middle" — they are distinguishable by degree
+     alone here, but more complex graphs could blur the line.
+
+3. Disjoint unions merge equivalent roles across components.
+   - Two copies of a 3-chain produce exactly 3 classes (not 6). p1/q1
+     share head-role; p2/q2 share middle-role; p3/q3 share tail-role.
+   - Useful property for later pattern detection: "similar structures in
+     different places" are recognized as similar without extra machinery.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - "These identifiers play the same role" — role-level clustering.
+  - Role-based filtering: later mechanisms can pick the representative
+    of each class instead of iterating every identifier.
+  - Cross-component recognition of similar structures.
+
+Does NOT enable:
+  - Naming a compound pattern. We see that p1, p2, p3 belong to classes
+    {LeftOnly-1, Both-1-1, RightOnly-1} respectively, but we have no
+    mechanism that says "there is a chain-of-3 pattern spanning these."
+  - Distinguishing "the second middle" from "the third middle" in a
+    long chain. Positions within a class collapse.
+  - Pattern naming (the design-notes target). That requires compound
+    machinery above this layer.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0004's 0-hop signature is sufficient for the role-classification
+layer. No immediate need to upgrade to 1-hop.
+
+The next layer up — pattern detection / naming — is what's needed
+before the "construct integer type" target from the design notes becomes
+reachable. Questions to resolve before building it:
+
+  (a) Does a "pattern" live over R instances, or over identifiers?
+      (An edge (x -> y) where x has profile P1 and y has profile P2 is
+      one kind; a connected subgraph is another. Design-notes leans
+      toward subgraphs; the former is cheaper.)
+  (b) How is a pattern named? Per commitment 3, types are meta-R
+      instances. So a pattern name is itself an identifier in the same
+      R space, linked to its instances by new R instances.
+  (c) What triggers the system to *try* naming a pattern? (Self-drive.)
+
+These are ADR 0005+ material. Not yet committed to a direction.
