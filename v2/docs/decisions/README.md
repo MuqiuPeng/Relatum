@@ -61,3 +61,4 @@ Commit hash(es), file pointers.
 - [0019](0019-mdl-scoring.md) — MDL-gain scoring (opt-in reusability filter)
 - [0020](0020-pattern-retraction.md) — Pattern retraction (remove named patterns)
 - [0021](0021-autonomous-sweep.md) — Multi-size autonomous sweep
+- [0022](0022-autonomous-and-attach.md) — Autonomous + attach composition (incremental workflow)

@@ -672,3 +672,21 @@ patterns, idempotent.
 
 Decision: [0021-autonomous-sweep](decisions/0021-autonomous-sweep.md).
 Log: [logs/2026-04-23_autonomous_sweep.log](../logs/2026-04-23_autonomous_sweep.log).
+
+Commit: `faa791c`.
+
+### Autonomous + attach composition (ADR 0022)
+`RSet::autonomous_and_attach` — runs `autonomous_pass` then
+`run_naming_pass(attach_only=true)`, returning both outputs.
+Natural incremental-data workflow: autonomous handles novel
+canonicals; attach handles new instances of pre-existing ones.
+Autonomous first is strictly inclusive. 3 new tests; 112 total.
+
+Incremental demo: prime with autonomous_pass (4 patterns on mixed
+graph), add `{q1→q2→q3→q4}` (new 3-chain instance), run
+autonomous_and_attach → attach phase adds 1 new p_0 instance
+(3-chain count 2 → 3). Autonomous phase reports `Existing` for the
+3-chain canonical since p_0 already exists.
+
+Decision: [0022-autonomous-and-attach](decisions/0022-autonomous-and-attach.md).
+Log: [logs/2026-04-23_autonomous_and_attach.log](../logs/2026-04-23_autonomous_and_attach.log).

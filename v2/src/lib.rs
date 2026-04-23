@@ -736,6 +736,21 @@ impl RSet {
         induced == sg.len()
     }
 
+    /// Run `autonomous_pass` (discovers novel canonicals) then
+    /// `run_naming_pass(attach_only=true)` (extends pre-existing
+    /// canonicals with new instances). The natural incremental-data
+    /// workflow. ADR 0022.
+    pub fn autonomous_and_attach(
+        &mut self,
+        config: &AutonomousConfig,
+    ) -> AutonomousAndAttachSummary {
+        let autonomous = self.autonomous_pass(config);
+        let mut attach_policy = config.naming.clone();
+        attach_policy.attach_only = true;
+        let attach = self.run_naming_pass(&attach_policy);
+        AutonomousAndAttachSummary { autonomous, attach }
+    }
+
     /// Run `autonomous_pass` once per `target_size` in `sizes`. Per-size
     /// config is the base with `discovery.target_size` overridden and
     /// `discovery.rng_seed` offset by the size so sampling differs
@@ -1373,6 +1388,13 @@ pub struct RetractionSummary {
     pub pattern_id: String,
     pub instances_removed: usize,
     pub meta_edges_removed: usize,
+}
+
+/// Combined outcome of `autonomous_and_attach`. ADR 0022.
+#[derive(Debug, Clone)]
+pub struct AutonomousAndAttachSummary {
+    pub autonomous: Vec<AutonomousOutcome>,
+    pub attach: Vec<(CanonicalForm, NamingDecision)>,
 }
 
 /// Outcome of a single candidate in an autonomous pass. ADR 0018.
@@ -3248,6 +3270,97 @@ mod tests {
             .count();
         assert_eq!(any_new, 0);
         assert_eq!(rs.patterns().len(), patterns_after);
+    }
+
+    #[test]
+    fn autonomous_and_attach_on_fresh_rset() {
+        // On fresh data, attach phase should find only AlreadyKnown /
+        // empty: autonomous already used find_instances_of exhaustively
+        // for each discovered canonical.
+        let mut rs = build_mixed_graph();
+        let config = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+        let summary = rs.autonomous_and_attach(&config);
+        // Autonomous creates several new patterns.
+        let new_patterns = summary
+            .autonomous
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        assert!(new_patterns > 0);
+        // Attach pass should not create any new patterns or instances.
+        let new_instances_via_attach: usize = summary
+            .attach
+            .iter()
+            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
+            .count();
+        assert_eq!(new_instances_via_attach, 0);
+    }
+
+    #[test]
+    fn autonomous_and_attach_picks_up_new_data_after_prior_naming() {
+        let mut rs = build_mixed_graph();
+        let config = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+        // Prime the registry with the first autonomous_pass.
+        rs.autonomous_pass(&config);
+        let p_3_chain: CanonicalForm = vec![(1, 3), (2, 0), (3, 2)];
+        let p_3_chain_id = rs
+            .find_pattern_matching(&p_3_chain)
+            .map(|s| s.to_string())
+            .expect("3-chain named");
+        let chain_instances_before = rs.instances_of(&p_3_chain_id).len();
+
+        // Add new data that contains another clean 3-chain.
+        rs.extend([
+            R::new("q1", "q2"),
+            R::new("q2", "q3"),
+            R::new("q3", "q4"),
+        ]);
+
+        // autonomous_and_attach: autonomous may or may not re-sample the
+        // 3-chain canonical (it's already Existing). Attach definitely
+        // picks up {q1, q2, q3, q4} as a new instance.
+        let _summary = rs.autonomous_and_attach(&config);
+        let chain_instances_after = rs.instances_of(&p_3_chain_id).len();
+        assert!(chain_instances_after > chain_instances_before);
+    }
+
+    #[test]
+    fn autonomous_and_attach_is_idempotent() {
+        let mut rs = build_mixed_graph();
+        let config = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+        rs.autonomous_and_attach(&config);
+        let size_before = rs.len();
+        let patterns_before = rs.patterns().len();
+        rs.autonomous_and_attach(&config);
+        assert_eq!(rs.len(), size_before);
+        assert_eq!(rs.patterns().len(), patterns_before);
     }
 
     #[test]

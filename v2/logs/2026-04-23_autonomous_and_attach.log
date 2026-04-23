@@ -1,0 +1,68 @@
+Date: 2026-04-23
+Descriptor: autonomous_and_attach (validates ADR 0022)
+Purpose:
+    Demonstrate the incremental workflow: prime registry with
+    autonomous_pass, add new data, then run the combined
+    `autonomous_and_attach`. Confirm the attach phase picks up
+    new instances of a pre-existing pattern.
+
+Mechanism version:
+    ADR 0022 (autonomous_and_attach).
+    Runner: v2/examples/autonomous_and_attach.rs.
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Prime: autonomous_pass ===
+patterns registered: 4
+  p_0  instances=2
+  p_1  instances=1
+  p_2  instances=1
+  p_3  instances=1
+
+=== Add new data: another 3-chain on new identifiers ===
+RSet size: 45
+
+=== autonomous_and_attach ===
+autonomous phase: 0 new patterns
+attach phase:     1 pattern(s) received new instances
+
+patterns registered: 4
+  p_0  instances=3
+  p_1  instances=1
+  p_2  instances=1
+  p_3  instances=1
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Attach catches new instances autonomous would otherwise miss
+   for existing patterns.** Adding `{q1→q2→q3→q4}` to the RSet
+   creates a new clean 3-chain instance. The autonomous phase
+   discovers the 3-chain canonical, but `find_pattern_matching`
+   finds it already named as p_0, so autonomous reports
+   `Existing(p_0)` and records nothing new. The attach phase then
+   runs subgraph matching against p_0's canonical and discovers
+   the `{q1..q4}` participant set is not already recorded,
+   attaching it as a new instance. Result: p_0 goes from 2 → 3
+   instances.
+
+2. **Order matters.** If attach ran first, it would not know about
+   newly-discovered canonicals (since autonomous hasn't created
+   them yet). Running autonomous first is strictly inclusive. The
+   ADR's "autonomous → attach" ordering is the correct default.
+
+3. **On fresh data (no pre-existing patterns), the attach phase is
+   a no-op.** The first test in the test suite confirms this.
+   Autonomous already exhausts `find_instances_of` per discovered
+   canonical, so attach finds no new instances for the patterns
+   autonomous just named.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0022 validated. Proceeding to ADR 0023 (cross-graph pattern
+transfer).
