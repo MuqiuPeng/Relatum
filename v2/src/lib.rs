@@ -20,6 +20,26 @@ impl R {
     }
 }
 
+/// Reserved registry marker for the pattern-naming mechanism (ADR 0010).
+///
+/// `R(PATTERN_MARKER, p)` declares `p` as a named pattern. The double
+/// underscore prefix is a pragmatic collision guard, not an ontological
+/// exception — commitment 4 (token-based identity) still holds, and an
+/// externally-supplied identifier equal to this string would be treated
+/// as the same object.
+pub const PATTERN_MARKER: &str = "__pattern__";
+
+/// Errors from pattern-naming operations. ADR 0010.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PatternError {
+    /// The caller provided no instances to name.
+    EmptyInstanceList,
+    /// One or more instances contain zero edges.
+    EmptyInstance,
+    /// Instances are not all isomorphic under ADR 0009 canonicalization.
+    NotIsomorphic,
+}
+
 /// A set of R instances — the only state v2 accumulates at the primitive layer.
 ///
 /// This is the observation surface abstraction mechanisms will hook into.
@@ -189,6 +209,144 @@ impl RSet {
             }
         }
         LocalityProfile { co_left, co_right, forward, reverse }
+    }
+
+    /// Record a set of isomorphic subgraphs as instances of one named
+    /// pattern. ADR 0010 — writes the three-shape encoding
+    /// (`R(PATTERN_MARKER, p)`, `R(p, inst)`, `R(inst, participant)`)
+    /// directly into the RSet. Returns the pattern identifier (reused
+    /// if an existing pattern matches the canonical form, minted
+    /// otherwise).
+    ///
+    /// Errors:
+    /// - `EmptyInstanceList` if `instances` is empty.
+    /// - `EmptyInstance` if any subgraph has zero edges.
+    /// - `NotIsomorphic` if instances disagree on canonical form.
+    ///
+    /// See ADR 0010 for the canonical-recovery invariant and feedback-
+    /// loop consequences on subsequent observation-layer queries.
+    pub fn name_pattern_instances(
+        &mut self,
+        instances: &[Subgraph],
+    ) -> Result<String, PatternError> {
+        if instances.is_empty() {
+            return Err(PatternError::EmptyInstanceList);
+        }
+        for inst in instances {
+            if inst.is_empty() {
+                return Err(PatternError::EmptyInstance);
+            }
+        }
+        let first = &instances[0];
+        for other in instances.iter().skip(1) {
+            if !first.is_isomorphic_to(other) {
+                return Err(PatternError::NotIsomorphic);
+            }
+        }
+
+        let canon = first.canonicalize();
+        let pattern_id: String = match self.find_pattern_matching(&canon) {
+            Some(existing) => existing.to_string(),
+            None => {
+                let new_id = self.mint_pattern_id();
+                self.add(R::new(PATTERN_MARKER, new_id.clone()));
+                new_id
+            }
+        };
+
+        for inst in instances {
+            let inst_id = self.mint_instance_id(&pattern_id);
+            self.add(R::new(pattern_id.clone(), inst_id.clone()));
+            let participants: Vec<String> =
+                inst.identifiers().into_iter().map(str::to_owned).collect();
+            for participant in participants {
+                self.add(R::new(inst_id.clone(), participant));
+            }
+        }
+
+        Ok(pattern_id)
+    }
+
+    /// All pattern identifiers currently registered in this RSet.
+    /// ADR 0010.
+    pub fn patterns(&self) -> Vec<&str> {
+        self.left_of(PATTERN_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Instance identifiers owned by a pattern. ADR 0010.
+    pub fn instances_of(&self, pattern: &str) -> Vec<&str> {
+        self.left_of(pattern)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Participant identifiers referenced by a pattern instance. ADR 0010.
+    pub fn participants_of(&self, instance: &str) -> HashSet<&str> {
+        self.left_of(instance)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Look up an existing pattern whose recovered canonical form equals
+    /// `canon`. ADR 0010. Recovery works by taking the pattern's first
+    /// instance, collecting RSet edges among its participants, and
+    /// canonicalizing that subgraph — see the recovery invariant in
+    /// ADR 0010's Consequences.
+    pub fn find_pattern_matching(&self, canon: &CanonicalForm) -> Option<&str> {
+        for pattern in self.patterns() {
+            let instance_ids = self.instances_of(pattern);
+            let Some(first_inst) = instance_ids.first() else {
+                continue;
+            };
+            let participants = self.participants_of(first_inst);
+            let edges: Vec<R> = self
+                .instances
+                .iter()
+                .filter(|r| {
+                    participants.contains(r.x.as_str())
+                        && participants.contains(r.y.as_str())
+                })
+                .cloned()
+                .collect();
+            let sg = Subgraph::from_edges(edges);
+            if sg.canonicalize() == *canon {
+                return Some(pattern);
+            }
+        }
+        None
+    }
+
+    /// Pick the next free pattern id. Monotone scan from current count,
+    /// skipping any identifier already present in the RSet (collision
+    /// guard — ADR 0010).
+    fn mint_pattern_id(&self) -> String {
+        let existing = self.identifiers();
+        let mut n = self.patterns().len();
+        loop {
+            let candidate = format!("p_{}", n);
+            if !existing.contains(candidate.as_str()) {
+                return candidate;
+            }
+            n += 1;
+        }
+    }
+
+    /// Pick the next free instance id under a pattern. ADR 0010.
+    fn mint_instance_id(&self, pattern: &str) -> String {
+        let existing = self.identifiers();
+        let mut n = self.instances_of(pattern).len();
+        loop {
+            let candidate = format!("{}_i_{}", pattern, n);
+            if !existing.contains(candidate.as_str()) {
+                return candidate;
+            }
+            n += 1;
+        }
     }
 }
 
@@ -1155,6 +1313,145 @@ mod tests {
         // But a -> b -> c (chain) and b -> a, b -> c (out-V) differ.
         let out_vee = Subgraph::from_edges([R::new("b", "a"), R::new("b", "c")]);
         assert_ne!(one_forward.canonicalize(), out_vee.canonicalize());
+    }
+
+    #[test]
+    fn naming_empty_instance_list_errors() {
+        let mut rs = RSet::new();
+        assert_eq!(
+            rs.name_pattern_instances(&[]),
+            Err(PatternError::EmptyInstanceList)
+        );
+    }
+
+    #[test]
+    fn naming_empty_instance_errors() {
+        let mut rs = RSet::new();
+        assert_eq!(
+            rs.name_pattern_instances(&[Subgraph::new()]),
+            Err(PatternError::EmptyInstance)
+        );
+    }
+
+    #[test]
+    fn naming_non_isomorphic_errors() {
+        let mut rs = RSet::new();
+        let chain = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let star = Subgraph::from_edges([R::new("h", "a"), R::new("h", "b")]);
+        assert_eq!(
+            rs.name_pattern_instances(&[chain, star]),
+            Err(PatternError::NotIsomorphic)
+        );
+    }
+
+    #[test]
+    fn naming_same_canonical_twice_reuses_pattern_id() {
+        let mut rs = RSet::new();
+        // Populate with two separated chains so reconstruction can recover
+        // the canonical form from participants.
+        rs.extend([
+            R::new("a", "b"), R::new("b", "c"),
+            R::new("p", "q"), R::new("q", "r"),
+        ]);
+        let first = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let second = Subgraph::from_edges([R::new("p", "q"), R::new("q", "r")]);
+
+        let p1 = rs.name_pattern_instances(&[first]).unwrap();
+        let p2 = rs.name_pattern_instances(&[second]).unwrap();
+        assert_eq!(p1, p2);
+        // One pattern, two instances.
+        assert_eq!(rs.patterns().len(), 1);
+        assert_eq!(rs.instances_of(&p1).len(), 2);
+    }
+
+    #[test]
+    fn naming_skips_colliding_pattern_id() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        // Plant a spurious user identifier that would clash with p_0.
+        rs.add(R::new("p_0", "spurious"));
+
+        let chain = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let pid = rs.name_pattern_instances(&[chain]).unwrap();
+        assert_ne!(pid, "p_0");
+        // With a single planted collision, the next free id is p_1.
+        assert_eq!(pid, "p_1");
+    }
+
+    #[test]
+    fn naming_round_trips_canonical_form() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let sg = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let expected = sg.canonicalize();
+
+        let pid = rs.name_pattern_instances(&[sg]).unwrap();
+        let instance = rs.instances_of(&pid)[0].to_string();
+        let participants = rs.participants_of(&instance);
+        let edges: Vec<R> = rs
+            .iter()
+            .filter(|r| {
+                participants.contains(r.x.as_str())
+                    && participants.contains(r.y.as_str())
+            })
+            .cloned()
+            .collect();
+        let recovered = Subgraph::from_edges(edges);
+        assert_eq!(recovered.canonicalize(), expected);
+    }
+
+    #[test]
+    fn participant_shared_across_two_patterns() {
+        let mut rs = RSet::new();
+        // A node `b` participates in a chain {a, b, c} and a star {b, x, y}.
+        rs.extend([
+            R::new("a", "b"), R::new("b", "c"),
+            R::new("b", "x"), R::new("b", "y"),
+        ]);
+        let chain = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let star = Subgraph::from_edges([R::new("b", "x"), R::new("b", "y")]);
+
+        let p_chain = rs.name_pattern_instances(&[chain]).unwrap();
+        let p_star = rs.name_pattern_instances(&[star]).unwrap();
+        assert_ne!(p_chain, p_star);
+
+        let inst_chain = rs.instances_of(&p_chain)[0].to_string();
+        let inst_star = rs.instances_of(&p_star)[0].to_string();
+        assert!(rs.participants_of(&inst_chain).contains("b"));
+        assert!(rs.participants_of(&inst_star).contains("b"));
+
+        // instances_of is pattern-local.
+        assert_eq!(rs.instances_of(&p_chain).len(), 1);
+        assert_eq!(rs.instances_of(&p_star).len(), 1);
+    }
+
+    #[test]
+    fn naming_single_edge_pattern_collects_six_instances() {
+        // Mirrors ADR 0009's P2 finding: six single-edge subgraphs across
+        // the mixed graph all share a canonical form.
+        let mut rs = RSet::new();
+        // A small assortment of single-edge contexts — participant
+        // identifiers cannot collide across subgraphs, so each instance
+        // is truly isolated.
+        rs.extend([
+            R::new("a1", "a2"),
+            R::new("b1", "b2"),
+            R::new("c1", "c2"),
+            R::new("d1", "d2"),
+            R::new("e1", "e2"),
+            R::new("f1", "f2"),
+        ]);
+        let instances: Vec<Subgraph> = [
+            ("a1", "a2"), ("b1", "b2"), ("c1", "c2"),
+            ("d1", "d2"), ("e1", "e2"), ("f1", "f2"),
+        ]
+        .into_iter()
+        .map(|(x, y)| Subgraph::from_edges([R::new(x, y)]))
+        .collect();
+
+        let pid = rs.name_pattern_instances(&instances).unwrap();
+        assert_eq!(rs.patterns().len(), 1);
+        assert_eq!(rs.instances_of(&pid).len(), 6);
     }
 
     #[test]

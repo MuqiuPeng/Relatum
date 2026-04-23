@@ -49,3 +49,4 @@ Commit hash(es), file pointers.
 - [0007](0007-compound-signature-probe.md) — Compound signature probe (edge_fingerprint = RSignature + LocalityProfile)
 - [0008](0008-subgraph-extraction.md) — Subgraph representation and connected-component extraction (first β ADR)
 - [0009](0009-subgraph-canonicalization.md) — Subgraph canonicalization via Weisfeiler–Lehman refinement
+- [0010](0010-pattern-naming-as-meta-r.md) — Pattern naming as meta-R instances (three-shape encoding)

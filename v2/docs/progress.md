@@ -223,3 +223,41 @@ confirming the full pipeline rejects the false merge.
 
 Decision: [0009-subgraph-canonicalization](decisions/0009-subgraph-canonicalization.md).
 Log: [logs/2026-04-23_canonicalization.log](../logs/2026-04-23_canonicalization.log).
+
+Commit: `0646dc8`.
+
+### Pattern naming as meta-R instances (β step 3 / 4 — ADR 0010)
+Added `PATTERN_MARKER = "__pattern__"`, `PatternError`, and five
+methods on `RSet`: `name_pattern_instances`, `patterns`,
+`instances_of`, `participants_of`, `find_pattern_matching`. Encoding
+is the three-shape convention: `R(PATTERN_MARKER, p)` registers a
+pattern, `R(p, inst)` owns an instance, `R(inst, participant)` lists
+participants. Canonical form is intentionally not stored — recovered
+on demand via `Subgraph::from_edges` + canonicalize. 8 new unit tests
+(empty list, empty subgraph, non-isomorphic reject, dedup, collision
+guard, canonical round-trip, shared participant across patterns, and
+the 6-instance single-edge case from ADR 0009's P2).
+
+Ran the full pipeline (0007 → 0008 → 0009 → 0010) on the mixed graph:
+
+- 14 original R instances → 49 after naming (35 meta-R added).
+- 4 canonical-form groups → 4 named patterns: p_0 (3-cycle, 1 inst),
+  **p_1 (single edge, 6 insts)**, p_2 (3-spoke star, 1 inst),
+  p_3 (2-edge chain, 1 inst).
+- p_1 is the P2 cross-compound-class pattern made durable: it lists
+  six instances whose participants span five original compound classes.
+- Every R-instance addition matches the oracle count
+  (4 registry + 9 ownership + 22 participant = 35).
+
+**Key observation for ADR 0011 (γ):** p_1 being dominant is exactly
+the case that motivates γ. Naming every canonical class surfaces
+trivial patterns ("just one edge") alongside substantial ones. "Which
+patterns deserve naming" needs a policy — the γ layer's first job.
+
+The feedback loop is now live but not exploited: compound classes
+computed on the post-naming RSet would include `__pattern__`, `p_N`,
+and `p_N_i_M` nodes as structural neighbors, potentially enabling
+patterns-of-patterns discovery. Re-running is γ's choice.
+
+Decision: [0010-pattern-naming-as-meta-r](decisions/0010-pattern-naming-as-meta-r.md).
+Log: [logs/2026-04-23_pattern_naming.log](../logs/2026-04-23_pattern_naming.log).

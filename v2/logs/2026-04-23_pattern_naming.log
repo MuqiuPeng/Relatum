@@ -1,0 +1,181 @@
+Date: 2026-04-23
+Descriptor: pattern_naming (validates ADR 0010)
+Purpose:
+    End-to-end pipeline (ADR 0007 → 0008 → 0009 → 0010) on the
+    canonical mixed graph. Verify that each of ADR 0009's four
+    canonical-form groups lands as exactly one named pattern in the
+    RSet, with participants recorded as plain R instances.
+
+Mechanism version:
+    ADR 0010 (PATTERN_MARKER, PatternError, name_pattern_instances,
+    patterns, instances_of, participants_of, find_pattern_matching).
+    Source: v2/src/lib.rs at the commit implementing 0010.
+    Runner: v2/examples/pattern_naming.rs.
+
+Command:
+    cargo run --example pattern_naming
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Before naming ===
+R instances: 14
+Canonical-form groups (ADR 0009 pattern classes): 4
+  [(0, 0), (0, 0), (0, 0)]  (1 instance(s))
+  [(1, 0)]  (6 instance(s))
+  [(1, 0), (1, 0), (1, 0)]  (1 instance(s))
+  [(1, 2), (2, 0)]  (1 instance(s))
+
+=== Naming ===
+pattern p_0  (1 instance(s))  canonical [(0, 0), (0, 0), (0, 0)]
+pattern p_1  (6 instance(s))  canonical [(1, 0)]
+pattern p_2  (1 instance(s))  canonical [(1, 0), (1, 0), (1, 0)]
+pattern p_3  (1 instance(s))  canonical [(1, 2), (2, 0)]
+
+=== After naming ===
+R instances: 49 (added 35 meta-R entries)
+
+=== Pattern registry ===
+  p_0  (1 instance(s))
+    p_0_i_0  participants: {k1, k2, k3}
+  p_1  (6 instance(s))
+    p_1_i_0  participants: {c1, c2}
+    p_1_i_1  participants: {t1, t3}
+    p_1_i_2  participants: {t2, t4}
+    p_1_i_3  participants: {c4, c5}
+    p_1_i_4  participants: {ie1, ie2}
+    p_1_i_5  participants: {t1, t2}
+  p_2  (1 instance(s))
+    p_2_i_0  participants: {s, sa, sb, sc}
+  p_3  (1 instance(s))
+    p_3_i_0  participants: {c2, c3, c4}
+
+=== Marker registry view ===
+  R(__pattern__, p_0)
+  R(__pattern__, p_1)
+  R(__pattern__, p_2)
+  R(__pattern__, p_3)
+
+====================================================================
+ORACLE vs OBSERVED
+====================================================================
+
+Expected R-instance additions:
+  - 1 registry edge per named pattern:            4
+  - 1 ownership edge per named instance:          9
+    (1 for p_0, 6 for p_1, 1 for p_2, 1 for p_3)
+  - 1 participant edge per (instance, participant) pair:
+      p_0_i_0 -> 3   (k1, k2, k3)
+      p_1_i_* -> 2 each × 6 = 12
+      p_2_i_0 -> 4   (s, sa, sb, sc)
+      p_3_i_0 -> 3   (c2, c3, c4)
+      total                                       22
+  - Grand total predicted                         35
+
+Observed grand total: 35. ✓
+
+ADR 0009's four canonical-form groups land as four named patterns —
+p_0 (3-cycle), p_1 (single edge), p_2 (3-spoke out-star), p_3 (2-edge
+forward chain). Every prediction matches the oracle.
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. The three-shape encoding holds tight.
+   Every piece of information ADR 0010 commits to storing — pattern
+   existence, instance ownership, participant membership — lands as
+   a plain R instance. No new relation kinds, no position markers,
+   no synthetic edge identifiers. Commitments 1 (only R) and 3
+   (types as meta-R) are both honored without accommodation.
+
+2. p_1 dominates the registry at six instances.
+   The known "single edge" pattern class from ADR 0009 becomes one
+   named pattern with six instances. This is empirically the
+   strongest argument for leaving the relevance filter to γ: naming
+   every canonical class will frequently surface trivial patterns
+   that add little explanatory value. "Which patterns deserve
+   naming" needs a policy, and the γ layer is where that policy
+   lives.
+
+3. RSet size grew from 14 to 49 edges after naming 9 instances.
+   2.5× growth on a trivial graph. At scale, the growth factor
+   depends on participant count per instance; stars grow the
+   ownership tree quickly, while short chains grow it slowly. The
+   growth itself is intentional — it is commitment 3 made visible.
+   γ will have to decide whether periodic rebuilds, cleanup, or
+   generational stores are needed for longer-running experiments.
+
+4. Reverse-derivability held.
+   `find_pattern_matching` relies on reconstructing each instance's
+   canonical form from participants plus RSet edges. Inside
+   `name_pattern_instances`, this derivation is queried twice: once
+   to dedupe the first instance against existing patterns (for the
+   chain canonical `[(1, 2), (2, 0)]`, no prior match, mint fresh),
+   and repeatedly during the example's four naming calls. Every
+   lookup succeeded — the invariant "instance participants do not
+   acquire new edges among themselves" holds trivially on this
+   single-pass run.
+
+5. Instance participant sets are symmetric.
+   p_0_i_0 lists `{k1, k2, k3}` without direction or position
+   information; the edges recoverable from those three identifiers
+   encode the rotational cycle. Likewise p_3_i_0's `{c2, c3, c4}`
+   decodes to a 2-edge chain. The participants-only encoding is
+   structurally sufficient because canonicalization re-derives
+   direction from the underlying edges.
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - A durable record of discovered patterns, stored in the same R
+    primitive as the data they describe (commitment 3).
+  - O(1) membership queries: `instances_of(pattern)`,
+    `participants_of(instance)`, `patterns()`.
+  - Rebuild of a pattern's canonical form on demand; no canonical
+    form stored means no drift between encoding and code.
+  - A foundation for γ to decide which patterns to actually name.
+
+Does NOT enable (explicitly out of scope for ADR 0010):
+  - Automatic discovery. A caller still has to invoke
+    `name_pattern_instances`. ADR 0011 (γ) will walk the pipeline
+    and pick candidates.
+  - Relevance or triviality filtering. p_1's "every single edge"
+    pattern is useless but gets named by this ADR as-is.
+  - Pattern retirement / cleanup. Once named, patterns persist.
+  - Recursive discovery. The feedback loop is noted but not acted
+    on — the pipeline is not re-run against the enlarged RSet.
+    Re-running would find new compound classes involving
+    `__pattern__`, `p_N`, `p_N_i_M` nodes, potentially naming
+    patterns-of-patterns. γ decides.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0010 is validated. The β layer now has:
+  - extraction (0008)
+  - canonicalization (0009)
+  - naming (0010, this ADR)
+
+Only γ (ADR 0011) remains of the β plan. Its scope:
+  - Policy for which candidate patterns to name (size ≥ k? edges
+    ≥ m? MDL? non-triviality filter?).
+  - Iteration: does the system re-run the pipeline against the
+    enlarged RSet after naming? If so, under what stopping
+    condition?
+  - Integrity: does γ defend the "participants don't gain new
+    edges among themselves" invariant, or relax it with a
+    stored-canonical fallback?
+  - Trigger: when does γ run at all? On every new R instance?
+    Batched? On demand?
+
+Worth running one more probe experiment before ADR 0011 is
+scoped: what does the enlarged RSet (post-naming) look like to
+ADR 0007's compound_class_subgraphs? Does it surface the
+`__pattern__`/`p_N`/`p_N_i_M` tokens as new structural neighbors
+in ways that suggest natural patterns-of-patterns? If yes, γ's
+iteration policy has a concrete target.
