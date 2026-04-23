@@ -54,3 +54,4 @@ Commit hash(es), file pointers.
 - [0012](0012-gamma-naming-pass.md) — γ naming-pass driver and relevance filter (closes β)
 - [0013](0013-pattern-query-api.md) — Pattern query API (first use of named meta-R)
 - [0014](0014-attach-only-mode.md) — Attach-only mode for naming pass
+- [0015](0015-subgraph-matching.md) — Subgraph matching against named patterns (fixes fragmentation)

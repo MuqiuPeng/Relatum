@@ -111,7 +111,6 @@ fn print_decisions(decisions: &[(CanonicalForm, NamingDecision)]) {
                 )
             }
             NamingDecision::Skipped(SkipReason::AlreadyKnown) => "Skipped(AlreadyKnown)".to_string(),
-            NamingDecision::Skipped(SkipReason::NoMatchingPattern) => "Skipped(NoMatchingPattern)".to_string(),
         };
         println!("  canonical {:?}  ->  {}", canon, verdict);
     }

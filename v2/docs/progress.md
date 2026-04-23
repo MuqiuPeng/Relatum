@@ -416,3 +416,50 @@ fragmentation misses.
 
 Decision: [0014-attach-only-mode](decisions/0014-attach-only-mode.md).
 Log: [logs/2026-04-23_attach_only.log](../logs/2026-04-23_attach_only.log).
+
+Commit: `e273354`.
+
+### Subgraph matching against named patterns (ADR 0015)
+Replaces compound-class enumeration with direct subgraph matching
+in the attach pass. New `RSet::find_instances_of(&CanonicalForm)
+-> Vec<Subgraph>` enumerates connected data subgraphs of the
+matching size and canonical form, with a cleanness filter:
+participants must induce exactly `k` data edges in the RSet (reject
+embedded cases). `run_naming_pass` branches on `attach_only`:
+discovery uses compound-class enumeration (unchanged); attach uses
+per-pattern subgraph matching. Removed
+`SkipReason::NoMatchingPattern` (no producer under new semantics).
+
+User's point — one reproducible failure (the ADR 0014 asymmetric
+2-chain) is sufficient evidence that the pipeline is wrong for this
+purpose — drove the priority.
+
+**Results on the mixed graph (subgraph_matching example):**
+- Phase 2: attach on original data. p_2 1 → 4 instances
+  (`{c2,c3,c4}` + `{c1,c2,c3}` + `{c3,c4,c5}` + `{t1,t2,t4}`).
+  Discovery had found only the interior fragment; attach surfaces
+  the overlaps and the tree branch.
+- Phase 4: after adding `{u,v,w}` chain + T-fork + new 3-cycle.
+  p_0 1 → 2; p_2 4 → 6 (picks up `{u,v,w}` and the T-fork's
+  `{q1,q3,q4}` 2-chain).
+- Phase 5: second attach is a no-op. Truly idempotent.
+
+Cleanness filter is load-bearing: without it, the cycle's three
+consecutive edge pairs all canonicalize to 2-chain and would be
+recorded as three p_2 instances on the same participants
+`{k1,k2,k3}`, breaking ADR 0010's canonical-recovery invariant.
+With it, only instances whose participants induce exactly `k`
+edges are admitted.
+
+Two enumeration primitives now coexist cleanly:
+- `compound_class_subgraphs` (ADR 0007): discovery heuristic.
+- `find_instances_of` (ADR 0015): verification primitive.
+
+Known residual: discovery itself (ADR 0007/0008) still fragments
+asymmetric structures. Naming novel asymmetric structures requires
+subgraph-*motif* discovery (enumerate connected subgraphs at sizes
+k, group by canonical, name by frequency) — candidate for a
+future probe. 83 tests pass.
+
+Decision: [0015-subgraph-matching](decisions/0015-subgraph-matching.md).
+Log: [logs/2026-04-23_subgraph_matching.log](../logs/2026-04-23_subgraph_matching.log).

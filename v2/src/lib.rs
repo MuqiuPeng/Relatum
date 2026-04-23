@@ -80,9 +80,6 @@ pub enum SkipReason {
     /// Every candidate in the group was already recorded as an instance
     /// of an existing pattern (dedup by participant set).
     AlreadyKnown,
-    /// `attach_only` was set and the candidate's canonical form does
-    /// not match any existing named pattern. ADR 0014.
-    NoMatchingPattern,
 }
 
 /// Outcome of a single naming attempt under policy. ADR 0012.
@@ -462,13 +459,29 @@ impl RSet {
         Ok(NamingDecision::Named(pid))
     }
 
-    /// γ driver — run one naming pass. ADR 0012.
+    /// γ driver — run one naming pass. ADR 0012, extended by ADR 0015.
     ///
-    /// Collects compound-class subgraphs, groups them by canonical form,
-    /// applies the policy (including the meta-subgraph skip when set),
-    /// and records a decision per canonical form. Deterministic
-    /// iteration via `BTreeMap` over canonical forms.
+    /// Under `attach_only = false` (discovery mode): collects compound-
+    /// class subgraphs, groups by canonical form, applies policy per
+    /// group. This is the original ADR 0012 semantics.
+    ///
+    /// Under `attach_only = true` (ADR 0015): iterates known patterns,
+    /// uses `find_instances_of` to locate matching subgraphs, and
+    /// attaches each fresh one. Returns one decision per pattern.
+    /// Handles asymmetric structures that compound-class enumeration
+    /// would fragment.
     pub fn run_naming_pass(
+        &mut self,
+        policy: &NamingPolicy,
+    ) -> Vec<(CanonicalForm, NamingDecision)> {
+        if policy.attach_only {
+            self.run_attach_pass(policy)
+        } else {
+            self.run_discovery_pass(policy)
+        }
+    }
+
+    fn run_discovery_pass(
         &mut self,
         policy: &NamingPolicy,
     ) -> Vec<(CanonicalForm, NamingDecision)> {
@@ -498,8 +511,6 @@ impl RSet {
             let fresh = self.filter_known_instances(subs);
             let decision = if fresh.is_empty() {
                 NamingDecision::Skipped(SkipReason::AlreadyKnown)
-            } else if policy.attach_only && self.find_pattern_matching(&canon).is_none() {
-                NamingDecision::Skipped(SkipReason::NoMatchingPattern)
             } else {
                 self.consider_naming(&fresh, policy)
                     .expect("well-formed candidate groups produced by the pipeline")
@@ -507,6 +518,87 @@ impl RSet {
             decisions.push((canon, decision));
         }
         decisions
+    }
+
+    fn run_attach_pass(
+        &mut self,
+        policy: &NamingPolicy,
+    ) -> Vec<(CanonicalForm, NamingDecision)> {
+        let patterns: Vec<String> = self.patterns().iter().map(|s| s.to_string()).collect();
+        let mut decisions = Vec::with_capacity(patterns.len());
+
+        for pattern_id in patterns {
+            // Reconstruct the pattern's canonical via its first instance.
+            let first_inst = match self.instances_of(&pattern_id).first() {
+                Some(s) => s.to_string(),
+                None => continue, // pattern exists in registry but has no instances
+            };
+            let canon = self.instance_subgraph(&first_inst).canonicalize();
+
+            let matches = self.find_instances_of(&canon);
+            let fresh = self.filter_known_instances(matches);
+
+            let decision = if fresh.is_empty() {
+                NamingDecision::Skipped(SkipReason::AlreadyKnown)
+            } else {
+                self.consider_naming(&fresh, policy)
+                    .expect("fresh isomorphic matches from find_instances_of")
+            };
+            decisions.push((canon, decision));
+        }
+        decisions
+    }
+
+    /// Enumerate every connected data subgraph whose canonical form
+    /// equals `target`, filtered to "clean" instances. ADR 0015.
+    ///
+    /// Meta-R edges are excluded so pattern matching never matches
+    /// patterns against their own metadata. Clean instances are those
+    /// whose participant set, restricted to the RSet's data edges,
+    /// induces exactly the subgraph itself — no extra edges. This
+    /// excludes embedded cases (e.g., a 2-chain inside a 3-cycle) so
+    /// that canonical recovery via participants (ADR 0010 invariant)
+    /// stays consistent: the participant set of a clean instance
+    /// uniquely determines its structure.
+    pub fn find_instances_of(&self, target: &CanonicalForm) -> Vec<Subgraph> {
+        let k = target.len();
+        if k == 0 {
+            return Vec::new();
+        }
+        let meta = self.collect_meta_ids();
+        let data: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .cloned()
+            .collect();
+        if k > data.len() {
+            return Vec::new();
+        }
+
+        let mut results: Vec<Subgraph> = Vec::new();
+        let mut seen: HashSet<Vec<R>> = HashSet::new();
+
+        for start in 0..data.len() {
+            let mut initial: HashSet<R> = HashSet::new();
+            initial.insert(data[start].clone());
+            expand_connected(&data, initial, k, &mut seen, &mut results, target);
+        }
+
+        // Cleanness filter — keep only subgraphs whose participants
+        // induce exactly k data edges in the RSet.
+        results.retain(|sg| {
+            let parts: HashSet<&str> = sg.identifiers();
+            let induced_count = data
+                .iter()
+                .filter(|r| {
+                    parts.contains(r.x.as_str()) && parts.contains(r.y.as_str())
+                })
+                .count();
+            induced_count == k
+        });
+
+        results
     }
 
     /// Drop any candidate whose participant set already matches an existing
@@ -800,6 +892,53 @@ impl Subgraph {
 
 fn shares_identifier(a: &R, b: &R) -> bool {
     a.x == b.x || a.x == b.y || a.y == b.x || a.y == b.y
+}
+
+/// BFS-style enumeration of connected k-edge subgraphs with canonical-form
+/// match. ADR 0015 `find_instances_of` helper. Dedups edge sets via a
+/// sorted-tuple key so each connected set is visited once, regardless of
+/// seed order.
+fn expand_connected(
+    all: &[R],
+    current: HashSet<R>,
+    target_size: usize,
+    seen: &mut HashSet<Vec<R>>,
+    results: &mut Vec<Subgraph>,
+    target: &CanonicalForm,
+) {
+    let mut key: Vec<R> = current.iter().cloned().collect();
+    key.sort_by(|a, b| (a.x.as_str(), a.y.as_str()).cmp(&(b.x.as_str(), b.y.as_str())));
+    if !seen.insert(key) {
+        return;
+    }
+
+    if current.len() == target_size {
+        let sg = Subgraph::from_edges(current.iter().cloned());
+        if sg.canonicalize() == *target {
+            results.push(sg);
+        }
+        return;
+    }
+
+    if current.len() > target_size {
+        return;
+    }
+
+    let current_ids: HashSet<&str> = current
+        .iter()
+        .flat_map(|r| [r.x.as_str(), r.y.as_str()])
+        .collect();
+
+    for edge in all {
+        if current.contains(edge) {
+            continue;
+        }
+        if current_ids.contains(edge.x.as_str()) || current_ids.contains(edge.y.as_str()) {
+            let mut extended = current.clone();
+            extended.insert(edge.clone());
+            expand_connected(all, extended, target_size, seen, results, target);
+        }
+    }
 }
 
 /// Rank a slice of signatures into small integer labels.
@@ -1903,8 +2042,10 @@ mod tests {
     }
 
     #[test]
-    fn attach_only_rejects_novel_canonical() {
-        // No existing patterns yet — every candidate is "novel."
+    fn attach_only_with_empty_registry_names_nothing() {
+        // ADR 0015: with no patterns registered, attach-only iterates an
+        // empty set of patterns and returns zero decisions. No new
+        // patterns created, no instances added.
         let mut rs = build_mixed_graph();
         let policy = NamingPolicy {
             min_edges: 2,
@@ -1913,17 +2054,46 @@ mod tests {
             attach_only: true,
         };
         let decisions = rs.run_naming_pass(&policy);
-        let novel: usize = decisions
-            .iter()
-            .filter(|(_, d)| matches!(d, NamingDecision::Skipped(SkipReason::NoMatchingPattern)))
-            .count();
-        let named: usize = decisions
-            .iter()
-            .filter(|(_, d)| matches!(d, NamingDecision::Named(_)))
-            .count();
-        assert!(novel > 0, "attach-only should reject some novel groups");
-        assert_eq!(named, 0, "attach-only must not create new patterns");
+        assert!(decisions.is_empty(), "no registered patterns → no decisions");
         assert!(rs.patterns().is_empty());
+    }
+
+    #[test]
+    fn attach_only_admits_asymmetric_chain_after_discovery() {
+        // ADR 0015 fix — the case that compound-class fragmentation
+        // missed in ADR 0014.
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+
+        // p_2 is the 2-chain pattern. Before extending: 1 instance.
+        let p2_before = rs.instances_of("p_2").len();
+
+        // Add a fresh 2-chain on completely new identifiers. Under the
+        // old compound-class pipeline, this would fragment and not
+        // attach. Under subgraph matching, it should attach.
+        rs.extend([R::new("u", "v"), R::new("v", "w")]);
+
+        let policy = NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+            attach_only: true,
+        };
+        rs.run_naming_pass(&policy);
+
+        let p2_after = rs.instances_of("p_2").len();
+        assert!(p2_after > p2_before, "asymmetric chain should attach to p_2");
+    }
+
+    #[test]
+    fn find_instances_of_returns_empty_for_novel_canonical() {
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        // A completely novel canonical (e.g., a 5-edge form that no
+        // named pattern uses) should yield no matches.
+        let novel_target: CanonicalForm = vec![(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)];
+        let matches = rs.find_instances_of(&novel_target);
+        assert!(matches.is_empty());
     }
 
     #[test]
@@ -1971,7 +2141,34 @@ mod tests {
     }
 
     #[test]
-    fn attach_only_is_idempotent() {
+    fn attach_pass_picks_up_instances_discovery_missed() {
+        // ADR 0015: under subgraph matching, attach finds 2-chain
+        // instances that compound-class discovery fragmented. In the
+        // c1→c2→c3→c4→c5 chain, discovery recognizes only the
+        // {c2,c3,c4} interior as a 2-chain subgraph (its edges share
+        // compound fingerprints). Attach enumeration finds {c1,c2,c3}
+        // and {c3,c4,c5} in addition.
+        let mut rs = build_mixed_graph();
+        rs.run_naming_pass(&NamingPolicy::default());
+        let p2_after_discovery = rs.instances_of("p_2").len();
+
+        let policy = NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+            attach_only: true,
+        };
+        rs.run_naming_pass(&policy);
+        let p2_after_attach = rs.instances_of("p_2").len();
+
+        assert!(
+            p2_after_attach > p2_after_discovery,
+            "attach should find additional 2-chain instances"
+        );
+    }
+
+    #[test]
+    fn attach_only_second_pass_is_no_op() {
         let mut rs = build_mixed_graph();
         rs.run_naming_pass(&NamingPolicy::default());
         let policy = NamingPolicy {
@@ -1980,13 +2177,15 @@ mod tests {
             skip_meta_subgraphs: true,
             attach_only: true,
         };
-        // First attach-only pass after discovery adds nothing (everything
-        // already known). Pattern and edge counts stay.
-        let size_before = rs.len();
-        let patterns_before = rs.patterns().len();
+        // First attach may add instances that discovery missed; second
+        // attach on unchanged data adds nothing.
         rs.run_naming_pass(&policy);
-        assert_eq!(rs.len(), size_before);
-        assert_eq!(rs.patterns().len(), patterns_before);
+        let size_after_first = rs.len();
+        let patterns_after = rs.patterns().len();
+
+        rs.run_naming_pass(&policy);
+        assert_eq!(rs.len(), size_after_first);
+        assert_eq!(rs.patterns().len(), patterns_after);
     }
 
     #[test]

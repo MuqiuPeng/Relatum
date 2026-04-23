@@ -5,7 +5,8 @@
 //!   2. New data arrives (another 3-cycle, a 2-chain, and a novel
 //!      "T-fork" subgraph the registry has never seen).
 //!   3. Attach-only pass — patterns are frozen; only instances can
-//!      be added. The T-fork is reported as NoMatchingPattern.
+//!      be added (ADR 0015's subgraph matching replaces the older
+//!      compound-class pipeline under attach_only).
 //!
 //! Used to produce `logs/2026-04-23_attach_only.log`.
 
@@ -102,9 +103,6 @@ fn print_decisions(decisions: &[(CanonicalForm, NamingDecision)]) {
                 format!("Skipped(BelowMinInstances {}<{})", instances, min)
             }
             NamingDecision::Skipped(SkipReason::AlreadyKnown) => "Skipped(AlreadyKnown)".to_string(),
-            NamingDecision::Skipped(SkipReason::NoMatchingPattern) => {
-                "Skipped(NoMatchingPattern)".to_string()
-            }
         };
         println!("  canonical {:?}  ->  {}", canon, verdict);
     }
