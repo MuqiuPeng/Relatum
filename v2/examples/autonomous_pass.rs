@@ -103,6 +103,9 @@ fn summarize(outcomes: &[AutonomousOutcome]) {
                     AutonomousSkip::PolicyFiltered(SkipReason::AlreadyKnown) => {
                         "Policy(AlreadyKnown)".to_string()
                     }
+                    AutonomousSkip::PolicyFiltered(SkipReason::BelowMdlGain { gain, min }) => {
+                        format!("Policy(BelowMdlGain {}<{})", gain, min)
+                    }
                 };
                 println!("  Skipped        {}  canonical={:?}", r, canonical);
             }

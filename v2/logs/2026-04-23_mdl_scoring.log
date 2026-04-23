@@ -1,0 +1,146 @@
+Date: 2026-04-23
+Descriptor: mdl_scoring (validates ADR 0019)
+Purpose:
+    Contrast sample-frequency ranking with MDL-gain ranking; confirm
+    that `min_mdl_gain > 0` in the naming policy suppresses singleton
+    candidates during `autonomous_pass` while keeping legitimately
+    reusable patterns.
+
+Mechanism version:
+    ADR 0019 (NamingPolicy::min_mdl_gain, SkipReason::BelowMdlGain,
+    RSet::mdl_gain, RSet::score_by_mdl, consider_naming updated).
+    Source: v2/src/lib.rs at the commit implementing 0019.
+    Runner: v2/examples/mdl_scoring.rs.
+
+Command:
+    cargo run --example mdl_scoring
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+RSet: 14 edges
+
+=== target_size=2  comparing rankings ===
+canonical                                      sample_freq   mdl_gain
+  [(1, 2), (2, 0)]                                    127          6
+  [(1, 0), (1, 0)]                                     60          6
+
+=== target_size=3  comparing rankings ===
+canonical                                      sample_freq   mdl_gain
+  [(1, 3), (2, 0), (3, 2)]                             67          3
+  [(0, 0), (0, 0), (0, 0)]                             51          0
+  [(2, 0), (3, 1), (3, 2)]                             44          0
+  [(1, 0), (1, 0), (1, 0)]                             27          0
+
+=== autonomous_pass, target_size=3, min_mdl_gain=0 (default) ===
+  NewPattern(p_0)  2 instances  canonical=[(1, 3), (2, 0), (3, 2)]
+  NewPattern(p_1)  1 instances  canonical=[(0, 0), (0, 0), (0, 0)]
+  NewPattern(p_2)  1 instances  canonical=[(2, 0), (3, 1), (3, 2)]
+  NewPattern(p_3)  1 instances  canonical=[(1, 0), (1, 0), (1, 0)]
+patterns registered: 4
+
+=== autonomous_pass, target_size=3, min_mdl_gain=1 (MDL filter) ===
+  NewPattern(p_0)  2 instances  canonical=[(1, 3), (2, 0), (3, 2)]
+  Skipped  Policy(BelowMdlGain 0<1)  canonical=[(0, 0), (0, 0), (0, 0)]
+  Skipped  Policy(BelowMdlGain 0<1)  canonical=[(2, 0), (3, 1), (3, 2)]
+  Skipped  Policy(BelowMdlGain 0<1)  canonical=[(1, 0), (1, 0), (1, 0)]
+patterns registered: 1
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **The two rankings agree on the top candidate but disagree below.**
+   At target_size=2, both frequency (127) and MDL (6) put the
+   2-chain first. At target_size=3, frequency's top (3-chain, 67)
+   also happens to be MDL's top (gain 3). But the other three
+   canonicals at size 3 have non-trivial sample frequencies
+   (51, 44, 27) yet MDL gain 0 each — because all three are
+   singletons in the data.
+   Frequency scores how often a structure was *sampled*. MDL scores
+   how often a structure *truly appears* in a clean, reusable form.
+   A canonical can be common in samples (e.g., the cycle is often
+   walked into because its nodes have degree 2) yet contribute zero
+   reusability because the data has exactly one instance.
+
+2. **The MDL filter changes autonomous_pass outcomes qualitatively.**
+   - Default policy: 4 patterns named (every discovered canonical
+     yields a `NewPattern`), registry grows to 4.
+   - `min_mdl_gain=1`: only the 3-chain (two clean instances → gain 3)
+     is named. The three singleton canonicals — 3-cycle, 3-tree,
+     3-star — are rejected with `BelowMdlGain { gain: 0, min: 1 }`.
+     Registry grows to 1.
+   MDL converts "every structure the sampler finds" into "only
+   structures that appear more than once." This is the intended
+   selectivity upgrade.
+
+3. **2-chain and 2-star tie on MDL gain at size=2 (both 6).**
+   Both have 4 clean instances. 2-chain appeared in 127 of 200
+   samples; 2-star in 60. Sampling preferred chains (more edges,
+   more seed opportunities), but on the reusability axis they are
+   equal. A caller who wants to name both 2-edge patterns would
+   use a permissive policy (min_edges=2, min_mdl_gain=1); both pass.
+
+4. **Determinism holds end-to-end.**
+   With fixed seeds, `discover_motifs` → `score_by_mdl` →
+   `autonomous_pass` all produce the same output across runs.
+   Scores in particular are now doubly deterministic: the sampling
+   step is stochastic-but-seeded, and MDL computation is fully
+   deterministic (integer arithmetic on find_instances_of output).
+
+5. **Integer arithmetic is sufficient.**
+   `(N - 1) × k` always returns a non-negative integer. The
+   original plan used f64 but ran afoul of `#[derive(Eq)]` on
+   `SkipReason`; switching to `usize` kept Eq derivable, aligned
+   with the natural semantics, and simplified reasoning ("gain 6"
+   vs "gain 6.0").
+
+====================================================================
+WHAT THIS ENABLES / WHAT IT DOES NOT
+====================================================================
+
+Enables:
+  - Principled filter for autonomous naming: only canonicals whose
+    naming would provide reusability gain are admitted.
+  - Clean separation of discovery heuristic (sample_frequency) from
+    evaluation criterion (MDL gain). Callers can opt into MDL after
+    discovery by calling `score_by_mdl` and sorting.
+  - A deterministic score attached to every canonical; useful for
+    logs, comparisons, and downstream composition.
+
+Does NOT enable (deferred):
+  - Logarithmic or information-theoretic scaling. `(N - 1) × k` is
+    a first-pass proxy. Refinements with `log|V|` or entropy terms
+    are possible if empirical experience shows they matter.
+  - Re-scoring by cross-graph frequency (pattern appearing across
+    multiple RSets). Cross-graph is a separate open direction.
+  - Replacing `find_instances_of`'s internals with sampling. MDL
+    currently uses the exhaustive enumeration; at β's scale this
+    is fine.
+  - Trading off gain vs specificity (preferring rare-structure
+    patterns over common-structure ones even if the latter has
+    higher raw gain). Not currently needed; could be a follow-up.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0019 validated. Naming policy now has a principled third
+threshold (alongside min_edges and min_instances). Default off,
+so existing behavior is preserved; opt-in for callers who want
+reusability-based selection.
+
+Open directions are essentially the same as after 0018, slightly
+pared:
+  - Multi-size autonomous passes (bundling discover_motifs over a
+    range of target sizes)
+  - autonomous_pass + attach-only in sequence
+  - Cross-graph pattern transfer
+  - Pattern retraction
+  - Sampling-based replacement for find_instances_of
+
+The core loop (sample-score-refine-name) plus the naming filter
+(min_edges, min_instances, MDL) now has enough depth that the
+remaining directions are feature additions rather than core
+corrections.

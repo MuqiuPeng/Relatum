@@ -50,6 +50,7 @@ fn main() {
         min_instances: 1,
         skip_meta_subgraphs: true,
         attach_only: true,
+        min_mdl_gain: 0,
     };
     let attach_decisions = rs.run_naming_pass(&attach_policy);
     print_decisions(&attach_decisions);
@@ -103,6 +104,9 @@ fn print_decisions(decisions: &[(CanonicalForm, NamingDecision)]) {
                 format!("Skipped(BelowMinInstances {}<{})", instances, min)
             }
             NamingDecision::Skipped(SkipReason::AlreadyKnown) => "Skipped(AlreadyKnown)".to_string(),
+            NamingDecision::Skipped(SkipReason::BelowMdlGain { gain, min }) => {
+                format!("Skipped(BelowMdlGain {}<{})", gain, min)
+            }
         };
         println!("  canonical {:?}  ->  {}", canon, verdict);
     }

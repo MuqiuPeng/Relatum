@@ -52,7 +52,7 @@ fn main() {
     // Pass 3 — min_instances=2 on a fresh RSet
     // ====================================================
     let mut rs = build_mixed_graph();
-    let tighter = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true, attach_only: false };
+    let tighter = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true, attach_only: false, min_mdl_gain: 0 };
     println!("=== Pass 3 — tighter policy on fresh RSet ===");
     println!(
         "policy: min_edges={} min_instances={} skip_meta={}",
@@ -67,7 +67,7 @@ fn main() {
     // Pass 4 — permissive policy (min_edges=1) on a fresh RSet
     // ====================================================
     let mut rs = build_mixed_graph();
-    let permissive = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true, attach_only: false };
+    let permissive = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true, attach_only: false, min_mdl_gain: 0 };
     println!("=== Pass 4 — permissive policy (min_edges=1) on fresh RSet ===");
     println!(
         "policy: min_edges={} min_instances={} skip_meta={}",
@@ -111,6 +111,9 @@ fn print_decisions(decisions: &[(CanonicalForm, NamingDecision)]) {
                 )
             }
             NamingDecision::Skipped(SkipReason::AlreadyKnown) => "Skipped(AlreadyKnown)".to_string(),
+            NamingDecision::Skipped(SkipReason::BelowMdlGain { gain, min }) => {
+                format!("Skipped(BelowMdlGain {}<{})", gain, min)
+            }
         };
         println!("  canonical {:?}  ->  {}", canon, verdict);
     }

@@ -58,3 +58,4 @@ Commit hash(es), file pointers.
 - [0016](0016-motif-discovery-via-sampling.md) — Motif discovery via sample-score-select (first non-enumeration search)
 - [0017](0017-representative-refinement.md) — Representative refinement via targeted re-sampling
 - [0018](0018-autonomous-pass.md) — Autonomous pass: compose discover + refine + name to close the abstraction loop
+- [0019](0019-mdl-scoring.md) — MDL-gain scoring (opt-in reusability filter)

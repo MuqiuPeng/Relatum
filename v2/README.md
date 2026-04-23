@@ -72,8 +72,12 @@ graph at target_size=3, one `autonomous_pass` names four distinct
 structural types — 3-chain, 3-cycle, 3-star, and the 3-tree that
 compound-class discovery could not reach.
 
+Naming policy includes a **MDL-gain filter** (ADR 0019) — opt-in
+reusability threshold via `NamingPolicy::min_mdl_gain`. Zero-gain
+singletons are automatically excluded when the threshold is set.
+
 Open directions (refinements, not completions): multi-size
-autonomous passes, attach-only integration, MDL-based scoring,
-cross-graph pattern transfer, pattern retraction.
+autonomous passes, attach-only integration, cross-graph pattern
+transfer, pattern retraction.
 
 See [docs/progress.md](docs/progress.md) for the current frontier.

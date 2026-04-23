@@ -58,6 +58,12 @@ pub struct NamingPolicy {
     /// match any named pattern are reported as
     /// `SkipReason::NoMatchingPattern`. ADR 0014.
     pub attach_only: bool,
+    /// Minimum MDL-inspired gain to accept a naming. Defaults to 0
+    /// (off). When positive, `consider_naming` computes
+    /// `mdl_gain = (N - 1) × k` where N is the provided instance
+    /// count and k is the canonical size; candidates below the
+    /// threshold return `Skipped(BelowMdlGain)`. ADR 0019.
+    pub min_mdl_gain: usize,
 }
 
 impl Default for NamingPolicy {
@@ -67,6 +73,7 @@ impl Default for NamingPolicy {
             min_instances: 1,
             skip_meta_subgraphs: true,
             attach_only: false,
+            min_mdl_gain: 0,
         }
     }
 }
@@ -80,6 +87,9 @@ pub enum SkipReason {
     /// Every candidate in the group was already recorded as an instance
     /// of an existing pattern (dedup by participant set).
     AlreadyKnown,
+    /// MDL-gain threshold from `NamingPolicy::min_mdl_gain` was not met.
+    /// ADR 0019.
+    BelowMdlGain { gain: usize, min: usize },
 }
 
 /// Outcome of a single naming attempt under policy. ADR 0012.
@@ -431,7 +441,8 @@ impl RSet {
     }
 
     /// Apply a policy filter to a candidate group and, if it passes,
-    /// invoke `name_pattern_instances`. ADR 0012.
+    /// invoke `name_pattern_instances`. ADR 0012; extended by ADR 0019
+    /// to include an optional MDL-gain threshold.
     pub fn consider_naming(
         &mut self,
         instances: &[Subgraph],
@@ -455,8 +466,54 @@ impl RSet {
                 min: policy.min_instances,
             }));
         }
+        if policy.min_mdl_gain > 0 {
+            // MDL gain computed from the provided instance list, not from
+            // find_instances_of — lets consider_naming remain a pure
+            // function of its inputs. Caller who wants exact data-wide
+            // gain should pass the full instance list (as run_naming_pass
+            // and autonomous_pass already do).
+            let gain = count.saturating_sub(1) * edges;
+            if gain < policy.min_mdl_gain {
+                return Ok(NamingDecision::Skipped(SkipReason::BelowMdlGain {
+                    gain,
+                    min: policy.min_mdl_gain,
+                }));
+            }
+        }
         let pid = self.name_pattern_instances(instances)?;
         Ok(NamingDecision::Named(pid))
+    }
+
+    /// MDL-inspired reusability gain of naming a pattern with this
+    /// canonical. `(N - 1) × k` where N is the clean instance count
+    /// from `find_instances_of` and k is the canonical size. Zero for
+    /// singletons or empty canonicals. ADR 0019.
+    pub fn mdl_gain(&self, canonical: &CanonicalForm) -> usize {
+        let k = canonical.len();
+        if k == 0 {
+            return 0;
+        }
+        let n = self.find_instances_of(canonical).len();
+        if n == 0 {
+            return 0;
+        }
+        n.saturating_sub(1) * k
+    }
+
+    /// Re-score candidates by MDL gain (replaces sample-frequency score
+    /// in the `MotifCandidate::score` field with `mdl_gain` as f64).
+    /// Deterministic. ADR 0019.
+    pub fn score_by_mdl(
+        &self,
+        candidates: Vec<MotifCandidate>,
+    ) -> Vec<MotifCandidate> {
+        candidates
+            .into_iter()
+            .map(|mut c| {
+                c.score = self.mdl_gain(&c.canonical) as f64;
+                c
+            })
+            .collect()
     }
 
     /// γ driver — run one naming pass. ADR 0012, extended by ADR 0015.
@@ -2195,7 +2252,7 @@ mod tests {
         let mut rs = RSet::new();
         rs.add(R::new("a", "b"));
         let sg = Subgraph::from_edges([R::new("a", "b")]);
-        let policy = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true, attach_only: false };
+        let policy = NamingPolicy { min_edges: 1, min_instances: 1, skip_meta_subgraphs: true, attach_only: false, min_mdl_gain: 0 };
         let decision = rs.consider_naming(&[sg], &policy).unwrap();
         assert!(matches!(decision, NamingDecision::Named(_)));
         assert_eq!(rs.patterns().len(), 1);
@@ -2206,7 +2263,7 @@ mod tests {
         let mut rs = RSet::new();
         rs.extend([R::new("a", "b"), R::new("b", "c")]);
         let sg = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
-        let policy = NamingPolicy { min_edges: 1, min_instances: 2, skip_meta_subgraphs: true, attach_only: false };
+        let policy = NamingPolicy { min_edges: 1, min_instances: 2, skip_meta_subgraphs: true, attach_only: false, min_mdl_gain: 0 };
         let decision = rs.consider_naming(&[sg], &policy).unwrap();
         assert!(matches!(
             decision,
@@ -2238,7 +2295,7 @@ mod tests {
         // (3-cycle, 3-star, 2-chain all singletons). P2 single-edge has 6
         // instances but is filtered by min_edges=2. So nothing is named.
         let mut rs = build_mixed_graph();
-        let policy = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true, attach_only: false };
+        let policy = NamingPolicy { min_edges: 2, min_instances: 2, skip_meta_subgraphs: true, attach_only: false, min_mdl_gain: 0 };
         let decisions = rs.run_naming_pass(&policy);
         let named: usize = decisions
             .iter()
@@ -2382,6 +2439,7 @@ mod tests {
             min_instances: 1,
             skip_meta_subgraphs: true,
             attach_only: true,
+            min_mdl_gain: 0,
         };
         let decisions = rs.run_naming_pass(&policy);
         assert!(decisions.is_empty(), "no registered patterns → no decisions");
@@ -2408,6 +2466,7 @@ mod tests {
             min_instances: 1,
             skip_meta_subgraphs: true,
             attach_only: true,
+            min_mdl_gain: 0,
         };
         rs.run_naming_pass(&policy);
 
@@ -2450,6 +2509,7 @@ mod tests {
             min_instances: 1,
             skip_meta_subgraphs: true,
             attach_only: true,
+            min_mdl_gain: 0,
         };
         let decisions = rs.run_naming_pass(&policy);
 
@@ -2487,6 +2547,7 @@ mod tests {
             min_instances: 1,
             skip_meta_subgraphs: true,
             attach_only: true,
+            min_mdl_gain: 0,
         };
         rs.run_naming_pass(&policy);
         let p2_after_attach = rs.instances_of("p_2").len();
@@ -2506,6 +2567,7 @@ mod tests {
             min_instances: 1,
             skip_meta_subgraphs: true,
             attach_only: true,
+            min_mdl_gain: 0,
         };
         // First attach may add instances that discovery missed; second
         // attach on unchanged data adds nothing.
@@ -2782,6 +2844,117 @@ mod tests {
             .count();
         assert_eq!(named_count, 1, "expected only the 3-chain to be named");
         assert!(filtered_count >= 2, "expected single-instance candidates filtered");
+    }
+
+    #[test]
+    fn mdl_gain_is_zero_for_singleton_canonical() {
+        // Build a graph with exactly one 3-cycle — one clean instance.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c"), R::new("c", "a")]);
+        let sg = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c"), R::new("c", "a")]);
+        let canon = sg.canonicalize();
+        assert_eq!(rs.mdl_gain(&canon), 0);
+    }
+
+    #[test]
+    fn mdl_gain_scales_with_reuse_and_size() {
+        let rs = build_mixed_graph();
+        // 2-chain canonical [(1, 2), (2, 0)]. Clean instances on the
+        // mixed graph: {c1,c2,c3}, {c2,c3,c4}, {c3,c4,c5}, {t1,t2,t4}
+        // → N=4. Gain = (4 - 1) * 2 = 6.
+        let two_chain: CanonicalForm = vec![(1, 2), (2, 0)];
+        assert_eq!(rs.mdl_gain(&two_chain), 6);
+
+        // 3-chain canonical. Clean instances: {c1..c4}, {c2..c5} → N=2.
+        // Gain = (2 - 1) * 3 = 3.
+        let three_chain: CanonicalForm = vec![(1, 3), (2, 0), (3, 2)];
+        assert_eq!(rs.mdl_gain(&three_chain), 3);
+    }
+
+    #[test]
+    fn score_by_mdl_updates_candidate_scores() {
+        let rs = build_mixed_graph();
+        let candidates = vec![
+            MotifCandidate {
+                canonical: vec![(1, 2), (2, 0)],
+                representative: Subgraph::from_edges([R::new("c1", "c2"), R::new("c2", "c3")]),
+                sample_frequency: 42,
+                score: 42.0,
+            },
+        ];
+        let rescored = rs.score_by_mdl(candidates);
+        assert_eq!(rescored[0].score, 6.0);
+    }
+
+    #[test]
+    fn consider_naming_rejects_below_mdl_threshold() {
+        let mut rs = build_mixed_graph();
+        // Singleton 3-cycle instance → edges=3, count=1, gain=0.
+        // With min_mdl_gain=1 it should be rejected.
+        let cycle = Subgraph::from_edges([
+            R::new("k1", "k2"), R::new("k2", "k3"), R::new("k3", "k1"),
+        ]);
+        let policy = NamingPolicy {
+            min_edges: 2,
+            min_instances: 1,
+            skip_meta_subgraphs: true,
+            attach_only: false,
+            min_mdl_gain: 1,
+        };
+        let decision = rs.consider_naming(&[cycle], &policy).unwrap();
+        assert!(matches!(
+            decision,
+            NamingDecision::Skipped(SkipReason::BelowMdlGain { gain: 0, min: 1 })
+        ));
+        assert!(rs.patterns().is_empty());
+    }
+
+    #[test]
+    fn autonomous_pass_honors_min_mdl_gain() {
+        // target_size=3 on the mixed graph surfaces four canonicals:
+        //   3-chain  (N=2, k=3, gain=3)
+        //   3-cycle  (N=1, k=3, gain=0)
+        //   3-tree   (N=1, k=3, gain=0)
+        //   3-star   (N=1, k=3, gain=0)
+        // min_mdl_gain=1 should keep only the 3-chain.
+        let mut rs = build_mixed_graph();
+        let config = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+            },
+            refinement: RefinementConfig {
+                max_tries: 200,
+                rng_seed: 999,
+            },
+            naming: NamingPolicy {
+                min_edges: 2,
+                min_instances: 1,
+                skip_meta_subgraphs: true,
+                attach_only: false,
+                min_mdl_gain: 1,
+            },
+        };
+        let outcomes = rs.autonomous_pass(&config);
+        let new_count = outcomes
+            .iter()
+            .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+            .count();
+        let mdl_skipped = outcomes
+            .iter()
+            .filter(|o| matches!(
+                o,
+                AutonomousOutcome::Skipped {
+                    reason: AutonomousSkip::PolicyFiltered(SkipReason::BelowMdlGain { .. }),
+                    ..
+                }
+            ))
+            .count();
+        assert_eq!(new_count, 1, "only 3-chain has positive MDL gain");
+        assert!(mdl_skipped >= 3, "three singleton canonicals should be MDL-filtered");
+        assert_eq!(rs.patterns().len(), 1);
     }
 
     #[test]

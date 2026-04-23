@@ -577,3 +577,44 @@ are refinements rather than completions.
 
 Decision: [0018-autonomous-pass](decisions/0018-autonomous-pass.md).
 Log: [logs/2026-04-23_autonomous_pass.log](../logs/2026-04-23_autonomous_pass.log).
+
+Commit: `93fef37`.
+
+### MDL-gain scoring (ADR 0019)
+Opt-in reusability filter for naming. Added
+`RSet::mdl_gain(canonical) → usize` computing `(N − 1) × k` from
+`find_instances_of(canonical)`, `RSet::score_by_mdl` for
+re-ranking candidates by MDL, `NamingPolicy::min_mdl_gain: usize`
+(default 0 = off), `SkipReason::BelowMdlGain { gain, min }`, and
+an MDL check branch in `consider_naming`. Integer arithmetic
+throughout — `(N − 1) × k` is always a non-negative integer, so
+Eq-derivability on `SkipReason` is preserved.
+
+Key comparison on the mixed graph at target_size=3 (200 samples):
+
+  canonical                      sample_freq    mdl_gain
+  3-chain  [(1,3),(2,0),(3,2)]         67          3
+  3-cycle  [(0,0),(0,0),(0,0)]         51          0
+  3-tree   [(2,0),(3,1),(3,2)]         44          0
+  3-star   [(1,0),(1,0),(1,0)]         27          0
+
+Frequency scores how often a structure is sampled; MDL scores how
+often it truly appears in a reusable form. Singletons have sample
+frequency but zero MDL gain.
+
+`autonomous_pass` with `min_mdl_gain=1` names only the 3-chain
+(the sole canonical with N≥2 clean instances on this graph).
+The three singleton canonicals are filtered with
+`Policy(BelowMdlGain 0<1)`. With `min_mdl_gain=0` (default), all
+4 still get named — backward-compatible.
+
+5 new unit tests; 101 total pass.
+
+Interpretation: in v2's encoding, naming adds meta-R rather than
+removing data, so strict byte-count MDL would always recommend
+naming nothing. `(N − 1) × k` is an MDL-inspired *reusability*
+proxy — the description saving that downstream callers would
+realize. Documented as such in the ADR.
+
+Decision: [0019-mdl-scoring](decisions/0019-mdl-scoring.md).
+Log: [logs/2026-04-23_mdl_scoring.log](../logs/2026-04-23_mdl_scoring.log).
