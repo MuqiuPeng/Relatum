@@ -1,0 +1,8 @@
+[package]
+name = "relatum-v2"
+version = "0.1.0"
+edition = "2021"
+description = "Autonomous abstraction from a single binary directed relation R(x, y)"
+license = "MIT"
+
+[dependencies]

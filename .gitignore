@@ -1,6 +1,13 @@
 # Rust
 /target/
+**/target/
 Cargo.lock
+
+# LaTeX build artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
 
 # IDE / Editor
 .idea/
