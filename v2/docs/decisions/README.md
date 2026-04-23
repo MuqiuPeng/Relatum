@@ -48,3 +48,4 @@ Commit hash(es), file pointers.
 - [0006](0006-locality-profile.md) — Locality profile: co-left / co-right / forward / reverse neighbor counts
 - [0007](0007-compound-signature-probe.md) — Compound signature probe (edge_fingerprint = RSignature + LocalityProfile)
 - [0008](0008-subgraph-extraction.md) — Subgraph representation and connected-component extraction (first β ADR)
+- [0009](0009-subgraph-canonicalization.md) — Subgraph canonicalization via Weisfeiler–Lehman refinement

@@ -1,0 +1,177 @@
+Date: 2026-04-23
+Descriptor: canonicalization (validates ADR 0009)
+Purpose:
+    Apply Weisfeiler–Lehman canonicalization to every subgraph instance
+    produced by ADR 0008's extraction on the ADR 0007 mixed graph.
+    Group instances by canonical form ("pattern class"). Answer the
+    follow-up question from ADR 0008's log: does pattern equivalence
+    span different compound classes?
+
+Mechanism version:
+    ADR 0009 (Subgraph::canonicalize — WL-1 rank-based refinement,
+    CanonicalForm = sorted edge list over stable labels).
+    Source: v2/src/lib.rs at the commit implementing 0009.
+    Runner: v2/examples/canonicalization.rs.
+
+Command:
+    cargo run --example canonicalization
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+Total edges:               14
+Total subgraph instances:  9
+Total pattern classes (canonical forms): 4
+
+pattern P1  (1 instances)  canonical edges: [(0, 0), (0, 0), (0, 0)]
+  compound classes involved: [C3]
+  [C3] {R(k1,k2), R(k2,k3), R(k3,k1)}
+
+pattern P2  (6 instances)  canonical edges: [(1, 0)]
+  compound classes involved: [C0, C1, C2, C4, C5]   <-- cross-compound-class pattern
+  [C0] {R(ie1,ie2)}
+  [C1] {R(c1,c2)}
+  [C2] {R(c4,c5)}
+  [C2] {R(t2,t4)}
+  [C4] {R(t1,t3)}
+  [C5] {R(t1,t2)}
+
+pattern P3  (1 instances)  canonical edges: [(1, 0), (1, 0), (1, 0)]
+  compound classes involved: [C6]
+  [C6] {R(s,sa), R(s,sb), R(s,sc)}
+
+pattern P4  (1 instances)  canonical edges: [(1, 2), (2, 0)]
+  compound classes involved: [C3]
+  [C3] {R(c2,c3), R(c3,c4)}
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Compound and canonical are distinct axes, and the distinction is
+   empirically visible.**
+   - Compound classification (ADR 0007) gave 7 classes across 14 edges.
+   - Connected-component extraction (ADR 0008) produced 9 subgraph
+     instances from those 7 classes.
+   - Structural canonicalization (this ADR) reduced those 9 instances
+     to **4 pattern classes**.
+   The sequence 7 → 9 → 4 shows two separate collapses with opposite
+   character: 7 → 9 is a *split* (compound false-merges open up into
+   distinct subgraph instances); 9 → 4 is a *merge* (instances with
+   different identifiers collapse into the same structural pattern).
+
+2. **P2 is a cross-compound-class pattern.**
+   Six subgraph instances — chain head, chain tail, tree leaf edge,
+   isolated edge, tree inner branch, tree leaf branch — all collapse
+   to the same canonical form `[(1, 0)]`, i.e., "a single directed
+   edge from a source to a sink." They were in 5 different compound
+   classes (C0, C1, C2, C4, C5) because their contextual roles
+   differ, but structurally each is "just one edge."
+   This is the first empirical finding that pattern identity
+   (structure) and role identity (context) can diverge. Neither is
+   wrong; they answer different questions.
+
+3. **Compound class C3 produces two different patterns.**
+   C3 is the known 1-hop false merge (chain-middle + cycle-edge at
+   compound level). After subgraph extraction it produced two
+   subgraphs; after canonicalization they land in *different* pattern
+   classes: P1 (3-cycle) and P4 (2-edge chain). The full pipeline
+   (0007 → 0008 → 0009) correctly rejects the false merge.
+
+4. **P3 (out-star spokes, 3 instances collapsed into one subgraph)
+   remains one pattern.**
+   The star's three spokes stayed connected at 0008 (they share the
+   hub), so there is one subgraph instance, and it produces its own
+   canonical form with three (1, 0) edges. Distinguishes cleanly
+   from P2 (single edge: one (1, 0)) — the count of (1, 0) edges is
+   part of the canonical form.
+
+5. **WL converges quickly on these graphs.** The tests pass, and by
+   construction WL-1 is accurate at the n ≤ 5 scale used here.
+   No false positives observed.
+
+====================================================================
+WHAT THIS IMPLIES FOR ADR 0010 (PATTERN NAMING)
+====================================================================
+
+Canonical-form equivalence is necessary but, on its own, **too coarse
+for pure structural naming to be useful**. The P2 result dramatizes
+this: 67% of this experiment's subgraph instances collapse to "single
+edge" — trivially the most generic pattern possible. Naming "single
+edge" as a discovered pattern is near-useless.
+
+Three refinements that pattern naming (ADR 0010) will have to pick
+between, or mix:
+
+  (α) **Identity = canonical form only.**
+      Simplest. "Pattern" is a structural equivalence class. Generic
+      patterns like P2 get named anyway — user / γ filters them
+      post-hoc for relevance.
+
+  (β) **Identity = (canonical form, compound fingerprint).**
+      A single edge in context X and a single edge in context Y are
+      treated as *different* named patterns because their contextual
+      roles differ. Preserves context, but loses cross-compound
+      patterns — the very phenomenon this ADR exposed.
+
+  (γ) **Identity = canonical form; γ gates which ones become named.**
+      Pattern identity is structural. Policy (γ) decides which
+      structural patterns are worth naming — e.g., "canonical form
+      appearing ≥ k times," "canonical form with ≥ m edges,"
+      "canonical form providing MDL-positive compression." This is
+      the cleanest split between "what is a pattern" (0010) and "what
+      is a *named* pattern" (0011 = γ).
+
+Leaning toward (γ) when ADR 0010 is scoped: structural identity
+should be the invariant; contextual relevance is a policy choice
+that belongs to γ. This keeps 0010 small and focused, and gives γ
+its proper job.
+
+====================================================================
+DECISION / NEXT
+====================================================================
+
+ADR 0009 is validated. Subgraph isomorphism is now tractable; pattern
+identity is well-defined as canonical-form equivalence.
+
+Follow-up question from ADR 0008 ("do structurally-equal subgraphs
+span different compound classes?") is answered affirmatively and in
+the strongest possible form: on this small mixed graph, the dominant
+pattern class spans 5 out of 7 compound classes.
+
+Next: ADR 0010 — pattern naming as a meta-R instance per commitment 3.
+
+Core scope for 0010:
+  - Introduce a way to create a new identifier (a pattern name) in
+    the same R space.
+  - Encode the pattern's definition (canonical form) and its instances
+    (subgraphs) as R instances linking the pattern name to its
+    constituents.
+  - Respect commitment 1: all encoding must stay within the single R
+    primitive; no separate type registry.
+
+Design questions for 0010:
+  1. How is a pattern name generated? Candidates:
+     - A synthetic identifier derived from the canonical form
+       (deterministic, so two naming calls on isomorphic inputs
+       produce the same name).
+     - A fresh opaque identifier with no structural meaning, linked
+       to its definition via R instances.
+     Tension: determinism is nice for reproducibility; opaque names
+     honor "meaning from usage" more strictly.
+  2. How are pattern members encoded?
+     - R(pattern, edge_identifier) for each member edge? But
+       "edge identifier" is not a thing — edges are R instances, not
+       identifiers.
+     - Give each instance edge a synthetic identifier; use R(pattern,
+       synth) and also R(synth, actual_x), R(synth, actual_y)?
+     - Use ordered structural marker: R(pattern, participant_role_k,
+       identifier)?
+     This is the key design decision for 0010.
+  3. What is the *shape* of the R subgraph representing the pattern?
+     Commitment 1 is non-negotiable; commitment 3 says "types are
+     meta-R instances." So the pattern itself must be visible as a
+     set of R instances. The question is the convention.
+
+These are worth a focused design pass before 0010's implementation.

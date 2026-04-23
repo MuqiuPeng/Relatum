@@ -279,6 +279,83 @@ impl Subgraph {
             .collect()
     }
 
+    /// Canonical form for pattern equality. ADR 0009.
+    ///
+    /// Two subgraphs produce the same canonical form iff they are
+    /// isomorphic under Weisfeiler–Lehman refinement. Isomorphism here
+    /// is direction-preserving (commitment 2); `R(a,b)` and `R(b,a)`
+    /// in isolation produce distinct canonical forms.
+    ///
+    /// Known limitation: WL-1 is heuristic. Rare graph pairs can
+    /// produce identical canonical forms while being non-isomorphic
+    /// (strongly regular graphs, certain trees). At β's current
+    /// experiment scale this does not occur; a stronger backend is a
+    /// future ADR if it ever does.
+    pub fn canonicalize(&self) -> CanonicalForm {
+        let mut identifiers: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        identifiers.sort();
+        let id_to_index: HashMap<&str, usize> = identifiers
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.as_str(), i))
+            .collect();
+
+        let n = identifiers.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+        let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for r in self.edges.iter() {
+            let i = id_to_index[r.x.as_str()];
+            let j = id_to_index[r.y.as_str()];
+            out_neighbors[i].push(j);
+            in_neighbors[j].push(i);
+        }
+
+        let initial: Vec<(usize, usize)> = (0..n)
+            .map(|i| (out_neighbors[i].len(), in_neighbors[i].len()))
+            .collect();
+        let mut labels = rank_labels(&initial);
+
+        for _ in 0..=n {
+            let sigs: Vec<(u32, Vec<u32>, Vec<u32>)> = (0..n)
+                .map(|i| {
+                    let mut outs: Vec<u32> =
+                        out_neighbors[i].iter().map(|&j| labels[j]).collect();
+                    outs.sort();
+                    let mut ins: Vec<u32> =
+                        in_neighbors[i].iter().map(|&j| labels[j]).collect();
+                    ins.sort();
+                    (labels[i], outs, ins)
+                })
+                .collect();
+            let next = rank_labels(&sigs);
+            if next == labels {
+                break;
+            }
+            labels = next;
+        }
+
+        let mut canonical: Vec<(u32, u32)> = self
+            .edges
+            .iter()
+            .map(|r| (labels[id_to_index[r.x.as_str()]], labels[id_to_index[r.y.as_str()]]))
+            .collect();
+        canonical.sort();
+        canonical
+    }
+
+    /// Are two subgraphs isomorphic under the current canonical form?
+    pub fn is_isomorphic_to(&self, other: &Subgraph) -> bool {
+        self.canonicalize() == other.canonicalize()
+    }
+
     /// Partition a set of edges into connected components. Two edges
     /// are connected iff they share at least one identifier. The
     /// relation is transitive; components are maximal connected sets.
@@ -331,6 +408,23 @@ impl Subgraph {
 fn shares_identifier(a: &R, b: &R) -> bool {
     a.x == b.x || a.x == b.y || a.y == b.x || a.y == b.y
 }
+
+/// Rank a slice of signatures into small integer labels.
+/// Two items with the same signature receive the same label; labels are
+/// assigned in sorted order of the distinct signatures (so the result is
+/// deterministic and independent of input order for equivalence purposes).
+fn rank_labels<T: Ord + Clone>(sigs: &[T]) -> Vec<u32> {
+    let mut sorted_unique: Vec<T> = sigs.to_vec();
+    sorted_unique.sort();
+    sorted_unique.dedup();
+    sigs.iter()
+        .map(|s| sorted_unique.binary_search(s).unwrap() as u32)
+        .collect()
+}
+
+/// Canonical form of a subgraph: sorted edge list over stable labels.
+/// See `Subgraph::canonicalize`. ADR 0009.
+pub type CanonicalForm = Vec<(u32, u32)>;
 
 /// Which slot positions an identifier appears in across the whole RSet.
 ///
@@ -961,6 +1055,106 @@ mod tests {
         let subgraphs = classes.values().next().unwrap();
         assert_eq!(subgraphs.len(), 2);
         assert!(subgraphs.iter().all(|s| s.len() == 1));
+    }
+
+    #[test]
+    fn canonicalize_empty_subgraph() {
+        assert!(Subgraph::new().canonicalize().is_empty());
+    }
+
+    #[test]
+    fn canonicalize_single_edge_has_one_canonical_form() {
+        // Every single-edge subgraph reduces to the same canonical form
+        // regardless of its identifiers: one directed edge from a
+        // source (out=1,in=0) to a sink (out=0,in=1).
+        let a = Subgraph::from_edges([R::new("a", "b")]);
+        let b = Subgraph::from_edges([R::new("p", "q")]);
+        let c = Subgraph::from_edges([R::new("hello", "world")]);
+        assert_eq!(a.canonicalize(), b.canonicalize());
+        assert_eq!(b.canonicalize(), c.canonicalize());
+    }
+
+    #[test]
+    fn canonicalize_isomorphic_two_chains() {
+        let a = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let b = Subgraph::from_edges([R::new("p", "q"), R::new("q", "r")]);
+        assert!(a.is_isomorphic_to(&b));
+    }
+
+    #[test]
+    fn canonicalize_chain_vs_cycle_differ() {
+        let chain = Subgraph::from_edges([
+            R::new("a", "b"), R::new("b", "c"), R::new("c", "d"),
+        ]);
+        let cycle = Subgraph::from_edges([
+            R::new("x", "y"), R::new("y", "z"), R::new("z", "x"),
+        ]);
+        assert_ne!(chain.canonicalize(), cycle.canonicalize());
+    }
+
+    #[test]
+    fn canonicalize_chain_vs_star_differ() {
+        let chain = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let star = Subgraph::from_edges([R::new("h", "a"), R::new("h", "b")]);
+        assert_ne!(chain.canonicalize(), star.canonicalize());
+    }
+
+    #[test]
+    fn canonicalize_isomorphic_three_cycles() {
+        let one = Subgraph::from_edges([
+            R::new("a", "b"), R::new("b", "c"), R::new("c", "a"),
+        ]);
+        let two = Subgraph::from_edges([
+            R::new("x", "y"), R::new("y", "z"), R::new("z", "x"),
+        ]);
+        assert!(one.is_isomorphic_to(&two));
+    }
+
+    #[test]
+    fn canonicalize_isomorphic_three_stars() {
+        let one = Subgraph::from_edges([
+            R::new("h1", "a"), R::new("h1", "b"), R::new("h1", "c"),
+        ]);
+        let two = Subgraph::from_edges([
+            R::new("h2", "p"), R::new("h2", "q"), R::new("h2", "r"),
+        ]);
+        assert!(one.is_isomorphic_to(&two));
+    }
+
+    #[test]
+    fn canonicalize_forward_chain_same_as_reversed_identifiers() {
+        // Forward chain a -> b -> c and "reversed identifier" chain
+        // c -> b -> a are the same *structure*: source -> middle -> sink.
+        // Only the names of the nodes change.
+        let forward = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let renamed = Subgraph::from_edges([R::new("c", "b"), R::new("b", "a")]);
+        assert!(forward.is_isomorphic_to(&renamed));
+    }
+
+    #[test]
+    fn canonicalize_distinguishes_V_from_chain() {
+        // a -> b -> c is a chain. a -> b, c -> b is a "V" into b.
+        // Structurally distinct even though node counts match.
+        let chain = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let vee = Subgraph::from_edges([R::new("a", "b"), R::new("c", "b")]);
+        assert_ne!(chain.canonicalize(), vee.canonicalize());
+    }
+
+    #[test]
+    fn canonicalize_direction_matters() {
+        // Single "outward" edge a -> b has a source and a sink.
+        // Reverse edge b -> a is *the same* one-edge pattern; only
+        // the labels change. But two chains with opposite edge
+        // direction at the fork are different.
+        let one_forward = Subgraph::from_edges([R::new("a", "b"), R::new("b", "c")]);
+        let one_reversed = Subgraph::from_edges([R::new("b", "a"), R::new("c", "b")]);
+        // Both are "source -> middle -> sink" with relabeled nodes.
+        // So canonical forms should match.
+        assert!(one_forward.is_isomorphic_to(&one_reversed));
+
+        // But a -> b -> c (chain) and b -> a, b -> c (out-V) differ.
+        let out_vee = Subgraph::from_edges([R::new("b", "a"), R::new("b", "c")]);
+        assert_ne!(one_forward.canonicalize(), out_vee.canonicalize());
     }
 
     #[test]

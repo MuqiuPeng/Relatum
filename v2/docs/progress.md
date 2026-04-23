@@ -182,3 +182,44 @@ define when two Subgraph values represent the same pattern
 
 Decision: [0008-subgraph-extraction](decisions/0008-subgraph-extraction.md).
 Log: [logs/2026-04-23_subgraph_extraction.log](../logs/2026-04-23_subgraph_extraction.log).
+
+Commit: `88097a8`.
+
+### Subgraph canonicalization (β step 2 / 4 — ADR 0009)
+Added Weisfeiler-Lehman-1 refinement to `Subgraph`: `canonicalize()`
+returns a deterministic `CanonicalForm` (sorted edge list over stable
+integer labels), `is_isomorphic_to(other)` checks structural equality.
+Rank-based labels (no hashing) keep the canonical form reproducible
+across processes. 10 new unit tests cover chains, cycles, stars, vees,
+direction sensitivity, cross-identifier isomorphism.
+
+Applied to the 9 subgraph instances from ADR 0008. Sequence
+**7 → 9 → 4** across the full pipeline:
+
+- **7** compound classes (ADR 0007)
+- **→ 9** subgraph instances after connectivity split (ADR 0008; false
+  merges open up)
+- **→ 4** pattern classes after structural merge (ADR 0009; instances
+  with different identifiers collapse)
+
+Pattern classes on the mixed graph:
+- **P1** `[(0,0),(0,0),(0,0)]` — 3-cycle; 1 instance
+- **P2** `[(1,0)]` — single edge; **6 instances across 5 compound classes**
+  (chain head, chain tail, tree leaf edge, tree branches, isolated edge)
+  — first empirical cross-compound-class pattern
+- **P3** `[(1,0),(1,0),(1,0)]` — 3-spoke out-star; 1 instance
+- **P4** `[(1,2),(2,0)]` — 2-edge forward chain; 1 instance
+
+**Key finding for ADR 0010:** canonical-form identity is necessary but
+too coarse on its own — P2 "single edge" pattern has 6 instances which
+would dominate any naive naming rule. The log argues for splitting the
+concerns: ADR 0010 establishes structural pattern identity; ADR 0011
+(γ) decides *which* structural patterns are worth naming (threshold /
+MDL / non-triviality filter).
+
+Compound class C3 (the known 1-hop false merge) correctly maps to TWO
+different pattern classes — P1 (cycle) and P4 (chain fragment) —
+confirming the full pipeline rejects the false merge.
+
+Decision: [0009-subgraph-canonicalization](decisions/0009-subgraph-canonicalization.md).
+Log: [logs/2026-04-23_canonicalization.log](../logs/2026-04-23_canonicalization.log).
