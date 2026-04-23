@@ -1,0 +1,115 @@
+Date: 2026-04-23
+Descriptor: hierarchical_probe (ADR 0025)
+Purpose:
+    Probe whether sampling the post-autonomous RSet with meta-R
+    edges included surfaces genuinely new (hierarchical) structural
+    patterns, or merely encoding artifacts of the three-shape
+    naming encoding.
+
+Mechanism version:
+    ADR 0025 (DiscoveryConfig::include_meta_in_discovery,
+    RSet::all_edges_sorted; discover_motifs branched on the flag).
+    Runner: v2/examples/hierarchical_probe.rs.
+
+====================================================================
+RAW OUTPUT
+====================================================================
+
+=== Baseline: discover_motifs (meta excluded) ===
+4 candidates:
+  [data]  freq=145  canonical=[(1, 3), (2, 0), (3, 2)]
+  [data]  freq=122  canonical=[(2, 0), (3, 1), (3, 2)]
+  [data]  freq=99  canonical=[(0, 0), (0, 0), (0, 0)]
+  [data]  freq=99  canonical=[(1, 0), (1, 0), (1, 0)]
+
+=== Probe: discover_motifs (meta included) ===
+9 candidates:
+  [META]  freq=88  canonical=[(2, 0), (3, 1), (3, 2)]
+  [META]  freq=77  canonical=[(2, 1), (3, 0), (3, 1)]
+  [META]  freq=73  canonical=[(1, 2), (2, 0), (2, 0)]
+  [META]  freq=66  canonical=[(1, 0), (1, 0), (1, 0)]
+  [META]  freq=64  canonical=[(1, 3), (2, 0), (3, 2)]
+  [META]  freq=52  canonical=[(1, 0), (2, 3), (3, 0)]
+  [META]  freq=39  canonical=[(1, 0), (2, 0), (2, 1)]
+  [META]  freq=26  canonical=[(1, 2), (1, 2), (2, 0)]
+  [data]  freq=5  canonical=[(0, 0), (0, 0), (0, 0)]
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **8 of 9 probe candidates touch meta-R.** Turning the flag on
+   heavily biases sampling toward the meta subgraph simply
+   because after naming, meta-R outnumbers data edges (42 → 28
+   meta + 14 data ≈ 2:1). Random walks from any meta seed walk
+   further through meta-R.
+
+2. **The data-only 3-cycle slips to frequency 5.** With meta
+   included, sampling rarely seeds a walk entirely within the
+   three-edge cycle region; the freq drops from 99 (baseline) to 5
+   (probe). This is a sampling artifact of dilution, not a signal
+   about the cycle's importance.
+
+3. **None of the new META canonicals describe composed patterns.**
+   Every new canonical is a 3-edge structure traversing the
+   pattern-registry encoding — registry → pattern → instance, or
+   pattern → instance → participant, or permutations thereof.
+   These match the encoding shapes ADR 0011 already identified as
+   artifacts. Examples:
+   - `[(1,0),(1,0),(1,0)]` re-appears — it's the pattern-ownership
+     star (p_N → three instances, when pattern has three).
+   - `[(2,0),(3,1),(3,2)]` at the top — same shape as the data-
+     level 3-tree canonical, which is no coincidence: the
+     pattern-instance-participant subgraph *is* a 3-tree rooted at
+     the pattern identifier.
+
+4. **No sign of composed patterns involving multiple named
+   patterns.** A true hierarchical pattern would, for instance,
+   find "an instance of p_0 sharing an identifier with an instance
+   of p_2" — i.e., a subgraph that contains edges from two
+   different named pattern-instance-participant structures.
+   Nothing in the output looks like that; the 3-edge walks are
+   too short to span across different patterns.
+
+5. **Larger target_size might help but is not free.** A 6- or 8-
+   edge subgraph has room to contain two 3-edge pattern encodings
+   — candidate "composed" structure. But a larger target_size
+   dramatically expands the sampling space, and MDL (ADR 0019)
+   would still favor repetitive encoding artifacts over the rare
+   true-composed ones without a more specific scoring criterion.
+
+====================================================================
+VERDICT
+====================================================================
+
+ADR 0025 probe delivers the negative finding it was designed to
+produce: **simply including meta-R in discovery does not surface
+genuine hierarchical structure on the current mixed graph.** What
+it surfaces is predictable encoding artifacts, as ADR 0011 already
+documented.
+
+A *real* hierarchical-pattern mechanism would require:
+
+  1. A canonical form that carries pattern-id labels (not just
+     integer node labels), so the system can express "an instance
+     of pattern P" as a first-class node.
+  2. Matching that resolves those labels — given a higher-order
+     canonical, find subgraphs where specific edges are themselves
+     instances of specified patterns.
+  3. A scoring criterion that rewards genuine composition over
+     encoding repetition (MDL by itself still rewards frequent
+     encoding trees).
+  4. Potentially a new meta-R convention — e.g., labelling each
+     instance edge with its pattern id explicitly, so that walks
+     carry pattern information with them.
+
+None of these are small. This ADR closes the "hierarchical
+patterns" open direction with an **empirically grounded decision
+not to pursue it now** — the simple lifting doesn't work, and the
+full machinery needs its own design discussion when a concrete use
+case demands it.
+
+## DECISION / NEXT
+
+ADR 0025 closes the last of the five post-β open directions the
+user asked to close. Summary report of 0021–0025 to follow.

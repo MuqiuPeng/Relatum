@@ -724,3 +724,24 @@ demonstrations of under-counting not needed for β.
 
 Decision: [0024-sample-instances](decisions/0024-sample-instances.md).
 Log: [logs/2026-04-23_sample_instances.log](../logs/2026-04-23_sample_instances.log).
+
+### Hierarchical discovery probe (ADR 0025)
+Adds `DiscoveryConfig::include_meta_in_discovery: bool` (default
+false). When true, `discover_motifs` samples from data + meta-R
+instead of data only. 2 new tests; 122 total pass.
+
+**Verdict: negative.** Probe on the post-autonomous mixed graph:
+baseline (meta excluded) → 4 candidates, all data-level;
+probe (meta included) → 9 candidates, 8 of 9 touch meta. Those 8
+are predictable encoding artifacts (stars and trees in the
+pattern-registry hierarchy — ADR 0011 already documented these).
+The data-only 3-cycle drops from freq 99 to 5 under dilution.
+
+A real hierarchical-pattern mechanism needs richer canonicals
+(pattern-id labels, not just integer node labels), resolving
+matching, and scoring that rewards true composition over encoding
+repetition. This is out of scope for a "simple lifting" ADR.
+Closing the direction empirically.
+
+Decision: [0025-hierarchical-discovery-probe](decisions/0025-hierarchical-discovery-probe.md).
+Log: [logs/2026-04-23_hierarchical_probe.log](../logs/2026-04-23_hierarchical_probe.log).

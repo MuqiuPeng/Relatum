@@ -23,6 +23,7 @@ fn run_with_size(rs: &RSet, target_size: usize, sample_count: usize, top_m: usiz
         sample_count,
         top_m,
         rng_seed: seed,
+        include_meta_in_discovery: false,
     };
     println!(
         "=== discover_motifs  target_size={}  sample_count={}  top_m={}  seed={} ===",

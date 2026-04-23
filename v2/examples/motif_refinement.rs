@@ -56,6 +56,7 @@ fn run(rs: &RSet, target_size: usize) {
         sample_count: 200,
         top_m: 5,
         rng_seed: 2024,
+            include_meta_in_discovery: false,
     };
     let raw = rs.discover_motifs(&disc_config);
 

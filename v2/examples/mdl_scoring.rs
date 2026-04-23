@@ -27,6 +27,7 @@ fn show_scoring_comparison(rs: &RSet, target_size: usize) {
         sample_count: 200,
         top_m: 10,
         rng_seed: 2024,
+            include_meta_in_discovery: false,
     };
     let raw = rs.discover_motifs(&config);
     let mdl = rs.score_by_mdl(raw.clone());
@@ -52,6 +53,7 @@ fn show_autonomous_with_and_without_mdl_filter() {
             sample_count: 200,
             top_m: 10,
             rng_seed: 2024,
+            include_meta_in_discovery: false,
         },
         refinement: RefinementConfig {
             max_tries: 200,

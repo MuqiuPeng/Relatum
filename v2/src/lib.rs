@@ -626,7 +626,11 @@ impl RSet {
         if config.target_size == 0 || config.sample_count == 0 {
             return Vec::new();
         }
-        let data = self.data_edges_sorted();
+        let data = if config.include_meta_in_discovery {
+            self.all_edges_sorted()
+        } else {
+            self.data_edges_sorted()
+        };
         if data.is_empty() {
             return Vec::new();
         }
@@ -1071,6 +1075,15 @@ impl RSet {
         data
     }
 
+    /// All edges (data + meta-R) in a deterministic order.
+    /// ADR 0025: used by `discover_motifs` when the hierarchical
+    /// probe flag is set.
+    fn all_edges_sorted(&self) -> Vec<R> {
+        let mut all: Vec<R> = self.instances.iter().cloned().collect();
+        all.sort_by(|a, b| (a.x.as_str(), a.y.as_str()).cmp(&(b.x.as_str(), b.y.as_str())));
+        all
+    }
+
     /// Collect every identifier currently marked as pattern registry,
     /// a pattern, or an instance. Used by `run_naming_pass` for the
     /// meta-subgraph skip. ADR 0012.
@@ -1466,6 +1479,11 @@ pub struct DiscoveryConfig {
     /// Seed for the inline xorshift64 PRNG. Zero is replaced with a
     /// non-zero default internally so that sampling always runs.
     pub rng_seed: u64,
+    /// ADR 0025 probe: when true, `discover_motifs` samples from
+    /// *all* edges (data + meta-R) rather than only data edges.
+    /// Defaults to `false`; leave off unless probing for hierarchical
+    /// structure.
+    pub include_meta_in_discovery: bool,
 }
 
 /// A motif candidate found by `discover_motifs`. ADR 0016.
@@ -2847,6 +2865,7 @@ mod tests {
             sample_count: 20,
             top_m: 5,
             rng_seed: 42,
+            include_meta_in_discovery: false,
         };
         assert!(rs.discover_motifs(&config).is_empty());
     }
@@ -2859,6 +2878,7 @@ mod tests {
             sample_count: 30,
             top_m: 5,
             rng_seed: 12345,
+            include_meta_in_discovery: false,
         };
         let first: Vec<CanonicalForm> =
             rs.discover_motifs(&config).into_iter().map(|c| c.canonical).collect();
@@ -2875,6 +2895,7 @@ mod tests {
             sample_count: 30,
             top_m: 5,
             rng_seed: 7,
+            include_meta_in_discovery: false,
         };
         let candidates = rs.discover_motifs(&config);
         for c in &candidates {
@@ -2892,6 +2913,7 @@ mod tests {
             sample_count: 50,
             top_m: 2,
             rng_seed: 99,
+            include_meta_in_discovery: false,
         };
         let candidates = rs.discover_motifs(&config);
         assert!(candidates.len() <= 2);
@@ -2910,6 +2932,7 @@ mod tests {
             sample_count: 200,
             top_m: 5,
             rng_seed: 2024,
+            include_meta_in_discovery: false,
         };
         let candidates = rs.discover_motifs(&config);
         assert!(!candidates.is_empty());
@@ -2996,6 +3019,7 @@ mod tests {
             sample_count: 50,
             top_m: 3,
             rng_seed: 11,
+            include_meta_in_discovery: false,
         };
         let cands = rs.discover_motifs(&config_disc);
         let cfg = RefinementConfig { max_tries: 100, rng_seed: 999 };
@@ -3014,6 +3038,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig {
                 max_tries: 200,
@@ -3183,6 +3208,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig {
                 max_tries: 200,
@@ -3277,6 +3303,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3335,6 +3362,7 @@ mod tests {
                 sample_count: 100,
                 top_m: 5,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 100, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3352,6 +3380,7 @@ mod tests {
                 sample_count: 100,
                 top_m: 5,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 100, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3382,6 +3411,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3418,6 +3448,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3448,6 +3479,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3485,6 +3517,7 @@ mod tests {
                 sample_count: 200,
                 top_m: 10,
                 rng_seed: 2024,
+            include_meta_in_discovery: false,
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
@@ -3634,6 +3667,63 @@ mod tests {
         // With 500 samples on a 14-edge graph, expect all 4 clean
         // 2-chain instances to be hit (verified empirically).
         assert_eq!(sampled.len(), exhaustive.len());
+    }
+
+    #[test]
+    fn hierarchical_probe_default_matches_data_only() {
+        // Flag off (default) should behave exactly like pre-0025 discover_motifs.
+        let rs = build_mixed_graph();
+        let cfg = DiscoveryConfig {
+            target_size: 3,
+            sample_count: 200,
+            top_m: 10,
+            rng_seed: 2024,
+            include_meta_in_discovery: false,
+        };
+        let a = rs.discover_motifs(&cfg);
+
+        let rs2 = build_mixed_graph();
+        let b = rs2.discover_motifs(&cfg);
+        let key = |v: &[MotifCandidate]| -> Vec<(CanonicalForm, usize)> {
+            v.iter().map(|c| (c.canonical.clone(), c.sample_frequency)).collect()
+        };
+        assert_eq!(key(&a), key(&b));
+    }
+
+    #[test]
+    fn hierarchical_probe_flag_on_after_naming_sees_meta_edges() {
+        let mut rs = build_mixed_graph();
+        let cfg = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+                include_meta_in_discovery: false,
+            },
+            refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
+            naming: NamingPolicy::default(),
+        };
+        rs.autonomous_pass(&cfg);
+
+        let meta_ids = rs.collect_meta_ids();
+        let probe_cfg = DiscoveryConfig {
+            target_size: 3,
+            sample_count: 500,
+            top_m: 20,
+            rng_seed: 7,
+            include_meta_in_discovery: true,
+        };
+        let candidates = rs.discover_motifs(&probe_cfg);
+        let has_meta_candidate = candidates.iter().any(|c| {
+            c.representative
+                .edges()
+                .any(|r| meta_ids.contains(&r.x) || meta_ids.contains(&r.y))
+        });
+        assert!(
+            has_meta_candidate,
+            "flag-on probe should surface at least one candidate touching meta-R"
+        );
     }
 
     #[test]

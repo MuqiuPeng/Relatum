@@ -60,6 +60,7 @@ fn default_config() -> AutonomousConfig {
             sample_count: 200,
             top_m: 10,
             rng_seed: 2024,
+            include_meta_in_discovery: false,
         },
         refinement: RefinementConfig {
             max_tries: 200,

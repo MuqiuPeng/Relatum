@@ -64,3 +64,4 @@ Commit hash(es), file pointers.
 - [0022](0022-autonomous-and-attach.md) — Autonomous + attach composition (incremental workflow)
 - [0023](0023-cross-graph-transfer.md) — Cross-graph pattern transfer (canonical library)
 - [0024](0024-sample-instances.md) — Sampling-based `sample_instances_of`
+- [0025](0025-hierarchical-discovery-probe.md) — Hierarchical discovery probe (opt-in meta inclusion)
