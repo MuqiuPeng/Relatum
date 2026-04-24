@@ -81,3 +81,4 @@ Commit hash(es), file pointers.
 - [0039](0039-totality-predicate.md) — Totality as predicate axiom
 - [0040](0040-auto-prune.md) — Drive auto-prune via counterfactual value
 - [0041](0041-scale-benchmark.md) — Scale benchmark (measurement only)
+- [0042](0042-theory-independence.md) — Theory independence relations

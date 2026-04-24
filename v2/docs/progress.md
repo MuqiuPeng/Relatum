@@ -1271,3 +1271,27 @@ No new library API. Two natural optimization follow-ups noted:
 
 Decision: [0041-scale-benchmark](decisions/0041-scale-benchmark.md).
 Log: [logs/2026-04-24_scale_benchmark.log](../logs/2026-04-24_scale_benchmark.log).
+
+### Theory independence relations (ADR 0042)
+Task 4 of 1'→4'. Companion to ADR 0034's `extends`: a symmetric
+relation saying two theories share no axioms. Together with
+extends, theories now have basic "theory-space geography" in
+meta-R.
+
+New marker `__independent__`. Chain encoded in canonical
+direction: `R(T_lo, ind_N) + R(ind_N, T_hi)` with `T_lo < T_hi`
+lex, so the pair has exactly one stored form regardless of
+argument order.
+
+API: `name_theory_independence`, `independence_edges`,
+`independence_endpoints`, `theories_independent_from` (symmetric),
+`discover_theory_independences`, `retract_independence`.
+
+Verification at name time: both theories exist, distinct, member
+sets disjoint. Tests: 222 → 230 (8 new).
+
+Note: independence edges are not currently rewarded by the drive
+metric (only extensions are, per ADR 0040). A future ADR can
+symmetrize this if usage warrants.
+
+Decision: [0042-theory-independence](decisions/0042-theory-independence.md).

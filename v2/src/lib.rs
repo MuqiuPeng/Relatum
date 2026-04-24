@@ -100,6 +100,13 @@ pub enum PersistenceError {
 /// convention used for axiom premise/conclusion edges.
 pub const EXTENDS_MARKER: &str = "__extends__";
 
+/// Reserved registry marker for theory-independence relations (ADR 0042).
+/// Two theories are independent iff their member-axiom sets are
+/// disjoint. Independence is symmetric; the chain stores one
+/// canonical direction `R(T_a, ind_N) + R(ind_N, T_b)` where
+/// `T_a < T_b` lexicographically.
+pub const INDEPENDENT_MARKER: &str = "__independent__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -2195,6 +2202,191 @@ impl RSet {
         }
     }
 
+    // ─── ADR 0042: theory independence relations ───────────────────
+
+    /// Name a "T_a ⊥ T_b" (independence) relation in meta-R. ADR 0042.
+    ///
+    /// Two theories are independent iff their member-axiom sets are
+    /// disjoint. Symmetric — the chain stores a canonical direction
+    /// (lex-smaller theory id as the source). On success writes:
+    ///
+    /// ```text
+    /// R(__independent__, ind_N)    — registry
+    /// R(T_min, ind_N)              — canonical source side
+    /// R(ind_N, T_max)              — canonical target side
+    /// ```
+    ///
+    /// Reuses an existing ind_N if the same pair is already recorded.
+    pub fn name_theory_independence(
+        &mut self,
+        a: &str,
+        b: &str,
+    ) -> Result<String, TheoryError> {
+        if !self.is_theory(a) {
+            return Err(TheoryError::UnsatisfiedMember(a.to_string()));
+        }
+        if !self.is_theory(b) {
+            return Err(TheoryError::UnsatisfiedMember(b.to_string()));
+        }
+        if a == b {
+            return Err(TheoryError::UnsatisfiedMember(
+                "a theory is not independent of itself".to_string(),
+            ));
+        }
+        let a_members: HashSet<String> = self
+            .theory_axioms(a)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let b_members: HashSet<String> = self
+            .theory_axioms(b)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if !a_members.is_disjoint(&b_members) {
+            return Err(TheoryError::UnsatisfiedMember(format!(
+                "{} and {} share at least one axiom",
+                a, b
+            )));
+        }
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        for existing in self.independence_edges() {
+            let (el, eh) = self.independence_endpoints(existing).unwrap_or_default();
+            if el == lo && eh == hi {
+                return Ok(existing.to_string());
+            }
+        }
+        let ind_id = self.mint_independence_id();
+        self.add(R::new(INDEPENDENT_MARKER, ind_id.clone()));
+        self.add(R::new(lo.to_string(), ind_id.clone()));
+        self.add(R::new(ind_id.clone(), hi.to_string()));
+        Ok(ind_id)
+    }
+
+    /// Every named independence-edge id. ADR 0042.
+    pub fn independence_edges(&self) -> Vec<&str> {
+        self.left_of(INDEPENDENT_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Decode an independence-edge's endpoints: `(T_lo, T_hi)` where
+    /// `T_lo < T_hi` lexicographically. ADR 0042.
+    pub fn independence_endpoints(&self, ind_id: &str) -> Option<(String, String)> {
+        if !self.instances.contains(&R::new(INDEPENDENT_MARKER, ind_id)) {
+            return None;
+        }
+        let lo = self
+            .right_of(ind_id)
+            .into_iter()
+            .find_map(|r| {
+                if self.is_theory(r.x.as_str()) {
+                    Some(r.x.clone())
+                } else {
+                    None
+                }
+            })?;
+        let hi = self
+            .left_of(ind_id)
+            .into_iter()
+            .find_map(|r| {
+                if self.is_theory(r.y.as_str()) {
+                    Some(r.y.clone())
+                } else {
+                    None
+                }
+            })?;
+        Some((lo, hi))
+    }
+
+    /// All theories independent from `theory` (either direction of
+    /// the canonical chain). ADR 0042.
+    pub fn theories_independent_from(&self, theory: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for ind in self.independence_edges() {
+            if let Some((lo, hi)) = self.independence_endpoints(ind) {
+                if lo == theory {
+                    out.push(hi);
+                } else if hi == theory {
+                    out.push(lo);
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Scan named theories for all pairs with disjoint member sets.
+    /// Returns pairs in canonical order `(lo, hi)` with `lo < hi`.
+    /// Read-only. ADR 0042.
+    pub fn discover_theory_independences(&self) -> Vec<(String, String)> {
+        let theories: Vec<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        let member_sets: HashMap<String, HashSet<String>> = theories
+            .iter()
+            .map(|t| {
+                let m: HashSet<String> = self
+                    .theory_axioms(t)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                (t.clone(), m)
+            })
+            .collect();
+        let mut out: Vec<(String, String)> = Vec::new();
+        for i in 0..theories.len() {
+            for j in (i + 1)..theories.len() {
+                let a = &theories[i];
+                let b = &theories[j];
+                if member_sets[a].is_disjoint(&member_sets[b])
+                    && !member_sets[a].is_empty()
+                    && !member_sets[b].is_empty()
+                {
+                    let (lo, hi) = if a < b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
+                    out.push((lo, hi));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Retract an independence-relation edge. ADR 0042.
+    pub fn retract_independence(&mut self, ind_id: &str) -> Result<usize, TheoryError> {
+        if !self.instances.contains(&R::new(INDEPENDENT_MARKER, ind_id)) {
+            return Err(TheoryError::UnsatisfiedMember(ind_id.to_string()));
+        }
+        let mut removed = 0usize;
+        let to_remove: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| r.x == ind_id || r.y == ind_id)
+            .cloned()
+            .collect();
+        for e in to_remove {
+            if self.remove(&e) {
+                removed += 1;
+            }
+        }
+        if self.remove(&R::new(INDEPENDENT_MARKER, ind_id.to_string())) {
+            removed += 1;
+        }
+        Ok(removed)
+    }
+
+    fn mint_independence_id(&self) -> String {
+        let existing = self.identifiers();
+        let mut n = self.independence_edges().len();
+        loop {
+            let candidate = format!("ind_{}", n);
+            if !existing.contains(candidate.as_str()) {
+                return candidate;
+            }
+            n += 1;
+        }
+    }
+
     /// Retract an extension-relation edge. ADR 0034 / 0035.
     pub fn retract_extension(&mut self, ext_id: &str) -> Result<usize, TheoryError> {
         if !self.instances.contains(&R::new(EXTENDS_MARKER, ext_id)) {
@@ -2568,6 +2760,10 @@ impl RSet {
         s.insert(EXTENDS_MARKER.to_string());
         for ext in self.extension_edges() {
             s.insert(ext.to_string());
+        }
+        s.insert(INDEPENDENT_MARKER.to_string());
+        for ind in self.independence_edges() {
+            s.insert(ind.to_string());
         }
         for role in self.roles() {
             s.insert(role.to_string());
@@ -7684,5 +7880,100 @@ mod tests {
         let _ = rs2.intrinsic_drive(&cfg);
         // Disabled → pattern still there.
         assert!(rs2.patterns().iter().any(|q| *q == p.as_str()));
+    }
+
+    // ADR 0042 — theory independence relations.
+
+    #[test]
+    fn adr0042_name_independence_on_disjoint_theories() {
+        let mut rs = diamond_poset();
+        // Two theories with disjoint member sets.
+        let t_anti = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        let t_refl = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let ind = rs.name_theory_independence(&t_anti, &t_refl).unwrap();
+        assert!(rs.independence_edges().contains(&ind.as_str()));
+        let (lo, hi) = rs.independence_endpoints(&ind).unwrap();
+        assert!(lo < hi);
+        assert!(lo == t_anti || lo == t_refl);
+    }
+
+    #[test]
+    fn adr0042_rejects_overlapping_theories() {
+        let mut rs = diamond_poset();
+        let t_full = rs
+            .name_theory(&["ax_tpl_v3_p0-1_p1-2_c0-2", AX_REFLEXIVITY, AX_ANTISYMMETRY])
+            .unwrap();
+        let t_shared = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        // Both contain AX_ANTISYMMETRY → not independent.
+        assert!(rs.name_theory_independence(&t_full, &t_shared).is_err());
+    }
+
+    #[test]
+    fn adr0042_refuses_self_independence() {
+        let mut rs = diamond_poset();
+        let t = name_theory_from_rset(&mut rs);
+        assert!(rs.name_theory_independence(&t, &t).is_err());
+    }
+
+    #[test]
+    fn adr0042_canonical_ordering_is_deterministic() {
+        let mut rs = diamond_poset();
+        let t1 = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        let t2 = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let ind_a = rs.name_theory_independence(&t1, &t2).unwrap();
+        let ind_b = rs.name_theory_independence(&t2, &t1).unwrap();
+        assert_eq!(ind_a, ind_b);
+        assert_eq!(rs.independence_edges().len(), 1);
+    }
+
+    #[test]
+    fn adr0042_symmetric_query() {
+        let mut rs = diamond_poset();
+        let t1 = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        let t2 = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let _ = rs.name_theory_independence(&t1, &t2).unwrap();
+        assert!(rs.theories_independent_from(&t1).contains(&t2));
+        assert!(rs.theories_independent_from(&t2).contains(&t1));
+    }
+
+    #[test]
+    fn adr0042_discover_independences() {
+        let mut rs = diamond_poset();
+        let t1 = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        let t2 = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let t3 = rs
+            .name_theory(&["ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        let found = rs.discover_theory_independences();
+        let expected_pairs = [
+            (t1.clone().min(t2.clone()), t1.clone().max(t2.clone())),
+            (t1.clone().min(t3.clone()), t1.clone().max(t3.clone())),
+            (t2.clone().min(t3.clone()), t2.clone().max(t3.clone())),
+        ];
+        for p in &expected_pairs {
+            assert!(found.contains(p), "missing pair {:?}", p);
+        }
+    }
+
+    #[test]
+    fn adr0042_retract_independence_clears_three_edges() {
+        let mut rs = diamond_poset();
+        let t1 = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        let t2 = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let ind = rs.name_theory_independence(&t1, &t2).unwrap();
+        let removed = rs.retract_independence(&ind).unwrap();
+        assert_eq!(removed, 3);
+        assert!(rs.independence_edges().is_empty());
+    }
+
+    #[test]
+    fn adr0042_collect_meta_ids_includes_independence() {
+        let mut rs = diamond_poset();
+        let t1 = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        let t2 = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let ind = rs.name_theory_independence(&t1, &t2).unwrap();
+        let meta = rs.collect_meta_ids();
+        assert!(meta.contains(INDEPENDENT_MARKER));
+        assert!(meta.contains(&ind));
     }
 }
