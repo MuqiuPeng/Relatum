@@ -1463,3 +1463,23 @@ specific `name_theory_*` functions.
 Tests: 270 → 276 (6 new).
 
 Decision: [0049-theory-relation-classifier](decisions/0049-theory-relation-classifier.md).
+
+### Large-scale sampling-mode benchmark (ADR 0050)
+Task 4 of 1'''→5'''. Runs the drive loop at 100/200/500/1000 edges
+in sampling mode, compares to exhaustive at overlapping sizes.
+
+Results:
+- sampling mode scales to 1000 edges in ~16.5s
+- exhaustive tolerable only to ~200 edges (~38s)
+- sampling under-reports instance counts (final score ~5-29% of
+  exhaustive's at overlapping sizes)
+
+Interactive envelope pushed from ~50 edges (ADR 0041) to ~1000
+edges (ADR 0050) — 20× expansion, at the cost of stochastic
+under-counting.
+
+No library changes — pure benchmark ADR exercising ADR 0043's
+existing knob.
+
+Decision: [0050-sampling-scale-benchmark](decisions/0050-sampling-scale-benchmark.md).
+Log: [logs/2026-04-24_sampling_scale_benchmark.log](../logs/2026-04-24_sampling_scale_benchmark.log).

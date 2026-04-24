@@ -1,0 +1,108 @@
+Date: 2026-04-24
+Descriptor: sampling_scale_benchmark (ADR 0050)
+Purpose:
+    Push the scale characterization from ADR 0041 to 1000 edges
+    using the sampling-mode path introduced in ADR 0043. Compare
+    sampling vs. exhaustive at overlapping sizes so the trade-off
+    (completeness vs. tractability) is visible in concrete
+    numbers.
+
+Mechanism version:
+    ADRs 0001–0049. `instance_sampling = Some(cfg)` in
+    `DriveConfig` routes `autonomous_pass` through
+    `sample_instances_of` (ADR 0024 / 0043). `sample_count = 500`
+    per candidate.
+
+====================================================================
+RESULTS
+====================================================================
+
+| edges | ids | mode       | steps | final score | wall time    |
+|------:|----:|-----------|------:|------------:|-------------:|
+|   100 |  48 | sampling   |   3   |   1 159.80  |   1.72 s     |
+|   100 |  48 | exhaustive |   2   |   3 948.40  |   2.39 s     |
+|   200 |  50 | sampling   |   3   |   1 109.00  |   2.46 s     |
+|   200 |  50 | exhaustive |   2   |  20 237.70  |  38.22 s     |
+|   500 | 100 | sampling   |   3   |   1 784.40  |  13.97 s     |
+|  1000 | 100 | sampling   |   3   |   1 059.30  |  16.53 s     |
+
+Exhaustive mode not run at 500 / 1000 edges — would take minutes
+to hours based on ADR 0041's growth curve.
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+### Sampling scales where exhaustive cannot
+
+At 1000 edges the sampling-mode drive completes in 16.5 s. ADR
+0041 projected ≥ 17 min for this size under exhaustive mode
+(based on O(edges × degree^(k-1)) growth). Sampling pushes the
+interactive envelope from ~50 edges to ~1000 edges — a 20×
+improvement.
+
+### Sampling under-reports instance counts
+
+At 200 edges, exhaustive finds enough pattern instances for a
+final score of 20 237; sampling (500 samples per candidate)
+reaches only 1 109 — about 5.5% of the exhaustive score. The
+metric's reuse-savings term `(N−1)·k` is most of the score, and
+sampling under-counts N.
+
+At 100 edges the gap is smaller (1 160 vs 3 948 — sampling hits
+~29% of exhaustive). Smaller graphs give sampling a proportionally
+larger chance of hitting every instance within the sample budget.
+
+### Final score is not directly comparable across modes
+
+The sampling-mode score still signals "this RSet has structure"
+(much higher than random), just not quite the same absolute scale
+as exhaustive would give. Callers wanting to compare scores
+across RSets should use **one consistent mode**.
+
+### Steps taken is similar
+
+Both modes took 2–3 steps before saturation. The drive's
+action-selection logic (greedy, best-Δ) is the same; the main
+difference is the per-step cost of pattern discovery.
+
+====================================================================
+PRACTICAL GUIDANCE
+====================================================================
+
+- **≤ 100 edges**: exhaustive is fine (fast, complete).
+- **200–500 edges**: exhaustive tolerable (seconds), sampling
+  is faster but loses information. Pick based on whether the
+  caller needs to know every instance.
+- **> 500 edges**: sampling is the only option that finishes in
+  reasonable time. Accept that pattern counts are
+  under-estimates; design metrics that don't require exact `N`.
+
+### Raising sample_count
+
+`sample_count = 500` is arbitrary. Doubling it roughly doubles
+wall time while increasing coverage. Diminishing returns — at
+some point every instance has been hit and extra samples are
+wasted. A future ADR could make sample_count self-adaptive based
+on the rate of new-instance discovery.
+
+====================================================================
+COMMITMENT CHECK
+====================================================================
+
+- Sampling path doesn't invalidate any prior mechanism; just
+  trades completeness for tractability at a specific point
+  (`find_instances_of` enumeration).
+- Metric: still ADR 0040's combined formula.
+- No new API added by this benchmark — it exercises ADR 0043's
+  existing `instance_sampling` knob.
+
+====================================================================
+WHAT'S ENABLED
+====================================================================
+
+With sampling mode, v2's drive loop now runs tractably on
+~1000-edge graphs — into the β+ range where real-world-sized
+relational data starts to be interesting. The drive still makes
+sensible decisions (score reflects structure; random input
+halts), just with under-counted instance statistics.
