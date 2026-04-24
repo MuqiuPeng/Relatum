@@ -75,6 +75,13 @@ pub const PREMISE_MARKER: &str = "__premise__";
 /// premise marker.
 pub const CONCLUSION_MARKER: &str = "__conclusion__";
 
+/// Reserved registry marker for theory-extension relations (ADR 0034).
+/// `R(EXTENDS_MARKER, ext_N)` declares `ext_N` as a named "T_sub
+/// extends T_super" edge. The two sides are encoded by the chain
+/// `R(T_sub, ext_N)` + `R(ext_N, T_super)` — same direction-as-role
+/// convention used for axiom premise/conclusion edges.
+pub const EXTENDS_MARKER: &str = "__extends__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -1847,6 +1854,193 @@ impl RSet {
         }
     }
 
+    // ─── ADR 0034: theory extension relations ──────────────────────────
+
+    /// Name a "T_sub extends T_super" relation in meta-R. ADR 0034.
+    ///
+    /// Verifies that both theories exist, are distinct, and that
+    /// `members(T_sub) ⊇ members(T_super)` (i.e., every axiom in the
+    /// super-theory is also in the sub-theory). On success writes the
+    /// three-edge chain:
+    ///
+    /// ```text
+    /// R(__extends__, ext_N)        — registry
+    /// R(T_sub,       ext_N)        — source-side chain link
+    /// R(ext_N,       T_super)      — target-side chain link
+    /// ```
+    ///
+    /// Returns the minted `ext_N` id. Reuses an existing id if the
+    /// same (sub, super) pair is already recorded.
+    pub fn name_theory_extension(
+        &mut self,
+        sub: &str,
+        super_: &str,
+    ) -> Result<String, TheoryError> {
+        if !self.is_theory(sub) {
+            return Err(TheoryError::UnsatisfiedMember(sub.to_string()));
+        }
+        if !self.is_theory(super_) {
+            return Err(TheoryError::UnsatisfiedMember(super_.to_string()));
+        }
+        if sub == super_ {
+            return Err(TheoryError::UnsatisfiedMember(
+                "sub and super must differ".to_string(),
+            ));
+        }
+        let sub_members: HashSet<String> = self
+            .theory_axioms(sub)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let super_members: HashSet<String> = self
+            .theory_axioms(super_)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if !super_members.is_subset(&sub_members) {
+            return Err(TheoryError::UnsatisfiedMember(format!(
+                "{} does not extend {} — super-members are not a subset",
+                sub, super_
+            )));
+        }
+        // Reuse existing ext_N if one already encodes the same pair.
+        for existing in self.extension_edges() {
+            let (es, esup) = self.extension_endpoints(existing).unwrap_or_default();
+            if es == sub && esup == super_ {
+                return Ok(existing.to_string());
+            }
+        }
+        let ext_id = self.mint_extension_id();
+        self.add(R::new(EXTENDS_MARKER, ext_id.clone()));
+        self.add(R::new(sub.to_string(), ext_id.clone()));
+        self.add(R::new(ext_id.clone(), super_.to_string()));
+        Ok(ext_id)
+    }
+
+    /// Every named extension-edge id. ADR 0034.
+    pub fn extension_edges(&self) -> Vec<&str> {
+        self.left_of(EXTENDS_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Decode an extension edge's endpoints: `(sub, super)`. Returns
+    /// `None` if `ext_id` is not a registered extension. ADR 0034.
+    pub fn extension_endpoints(&self, ext_id: &str) -> Option<(String, String)> {
+        if !self.instances.contains(&R::new(EXTENDS_MARKER, ext_id)) {
+            return None;
+        }
+        let sub = self
+            .right_of(ext_id)
+            .into_iter()
+            .find_map(|r| {
+                if self.is_theory(r.x.as_str()) {
+                    Some(r.x.clone())
+                } else {
+                    None
+                }
+            })?;
+        let super_ = self
+            .left_of(ext_id)
+            .into_iter()
+            .find_map(|r| {
+                if self.is_theory(r.y.as_str()) {
+                    Some(r.y.clone())
+                } else {
+                    None
+                }
+            })?;
+        Some((sub, super_))
+    }
+
+    /// Theories that `theory` extends (direct super-theories). ADR 0034.
+    pub fn theory_extends(&self, theory: &str) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for ext in self.extension_edges() {
+            if let Some((sub, super_)) = self.extension_endpoints(ext) {
+                if sub == theory {
+                    // We need &str scoped to self, not owned String.
+                    if let Some(edge) = self
+                        .instances
+                        .iter()
+                        .find(|r| r.x == ext && r.y == super_)
+                    {
+                        out.push(edge.y.as_str());
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Theories that extend `theory` (direct sub-theories). ADR 0034.
+    pub fn theory_extended_by(&self, theory: &str) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for ext in self.extension_edges() {
+            if let Some((sub, super_)) = self.extension_endpoints(ext) {
+                if super_ == theory {
+                    if let Some(edge) = self
+                        .instances
+                        .iter()
+                        .find(|r| r.x == sub && r.y == ext)
+                    {
+                        out.push(edge.x.as_str());
+                    }
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Scan named theories for all (sub, super) pairs where
+    /// `members(sub) ⊋ members(super)` (strict superset). Does not
+    /// write anything to meta-R. ADR 0034.
+    pub fn discover_theory_extensions(&self) -> Vec<(String, String)> {
+        let theories: Vec<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        let member_sets: HashMap<String, HashSet<String>> = theories
+            .iter()
+            .map(|t| {
+                let members: HashSet<String> = self
+                    .theory_axioms(t)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                (t.clone(), members)
+            })
+            .collect();
+        let mut out: Vec<(String, String)> = Vec::new();
+        for sub in &theories {
+            for super_ in &theories {
+                if sub == super_ {
+                    continue;
+                }
+                let s = &member_sets[sub];
+                let p = &member_sets[super_];
+                if p.is_subset(s) && p.len() < s.len() {
+                    out.push((sub.clone(), super_.clone()));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    fn mint_extension_id(&self) -> String {
+        let existing = self.identifiers();
+        let mut n = self.extension_edges().len();
+        loop {
+            let candidate = format!("ext_{}", n);
+            if !existing.contains(candidate.as_str()) {
+                return candidate;
+            }
+            n += 1;
+        }
+    }
+
     /// Reflexivity: every data identifier has a self-loop `R(x, x)`.
     /// ADR 0027.
     pub fn check_reflexivity(&self) -> ReflexivityEvidence {
@@ -2087,6 +2281,10 @@ impl RSet {
         s.insert(AXIOMVAR_MARKER.to_string());
         s.insert(PREMISE_MARKER.to_string());
         s.insert(CONCLUSION_MARKER.to_string());
+        s.insert(EXTENDS_MARKER.to_string());
+        for ext in self.extension_edges() {
+            s.insert(ext.to_string());
+        }
         for role in self.roles() {
             s.insert(role.to_string());
         }
@@ -6375,5 +6573,100 @@ mod tests {
         let a = rs.discover_axioms(&tight);
         let b = rs.discover_axioms(&loose);
         assert!(b.len() >= a.len());
+    }
+
+    // ADR 0034 — theory extension relations.
+
+    fn name_theory_from_rset(rs: &mut RSet) -> String {
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> =
+            th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        rs.name_theory(&ids).unwrap()
+    }
+
+    #[test]
+    fn adr0034_poset_theory_extends_strict_poset_theory() {
+        // strict partial order {trans, antisym} is a sub-theory of
+        // full poset {trans, antisym, refl}. Build both in one RSet by
+        // naming two theories explicitly.
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs); // {trans, refl, antisym}
+        // Name a smaller theory with just {trans, antisym}.
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        // Full extends strict (full has refl in addition).
+        let ext_id = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        assert!(rs.extension_edges().contains(&ext_id.as_str()));
+        // Query
+        let (sub, sup) = rs.extension_endpoints(&ext_id).unwrap();
+        assert_eq!(sub, t_full);
+        assert_eq!(sup, t_strict);
+        assert!(rs.theory_extends(&t_full).contains(&t_strict.as_str()));
+        assert!(rs.theory_extended_by(&t_strict).contains(&t_full.as_str()));
+    }
+
+    #[test]
+    fn adr0034_name_extension_rejects_non_subset() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        // Make a bogus "theory" with axioms not in t_full by handpicking.
+        // Here: a theory with just symmetry (not in poset).
+        // But symmetry doesn't hold on poset, so name_theory rejects.
+        // Use a different approach: two theories with disjoint non-subset members.
+        let weak_ids = [AX_ANTISYMMETRY];
+        let t_weak = rs.name_theory(&weak_ids).unwrap();
+        let strong_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2"];
+        let t_strong = rs.name_theory(&strong_ids).unwrap();
+        // Neither is a subset of the other.
+        assert!(rs.name_theory_extension(&t_weak, &t_strong).is_err());
+        assert!(rs.name_theory_extension(&t_strong, &t_weak).is_err());
+    }
+
+    #[test]
+    fn adr0034_name_extension_refuses_self_loop() {
+        let mut rs = diamond_poset();
+        let t = name_theory_from_rset(&mut rs);
+        assert!(rs.name_theory_extension(&t, &t).is_err());
+    }
+
+    #[test]
+    fn adr0034_discover_extensions_scans_pairs() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        let trans_only = ["ax_tpl_v3_p0-1_p1-2_c0-2"];
+        let t_trans = rs.name_theory(&trans_only).unwrap();
+        let found = rs.discover_theory_extensions();
+        // t_full ⊋ t_strict ⊋ t_trans. Expected pairs:
+        // (t_full, t_strict), (t_full, t_trans), (t_strict, t_trans).
+        assert!(found.contains(&(t_full.clone(), t_strict.clone())));
+        assert!(found.contains(&(t_full.clone(), t_trans.clone())));
+        assert!(found.contains(&(t_strict.clone(), t_trans.clone())));
+        assert_eq!(found.len(), 3);
+    }
+
+    #[test]
+    fn adr0034_extension_reuses_on_duplicate() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        let e1 = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        let e2 = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        assert_eq!(e1, e2);
+        assert_eq!(rs.extension_edges().len(), 1);
+    }
+
+    #[test]
+    fn adr0034_collect_meta_ids_includes_extends() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        let ext = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        let meta = rs.collect_meta_ids();
+        assert!(meta.contains(EXTENDS_MARKER));
+        assert!(meta.contains(&ext));
     }
 }

@@ -73,3 +73,4 @@ Commit hash(es), file pointers.
 - [0031](0031-intrinsic-drive.md) — Intrinsic drive + global abstraction score
 - [0032](0032-axiom-intension.md) — Axiom intension as meta-R (extends 0030)
 - [0033](0033-defeasible-axioms.md) — Defeasible axioms (rate < 1.0 with support threshold)
+- [0034](0034-theory-extension-relations.md) — Theory extension relations (first higher-order meta-R)

@@ -1082,3 +1082,23 @@ strict minimal still subsumes, rate invariant across evidence,
 loose threshold yields at least as many).
 
 Decision: [0033-defeasible-axioms](decisions/0033-defeasible-axioms.md).
+
+### Theory extension relations (ADR 0034)
+First of the approved five-step extension (1→2→3→4→5). Adds theory-
+to-theory extension as a first-class meta-R object: T_sub extends
+T_super when `members(T_sub) ⊇ members(T_super)`.
+
+New marker `__extends__`. Extension edge encoded as three-edge chain:
+`R(__extends__, ext_N)` + `R(T_sub, ext_N)` + `R(ext_N, T_super)`.
+Same direction-as-role convention used for axiom internal chains.
+
+API: `name_theory_extension`, `extension_edges`, `extension_endpoints`,
+`theory_extends`, `theory_extended_by`, `discover_theory_extensions`
+(read-only pair scan).
+
+First higher-order relation in v2 meta-R — all prior meta-R linked
+objects to definitions; this links objects to each other. Tests:
+176 → 182. collect_meta_ids extended for EXTENDS_MARKER and every
+ext_N.
+
+Decision: [0034-theory-extension-relations](decisions/0034-theory-extension-relations.md).
