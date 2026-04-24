@@ -165,6 +165,42 @@ nothing, defeasible discovery surfaces transitivity at rate 0.667
 (support 2/3) — the system can now report "this almost holds"
 rather than stay silent.
 
+ADR 0034 added **theory extension relations** — the first
+higher-order meta-R object. `R(__extends__, ext_N)` + chain
+`R(T_sub, ext_N) + R(ext_N, T_super)` declares T_sub's member set
+is a strict superset of T_super's. `name_theory_extension` verifies;
+`discover_theory_extensions` scans named theories for all such
+pairs.
+
+ADR 0035 added **counterfactual value** as a second-order signal
+on top of the drive. `counterfactual_value(id)` clones the RSet,
+retracts the object, returns `before − after` score — the object's
+actual contribution to `abstraction_score`. `rank_by_counterfactual`
+produces a global descending ranking. `retract_extension` added
+symmetrically with other retract_*.
+
+ADR 0036 added **empty-premise axiom templates** (opt-in via
+`include_empty_premise`), closing part of the predicate-axiom gap
+— reflexivity now has a template form `ax_tpl_v1_c0-0` alongside
+the predicate form `ax_reflexivity`. Antisymmetry / totality still
+require further language extensions.
+
+ADR 0037 added **compositional subsumption** via forward chaining.
+`template_derivable_from(target, sources)` checks if target's
+conclusion follows from sources by iterated closure on a fresh
+domain. `subsume_by_composition` drops mutually-derivable axioms.
+`discover_axioms_minimal_compositional` runs this on top of ADR
+0028's direct subsumption. Strict-mode only. On the equivalence
+case: 5 → 2 axioms (finally closing the "four transitivity
+variants" residue noted since ADR 0030).
+
+ADR 0038 added **RSet text persistence**: `to_text()` / `from_text`
+in line-oriented TSV, sorted for byte-identical output across
+processes. Because every named meta-R object (patterns, theories,
+axioms with intension, extensions) is encoded as R instances,
+persistence is a single Set roundtrip with no special casing.
+Zero external dependencies (no serde).
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,
