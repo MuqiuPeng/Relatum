@@ -1955,9 +1955,9 @@ impl RSet {
             }
             return Err(TheoryError::UnsatisfiedMember(id.to_string()));
         }
-        let Some(template) = axiom_id_to_template(id) else {
-            return Err(TheoryError::UnparseableAxiomId(id.to_string()));
-        };
+        // Try the three template families in order: edge, equality,
+        // disjunctive. First that parses succeeds; others return None.
+        // ADR 0047.
         let meta = self.collect_meta_ids();
         let ids: Vec<String> = self
             .identifiers()
@@ -1968,12 +1968,30 @@ impl RSet {
         if ids.is_empty() {
             return Err(TheoryError::UnsatisfiedMember(id.to_string()));
         }
-        let ev = self.evaluate_axiom_template(&template, &ids, &meta);
-        if ev.rate == 1.0 && ev.premise_bindings > 0 {
-            Ok(())
-        } else {
-            Err(TheoryError::UnsatisfiedMember(id.to_string()))
+        if let Some(template) = axiom_id_to_template(id) {
+            let ev = self.evaluate_axiom_template(&template, &ids, &meta);
+            if ev.rate == 1.0 && ev.premise_bindings > 0 {
+                return Ok(());
+            }
+            return Err(TheoryError::UnsatisfiedMember(id.to_string()));
         }
+        if let Some(template) = equality_id_to_template(id) {
+            let (bindings, satisfied) =
+                self.evaluate_equality_template(&template, &ids);
+            if bindings > 0 && satisfied == bindings {
+                return Ok(());
+            }
+            return Err(TheoryError::UnsatisfiedMember(id.to_string()));
+        }
+        if let Some(template) = disjunctive_id_to_template(id) {
+            let (bindings, satisfied) =
+                self.evaluate_disjunctive_template(&template, &ids);
+            if bindings > 0 && satisfied == bindings {
+                return Ok(());
+            }
+            return Err(TheoryError::UnsatisfiedMember(id.to_string()));
+        }
+        Err(TheoryError::UnparseableAxiomId(id.to_string()))
     }
 
     /// Registered axioms in this RSet. ADR 0030.
@@ -4586,6 +4604,96 @@ fn split_edge_part(s: &str) -> Option<(usize, usize)> {
         return None;
     }
     Some((x, y))
+}
+
+/// ADR 0047: deterministic id for an equality-conclusion template.
+/// Format: `ax_eq_v{n}_p{x}-{y}_..._eq{a}-{b}`.
+pub fn equality_axiom_id(template: &EqualityAxiomTemplate) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(format!("ax_eq_v{}", template.num_vars));
+    let mut premise_sorted = template.premise.clone();
+    premise_sorted.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
+    for e in &premise_sorted {
+        parts.push(format!("p{}-{}", e.x_var, e.y_var));
+    }
+    // Equality is order-independent: normalize (a, b) to (min, max).
+    let (a, b) = (
+        template.equal_vars.0.min(template.equal_vars.1),
+        template.equal_vars.0.max(template.equal_vars.1),
+    );
+    parts.push(format!("eq{}-{}", a, b));
+    parts.join("_")
+}
+
+/// ADR 0047: deterministic id for a disjunctive-conclusion template.
+/// Format: `ax_disj_v{n}_p{x}-{y}_..._d{cx}-{cy}_...`.
+pub fn disjunctive_axiom_id(template: &DisjunctiveAxiomTemplate) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    parts.push(format!("ax_disj_v{}", template.num_vars));
+    let mut premise_sorted = template.premise.clone();
+    premise_sorted.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
+    for e in &premise_sorted {
+        parts.push(format!("p{}-{}", e.x_var, e.y_var));
+    }
+    let mut concls_sorted = template.conclusions.clone();
+    concls_sorted.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
+    for c in &concls_sorted {
+        parts.push(format!("d{}-{}", c.x_var, c.y_var));
+    }
+    parts.join("_")
+}
+
+/// ADR 0047: parse an equality axiom id. Returns None if not the
+/// equality form.
+pub fn equality_id_to_template(id: &str) -> Option<EqualityAxiomTemplate> {
+    let rest = id.strip_prefix("ax_eq_v")?;
+    let mut parts = rest.split('_');
+    let num_vars: usize = parts.next()?.parse().ok()?;
+    let mut premise: Vec<EdgeTemplate> = Vec::new();
+    let mut equal_vars: Option<(usize, usize)> = None;
+    for p in parts {
+        if let Some(body) = p.strip_prefix('p') {
+            let (x, y) = split_edge_part(body)?;
+            premise.push(EdgeTemplate { x_var: x, y_var: y });
+        } else if let Some(body) = p.strip_prefix("eq") {
+            equal_vars = Some(split_edge_part(body)?);
+        } else {
+            return None;
+        }
+    }
+    Some(EqualityAxiomTemplate {
+        num_vars,
+        premise,
+        equal_vars: equal_vars?,
+    })
+}
+
+/// ADR 0047: parse a disjunctive axiom id. Returns None otherwise.
+pub fn disjunctive_id_to_template(id: &str) -> Option<DisjunctiveAxiomTemplate> {
+    let rest = id.strip_prefix("ax_disj_v")?;
+    let mut parts = rest.split('_');
+    let num_vars: usize = parts.next()?.parse().ok()?;
+    let mut premise: Vec<EdgeTemplate> = Vec::new();
+    let mut conclusions: Vec<EdgeTemplate> = Vec::new();
+    for p in parts {
+        if let Some(body) = p.strip_prefix('p') {
+            let (x, y) = split_edge_part(body)?;
+            premise.push(EdgeTemplate { x_var: x, y_var: y });
+        } else if let Some(body) = p.strip_prefix('d') {
+            let (x, y) = split_edge_part(body)?;
+            conclusions.push(EdgeTemplate { x_var: x, y_var: y });
+        } else {
+            return None;
+        }
+    }
+    if conclusions.is_empty() {
+        return None;
+    }
+    Some(DisjunctiveAxiomTemplate {
+        num_vars,
+        premise,
+        conclusions,
+    })
 }
 
 /// Configuration for sampling-based `sample_instances_of`. ADR 0024.
@@ -8972,5 +9080,112 @@ mod tests {
         let meta = rs.collect_meta_ids();
         assert!(meta.contains(PARALLEL_MARKER));
         assert!(meta.contains(&par));
+    }
+
+    // ADR 0047 — extended axiom id codecs (equality + disjunctive).
+
+    #[test]
+    fn adr0047_equality_id_roundtrip_antisymmetry() {
+        let antisym = EqualityAxiomTemplate {
+            num_vars: 2,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 0 },
+            ],
+            equal_vars: (0, 1),
+        };
+        let id = equality_axiom_id(&antisym);
+        assert_eq!(id, "ax_eq_v2_p0-1_p1-0_eq0-1");
+        let back = equality_id_to_template(&id).unwrap();
+        assert_eq!(back, antisym);
+    }
+
+    #[test]
+    fn adr0047_disjunctive_id_roundtrip_totality() {
+        let tot = DisjunctiveAxiomTemplate {
+            num_vars: 2,
+            premise: vec![],
+            conclusions: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 0 },
+            ],
+        };
+        let id = disjunctive_axiom_id(&tot);
+        assert_eq!(id, "ax_disj_v2_d0-1_d1-0");
+        let back = disjunctive_id_to_template(&id).unwrap();
+        assert_eq!(back, tot);
+    }
+
+    #[test]
+    fn adr0047_id_dispatch_is_unambiguous() {
+        // Edge id never parses as equality / disjunctive.
+        let edge_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        assert!(axiom_id_to_template(edge_id).is_some());
+        assert!(equality_id_to_template(edge_id).is_none());
+        assert!(disjunctive_id_to_template(edge_id).is_none());
+
+        // Equality id only parses as equality.
+        let eq_id = "ax_eq_v2_p0-1_p1-0_eq0-1";
+        assert!(axiom_id_to_template(eq_id).is_none());
+        assert!(equality_id_to_template(eq_id).is_some());
+        assert!(disjunctive_id_to_template(eq_id).is_none());
+
+        // Disjunctive id only parses as disjunctive.
+        let d_id = "ax_disj_v2_d0-1_d1-0";
+        assert!(axiom_id_to_template(d_id).is_none());
+        assert!(equality_id_to_template(d_id).is_none());
+        assert!(disjunctive_id_to_template(d_id).is_some());
+    }
+
+    #[test]
+    fn adr0047_name_theory_accepts_equality_id_on_satisfying_rset() {
+        // Diamond poset: antisymmetry holds via template form because
+        // the only bindings where R(x,y) ∧ R(y,x) both hold are self-
+        // loops (x=y). All such bindings trivially satisfy x=y.
+        let mut rs = diamond_poset();
+        let antisym_id = "ax_eq_v2_p0-1_p1-0_eq0-1";
+        let t_id = rs.name_theory(&[antisym_id]).unwrap();
+        assert!(rs.theory_axioms(&t_id).contains(&antisym_id));
+    }
+
+    #[test]
+    fn adr0047_name_theory_rejects_equality_on_equivalence() {
+        // Equivalence: R(a,b) ∧ R(b,a) holds for many distinct (a,b)
+        // pairs → template-form antisymmetry is NOT rate 1.0.
+        let mut rs = equivalence_relation();
+        let antisym_id = "ax_eq_v2_p0-1_p1-0_eq0-1";
+        assert!(rs.name_theory(&[antisym_id]).is_err());
+    }
+
+    #[test]
+    fn adr0047_name_theory_accepts_disjunctive_id_on_total_order() {
+        let mut rs = total_order_closure();
+        let tot_id = "ax_disj_v2_d0-1_d1-0";
+        let t_id = rs.name_theory(&[tot_id]).unwrap();
+        assert!(rs.theory_axioms(&t_id).contains(&tot_id));
+    }
+
+    #[test]
+    fn adr0047_name_theory_rejects_disjunctive_on_diamond() {
+        let mut rs = diamond_poset();
+        let tot_id = "ax_disj_v2_d0-1_d1-0";
+        assert!(rs.name_theory(&[tot_id]).is_err());
+    }
+
+    #[test]
+    fn adr0047_name_theory_bundles_all_three_families() {
+        // One theory with edge axiom + equality + disjunctive. Use
+        // total order where all three hold.
+        let mut rs = total_order_closure();
+        let ids = [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",  // edge: transitivity
+            "ax_eq_v2_p0-1_p1-0_eq0-1",  // equality: antisymmetry
+            "ax_disj_v2_d0-1_d1-0",      // disjunctive: totality
+        ];
+        let t_id = rs.name_theory(&ids).unwrap();
+        let members = rs.theory_axioms(&t_id);
+        for id in &ids {
+            assert!(members.contains(id));
+        }
     }
 }

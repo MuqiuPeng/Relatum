@@ -1399,3 +1399,25 @@ Plus the trivial `equal` case handled by `name_theory`'s id-reuse.
 Tests: 249 → 257 (8 new).
 
 Decision: [0046-theory-parallel](decisions/0046-theory-parallel.md).
+
+### Extended axiom id codec (ADR 0047)
+Task 1 of 1'''→5'''. Fills the gap left in ADR 0044: equality and
+disjunctive templates now have deterministic ids and can be
+accepted by `name_theory`.
+
+Format:
+- Edge: `ax_tpl_v{n}_p..._c...` (0030)
+- Equality: `ax_eq_v{n}_p..._eq{a}-{b}` (new)
+- Disjunctive: `ax_disj_v{n}_p..._d..._d...` (new)
+
+`verify_axiom_holds` now dispatches the three prefixes in order.
+`name_theory` can bundle axioms of all three families into one
+theory — on a total order: {transitivity, antisymmetry via
+equality form, totality via disjunctive form} all co-exist.
+
+Not yet: meta-R intension / subsumption / composition for non-
+edge axioms. Deferred.
+
+Tests: 257 → 265 (8 new).
+
+Decision: [0047-extended-axiom-ids](decisions/0047-extended-axiom-ids.md).

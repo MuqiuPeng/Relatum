@@ -86,3 +86,4 @@ Commit hash(es), file pointers.
 - [0044](0044-extended-template-language.md) — Extended template language (equality + disjunctive conclusions)
 - [0045](0045-axiom-confidence.md) — Axiom confidence (Wilson score + null-baseline probability)
 - [0046](0046-theory-parallel.md) — Theory parallel relations
+- [0047](0047-extended-axiom-ids.md) — Extended axiom id codec (equality + disjunctive)
