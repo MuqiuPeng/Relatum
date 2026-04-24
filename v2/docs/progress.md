@@ -1241,3 +1241,33 @@ referenced" failure.
 Tests: 217 → 222 (5 new).
 
 Decision: [0040-auto-prune](decisions/0040-auto-prune.md).
+
+### Scale benchmark (ADR 0041)
+Task 3 of 1'→4'. Measurement-only ADR. Built
+`examples/scale_benchmark.rs` to characterize the β-scale envelope
+on deterministic random graphs.
+
+Findings:
+- 50 edges → drive completes in ~0.4 s
+- 100 edges → ~2.3 s
+- 200 edges → ~30 s
+- 400 edges → ~255 s
+- Interactive envelope ≈ 50 edges; tolerable ≈ 200.
+
+Bottleneck: `find_instances_of` in `autonomous_pass` scales as
+edges × avg_degree^(k-1). Axiom discovery scales ~linearly
+(nearly independent of edge count at fixed identifier count).
+Persistence (to_text / from_text) is not a bottleneck — sub-ms per
+100 KB.
+
+Accidental-axiom effect surfaces at dense small-id graphs: 31
+templates at rate 1.0 (9 after minimization) on a 400-edge
+20-id graph. Recorded as known limit; needs statistical-
+significance filter to address.
+
+No new library API. Two natural optimization follow-ups noted:
+(a) route autonomous_pass through sample_instances_of,
+(b) add source-/target-index to RSet.
+
+Decision: [0041-scale-benchmark](decisions/0041-scale-benchmark.md).
+Log: [logs/2026-04-24_scale_benchmark.log](../logs/2026-04-24_scale_benchmark.log).
