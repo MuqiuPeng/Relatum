@@ -1126,3 +1126,29 @@ retract_behavior`).
 Tests: 182 → 188 (6 new).
 
 Decision: [0035-counterfactual-value](decisions/0035-counterfactual-value.md).
+
+### Empty-premise templates (ADR 0036)
+Task 3 of 1→5. Partially closes the "predicate axioms have no
+template form" gap flagged since ADR 0027. Admits empty-premise
+templates with single-variable self-loop conclusion:
+`[] ⇒ R(0,0)` — reflexivity as a template.
+
+Config: `AxiomDiscoveryConfig::include_empty_premise: bool`, default
+`false` (backward compat). When true, `enumerate_axiom_templates`
+prepends the empty-premise case; `evaluate_template_recursive`
+already handles empty premise trivially (every binding counts).
+
+Reflexivity now has two ids: `ax_reflexivity` (predicate, via
+check_reflexivity, used by discover_theory) and `ax_tpl_v1_c0-0`
+(template, via opt-in discover_axioms). They coexist; discover_theory
+unchanged for backward compatibility.
+
+Antisymmetry (equality conclusion) and totality (disjunction) still
+require template-language extensions beyond this ADR.
+
+Defeasible + empty-premise: partial reflexivity at rate 0.5
+correctly surfaces on a half-reflexive graph.
+
+Tests: 188 → 194 (6 new).
+
+Decision: [0036-empty-premise-templates](decisions/0036-empty-premise-templates.md).

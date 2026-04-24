@@ -2767,6 +2767,9 @@ fn enumerate_axiom_templates(config: &AxiomDiscoveryConfig) -> Vec<AxiomTemplate
     }
 
     let mut premises: Vec<Vec<EdgeTemplate>> = Vec::new();
+    if config.include_empty_premise {
+        premises.push(Vec::new());
+    }
     for m in 1..=config.max_premise_edges {
         if m == 1 {
             for e in &single_edges {
@@ -2789,6 +2792,21 @@ fn enumerate_axiom_templates(config: &AxiomDiscoveryConfig) -> Vec<AxiomTemplate
     let mut seen: HashSet<AxiomTemplate> = HashSet::new();
 
     for premise in premises {
+        if premise.is_empty() {
+            // Empty-premise axioms (ADR 0036): only `R(v, v)` self-loop
+            // conclusion is admitted — universally quantified reflexivity
+            // at a single variable. Use v = 0 as the canonical pick.
+            let concl = EdgeTemplate { x_var: 0, y_var: 0 };
+            let tpl = canonicalize_template(AxiomTemplate {
+                num_vars: v,
+                premise: Vec::new(),
+                conclusion: concl,
+            });
+            if seen.insert(tpl.clone()) {
+                templates.push(tpl);
+            }
+            continue;
+        }
         // Collect variables used in premise.
         let mut used_vars: HashSet<usize> = HashSet::new();
         for e in &premise {
@@ -3225,7 +3243,7 @@ pub struct AxiomEvidence {
 }
 
 /// Configuration for axiom discovery. ADR 0027, extended by ADR
-/// 0033 (defeasible rules).
+/// 0033 (defeasible rules) and ADR 0036 (empty-premise templates).
 #[derive(Debug, Clone)]
 pub struct AxiomDiscoveryConfig {
     pub max_premise_edges: usize,
@@ -3236,6 +3254,11 @@ pub struct AxiomDiscoveryConfig {
     /// Lowering it to e.g. `0.8` admits defeasible rules that hold on
     /// ≥ 80% of premise bindings. ADR 0033.
     pub min_rate: f64,
+    /// When true, enumerate empty-premise templates `[] ⇒ R(0,0)`
+    /// (single-variable self-loop conclusion — universally quantified
+    /// reflexivity in template form). Default `false` preserves
+    /// ADR 0027's "premise must have at least one edge" shape. ADR 0036.
+    pub include_empty_premise: bool,
 }
 
 impl Default for AxiomDiscoveryConfig {
@@ -3245,6 +3268,7 @@ impl Default for AxiomDiscoveryConfig {
             max_vars: 3,
             min_evidence: 1,
             min_rate: 1.0,
+            include_empty_premise: false,
         }
     }
 }
@@ -6837,5 +6861,109 @@ mod tests {
         let removed = rs.retract_extension(&ext).unwrap();
         assert_eq!(removed, 3);
         assert!(rs.extension_edges().is_empty());
+    }
+
+    // ADR 0036 — extended template language (empty premise).
+
+    #[test]
+    fn adr0036_default_config_does_not_include_empty_premise() {
+        // Reflexive diamond poset. Default config should NOT surface
+        // ax_tpl_v1_c0-0 — backward compat with 0027/0028.
+        let rs = diamond_poset();
+        let cfg = AxiomDiscoveryConfig::default();
+        let axioms = rs.discover_axioms(&cfg);
+        let has_empty_premise = axioms
+            .iter()
+            .any(|e| e.template.premise.is_empty());
+        assert!(!has_empty_premise,
+            "default config must not produce empty-premise templates");
+    }
+
+    #[test]
+    fn adr0036_opt_in_surfaces_template_reflexivity() {
+        // Reflexive diamond poset with include_empty_premise=true:
+        // reflexivity shows up as ax_tpl_v1_c0-0 at rate 1.0.
+        let rs = diamond_poset();
+        let cfg = AxiomDiscoveryConfig {
+            include_empty_premise: true,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let axioms = rs.discover_axioms(&cfg);
+        let reflexivity_tpl = AxiomTemplate {
+            num_vars: 1,
+            premise: vec![],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 0 },
+        };
+        let ev = axioms.iter().find(|e| e.template == reflexivity_tpl);
+        assert!(ev.is_some(),
+            "empty-premise reflexivity should be discovered");
+        assert_eq!(ev.unwrap().rate, 1.0);
+    }
+
+    #[test]
+    fn adr0036_empty_premise_id_roundtrip() {
+        let reflexivity_tpl = AxiomTemplate {
+            num_vars: 1,
+            premise: vec![],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 0 },
+        };
+        let id = axiom_template_id(&reflexivity_tpl);
+        assert_eq!(id, "ax_tpl_v1_c0-0");
+        let back = axiom_id_to_template(&id).expect("parses");
+        assert_eq!(back, reflexivity_tpl);
+    }
+
+    #[test]
+    fn adr0036_empty_premise_absent_on_non_reflexive_rset() {
+        // Non-reflexive graph + opt-in → ax_tpl_v1_c0-0 must be absent
+        // (rate would be < 1.0, default strict mode suppresses it).
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let cfg = AxiomDiscoveryConfig {
+            include_empty_premise: true,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let axioms = rs.discover_axioms(&cfg);
+        let has = axioms.iter().any(|e| e.template.premise.is_empty());
+        assert!(!has);
+    }
+
+    #[test]
+    fn adr0036_empty_premise_with_defeasible_surfaces_partial() {
+        // Partially-reflexive graph: 2 of 4 identifiers have self-loops.
+        // Rate = 0.5. Defeasible mode + empty-premise should surface it.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "a"), R::new("b", "b"),
+            R::new("c", "d"), R::new("d", "c"),
+        ]);
+        let cfg = AxiomDiscoveryConfig {
+            include_empty_premise: true,
+            min_rate: 0.4,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let axioms = rs.discover_axioms(&cfg);
+        let refl = axioms.iter().find(|e| e.template.premise.is_empty());
+        assert!(refl.is_some());
+        let ev = refl.unwrap();
+        assert!((ev.rate - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn adr0036_opt_in_does_not_break_existing_behavior() {
+        // Check that opt-in only ADDS templates, never removes.
+        let rs = diamond_poset();
+        let strict = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        let extended = rs.discover_axioms(&AxiomDiscoveryConfig {
+            include_empty_premise: true,
+            ..AxiomDiscoveryConfig::default()
+        });
+        assert!(extended.len() >= strict.len());
+        for ev in &strict {
+            assert!(extended
+                .iter()
+                .any(|e| e.template == ev.template),
+                "template {:?} disappeared when opting in", ev.template);
+        }
     }
 }
