@@ -1504,3 +1504,37 @@ the pipeline's widest lever.
 Tests: 276 → 282 (6 new).
 
 Decision: [0051-adaptive-drive-config](decisions/0051-adaptive-drive-config.md).
+
+### Autonomous runtime — Phase A0 skeleton (ADR 0052)
+After a multi-round design conversation, landed ADR 0052 as the
+overall autonomous-runtime architecture. Status promoted from
+Proposed to Accepted concurrent with Phase A0 implementation.
+
+Design summary: v2 + runtime module (NOT v3); five modules
+(runtime / scheduler / memory / environment / evaluator); memory
+two-tier (M0 durable Rust struct now, M1 declarativized meta-R
+deferred); budget is step-count only; non-goals explicitly enumerated.
+
+Phase A0 landed: `src/runtime/mod.rs` with `AutonomousRuntime`,
+`LifecycleState` (Booting/Running/Sleeping/Stopped), `RuntimeMode`
+(Expand/Consolidate/Reflect), `BudgetState`, `Episode`, `Memory`
+(ring buffer + cap), `ActionKind`, `SchedulerDecision`, `ActionPlan`,
+`Scheduler` trait + `StubScheduler`, `Environment` trait +
+`NoOpEnvironment`, `Event`.
+
+`run_bounded(max_ticks)` main loop: poll env → apply events →
+scheduler.choose → execute (DiscoverTheory wired; DiscoverPatterns
+and Prune stubbed for A1/A2) → record episode.
+
+Tests (10 new): bounded-tick runs N episodes, diamond poset gets
+its full theory named on first tick, score monotone non-decreasing
+under stub, memory respects cap, run_bounded is additive, Stop /
+Sleep decisions halt loop.
+
+Phase A1 (real Frontier + rule-based Scheduler), A2 (mode
+machine), A3 (sleep/wake + checkpoint), B (history kicks in)
+queued. No v3 rename.
+
+Tests: 282 → 292 (10 new).
+
+Decision: [0052-autonomous-runtime-architecture](decisions/0052-autonomous-runtime-architecture.md).

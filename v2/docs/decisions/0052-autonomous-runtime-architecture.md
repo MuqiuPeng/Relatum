@@ -1,6 +1,6 @@
 # 0052: Autonomous runtime architecture
 
-Status: Proposed
+Status: Accepted (design; Phase A0 implemented)
 Date: 2026-04-24
 
 ## Context

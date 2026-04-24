@@ -7,6 +7,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+pub mod runtime;
+
 /// The sole primitive. Direction is intrinsic; meaning is not.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct R {
