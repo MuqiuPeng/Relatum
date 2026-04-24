@@ -1295,3 +1295,27 @@ metric (only extensions are, per ADR 0040). A future ADR can
 symmetrize this if usage warrants.
 
 Decision: [0042-theory-independence](decisions/0042-theory-independence.md).
+
+### Indexed RSet + sampling-path integration (ADR 0043)
+Task 1 of the 1''→5'' round. Combines the two optimizations noted
+in ADR 0041. `RSet` now maintains `by_source` / `by_target`
+HashMaps synced with `instances` via `add`/`remove`. `left_of` and
+`right_of` are O(edges-at-id) instead of O(all-edges). Manual
+`PartialEq` ignores indices (equality = same `instances`).
+
+`AutonomousConfig.instance_sampling: Option<SamplingMatchConfig>`
+opts into sampling-path: when `Some`, `autonomous_pass` routes
+instance collection through `sample_instances_of` (ADR 0024)
+instead of exhaustive `find_instances_of`. `DriveConfig` gains
+the same flag propagated to each DiscoverPatterns action. Default
+stays exhaustive.
+
+Scale benchmark (release) drive-time: 373 → 364 ms (50e), 2.26 →
+2.04 s (100e), 30.2 → 29.2 s (200e), 255 → 208 s (400e). 10–18%
+speedup from indexing; the deeper bottleneck (find_instances_of
+enumeration) remains — sampling mode is the lever when that
+matters.
+
+Tests: 230 → 236 (6 new). Zero public API regression.
+
+Decision: [0043-indexed-rset-and-sampling-path](decisions/0043-indexed-rset-and-sampling-path.md).

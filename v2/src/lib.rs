@@ -209,10 +209,26 @@ pub enum NamingDecision {
 ///
 /// This is the observation surface abstraction mechanisms will hook into.
 /// It adds no interpretation: just storage, ingestion, and structural lookups.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// Internally maintains source and target indices for O(1) `left_of` /
+/// `right_of` queries; see ADR 0043.
+#[derive(Debug, Clone, Default)]
 pub struct RSet {
     instances: HashSet<R>,
+    // ADR 0043: side indices. Kept in sync with `instances` by `add` and
+    // `remove`. Not part of identity — two RSets with the same `instances`
+    // have equivalent indices and are considered equal.
+    by_source: HashMap<String, HashSet<R>>,
+    by_target: HashMap<String, HashSet<R>>,
 }
+
+impl PartialEq for RSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.instances == other.instances
+    }
+}
+
+impl Eq for RSet {}
 
 impl RSet {
     pub fn new() -> Self {
@@ -221,11 +237,21 @@ impl RSet {
 
     /// Insert an instance. Returns true if it was not already present.
     pub fn add(&mut self, r: R) -> bool {
-        self.instances.insert(r)
+        let is_new = self.instances.insert(r.clone());
+        if is_new {
+            self.by_source
+                .entry(r.x.clone())
+                .or_default()
+                .insert(r.clone());
+            self.by_target.entry(r.y.clone()).or_default().insert(r);
+        }
+        is_new
     }
 
     pub fn extend<I: IntoIterator<Item = R>>(&mut self, iter: I) {
-        self.instances.extend(iter);
+        for r in iter {
+            self.add(r);
+        }
     }
 
     pub fn contains(&self, r: &R) -> bool {
@@ -235,7 +261,22 @@ impl RSet {
     /// Remove a single R instance. Returns true if the edge was
     /// present. Dual of `add`. ADR 0020.
     pub fn remove(&mut self, r: &R) -> bool {
-        self.instances.remove(r)
+        let removed = self.instances.remove(r);
+        if removed {
+            if let Some(set) = self.by_source.get_mut(&r.x) {
+                set.remove(r);
+                if set.is_empty() {
+                    self.by_source.remove(&r.x);
+                }
+            }
+            if let Some(set) = self.by_target.get_mut(&r.y) {
+                set.remove(r);
+                if set.is_empty() {
+                    self.by_target.remove(&r.y);
+                }
+            }
+        }
+        removed
     }
 
     pub fn len(&self) -> usize {
@@ -307,14 +348,22 @@ impl RSet {
             .collect()
     }
 
-    /// Instances with `x` on the left.
+    /// Instances with `x` on the left (the source position).
+    /// O(|edges from x|) via the source index. ADR 0043.
     pub fn left_of(&self, x: &str) -> Vec<&R> {
-        self.instances.iter().filter(|r| r.x == x).collect()
+        match self.by_source.get(x) {
+            Some(set) => set.iter().collect(),
+            None => Vec::new(),
+        }
     }
 
-    /// Instances with `y` on the right.
+    /// Instances with `y` on the right (the target position).
+    /// O(|edges into y|) via the target index. ADR 0043.
     pub fn right_of(&self, y: &str) -> Vec<&R> {
-        self.instances.iter().filter(|r| r.y == y).collect()
+        match self.by_target.get(y) {
+            Some(set) => set.iter().collect(),
+            None => Vec::new(),
+        }
     }
 
     /// Structural profile of one identifier.
@@ -1425,8 +1474,13 @@ impl RSet {
                 continue;
             }
 
-            // 2. Novel canonical. Collect clean instances.
-            let instances = self.find_instances_of(&canon);
+            // 2. Novel canonical. Collect clean instances — use
+            // sampling path when configured, otherwise exhaustive.
+            // ADR 0043.
+            let instances = match &config.instance_sampling {
+                Some(smpl) => self.sample_instances_of(&canon, smpl),
+                None => self.find_instances_of(&canon),
+            };
             if instances.is_empty() {
                 outcomes.push(AutonomousOutcome::Skipped {
                     canonical: canon,
@@ -3880,6 +3934,11 @@ pub struct DriveConfig {
     /// Counterfactual-value threshold below which Prune retracts an
     /// object. Default `0.0` (retract only net-negative contributors).
     pub prune_threshold: f64,
+    /// When `Some(cfg)`, pattern-discovery actions route through
+    /// `sample_instances_of` instead of exhaustive `find_instances_of`
+    /// — trades completeness for tractability on large graphs.
+    /// ADR 0043. Default `None`.
+    pub instance_sampling: Option<SamplingMatchConfig>,
 }
 
 impl DriveConfig {
@@ -3894,6 +3953,7 @@ impl DriveConfig {
                     discovery: d,
                     refinement: self.refinement_config.clone(),
                     naming: self.naming_policy.clone(),
+                    instance_sampling: self.instance_sampling.clone(),
                 })
             })
             .collect();
@@ -3926,6 +3986,7 @@ impl Default for DriveConfig {
             epsilon: 0.0,
             enable_prune: true,
             prune_threshold: 0.0,
+            instance_sampling: None,
         }
     }
 }
@@ -4018,12 +4079,20 @@ pub struct RefinementConfig {
     pub rng_seed: u64,
 }
 
-/// Configuration for the autonomous abstraction pass. ADR 0018.
+/// Configuration for the autonomous abstraction pass. ADR 0018,
+/// extended by ADR 0043 with `instance_sampling`.
 #[derive(Debug, Clone)]
 pub struct AutonomousConfig {
     pub discovery: DiscoveryConfig,
     pub refinement: RefinementConfig,
     pub naming: NamingPolicy,
+    /// When `Some(cfg)`, `autonomous_pass` uses `sample_instances_of`
+    /// (ADR 0024) to collect instances of a novel canonical, instead
+    /// of the exhaustive `find_instances_of`. This trades complete
+    /// enumeration for tractability on large graphs; may under-report
+    /// instance counts. `None` (default) keeps the exhaustive path.
+    /// ADR 0043.
+    pub instance_sampling: Option<SamplingMatchConfig>,
 }
 
 /// Why a candidate was skipped by the autonomous pass. ADR 0018.
@@ -5553,6 +5622,7 @@ mod tests {
                 rng_seed: 999,
             },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         }
     }
 
@@ -5729,6 +5799,7 @@ mod tests {
                 attach_only: false,
                 min_mdl_gain: 1,
             },
+            instance_sampling: None,
         };
         let outcomes = rs.autonomous_pass(&config);
         let new_count = outcomes
@@ -5815,6 +5886,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
         rs.autonomous_pass(&config);
         let patterns_before: Vec<String> = rs
@@ -5874,6 +5946,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 100, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
         let results = rs.autonomous_sweep(&base, &[]);
         assert!(results.is_empty());
@@ -5892,6 +5965,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 100, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
 
         // Path A: sweep with a single size — seed is offset by the size.
@@ -5923,6 +5997,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
 
         let mut rs = build_mixed_graph();
@@ -5960,6 +6035,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
         let summary = rs.autonomous_and_attach(&config);
         // Autonomous creates several new patterns.
@@ -5991,6 +6067,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
         // Prime the registry with the first autonomous_pass.
         rs.autonomous_pass(&config);
@@ -6029,6 +6106,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
         rs.autonomous_and_attach(&config);
         let size_before = rs.len();
@@ -6211,6 +6289,7 @@ mod tests {
             },
             refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
             naming: NamingPolicy::default(),
+            instance_sampling: None,
         };
         rs.autonomous_pass(&cfg);
 
@@ -7975,5 +8054,103 @@ mod tests {
         let meta = rs.collect_meta_ids();
         assert!(meta.contains(INDEPENDENT_MARKER));
         assert!(meta.contains(&ind));
+    }
+
+    // ADR 0043 — indexed RSet + sampling-path integration.
+
+    #[test]
+    fn adr0043_indices_stay_consistent_with_instances() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"), R::new("a", "c"),
+            R::new("b", "c"), R::new("c", "a"),
+        ]);
+        // left_of("a") should match instances scan manually.
+        let from_index = rs.left_of("a");
+        let from_scan: Vec<&R> = rs
+            .instances
+            .iter()
+            .filter(|r| r.x == "a")
+            .collect();
+        assert_eq!(from_index.len(), from_scan.len());
+        for r in &from_scan {
+            assert!(from_index.contains(r));
+        }
+    }
+
+    #[test]
+    fn adr0043_indices_survive_remove() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("a", "c")]);
+        assert_eq!(rs.left_of("a").len(), 2);
+        rs.remove(&R::new("a", "b"));
+        assert_eq!(rs.left_of("a").len(), 1);
+        rs.remove(&R::new("a", "c"));
+        assert_eq!(rs.left_of("a").len(), 0);
+    }
+
+    #[test]
+    fn adr0043_equality_ignores_indices() {
+        // Two RSets built via different insertion orders still compare
+        // equal — equality is defined by `instances`, not index state.
+        let mut a = RSet::new();
+        a.extend([R::new("x", "y"), R::new("y", "z")]);
+        let mut b = RSet::new();
+        b.extend([R::new("y", "z"), R::new("x", "y")]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn adr0043_clone_carries_indices() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let rs2 = rs.clone();
+        assert_eq!(rs.left_of("a").len(), rs2.left_of("a").len());
+        assert_eq!(rs.right_of("b").len(), rs2.right_of("b").len());
+    }
+
+    #[test]
+    fn adr0043_autonomous_pass_sampling_mode_finds_patterns() {
+        // Same mixed graph; sampling-path should find the same kinds
+        // of patterns (sampling may return fewer instances, but at
+        // least some).
+        let mut rs = RSet::new();
+        rs.extend([R::new("c1", "c2"), R::new("c2", "c3"),
+                   R::new("c3", "c4"), R::new("c4", "c5")]);
+        rs.extend([R::new("s", "sa"), R::new("s", "sb"), R::new("s", "sc")]);
+        let cfg = AutonomousConfig {
+            discovery: DiscoveryConfig {
+                target_size: 2,
+                sample_count: 100,
+                top_m: 5,
+                rng_seed: 2024,
+                include_meta_in_discovery: false,
+            },
+            refinement: RefinementConfig { max_tries: 50, rng_seed: 2024 },
+            naming: NamingPolicy::default(),
+            instance_sampling: Some(SamplingMatchConfig {
+                sample_count: 200,
+                rng_seed: 3,
+            }),
+        };
+        let outcomes = rs.autonomous_pass(&cfg);
+        // With sampling, we expect at least some outcomes; no crashes.
+        assert!(!outcomes.is_empty());
+    }
+
+    #[test]
+    fn adr0043_drive_with_sampling_flag_works() {
+        let mut rs = diamond_poset();
+        let cfg = DriveConfig {
+            pattern_sizes: vec![2],
+            instance_sampling: Some(SamplingMatchConfig {
+                sample_count: 100,
+                rng_seed: 7,
+            }),
+            ..DriveConfig::default()
+        };
+        let trace = rs.intrinsic_drive(&cfg);
+        // Just a smoke test — drive runs without panicking.
+        let _ = trace.final_score;
     }
 }

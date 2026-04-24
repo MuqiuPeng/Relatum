@@ -61,6 +61,7 @@ fn run_one(edge_count: usize, id_count: usize) {
         epsilon: 0.0,
         enable_prune: true,
         prune_threshold: 0.0,
+        instance_sampling: None,
     };
     let mut rs_drive = rs.clone();
     let t0 = Instant::now();
