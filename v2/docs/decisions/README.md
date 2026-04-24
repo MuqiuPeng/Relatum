@@ -76,3 +76,4 @@ Commit hash(es), file pointers.
 - [0034](0034-theory-extension-relations.md) — Theory extension relations (first higher-order meta-R)
 - [0035](0035-counterfactual-value.md) — Counterfactual value / meta-metric (second-order signal)
 - [0036](0036-empty-premise-templates.md) — Empty-premise templates (reflexivity as template)
+- [0037](0037-compositional-subsumption.md) — Compositional subsumption (forward-chaining derivation)

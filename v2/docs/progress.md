@@ -1152,3 +1152,34 @@ correctly surfaces on a half-reflexive graph.
 Tests: 188 → 194 (6 new).
 
 Decision: [0036-empty-premise-templates](decisions/0036-empty-premise-templates.md).
+
+### Compositional subsumption (ADR 0037)
+Task 4 of 1→5. Finally addresses the equivalence-relation "5
+minimal axioms" residue noted since ADR 0030/0028: the four
+transitivity variants are all derivable from {sym, any one variant}
+under composition, but ADR 0028's direct premise-weakening couldn't
+see that.
+
+Added `template_derivable_from(target, sources)` — forward-chaining
+derivability check on fresh nodes. Seeds target's premise, iterates
+sources as closure rules to fixpoint, checks if target's conclusion
+appears. Sound only in strict mode (rate = 1.0 sources).
+
+Added `subsume_by_composition(axioms) -> axioms` — iteratively drop
+axioms derivable from the rest, in descending template-key order
+for determinism.
+
+Added `RSet::discover_axioms_minimal_compositional(config)` — runs
+`discover_axioms_minimal` then applies composition subsumption.
+Strict-mode only; defeasible mode passes through.
+
+Effect on equivalence: 5 → 2 (symmetry + one transitivity-shape
+axiom). Strict poset / total order unchanged (already 1 axiom).
+`discover_axioms_minimal` itself NOT changed — composition is an
+opt-in extra step.
+
+Tests: 194 → 200 (6 new). The "4 transitivity variants are
+compositionally subsumed" gap noted since ADR 0030 is finally
+closed.
+
+Decision: [0037-compositional-subsumption](decisions/0037-compositional-subsumption.md).

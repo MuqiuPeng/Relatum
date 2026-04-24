@@ -1418,6 +1418,26 @@ impl RSet {
         subsume_by_premise_weakening(after_refl)
     }
 
+    /// Like `discover_axioms_minimal`, but also applies
+    /// `subsume_by_composition` — a forward-chaining derivation check
+    /// that drops axioms derivable from the others. ADR 0037.
+    ///
+    /// Goes beyond premise-weakening by detecting that e.g. on an
+    /// equivalence relation, the four "transitivity variants" are all
+    /// derivable from {symmetry, transitivity} and therefore
+    /// redundant. Strict-mode only — composition derivation is not
+    /// sound under defeasible semantics.
+    pub fn discover_axioms_minimal_compositional(
+        &self,
+        config: &AxiomDiscoveryConfig,
+    ) -> Vec<AxiomEvidence> {
+        if config.min_rate < 1.0 {
+            return self.discover_axioms(config);
+        }
+        let minimal = self.discover_axioms_minimal(config);
+        subsume_by_composition(minimal)
+    }
+
     /// Discover the complete theory that holds on this RSet at rate 1.0:
     /// the minimal set of template axioms plus any predicate axioms
     /// (reflexivity, antisymmetry) that currently hold. ADR 0030.
@@ -2995,6 +3015,125 @@ pub fn subsume_by_premise_weakening(
         .into_iter()
         .enumerate()
         .filter_map(|(idx, ev)| if keep[idx] { Some(ev) } else { None })
+        .collect()
+}
+
+/// Is `target` derivable from `sources` by forward chaining? ADR 0037.
+///
+/// Instantiates `target.premise` as seed facts on a fresh RSet over
+/// `max(target.num_vars, sources[*].num_vars)` fresh identifiers
+/// `v0, v1, …`, then iterates every source axiom as a closure rule
+/// until no new facts are added. Finally checks whether the seeded
+/// graph contains `target.conclusion`.
+///
+/// Sound only when the provided sources are all universally valid
+/// (rate = 1.0). Defeasible sources would break the derivation.
+pub fn template_derivable_from(
+    target: &AxiomTemplate,
+    sources: &[AxiomTemplate],
+) -> bool {
+    let mut n = target.num_vars;
+    for s in sources {
+        if s.num_vars > n {
+            n = s.num_vars;
+        }
+    }
+    if n == 0 {
+        return false;
+    }
+    let node_id = |i: usize| format!("v{}", i);
+    let mut rs = RSet::new();
+    for e in &target.premise {
+        rs.add(R::new(node_id(e.x_var), node_id(e.y_var)));
+    }
+    loop {
+        let before = rs.len();
+        for axiom in sources {
+            // Skip exact target — we want derivation via OTHERS.
+            if axiom == target {
+                continue;
+            }
+            let mut binding = vec![0usize; axiom.num_vars];
+            forward_chain_apply(&mut rs, axiom, n, &mut binding, 0);
+        }
+        if rs.len() == before {
+            break;
+        }
+    }
+    let cx = node_id(target.conclusion.x_var);
+    let cy = node_id(target.conclusion.y_var);
+    rs.instances.contains(&R::new(cx, cy))
+}
+
+fn forward_chain_apply(
+    rs: &mut RSet,
+    axiom: &AxiomTemplate,
+    n: usize,
+    binding: &mut [usize],
+    depth: usize,
+) {
+    if depth == binding.len() {
+        for e in &axiom.premise {
+            let x = format!("v{}", binding[e.x_var]);
+            let y = format!("v{}", binding[e.y_var]);
+            if !rs.instances.contains(&R::new(x, y)) {
+                return;
+            }
+        }
+        let cx = format!("v{}", binding[axiom.conclusion.x_var]);
+        let cy = format!("v{}", binding[axiom.conclusion.y_var]);
+        rs.add(R::new(cx, cy));
+        return;
+    }
+    for i in 0..n {
+        binding[depth] = i;
+        forward_chain_apply(rs, axiom, n, binding, depth + 1);
+    }
+}
+
+/// Drop axioms that are derivable from the remaining set via forward
+/// chaining. ADR 0037. Runs to a fixpoint: if dropping B makes C
+/// now undrop-able (because C's derivation relied on B), C remains.
+/// Ordering tie-break by template key to ensure determinism.
+pub fn subsume_by_composition(
+    axioms: Vec<AxiomEvidence>,
+) -> Vec<AxiomEvidence> {
+    let n = axioms.len();
+    if n <= 1 {
+        return axioms;
+    }
+    let mut keep = vec![true; n];
+    loop {
+        let mut changed = false;
+        // Process in a deterministic order: largest template_key first,
+        // so that "bigger" (more complex) axioms get considered for
+        // subsumption before simpler ones.
+        let mut indices: Vec<usize> = (0..n).filter(|i| keep[*i]).collect();
+        indices.sort_by(|a, b| {
+            template_key(&axioms[*b].template)
+                .cmp(&template_key(&axioms[*a].template))
+        });
+        for i in indices {
+            if !keep[i] {
+                continue;
+            }
+            let sources: Vec<AxiomTemplate> = (0..n)
+                .filter(|j| *j != i && keep[*j])
+                .map(|j| axioms[j].template.clone())
+                .collect();
+            if template_derivable_from(&axioms[i].template, &sources) {
+                keep[i] = false;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    axioms
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, ev)| if keep[i] { Some(ev) } else { None })
         .collect()
 }
 
@@ -6965,5 +7104,125 @@ mod tests {
                 .any(|e| e.template == ev.template),
                 "template {:?} disappeared when opting in", ev.template);
         }
+    }
+
+    // ADR 0037 — compositional subsumption via forward chaining.
+
+    #[test]
+    fn adr0037_transitivity_variant_derivable_from_sym_trans() {
+        // On an equivalence relation: variant-B `[R(0,1), R(1,2)] ⇒ R(2,0)`
+        // should be derivable from {symmetry, transitivity}.
+        let sym = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        let trans = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        let variant_b = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 2, y_var: 0 },
+        };
+        assert!(template_derivable_from(&variant_b, &[sym, trans]));
+    }
+
+    #[test]
+    fn adr0037_transitivity_not_derivable_from_symmetry_alone() {
+        let sym = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        let trans = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        assert!(!template_derivable_from(&trans, &[sym]));
+    }
+
+    #[test]
+    fn adr0037_equivalence_minimal_compositional_collapses_to_two() {
+        // ADR 0028 minimal on equivalence returns 5 axioms (sym + 4
+        // transitivity-like). Composition should drop 3 variants,
+        // leaving two: symmetry plus one transitivity-like axiom (which
+        // specific one survives depends on processing order — any
+        // 1 of the 4 variants generates the other 3 under symmetry, so
+        // all 4 are valid minimal-set choices).
+        let rs = equivalence_relation();
+        let five = rs.discover_axioms_minimal(&AxiomDiscoveryConfig::default());
+        let compositional =
+            rs.discover_axioms_minimal_compositional(&AxiomDiscoveryConfig::default());
+        assert_eq!(five.len(), 5);
+        assert_eq!(compositional.len(), 2,
+            "equivalence should compose down to exactly 2 axioms, got {}",
+            compositional.len());
+        // Symmetry always survives.
+        let sym_template = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        assert!(compositional.iter().any(|e| e.template == sym_template),
+            "symmetry should survive");
+        // Exactly one of the 4 transitivity variants survives.
+        let trans_like_count = compositional
+            .iter()
+            .filter(|e| e.template.num_vars == 3 && e.template.premise.len() == 2)
+            .count();
+        assert_eq!(trans_like_count, 1,
+            "exactly one transitivity variant should survive");
+    }
+
+    #[test]
+    fn adr0037_strict_inputs_unchanged_when_no_redundancy() {
+        // Strict partial order minimal = {trans}. No composition applies.
+        let rs = diamond_poset();
+        let minimal = rs.discover_axioms_minimal(&AxiomDiscoveryConfig::default());
+        let compositional =
+            rs.discover_axioms_minimal_compositional(&AxiomDiscoveryConfig::default());
+        assert_eq!(minimal.len(), compositional.len());
+    }
+
+    #[test]
+    fn adr0037_compositional_defeasible_passes_through() {
+        let rs = almost_transitive();
+        let cfg = AxiomDiscoveryConfig {
+            min_rate: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let raw = rs.discover_axioms(&cfg);
+        let comp = rs.discover_axioms_minimal_compositional(&cfg);
+        assert_eq!(raw.len(), comp.len());
+    }
+
+    #[test]
+    fn adr0037_subsume_by_composition_handles_singletons() {
+        let sym = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        let ev = AxiomEvidence {
+            template: sym,
+            premise_bindings: 1,
+            conclusion_satisfied: 1,
+            rate: 1.0,
+        };
+        let out = subsume_by_composition(vec![ev]);
+        assert_eq!(out.len(), 1);
     }
 }
