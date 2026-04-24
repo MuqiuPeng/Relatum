@@ -1,0 +1,148 @@
+Date: 2026-04-24
+Descriptor: theory_discovery (ADR 0030)
+Purpose:
+    Verify that v2 can now do conjunctive concept naming: take the
+    minimal axiom set on a RSet and bundle it as a single named
+    theory object in meta-R. This is the step from "axiom mining"
+    (found in ADR 0027/0028) to "theory-level structure," which the
+    user flagged as the unfinished layer between "fragment rules"
+    and "concept objects."
+
+Mechanism version:
+    ADR 0030 on top of ADR 0027/0028/0029. Theory objects live in
+    meta-R as `R(__theory__, t_N)` + `R(t_N, ax_i)`. Axioms are
+    registered by deterministic ids derived from canonicalized
+    templates or fixed predicate strings.
+
+====================================================================
+THEORY FINGERPRINTS ON THE 8-CASE BATTERY
+====================================================================
+
+Axiom id legend used below:
+  ax_trans    = ax_tpl_v3_p0-1_p1-2_c0-2    (transitivity)
+  ax_sym      = ax_tpl_v2_p0-1_c1-0         (symmetry)
+  ax_trans_v1 = ax_tpl_v3_p0-1_p0-2_c1-2    (transitivity variant)
+  ax_trans_v2 = ax_tpl_v3_p0-1_p1-2_c2-0    (transitivity variant)
+  ax_trans_v3 = ax_tpl_v3_p0-1_p2-1_c0-2    (transitivity variant)
+  ax_refl     = ax_reflexivity
+  ax_anti     = ax_antisymmetry
+
+| Case                      | Theory members                                               | Interpretation                     |
+|---------------------------|---------------------------------------------------------------|------------------------------------|
+| 1. transitive chain       | {ax_trans, ax_anti}                                           | strict partial-order core          |
+| 2. equivalence relation   | {ax_sym, ax_refl, ax_trans, ax_trans_v1, ax_trans_v2, ax_trans_v3} | equivalence                   |
+| 3. strict partial order   | {ax_trans, ax_anti}                                           | same as case 1                     |
+| 4. broken transitive      | {ax_anti}                                                     | only antisymmetry (transitivity violated) |
+| 5. random sparse          | {ax_anti}                                                     | accidentally antisymmetric         |
+| 6. tolerance              | {ax_sym, ax_refl}                                             | reflexive + symmetric, not transitive |
+| 7. total order            | {ax_trans, ax_refl, ax_anti}                                  | poset (is_poset=true)              |
+| 8. complete bipartite     | {ax_anti}                                                     | trivially antisymmetric            |
+
+====================================================================
+OBSERVATIONS
+====================================================================
+
+1. **Identical theories unify.** Cases 1 and 3 produce the same
+   fingerprint `{ax_trans, ax_anti}`. If both RSets were in one
+   context and each called `name_theory`, they'd share the same `t_N`
+   id via the membership-set-equality lookup. The system has
+   arrived at a form of "same theoretical object" judgment that's
+   structural, not label-based.
+
+2. **The equivalence fingerprint contains six axioms.** ADR 0028's
+   subsumption left five template-axioms on the equivalence case
+   (four transitivity variants + symmetry). With reflexivity added
+   as an independent predicate, the theory has six members. Humans
+   would call this "equivalence relation," which is the
+   {reflexivity, symmetry, transitivity} triple; the four
+   transitivity variants are compositional consequences of {sym,
+   trans} that would collapse under a future compositional-
+   subsumption step. For now the theory is faithful to what the
+   system can prove, which is the honest answer.
+
+3. **Cases 4, 5, 8 all reduce to `{ax_anti}`.** These are graphs
+   where no mutual back-edge exists, so antisymmetry holds
+   vacuously at rate 1.0 over existing directed pairs. This is
+   correct per the stated semantics (rate = 1.0 over
+   directed_pairs_checked > 0), but gives no real discriminatory
+   power among these three inputs. Deep structural difference
+   between them lives at the pattern layer (different subgraph
+   shapes, different motifs), which is the β layer's job. ADR 0030
+   only claims theory-level identity.
+
+4. **The strict/total distinction shows up cleanly.** Case 1
+   (strict) = `{ax_trans, ax_anti}`. Case 7 (total, reflexive) =
+   `{ax_trans, ax_refl, ax_anti}`. Case 7 minus case 1 =
+   `{ax_refl}`. That's exactly the formal difference between a
+   strict-closure poset and a reflexive poset.
+
+5. **Minimal fingerprint for broken inputs is correct.** Case 4 has
+   a broken transitivity binding; discover_axioms drops
+   transitivity; discover_theory respects that. Only antisymmetry
+   survives. No false theoretical claim emerges from broken data.
+
+====================================================================
+META-R GROWTH PER CASE
+====================================================================
+
+Each theory write costs:
+  1 × R(__theory__, t_N)
+  + N × R(__axiom__, ax_i)   — only for previously-unregistered axioms
+  + N × R(t_N, ax_i)         — theory membership
+
+For the fresh RSets used here (every axiom is new), total meta-R
+added = 1 + 2N.
+
+  Case 1: 1 + 4 = 5 edges
+  Case 2: 1 + 12 = 13 edges
+  Case 3: 1 + 4 = 5 edges (same shape as case 1; no reuse across cases
+          because each runs on a fresh RSet)
+  Case 4: 1 + 2 = 3 edges
+  Case 5: 1 + 2 = 3 edges
+  Case 6: 1 + 4 = 5 edges
+  Case 7: 1 + 6 = 7 edges
+  Case 8: 1 + 2 = 3 edges
+
+Theory meta-R is small. The per-theory cost is O(N) in the member
+count; axiom registry is O(unique axioms seen across all theories).
+
+====================================================================
+SANITY
+====================================================================
+
+- All 155 tests pass (143 prior + 12 new).
+- Tests cover: axiom id round-trip, theory discovery on equivalence
+  /poset/tolerance, name roundtrip, id reuse, reject-unsatisfied,
+  reject-unparseable, reject-empty, retract preserves axiom
+  registry, theories_containing, meta-id collection.
+- No pattern-layer tests broke; collect_meta_ids now covers
+  axioms/theories so `run_naming_pass` skips them correctly.
+
+====================================================================
+COMMITMENT CHECK
+====================================================================
+
+- Commitment 1 (only R): all writes are R instances. ✓
+- Commitment 2 (R binary): same. ✓
+- Commitment 3 (types are meta-R): theories ARE types (they group
+  axioms as one object) and are fully in meta-R. ✓ Note: axioms
+  themselves are still *name-only* in meta-R here — their intension
+  (premise / conclusion structure) lands in ADR 0031+ (task B).
+- Commitment 4 (token identity): theory and axiom ids use
+  reserved-prefix naming; no external-semantic label injected.
+  Crucially, axiom ids are DERIVED from template canonical form,
+  not named by a human, so "ax_reflexivity" is the ONE exception
+  (a predicate name) and the rest are structure-derived. ✓
+- Commitment 5 (structural similarity): theories are equal iff
+  their member axiom sets are equal (checked as HashSet equality).
+  No external similarity metric; pure structural. ✓
+
+====================================================================
+NEXT (per the approved order A → C → B → D)
+====================================================================
+
+A (this ADR) is complete. Next: C (intrinsic-drive / self-triggering).
+The theory-object mechanism is a precondition because the drive will
+likely want to check "did I learn something new this pass?" — which
+becomes easy once theory fingerprints exist (compare theory member
+sets pre/post).

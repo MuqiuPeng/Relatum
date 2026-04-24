@@ -933,3 +933,47 @@ legacy fallback, retraction, meta-id collection).
 
 Decision: [0029-intension-extension-split](decisions/0029-intension-extension-split.md).
 Log: [logs/2026-04-24_intension_extension.log](../logs/2026-04-24_intension_extension.log).
+
+### Theory objects: conjunctive concept naming (ADR 0030)
+The four-phase plan (A → C → B → D) starts here. User's A: bundle
+multiple axioms into a single named theory object in meta-R, so the
+system can hold "this is an equivalence-shaped relation" as one
+entity rather than as a list of fragments.
+
+Added reserved markers `__axiom__` and `__theory__`, stable
+predicate ids `ax_reflexivity` and `ax_antisymmetry`, deterministic
+template-axiom ids via `axiom_template_id` / `axiom_id_to_template`.
+New API:
+- `discover_theory(config) -> Theory` — runs
+  `discover_axioms_minimal` + reflexivity/antisymmetry predicates,
+  packages everything as a Theory struct
+- `name_theory(&[axiom_ids]) -> Result<String, TheoryError>` —
+  verifies every member still holds on the current RSet, writes
+  `R(__theory__, t_N)` + `R(t_N, ax_i)` membership, reuses existing
+  theory id when member set matches
+- `retract_theory`, `theories`, `theory_axioms`,
+  `theories_containing`, `axioms`, `is_axiom`, `is_theory`
+- `collect_meta_ids` extended to include axiom/theory markers + ids
+
+Theory fingerprints on the 8-case rigorous battery:
+- transitive chain: {trans, antisym}
+- equivalence: {sym, refl, trans, 3 trans-variants} (6 members)
+- strict partial order: {trans, antisym} — same fingerprint as chain
+- broken transitive: {antisym} — transitivity correctly absent
+- random sparse: {antisym} — vacuously antisymmetric
+- tolerance: {sym, refl} — transitivity correctly absent
+- total order: {trans, refl, antisym} — poset fingerprint
+- bipartite: {antisym} — vacuously antisymmetric
+
+Identical theories reuse the same `t_N` via member-set equality
+(structural identity, not label-based). Axiom intension (premise /
+conclusion structure of the axiom itself as meta-R) is deferred to
+B. Concept library injection rejected as off-philosophy (commitment
+5: no external labels).
+
+Tests: 143 → 155 (12 new). Commitment 3 extends one more step —
+theories' *membership* is now materialized in meta-R, though
+individual axioms are still name-only until B.
+
+Decision: [0030-theory-objects](decisions/0030-theory-objects.md).
+Log: [logs/2026-04-24_theory_discovery.log](../logs/2026-04-24_theory_discovery.log).

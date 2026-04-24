@@ -118,6 +118,19 @@ still work via the old first-instance recovery fallback.
 Constitution gained a clarifying footnote: commitment 3 is about the
 type's *intension*, extension is instrumentation policy.
 
+ADR 0030 added **theory objects** (conjunctive concept naming) as
+the jump from individual axioms to theory-level structure. Each
+axiom carries a deterministic id — template-based axioms serialize
+from their canonical form, predicate axioms use fixed strings
+(`ax_reflexivity`, `ax_antisymmetry`). `discover_theory` returns
+the minimal axiom bundle that holds on the RSet; `name_theory`
+verifies membership and writes `R(__theory__, t_N)` +
+`R(t_N, ax_i)` membership edges, reusing existing ids when the
+member set matches. Fingerprints on the 8-case battery separate
+strict partial order from total order from equivalence from
+tolerance cleanly, by structural identity alone. Axiom intension
+itself stays name-only until ADR 0031 / task B.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,
