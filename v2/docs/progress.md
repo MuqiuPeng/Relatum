@@ -1441,3 +1441,25 @@ drops every axiom as accidental. On diamond poset:
 Tests: 265 → 270 (5 new).
 
 Decision: [0048-confidence-filters](decisions/0048-confidence-filters.md).
+
+### Theory relation classifier + neighborhood (ADR 0049)
+Task 3 of 1'''→5'''. Meta-view over ADRs 0034/0042/0046. One call
+gives the relation kind for any pair of named theories; another
+groups every other theory by its relation to a given one.
+
+`TheoryRelationKind` enum has 5 values: Equal, Extends, ExtendedBy,
+Independent, Parallel. Every distinct pair of named theories falls
+into exactly one.
+
+`classify_theory_pair(a, b)` — HashSet-compare member sets, return
+the kind in O(|axioms|). Returns None if either id isn't a theory.
+
+`theory_neighborhood(t) -> TheoryNeighborhood` — for every other
+named theory, classify and group. Returns sorted lists per kind.
+
+Read-only. Callers who want to persist a relation still use the
+specific `name_theory_*` functions.
+
+Tests: 270 → 276 (6 new).
+
+Decision: [0049-theory-relation-classifier](decisions/0049-theory-relation-classifier.md).

@@ -80,6 +80,32 @@ pub const PREMISE_MARKER: &str = "__premise__";
 /// premise marker.
 pub const CONCLUSION_MARKER: &str = "__conclusion__";
 
+/// ADR 0049: the structural relation between two named theories
+/// given their member-axiom sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheoryRelationKind {
+    /// Same member set.
+    Equal,
+    /// `a`'s members strictly contain `b`'s.
+    Extends,
+    /// `b`'s members strictly contain `a`'s.
+    ExtendedBy,
+    /// Empty intersection.
+    Independent,
+    /// Non-empty intersection, neither is a subset of the other.
+    Parallel,
+}
+
+/// ADR 0049: summary of a theory's neighbors, grouped by relation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TheoryNeighborhood {
+    pub equal: Vec<String>,
+    pub extends: Vec<String>,
+    pub extended_by: Vec<String>,
+    pub independent: Vec<String>,
+    pub parallel: Vec<String>,
+}
+
 /// Errors returned by `RSet::to_text` and `RSet::from_text`. ADR 0038.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PersistenceError {
@@ -2652,6 +2678,87 @@ impl RSet {
             }
             n += 1;
         }
+    }
+
+    // ─── ADR 0049: theory relation classifier + neighborhood ────────
+
+    /// Classify the structural relation between two named theories.
+    /// ADR 0049. The five cases partition every pair of distinct
+    /// theories with named members:
+    ///
+    /// - `Equal`: same member set (but distinct ids — should be rare,
+    ///   since `name_theory` reuses id on match; left in the enum for
+    ///   completeness).
+    /// - `Extends`: `a`'s members ⊋ `b`'s members.
+    /// - `ExtendedBy`: `b`'s members ⊋ `a`'s members.
+    /// - `Independent`: empty intersection.
+    /// - `Parallel`: non-empty intersection, neither is subset.
+    ///
+    /// Returns `None` if either id is not a named theory.
+    pub fn classify_theory_pair(
+        &self,
+        a: &str,
+        b: &str,
+    ) -> Option<TheoryRelationKind> {
+        if !self.is_theory(a) || !self.is_theory(b) {
+            return None;
+        }
+        if a == b {
+            return Some(TheoryRelationKind::Equal);
+        }
+        let am: HashSet<String> = self
+            .theory_axioms(a)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let bm: HashSet<String> = self
+            .theory_axioms(b)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if am == bm {
+            return Some(TheoryRelationKind::Equal);
+        }
+        if am.is_disjoint(&bm) {
+            return Some(TheoryRelationKind::Independent);
+        }
+        let a_super = bm.is_subset(&am);
+        let b_super = am.is_subset(&bm);
+        if a_super && !b_super {
+            return Some(TheoryRelationKind::Extends);
+        }
+        if b_super && !a_super {
+            return Some(TheoryRelationKind::ExtendedBy);
+        }
+        Some(TheoryRelationKind::Parallel)
+    }
+
+    /// Summarize the structural neighborhood of a theory. ADR 0049.
+    /// Groups every other named theory by their relation to `theory`.
+    pub fn theory_neighborhood(&self, theory: &str) -> Option<TheoryNeighborhood> {
+        if !self.is_theory(theory) {
+            return None;
+        }
+        let mut out = TheoryNeighborhood::default();
+        for other in self.theories() {
+            if other == theory {
+                continue;
+            }
+            match self.classify_theory_pair(theory, other) {
+                Some(TheoryRelationKind::Equal) => out.equal.push(other.to_string()),
+                Some(TheoryRelationKind::Extends) => out.extends.push(other.to_string()),
+                Some(TheoryRelationKind::ExtendedBy) => out.extended_by.push(other.to_string()),
+                Some(TheoryRelationKind::Independent) => out.independent.push(other.to_string()),
+                Some(TheoryRelationKind::Parallel) => out.parallel.push(other.to_string()),
+                None => {}
+            }
+        }
+        out.equal.sort();
+        out.extends.sort();
+        out.extended_by.sort();
+        out.independent.sort();
+        out.parallel.sort();
+        Some(out)
     }
 
     /// Retract an extension-relation edge. ADR 0034 / 0035.
@@ -9293,5 +9400,85 @@ mod tests {
         // At least one axiom should survive — specifically one with
         // enough support to breach 0.9.
         assert!(!axioms.is_empty());
+    }
+
+    // ADR 0049 — theory relation classifier + neighborhood.
+
+    #[test]
+    fn adr0049_classify_extends() {
+        let mut rs = diamond_poset();
+        let t_big = rs
+            .name_theory(&[AX_REFLEXIVITY, AX_ANTISYMMETRY,
+                           "ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        let t_small = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        assert_eq!(
+            rs.classify_theory_pair(&t_big, &t_small),
+            Some(TheoryRelationKind::Extends)
+        );
+        assert_eq!(
+            rs.classify_theory_pair(&t_small, &t_big),
+            Some(TheoryRelationKind::ExtendedBy)
+        );
+    }
+
+    #[test]
+    fn adr0049_classify_independent() {
+        let mut rs = diamond_poset();
+        let t_a = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let t_b = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        assert_eq!(
+            rs.classify_theory_pair(&t_a, &t_b),
+            Some(TheoryRelationKind::Independent)
+        );
+    }
+
+    #[test]
+    fn adr0049_classify_parallel() {
+        let mut rs = diamond_poset();
+        let t_a = rs.name_theory(&[AX_REFLEXIVITY, AX_ANTISYMMETRY]).unwrap();
+        let t_b = rs
+            .name_theory(&[AX_ANTISYMMETRY, "ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        assert_eq!(
+            rs.classify_theory_pair(&t_a, &t_b),
+            Some(TheoryRelationKind::Parallel)
+        );
+    }
+
+    #[test]
+    fn adr0049_classify_equal_on_same_theory_id() {
+        let mut rs = diamond_poset();
+        let t = name_theory_from_rset(&mut rs);
+        assert_eq!(
+            rs.classify_theory_pair(&t, &t),
+            Some(TheoryRelationKind::Equal)
+        );
+    }
+
+    #[test]
+    fn adr0049_classify_returns_none_for_non_theory() {
+        let rs = diamond_poset();
+        assert!(rs.classify_theory_pair("a", "b").is_none());
+    }
+
+    #[test]
+    fn adr0049_neighborhood_partitions_pairs() {
+        let mut rs = diamond_poset();
+        let t_self = rs.name_theory(&[AX_REFLEXIVITY, AX_ANTISYMMETRY]).unwrap();
+        let t_small = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let t_disjoint = rs
+            .name_theory(&["ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        let t_parallel = rs
+            .name_theory(&[AX_ANTISYMMETRY, "ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        let neigh = rs.theory_neighborhood(&t_self).unwrap();
+        // t_small is extended by t_self → appears in 'extends' list.
+        assert!(neigh.extends.contains(&t_small));
+        // t_disjoint is independent.
+        assert!(neigh.independent.contains(&t_disjoint));
+        // t_parallel shares antisym.
+        assert!(neigh.parallel.contains(&t_parallel));
     }
 }

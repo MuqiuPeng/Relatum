@@ -88,3 +88,4 @@ Commit hash(es), file pointers.
 - [0046](0046-theory-parallel.md) — Theory parallel relations
 - [0047](0047-extended-axiom-ids.md) — Extended axiom id codec (equality + disjunctive)
 - [0048](0048-confidence-filters.md) — Confidence thresholds in AxiomDiscoveryConfig
+- [0049](0049-theory-relation-classifier.md) — Theory relation classifier + neighborhood
