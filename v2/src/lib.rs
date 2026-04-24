@@ -2874,11 +2874,29 @@ impl RSet {
         } else {
             conclusion_satisfied as f64 / premise_bindings as f64
         };
+        let (posterior_lower_95, posterior_upper_95) =
+            wilson_score_95(conclusion_satisfied, premise_bindings);
+        let ids_n = ids.len();
+        let data_edge_count = self
+            .instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .count();
+        let p_edge = if ids_n == 0 {
+            0.0
+        } else {
+            data_edge_count as f64 / (ids_n as f64 * ids_n as f64)
+        };
+        let null_baseline_prob =
+            null_baseline_probability(premise_bindings, conclusion_satisfied, p_edge);
         AxiomEvidence {
             template: template.clone(),
             premise_bindings,
             conclusion_satisfied,
             rate,
+            posterior_lower_95,
+            posterior_upper_95,
+            null_baseline_prob,
         }
     }
 
@@ -3744,6 +3762,60 @@ pub fn subsume_by_composition(
         .collect()
 }
 
+/// Wilson score 95% confidence interval on the binomial proportion
+/// `s / n`. Returns `(lower, upper)`. ADR 0045.
+///
+/// Wilson score is an interval-estimator that's better than the
+/// normal approximation for small `n` and extreme `s / n`. Formula
+/// with `z = 1.96`:
+///
+/// ```text
+/// p_hat = s / n
+/// denom = 1 + z² / n
+/// center = (p_hat + z² / (2n)) / denom
+/// halfwidth = z × sqrt(p_hat(1 − p_hat)/n + z²/(4n²)) / denom
+/// ```
+pub fn wilson_score_95(successes: usize, n: usize) -> (f64, f64) {
+    if n == 0 {
+        return (0.0, 1.0);
+    }
+    let z = 1.96_f64;
+    let z2 = z * z;
+    let n_f = n as f64;
+    let p_hat = successes as f64 / n_f;
+    let denom = 1.0 + z2 / n_f;
+    let center = (p_hat + z2 / (2.0 * n_f)) / denom;
+    let halfwidth =
+        (z * (p_hat * (1.0 - p_hat) / n_f + z2 / (4.0 * n_f * n_f)).sqrt()) / denom;
+    (
+        (center - halfwidth).max(0.0),
+        (center + halfwidth).min(1.0),
+    )
+}
+
+/// Null-baseline probability of a template's result under iid
+/// Bernoulli edges with density `p` = data_edges / |ids|².
+/// ADR 0045. If premise holds on N bindings and conclusion
+/// satisfied on all N, returns `p_conclusion^N` — the chance
+/// of this observation under random edges. A small value = the
+/// observed rate is surprising and less likely to be accidental.
+pub fn null_baseline_probability(
+    bindings: usize,
+    satisfied: usize,
+    p_edge: f64,
+) -> f64 {
+    if p_edge <= 0.0 || bindings == 0 {
+        return 1.0;
+    }
+    if p_edge >= 1.0 {
+        return 1.0;
+    }
+    if satisfied < bindings {
+        return 1.0; // not a rate-1.0 claim; no significance discount
+    }
+    p_edge.powi(bindings as i32)
+}
+
 /// Does template A subsume template B? See `subsume_by_premise_weakening`.
 fn template_subsumes(a: &AxiomTemplate, b: &AxiomTemplate) -> bool {
     let b_premise_set: HashSet<(usize, usize)> =
@@ -4034,13 +4106,27 @@ impl ExtendedAxiomEvidence {
 }
 
 /// Axiom discovery: evidence for one template against an RSet.
-/// ADR 0027.
+/// ADR 0027. Extended by ADR 0045 with Bayesian posterior (Wilson
+/// score) fields and `null_baseline_prob` for significance filtering.
 #[derive(Debug, Clone)]
 pub struct AxiomEvidence {
     pub template: AxiomTemplate,
     pub premise_bindings: usize,
     pub conclusion_satisfied: usize,
     pub rate: f64,
+    /// Lower bound of the 95% Wilson score confidence interval on the
+    /// posterior rate. For support N and successes s, this is an
+    /// interval-estimate of the "true" rate that corrects the raw
+    /// `s/N` estimator for small N. ADR 0045.
+    pub posterior_lower_95: f64,
+    /// Upper bound of the 95% Wilson score confidence interval.
+    pub posterior_upper_95: f64,
+    /// Null-baseline probability: if edges were iid Bernoulli with
+    /// p = |data edges| / |ids|², the chance of seeing this template
+    /// hold on all N premise bindings by accident. A small value
+    /// (e.g. < 0.01) indicates the axiom is statistically surprising
+    /// relative to a random-edge null hypothesis. ADR 0045.
+    pub null_baseline_prob: f64,
 }
 
 /// Configuration for axiom discovery. ADR 0027, extended by ADR
@@ -6759,6 +6845,9 @@ mod tests {
             premise_bindings: 10,
             conclusion_satisfied: 10,
             rate: 1.0,
+            posterior_lower_95: 0.0,
+            posterior_upper_95: 1.0,
+            null_baseline_prob: 1.0,
         };
         let b = AxiomEvidence {
             template: AxiomTemplate {
@@ -6772,6 +6861,9 @@ mod tests {
             premise_bindings: 10,
             conclusion_satisfied: 10,
             rate: 1.0,
+            posterior_lower_95: 0.0,
+            posterior_upper_95: 1.0,
+            null_baseline_prob: 1.0,
         };
         let out = subsume_by_premise_weakening(vec![a.clone(), b]);
         assert_eq!(out.len(), 1);
@@ -7934,6 +8026,9 @@ mod tests {
             premise_bindings: 1,
             conclusion_satisfied: 1,
             rate: 1.0,
+            posterior_lower_95: 0.0,
+            posterior_upper_95: 1.0,
+            null_baseline_prob: 1.0,
         };
         let out = subsume_by_composition(vec![ev]);
         assert_eq!(out.len(), 1);
@@ -8477,5 +8572,104 @@ mod tests {
         let loose_ev = rs.discover_extended_axioms(&loose);
         let strict_ev = rs.discover_extended_axioms(&strict);
         assert!(loose_ev.len() >= strict_ev.len());
+    }
+
+    // ADR 0045 — axiom confidence (Wilson score + null-baseline).
+
+    #[test]
+    fn adr0045_wilson_score_edge_cases() {
+        // n=0 → (0, 1) (no information)
+        let (lo, hi) = wilson_score_95(0, 0);
+        assert_eq!(lo, 0.0);
+        assert_eq!(hi, 1.0);
+        // n=1, s=1 → high lower? Actually small n means wide CI.
+        let (lo1, hi1) = wilson_score_95(1, 1);
+        assert!(lo1 < 0.5, "n=1 CI should be wide, got lower {}", lo1);
+        assert!(hi1 > 0.9);
+        // n=100, s=100 → tight CI near 1.0
+        let (lo2, _) = wilson_score_95(100, 100);
+        assert!(lo2 > 0.95,
+            "n=100 s=100 should give tight CI lower > 0.95, got {}", lo2);
+        // n=100, s=50 → CI around 0.5
+        let (lo3, hi3) = wilson_score_95(50, 100);
+        assert!(lo3 > 0.4 && lo3 < 0.5);
+        assert!(hi3 > 0.5 && hi3 < 0.6);
+    }
+
+    #[test]
+    fn adr0045_null_baseline_extreme_cases() {
+        // p = 0 → no edges → null prob 1 (impossible to observe anything)
+        assert_eq!(null_baseline_probability(10, 10, 0.0), 1.0);
+        // p = 1 → all edges → anything holds trivially → null prob 1
+        assert_eq!(null_baseline_probability(10, 10, 1.0), 1.0);
+        // N = 0 → nothing observed → null prob 1 (no info)
+        assert_eq!(null_baseline_probability(0, 0, 0.5), 1.0);
+        // not satisfied-all (satisfied < bindings) → no claim to discount
+        assert_eq!(null_baseline_probability(10, 5, 0.5), 1.0);
+    }
+
+    #[test]
+    fn adr0045_null_baseline_small_with_dense_input() {
+        // 20 bindings, all satisfied, p = 0.5 → 0.5^20 ≈ 9.5e-7
+        let p = null_baseline_probability(20, 20, 0.5);
+        assert!(p > 0.0 && p < 1e-5);
+    }
+
+    #[test]
+    fn adr0045_evidence_carries_posterior_fields() {
+        let rs = diamond_poset();
+        let axioms = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        assert!(!axioms.is_empty());
+        for ev in &axioms {
+            // All rate=1.0 axioms have CI lower ≤ 1.0, upper = 1.0.
+            assert!(ev.posterior_lower_95 >= 0.0);
+            assert!(ev.posterior_upper_95 <= 1.0);
+            assert!(ev.posterior_lower_95 <= ev.posterior_upper_95);
+            // null baseline is in [0, 1].
+            assert!(ev.null_baseline_prob >= 0.0);
+            assert!(ev.null_baseline_prob <= 1.0);
+        }
+    }
+
+    #[test]
+    fn adr0045_dense_random_graph_has_high_null_baseline() {
+        // Build a dense random graph; accidental axioms at rate 1.0
+        // should show high null-baseline probability.
+        let mut rs = RSet::new();
+        let nodes: Vec<&str> = vec!["a", "b", "c", "d"];
+        // Complete graph: all pairs.
+        for a in &nodes {
+            for b in &nodes {
+                rs.add(R::new(*a, *b));
+            }
+        }
+        // Everything holds at rate 1.0. And null baseline should be
+        // close to 1.0 because p=1.0.
+        let axioms = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        for ev in &axioms {
+            // With p_edge = 16/16 = 1.0, null_baseline_prob = 1.0
+            assert!((ev.null_baseline_prob - 1.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn adr0045_small_support_gives_wide_ci() {
+        // Custom synthetic axiom with small support.
+        let ev = AxiomEvidence {
+            template: AxiomTemplate {
+                num_vars: 2,
+                premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+                conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+            },
+            premise_bindings: 2,
+            conclusion_satisfied: 2,
+            rate: 1.0,
+            posterior_lower_95: 0.0,
+            posterior_upper_95: 1.0,
+            null_baseline_prob: 1.0,
+        };
+        let (lo, _) = wilson_score_95(ev.conclusion_satisfied, ev.premise_bindings);
+        // CI lower at N=2 should be well below rate=1
+        assert!(lo < 0.5);
     }
 }

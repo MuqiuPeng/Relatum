@@ -1345,3 +1345,30 @@ as deferrals.
 Tests: 236 → 243 (7 new).
 
 Decision: [0044-extended-template-language](decisions/0044-extended-template-language.md).
+
+### Axiom confidence: Wilson score + null-baseline (ADR 0045)
+Tasks 3+4 of 1''→5'' (combined). Closes the "how confident should
+I be" gap noted since ADR 0041's scale benchmark. Every AxiomEvidence
+now carries:
+- `posterior_lower_95` / `posterior_upper_95`: Wilson score 95%
+  CI on the binomial proportion `s/n`. Corrects `rate` for small
+  N (diamond poset's N=2 transitivity: CI lower < 0.5 despite
+  rate 1.0).
+- `null_baseline_prob`: `p_edge^N` under iid Bernoulli null;
+  small = statistically surprising.
+
+Fields populate in `evaluate_axiom_template`; no default filter
+applied. Callers opt into strict acceptance via
+`ev.posterior_lower_95 > 0.8` or `ev.null_baseline_prob < 0.01`.
+
+Dense random graphs (ADR 0041's 400-edge case) now report
+null_baseline_prob ≈ 1.0 on all axioms — a filter threshold of
+0.01 would drop the accidental 31.
+
+Three AxiomEvidence struct-literal test sites patched with the
+new fields (non-breaking at contract level, breaking at literal
+level).
+
+Tests: 243 → 249 (6 new).
+
+Decision: [0045-axiom-confidence](decisions/0045-axiom-confidence.md).
