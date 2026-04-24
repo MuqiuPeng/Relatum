@@ -1483,3 +1483,24 @@ existing knob.
 
 Decision: [0050-sampling-scale-benchmark](decisions/0050-sampling-scale-benchmark.md).
 Log: [logs/2026-04-24_sampling_scale_benchmark.log](../logs/2026-04-24_sampling_scale_benchmark.log).
+
+### Adaptive drive config (ADR 0051)
+Task 5 of 1'''→5''', final in this round. Makes DriveConfig
+RSet-aware.
+
+`RSet::adaptive_drive_config(base) -> DriveConfig` reads the RSet's
+data-edge count and tunes:
+- drops pattern_sizes that don't fit (`k > data_edges`)
+- scales `discovery_config.sample_count` to `(edges*2).clamp(50, 1000)`
+- enables `instance_sampling` when `edges > 300` (if caller left it None)
+- preserves every explicit caller choice (naming_policy,
+  axiom_config, explicit instance_sampling, etc.)
+
+First v2 mechanism where the system **picks its own performance
+parameters** based on inspecting itself. Not full autonomy (still
+triggered externally) but removes the manual scale-tuning step at
+the pipeline's widest lever.
+
+Tests: 276 → 282 (6 new).
+
+Decision: [0051-adaptive-drive-config](decisions/0051-adaptive-drive-config.md).

@@ -90,3 +90,4 @@ Commit hash(es), file pointers.
 - [0048](0048-confidence-filters.md) — Confidence thresholds in AxiomDiscoveryConfig
 - [0049](0049-theory-relation-classifier.md) — Theory relation classifier + neighborhood
 - [0050](0050-sampling-scale-benchmark.md) — Large-scale sampling-mode benchmark
+- [0051](0051-adaptive-drive-config.md) — Adaptive drive config (RSet-aware auto-tuning)

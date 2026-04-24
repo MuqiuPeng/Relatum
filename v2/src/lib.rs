@@ -1368,6 +1368,45 @@ impl RSet {
         }
     }
 
+    /// Produce a config auto-tuned to this RSet's scale and density.
+    /// ADR 0051.
+    ///
+    /// Reads the number of data edges and identifiers and adjusts
+    /// `pattern_sizes`, `sample_count`, and `instance_sampling` so
+    /// that the drive is likely to finish in bounded time. Honors
+    /// every caller-specified field except the ones it adapts.
+    ///
+    /// Rules (all applied to a clone of `base`; original untouched):
+    /// - If data_edges > 300: enable `instance_sampling` with
+    ///   sample_count proportional to edges.
+    /// - If data_edges < pattern_size: drop that size from
+    ///   `pattern_sizes` (can't discover k-edge patterns with < k
+    ///   data edges).
+    /// - `discovery_config.sample_count` scaled by edge count (more
+    ///   edges → explore more candidates, capped at 1000).
+    pub fn adaptive_drive_config(&self, base: DriveConfig) -> DriveConfig {
+        let meta = self.collect_meta_ids();
+        let data_edges = self
+            .instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .count();
+        let mut cfg = base;
+        // Drop pattern sizes that can't fit.
+        cfg.pattern_sizes.retain(|&k| data_edges >= k);
+        // Scale discovery sample_count with edge count.
+        cfg.discovery_config.sample_count = (data_edges * 2).clamp(50, 1000);
+        // Enable instance_sampling when the graph is large enough
+        // that exhaustive enumeration starts biting.
+        if data_edges > 300 && cfg.instance_sampling.is_none() {
+            cfg.instance_sampling = Some(SamplingMatchConfig {
+                sample_count: (data_edges * 2).clamp(100, 2000),
+                rng_seed: cfg.discovery_config.rng_seed,
+            });
+        }
+        cfg
+    }
+
     /// Iterate `drive_step` until no action is worthwhile or until
     /// `config.max_steps` is reached. Returns the ordered trace of
     /// applied steps. ADR 0031.
@@ -9480,5 +9519,103 @@ mod tests {
         assert!(neigh.independent.contains(&t_disjoint));
         // t_parallel shares antisym.
         assert!(neigh.parallel.contains(&t_parallel));
+    }
+
+    // ADR 0051 — adaptive drive config.
+
+    #[test]
+    fn adr0051_small_rset_no_sampling() {
+        // Small RSet → sampling should remain None.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let base = DriveConfig::default();
+        let tuned = rs.adaptive_drive_config(base);
+        assert!(tuned.instance_sampling.is_none());
+    }
+
+    #[test]
+    fn adr0051_large_rset_enables_sampling() {
+        // Build a graph with > 300 edges.
+        let mut rs = RSet::new();
+        let mut state: u64 = 12345;
+        while rs.len() < 500 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let a = (state as usize) % 30;
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let b = (state as usize) % 30;
+            rs.add(R::new(format!("n{}", a), format!("n{}", b)));
+        }
+        let base = DriveConfig::default();
+        let tuned = rs.adaptive_drive_config(base);
+        assert!(tuned.instance_sampling.is_some());
+    }
+
+    #[test]
+    fn adr0051_drops_pattern_sizes_that_dont_fit() {
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        // Only 1 data edge; sizes 2, 3, 4 should all be dropped.
+        let base = DriveConfig {
+            pattern_sizes: vec![2, 3, 4],
+            ..DriveConfig::default()
+        };
+        let tuned = rs.adaptive_drive_config(base);
+        assert!(tuned.pattern_sizes.is_empty());
+    }
+
+    #[test]
+    fn adr0051_scales_sample_count() {
+        let mut rs = RSet::new();
+        for i in 0..100 {
+            rs.add(R::new(format!("a{}", i), format!("b{}", i)));
+        }
+        let base = DriveConfig {
+            discovery_config: DiscoveryConfig {
+                target_size: 2,
+                sample_count: 50,
+                top_m: 5,
+                rng_seed: 0,
+                include_meta_in_discovery: false,
+            },
+            ..DriveConfig::default()
+        };
+        let tuned = rs.adaptive_drive_config(base);
+        // 100 edges × 2 = 200, clamped to [50, 1000] → 200.
+        assert_eq!(tuned.discovery_config.sample_count, 200);
+    }
+
+    #[test]
+    fn adr0051_respects_explicit_sampling_config() {
+        // If caller already set instance_sampling, don't override it.
+        let mut rs = RSet::new();
+        for i in 0..500 {
+            rs.add(R::new(format!("a{}", i), format!("b{}", i)));
+        }
+        let custom_smpl = SamplingMatchConfig {
+            sample_count: 42,
+            rng_seed: 99,
+        };
+        let base = DriveConfig {
+            instance_sampling: Some(custom_smpl.clone()),
+            ..DriveConfig::default()
+        };
+        let tuned = rs.adaptive_drive_config(base);
+        assert_eq!(tuned.instance_sampling, Some(custom_smpl));
+    }
+
+    #[test]
+    fn adr0051_clamps_extreme_sample_counts() {
+        let mut rs = RSet::new();
+        for i in 0..2000 {
+            rs.add(R::new(format!("a{}", i), format!("b{}", i)));
+        }
+        let base = DriveConfig::default();
+        let tuned = rs.adaptive_drive_config(base);
+        // 2000 × 2 = 4000, should clamp to 1000.
+        assert_eq!(tuned.discovery_config.sample_count, 1000);
     }
 }
