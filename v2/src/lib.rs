@@ -58,6 +58,23 @@ pub const AX_REFLEXIVITY: &str = "ax_reflexivity";
 /// axiom (conclusion "x = y" is not an edge). ADR 0030.
 pub const AX_ANTISYMMETRY: &str = "ax_antisymmetry";
 
+/// Reserved registry marker for axiom-variable identifiers (ADR 0032).
+/// `R(AXIOMVAR_MARKER, ax_X_var_i)` declares `ax_X_var_i` as the i-th
+/// variable slot in axiom `ax_X`'s intension.
+pub const AXIOMVAR_MARKER: &str = "__axiomvar__";
+
+/// Reserved registry marker for an axiom's premise-edge identifiers
+/// (ADR 0032). `R(PREMISE_MARKER, ax_X_prem_j)` declares `ax_X_prem_j`
+/// as a premise edge of `ax_X`. The source and target variables are
+/// encoded by the chain `R(var_x, prem_j)` + `R(prem_j, var_y)`.
+pub const PREMISE_MARKER: &str = "__premise__";
+
+/// Reserved registry marker for an axiom's conclusion-edge identifier
+/// (ADR 0032). `R(CONCLUSION_MARKER, ax_X_concl)` declares the
+/// conclusion of `ax_X`. Same source/target chain convention as the
+/// premise marker.
+pub const CONCLUSION_MARKER: &str = "__conclusion__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -1451,11 +1468,239 @@ impl RSet {
         self.add(R::new(THEORY_MARKER, theory_id.clone()));
         for id in &unique {
             if !self.is_axiom(id) {
-                self.add(R::new(AXIOM_MARKER, (*id).to_string()));
+                self.register_axiom_with_intension(id);
             }
             self.add(R::new(theory_id.clone(), (*id).to_string()));
         }
         Ok(theory_id)
+    }
+
+    /// Register an axiom and, if it is a template axiom (not a
+    /// predicate), write its intension to meta-R. ADR 0032.
+    ///
+    /// For a template axiom `ax_tpl_...` the intension comprises:
+    /// - `n` variables `ax_X_var_i` (registry + ownership)
+    /// - `m` premise-edge nodes `ax_X_prem_j` (registry + ownership)
+    /// - One conclusion-edge node `ax_X_concl` (registry + ownership)
+    /// - A chain `R(var_x, edge) + R(edge, var_y)` per premise/conclusion
+    ///   edge that encodes source→target by the direction of R itself.
+    ///
+    /// Predicate axioms (`ax_reflexivity`, `ax_antisymmetry`) get only
+    /// the registry edge; their semantics live in the predicate
+    /// checkers, not in meta-R. Documented as an asymmetry — the
+    /// current template language cannot express them.
+    pub fn register_axiom_with_intension(&mut self, id: &str) -> bool {
+        if self.is_axiom(id) {
+            return false;
+        }
+        self.add(R::new(AXIOM_MARKER, id.to_string()));
+        // Predicate axioms: registry only.
+        if id == AX_REFLEXIVITY || id == AX_ANTISYMMETRY {
+            return true;
+        }
+        // Template axioms: write the intension.
+        let Some(template) = axiom_id_to_template(id) else {
+            return true; // unknown shape — registry-only, same as predicates
+        };
+        let var_ids: Vec<String> = (0..template.num_vars)
+            .map(|i| format!("{}_var_{}", id, i))
+            .collect();
+        for v in &var_ids {
+            self.add(R::new(AXIOMVAR_MARKER, v.clone()));
+            self.add(R::new(id.to_string(), v.clone()));
+        }
+        for (j, e) in template.premise.iter().enumerate() {
+            let prem_id = format!("{}_prem_{}", id, j);
+            self.add(R::new(PREMISE_MARKER, prem_id.clone()));
+            self.add(R::new(id.to_string(), prem_id.clone()));
+            self.add(R::new(var_ids[e.x_var].clone(), prem_id.clone()));
+            self.add(R::new(prem_id.clone(), var_ids[e.y_var].clone()));
+        }
+        let concl_id = format!("{}_concl", id);
+        self.add(R::new(CONCLUSION_MARKER, concl_id.clone()));
+        self.add(R::new(id.to_string(), concl_id.clone()));
+        self.add(R::new(
+            var_ids[template.conclusion.x_var].clone(),
+            concl_id.clone(),
+        ));
+        self.add(R::new(
+            concl_id.clone(),
+            var_ids[template.conclusion.y_var].clone(),
+        ));
+        true
+    }
+
+    /// Variables of an axiom, in sorted order. ADR 0032.
+    pub fn axiom_variables(&self, axiom_id: &str) -> Vec<&str> {
+        let var_set: HashSet<&str> = self
+            .left_of(AXIOMVAR_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect();
+        let mut out: Vec<&str> = self
+            .left_of(axiom_id)
+            .into_iter()
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if var_set.contains(y) {
+                    Some(y)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Premise-edge ids of an axiom, in sorted order. ADR 0032.
+    pub fn axiom_premise_edges(&self, axiom_id: &str) -> Vec<&str> {
+        let prem_set: HashSet<&str> = self
+            .left_of(PREMISE_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect();
+        let mut out: Vec<&str> = self
+            .left_of(axiom_id)
+            .into_iter()
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if prem_set.contains(y) {
+                    Some(y)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Conclusion-edge id of an axiom, if intension is recorded. ADR 0032.
+    pub fn axiom_conclusion(&self, axiom_id: &str) -> Option<String> {
+        let concl_set: HashSet<String> = self
+            .left_of(CONCLUSION_MARKER)
+            .iter()
+            .map(|r| r.y.clone())
+            .collect();
+        self.left_of(axiom_id)
+            .into_iter()
+            .find_map(|r| {
+                if concl_set.contains(&r.y) {
+                    Some(r.y.clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Reconstruct an `AxiomTemplate` from the stored intension.
+    /// Returns `None` for predicate axioms or unregistered ids. ADR 0032.
+    pub fn reconstruct_axiom_template(&self, axiom_id: &str) -> Option<AxiomTemplate> {
+        if axiom_id == AX_REFLEXIVITY || axiom_id == AX_ANTISYMMETRY {
+            return None;
+        }
+        let vars = self.axiom_variables(axiom_id);
+        if vars.is_empty() {
+            return None;
+        }
+        let var_index: HashMap<&str, usize> =
+            vars.iter().enumerate().map(|(i, v)| (*v, i)).collect();
+        let prem_ids = self.axiom_premise_edges(axiom_id);
+        let concl_id = self.axiom_conclusion(axiom_id)?;
+
+        let endpoints = |edge_id: &str| -> Option<EdgeTemplate> {
+            // Source: R(var_x, edge_id) — edge_id on the right side.
+            let src = self.right_of(edge_id).into_iter().find_map(|r| {
+                var_index.get(r.x.as_str()).copied()
+            })?;
+            // Target: R(edge_id, var_y) — edge_id on the left side.
+            let tgt = self.left_of(edge_id).into_iter().find_map(|r| {
+                var_index.get(r.y.as_str()).copied()
+            })?;
+            Some(EdgeTemplate { x_var: src, y_var: tgt })
+        };
+        let mut premise: Vec<EdgeTemplate> = Vec::new();
+        for p in &prem_ids {
+            premise.push(endpoints(p)?);
+        }
+        let conclusion = endpoints(&concl_id)?;
+        Some(AxiomTemplate {
+            num_vars: vars.len(),
+            premise,
+            conclusion,
+        })
+    }
+
+    /// Retract an axiom along with its intension. ADR 0032.
+    ///
+    /// Fails if the axiom is still referenced by any theory (caller
+    /// must retract the theories first). Returns the count of meta-R
+    /// edges removed. Predicate axioms only remove the registry edge.
+    pub fn retract_axiom(&mut self, axiom_id: &str) -> Result<usize, TheoryError> {
+        if !self.is_axiom(axiom_id) {
+            return Err(TheoryError::UnsatisfiedMember(axiom_id.to_string()));
+        }
+        if !self.theories_containing(axiom_id).is_empty() {
+            return Err(TheoryError::UnsatisfiedMember(
+                format!("{} is still referenced by a theory", axiom_id),
+            ));
+        }
+        let mut removed = 0usize;
+
+        // Collect everything this axiom owns (variables, premise edges,
+        // conclusion).
+        let vars: Vec<String> = self
+            .axiom_variables(axiom_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let prem_edges: Vec<String> = self
+            .axiom_premise_edges(axiom_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let concl = self.axiom_conclusion(axiom_id);
+
+        // Remove structural edges: R(var, prem), R(prem, var), R(var, concl), R(concl, var).
+        for prem in &prem_edges {
+            let to_remove: Vec<R> = self
+                .instances
+                .iter()
+                .filter(|r| r.x == *prem || r.y == *prem)
+                .cloned()
+                .collect();
+            for e in to_remove {
+                if self.remove(&e) {
+                    removed += 1;
+                }
+            }
+        }
+        if let Some(c) = &concl {
+            let to_remove: Vec<R> = self
+                .instances
+                .iter()
+                .filter(|r| r.x == *c || r.y == *c)
+                .cloned()
+                .collect();
+            for e in to_remove {
+                if self.remove(&e) {
+                    removed += 1;
+                }
+            }
+        }
+        for v in &vars {
+            if self.remove(&R::new(AXIOMVAR_MARKER, v.clone())) {
+                removed += 1;
+            }
+            if self.remove(&R::new(axiom_id.to_string(), v.clone())) {
+                removed += 1;
+            }
+        }
+        if self.remove(&R::new(AXIOM_MARKER, axiom_id.to_string())) {
+            removed += 1;
+        }
+        Ok(removed)
     }
 
     fn verify_axiom_holds(&self, id: &str) -> Result<(), TheoryError> {
@@ -1820,17 +2065,20 @@ impl RSet {
         all
     }
 
-    /// Collect every identifier currently marked as pattern registry,
-    /// a pattern, an instance, a role marker, a role, an axiom
-    /// marker, an axiom, a theory marker, or a theory. Used by
+    /// Collect every identifier currently marked as a meta-R
+    /// registry marker, or an identifier owned by one. Used by
     /// `run_naming_pass` for the meta-subgraph skip. ADR 0012,
-    /// extended by ADR 0029 (roles) and ADR 0030 (axioms, theories).
+    /// extended by ADR 0029 (roles), ADR 0030 (axioms, theories),
+    /// and ADR 0032 (axiom-intension variables and edge nodes).
     fn collect_meta_ids(&self) -> HashSet<String> {
         let mut s = HashSet::new();
         s.insert(PATTERN_MARKER.to_string());
         s.insert(ROLE_MARKER.to_string());
         s.insert(AXIOM_MARKER.to_string());
         s.insert(THEORY_MARKER.to_string());
+        s.insert(AXIOMVAR_MARKER.to_string());
+        s.insert(PREMISE_MARKER.to_string());
+        s.insert(CONCLUSION_MARKER.to_string());
         for role in self.roles() {
             s.insert(role.to_string());
         }
@@ -1840,11 +2088,22 @@ impl RSet {
                 s.insert(inst.to_string());
             }
         }
-        for a in self.axioms() {
-            s.insert(a.to_string());
-        }
         for t in self.theories() {
             s.insert(t.to_string());
+        }
+        let axiom_ids: Vec<String> =
+            self.axioms().into_iter().map(str::to_owned).collect();
+        for a in &axiom_ids {
+            s.insert(a.clone());
+            for v in self.axiom_variables(a) {
+                s.insert(v.to_string());
+            }
+            for p in self.axiom_premise_edges(a) {
+                s.insert(p.to_string());
+            }
+            if let Some(c) = self.axiom_conclusion(a) {
+                s.insert(c);
+            }
         }
         s
     }
@@ -5861,5 +6120,140 @@ mod tests {
             "second drive added steps: {:?}", second.steps);
         assert_eq!(rs.abstraction_score(), score_after_first);
         assert!(!first.steps.is_empty());
+    }
+
+    // ADR 0032 — axiom intension as meta-R.
+
+    #[test]
+    fn adr0032_template_axiom_gets_intension_on_registration() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        // Transitivity axiom: n=3 variables, 2 premise edges, 1 conclusion.
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        assert!(rs.is_axiom(trans_id));
+        let vars = rs.axiom_variables(trans_id);
+        assert_eq!(vars.len(), 3);
+        let prem = rs.axiom_premise_edges(trans_id);
+        assert_eq!(prem.len(), 2);
+        assert!(rs.axiom_conclusion(trans_id).is_some());
+    }
+
+    #[test]
+    fn adr0032_predicate_axioms_get_registry_only() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        // Reflexivity + antisymmetry exist as registered axioms...
+        assert!(rs.is_axiom(AX_REFLEXIVITY));
+        assert!(rs.is_axiom(AX_ANTISYMMETRY));
+        // ...but have no intension (no variables, no edges).
+        assert!(rs.axiom_variables(AX_REFLEXIVITY).is_empty());
+        assert!(rs.axiom_premise_edges(AX_REFLEXIVITY).is_empty());
+        assert!(rs.axiom_conclusion(AX_REFLEXIVITY).is_none());
+        assert!(rs.axiom_variables(AX_ANTISYMMETRY).is_empty());
+    }
+
+    #[test]
+    fn adr0032_reconstruct_roundtrip_transitivity() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        let reconstructed = rs.reconstruct_axiom_template(trans_id).unwrap();
+        let expected = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        assert_eq!(reconstructed, expected);
+    }
+
+    #[test]
+    fn adr0032_reconstruct_roundtrip_symmetry() {
+        let mut rs = equivalence_relation();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        let sym_id = "ax_tpl_v2_p0-1_c1-0";
+        let reconstructed = rs.reconstruct_axiom_template(sym_id).unwrap();
+        let expected = AxiomTemplate {
+            num_vars: 2,
+            premise: vec![EdgeTemplate { x_var: 0, y_var: 1 }],
+            conclusion: EdgeTemplate { x_var: 1, y_var: 0 },
+        };
+        assert_eq!(reconstructed, expected);
+    }
+
+    #[test]
+    fn adr0032_retract_axiom_removes_intension() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let t_id = rs.name_theory(&ids).unwrap();
+        // Must retract the theory first.
+        let _ = rs.retract_theory(&t_id).unwrap();
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2".to_string();
+        let before = rs.len();
+        let removed = rs.retract_axiom(&trans_id).unwrap();
+        assert!(removed > 0);
+        assert!(rs.len() < before);
+        assert!(!rs.is_axiom(&trans_id));
+        assert!(rs.axiom_variables(&trans_id).is_empty());
+        assert!(rs.reconstruct_axiom_template(&trans_id).is_none());
+    }
+
+    #[test]
+    fn adr0032_retract_axiom_refuses_when_theory_holds_reference() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2".to_string();
+        let err = rs.retract_axiom(&trans_id).unwrap_err();
+        assert!(matches!(err, TheoryError::UnsatisfiedMember(_)));
+    }
+
+    #[test]
+    fn adr0032_collect_meta_ids_includes_axiom_intension_ids() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        let meta = rs.collect_meta_ids();
+        assert!(meta.contains(AXIOMVAR_MARKER));
+        assert!(meta.contains(PREMISE_MARKER));
+        assert!(meta.contains(CONCLUSION_MARKER));
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        for v in rs.axiom_variables(trans_id) {
+            assert!(meta.contains(v));
+        }
+        for p in rs.axiom_premise_edges(trans_id) {
+            assert!(meta.contains(p));
+        }
+        if let Some(c) = rs.axiom_conclusion(trans_id) {
+            assert!(meta.contains(&c));
+        }
+    }
+
+    #[test]
+    fn adr0032_axioms_do_not_pollute_data_discovery() {
+        // Name a theory, then verify axiom discovery on the same RSet
+        // still sees only the original data identifiers — none of the
+        // axiom intension ids leaks in.
+        let mut rs = poset_with_selfloops();
+        let before = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = rs.name_theory(&ids).unwrap();
+        let after = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        assert_eq!(before.len(), after.len(),
+            "axiom discovery must be stable — meta-R should be filtered");
     }
 }

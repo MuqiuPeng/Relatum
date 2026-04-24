@@ -143,6 +143,17 @@ inputs the drive picks action orders that reflect the input (structure-
 rich → patterns first, rule-rich → theory first); final score
 discriminates structured inputs (~14–15) from unstructured (~4).
 
+ADR 0032 gave template axioms their own intension in meta-R via a
+chain encoding `var_x → edge_node → var_y` (direction of R encodes
+source vs. target — no extra markers per edge needed). New reserved
+markers `__axiomvar__`, `__premise__`, `__conclusion__`. Full
+reconstruction roundtrip verified for transitivity and symmetry.
+`register_axiom_with_intension` is called automatically from
+`name_theory`; `retract_axiom` tears the intension down. Commitment 3
+now lands for every named meta-R object in v2 (patterns, theories,
+template axioms) — predicate axioms remain registry-only because
+the current template language can't express them.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,

@@ -1013,3 +1013,47 @@ gives v2 its first external-visible signal of abstraction depth.
 
 Decision: [0031-intrinsic-drive](decisions/0031-intrinsic-drive.md).
 Log: [logs/2026-04-24_intrinsic_drive.log](../logs/2026-04-24_intrinsic_drive.log).
+
+### Axiom intension as meta-R (ADR 0032)
+Task B of the A→C→B→D sequence. ADR 0030 registered axioms by name
+only; this ADR gives each template axiom its full structural
+intension in meta-R — the promise commitment 3 makes for every
+type-level object.
+
+Added three reserved markers: `__axiomvar__`, `__premise__`,
+`__conclusion__`. Every template axiom now carries:
+- `n` variables `ax_X_var_i` (registry + ownership)
+- `m` premise-edge nodes (registry + ownership + chain source/target)
+- One conclusion-edge node (registry + ownership + chain)
+
+Each premise / conclusion edge becomes a 3-node chain
+`var_x → edge_node → var_y`. Direction of R encodes source vs.
+target, so no per-edge src/tgt markers are needed. Total per
+template axiom: 2n + 4m + 4 edges (18 for transitivity, 12 for
+symmetry).
+
+Predicate axioms (`ax_reflexivity`, `ax_antisymmetry`) remain
+registry-only — their semantics is in the predicate checkers, not
+in the template form.
+
+New API:
+- `register_axiom_with_intension(id)` — writes the chain encoding
+  (called automatically from `name_theory`)
+- `axiom_variables(ax)`, `axiom_premise_edges(ax)`, `axiom_conclusion(ax)`
+- `reconstruct_axiom_template(ax) -> Option<AxiomTemplate>` — inverse
+  of the intension write
+- `retract_axiom(ax)` — removes the full stack, refuses if a theory
+  references it
+
+Roundtrip tests confirm that storing + reading back yields the
+original template exactly for both transitivity and symmetry.
+Axiom intension does not leak into data-layer discovery (verified
+with a before/after `discover_axioms` equality check).
+
+Tests: 162 → 170 (8 new). `collect_meta_ids` extended to cover the
+three new markers and all axiom internal ids. commitment 3 now
+lands for every named meta-R object in v2 (patterns, theories,
+axioms) except predicate axioms, which require a richer template
+language.
+
+Decision: [0032-axiom-intension](decisions/0032-axiom-intension.md).

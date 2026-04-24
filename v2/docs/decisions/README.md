@@ -71,3 +71,4 @@ Commit hash(es), file pointers.
 - [0029](0029-intension-extension-split.md) — Intension vs extension for pattern naming (partial supersession of 0010)
 - [0030](0030-theory-objects.md) — Theory objects (conjunctive concept naming)
 - [0031](0031-intrinsic-drive.md) — Intrinsic drive + global abstraction score
+- [0032](0032-axiom-intension.md) — Axiom intension as meta-R (extends 0030)
