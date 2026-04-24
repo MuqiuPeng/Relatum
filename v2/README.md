@@ -129,7 +129,19 @@ verifies membership and writes `R(__theory__, t_N)` +
 member set matches. Fingerprints on the 8-case battery separate
 strict partial order from total order from equivalence from
 tolerance cleanly, by structural identity alone. Axiom intension
-itself stays name-only until ADR 0031 / task B.
+itself stays name-only until task B.
+
+ADR 0031 added **intrinsic drive + global evaluation**. The system
+now has a scalar `abstraction_score` (reuse savings + theory
+richness − meta-R overhead tax) and a `drive_step` / `intrinsic_drive`
+loop that explores its own action space (pattern discovery at
+configurable sizes, theory discovery), applies the best-improving
+action per step, and halts on saturation. First v2 mechanism where
+the system chooses *what* to do and *when to stop* from its own
+value signal, with no external trigger. On four different-shaped
+inputs the drive picks action orders that reflect the input (structure-
+rich → patterns first, rule-rich → theory first); final score
+discriminates structured inputs (~14–15) from unstructured (~4).
 
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern

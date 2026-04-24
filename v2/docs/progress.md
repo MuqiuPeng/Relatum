@@ -977,3 +977,39 @@ individual axioms are still name-only until B.
 
 Decision: [0030-theory-objects](decisions/0030-theory-objects.md).
 Log: [logs/2026-04-24_theory_discovery.log](../logs/2026-04-24_theory_discovery.log).
+
+### Intrinsic drive + global evaluation (ADR 0031)
+Task C of the A→C→B→D sequence. First v2 mechanism where the system
+self-triggers: chooses among its own abstraction capabilities, when
+to invoke them, and when to stop — all driven by an internal scalar
+score rather than external calls.
+
+Added `RSet::abstraction_score(&self) -> f64`:
+- Σ pattern reuse savings `max(0, (N-1)·k)`
+- Plus `2.0 × Σ theory member counts`
+- Minus `0.1 × meta-R edge count` (overhead tax)
+
+Added `drive_step` (try all candidate actions on a clone, apply
+best-improving) and `intrinsic_drive` (loop until saturation).
+Candidate action space:
+- `DiscoverPatterns(size)` for each `pattern_sizes` entry — wraps
+  `autonomous_pass`
+- `DiscoverTheory` — wraps `discover_theory` + `name_theory`
+
+On four characteristically different inputs, the drive picked
+different action orders that reflected the inputs:
+- mixed graph: patterns(2) → theory, final 14.7
+- equivalence: theory → patterns(4), final 14.6
+- strict poset: patterns(3) → theory, final 11.0
+- random sparse: patterns(2) → theory, final 4.3
+
+The final score discriminates "how much is there to understand"
+(structured inputs ~14.7 vs random ~4.3). `adr0031_drive_is_idempotent_
+after_saturation` confirms the loop halts and is stable on re-run.
+
+Tests: 155 → 162 (7 new). This closes the long-pending
+"self-driven triggering" capability from MEMORY.md's wishlist and
+gives v2 its first external-visible signal of abstraction depth.
+
+Decision: [0031-intrinsic-drive](decisions/0031-intrinsic-drive.md).
+Log: [logs/2026-04-24_intrinsic_drive.log](../logs/2026-04-24_intrinsic_drive.log).

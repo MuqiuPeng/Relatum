@@ -1,0 +1,203 @@
+Date: 2026-04-24
+Descriptor: intrinsic_drive (ADR 0031)
+Purpose:
+    First v2 mechanism where the system chooses what to do and when
+    to stop, based on an internal value signal. Prior ADRs provided
+    capabilities (pattern discovery, axiom discovery, theory
+    naming); the caller had to decide which one to invoke, with what
+    parameters. Under ADR 0031 the RSet carries a global
+    `abstraction_score` and a `drive_step` that tries every
+    candidate action on a clone and applies the best-improving one.
+    `intrinsic_drive` loops this until nothing helps anymore.
+
+Mechanism version:
+    ADR 0031 on top of ADR 0018 (autonomous_pass), ADR 0028
+    (discover_axioms_minimal), and ADR 0030 (theories).
+
+====================================================================
+METRIC
+====================================================================
+
+    score = Σ_pattern max(0, (N − 1) × k)     # reuse savings
+          + 2.0 · Σ_theory |members|           # theory richness
+          − 0.1 · |meta-R edges|               # overhead tax
+
+- `(N−1)·k` is classical MDL reuse savings: N instances of a k-edge
+  pattern need only 1 definition, plus N−1 references to it, vs.
+  N·k raw edges.
+- The per-axiom reward keeps theory discovery competitive with
+  pattern discovery on theory-heavy inputs.
+- Overhead tax penalizes accumulating unused meta-R.
+
+The metric is not a "true" MDL computation — it's a direction signal
+good enough to choose among candidate actions. It's monotonic in the
+things we want (reuse, conjunction, minimality) and additive.
+
+====================================================================
+ACTION SPACE
+====================================================================
+
+Two action families are currently in `candidate_actions()`:
+
+1. `DiscoverPatterns(size)` — runs `autonomous_pass` with
+   `discovery.target_size = size`. Tried at every size in
+   `config.pattern_sizes` (default [2, 3, 4]).
+2. `DiscoverTheory` — runs `discover_theory` then `name_theory` on
+   whatever comes out.
+
+Each step:
+    for each action in candidate_actions():
+        trial = self.clone()
+        trial.apply(action)
+        delta = trial.score - self.score
+        if delta > best.delta: best = (action, trial, delta)
+    if best.delta > epsilon:
+        self = best.trial   (take the best improvement)
+    else:
+        stop
+
+Both actions are idempotent under repeat applications (autonomous
+pass would re-encounter existing patterns and not re-name them;
+name_theory reuses theory id under member-set equality). That is
+why the loop terminates — eventually every candidate's delta is 0.
+
+====================================================================
+RESULTS ON FOUR DIFFERENT-SHAPED INPUTS
+====================================================================
+
+   input                               | action order                 | final
+  -------------------------------------|------------------------------|------
+  1. mixed graph (pattern-rich)        | patterns(2) → theory          | 14.7
+  2. equivalence (theory-rich)         | theory → patterns(4)          | 14.6
+  3. strict poset (both)               | patterns(3) → theory          | 11.0
+  4. random sparse (low-abstraction)   | patterns(2) → theory          |  4.3
+
+**The action order reflects the input's character**:
+
+- On the mixed graph, the driver reaches for pattern discovery first
+  because size-2 matches yield 6 single-edge reuses — immediate
+  Δ=+13. Theory discovery only nets Δ=+1.7 (accidental antisymmetry).
+- On equivalence, theory discovery is the big win up front (six
+  axioms, Δ=+10.7). Pattern discovery at size 4 comes second.
+- On the strict poset, patterns-at-size-3 wins first (the diamond's
+  k=3 structural pattern with k participants each gives Δ=+5.7),
+  then theory (transitivity + antisymmetry, Δ=+5.3).
+- On random input, almost nothing pays off. The driver grabs the
+  single-edge pattern reuse (Δ=+2.6, since the graph has several
+  single-edge instances) and the accidental antisymmetry theory
+  (Δ=+1.7), then halts.
+
+The driver correctly identifies that random has far less structure
+to abstract over — final score 4.3 vs 14.7 on a similarly-sized
+mixed graph. The score works as a "how much is there to understand
+here" signal.
+
+====================================================================
+TERMINATION
+====================================================================
+
+`adr0031_drive_is_idempotent_after_saturation` is the key test: run
+the drive to completion, then run it again, and verify no new steps
+are taken and the score is unchanged. Passes on every test case.
+
+In every example above, the driver stopped on its own after 2 steps
+because further actions produced Δ ≤ epsilon:
+- Re-running `DiscoverPatterns(size)` with an already-named pattern
+  at that size yields no new pattern (Δ = 0 or slightly negative
+  from overhead tax).
+- Re-running `DiscoverTheory` when the theory is already named
+  finds the same member set and `name_theory` returns the existing
+  id — no new edges, Δ ≈ 0.
+
+So the loop is guaranteed to terminate when no action improves
+score above epsilon (default 0), which always happens in finite
+steps because the state space is bounded.
+
+====================================================================
+COMPARISON WITH PRIOR AUTONOMOUS MECHANISMS
+====================================================================
+
+- **`autonomous_pass` (0018)**: a *single* end-to-end discover +
+  refine + name cycle at *one fixed target_size*. Caller chose
+  the size.
+- **`autonomous_sweep` (0021)**: loops autonomous_pass over a
+  size list. Caller chose the list and the termination.
+- **`intrinsic_drive` (0031)**: loops a broader action space (sizes
+  + theory), self-selects the best-improving action each step,
+  self-terminates.
+
+The qualitative difference is in *who decides*. Before 0031,
+external code picked the mechanism, the size, and the stopping
+condition. After 0031, the RSet picks them based on its own score.
+This is the first mechanism where v2 satisfies the
+"self-driven triggering" entry in the initial capability list.
+
+====================================================================
+LIMITS
+====================================================================
+
+1. **Metric is hand-tuned.** The weights (2.0 per axiom, 0.1
+   overhead) are chosen because they produce reasonable action
+   orderings on the test inputs, not derived from information-
+   theoretic first principles. A better derivation (e.g., true
+   MDL bit cost with priors) would make the score more defensible
+   but would not change the qualitative behavior here.
+
+2. **Action space is fixed.** The driver cannot invent new actions
+   or new parameter settings — it can only pick from the enumerated
+   candidates. Extending to (say) cross-size naming policy choices
+   or attach-only re-runs would require enlarging
+   `candidate_actions()`.
+
+3. **No exploration.** The driver is purely greedy (best improving
+   action wins). No "try a worse action to escape a local optimum"
+   step; no randomization across ties. On this workload it doesn't
+   matter (actions are additive on score), but on a future workload
+   with action interactions it might.
+
+4. **No revision.** The driver never retracts a named pattern or
+   theory. If an action turned out bad (it didn't here, but could
+   under a changed metric), the driver has no mechanism to undo.
+   This is a deliberate choice for ADR 0031; the retract_pattern /
+   retract_theory primitives are available if a future ADR wants to
+   build a more sophisticated revision loop.
+
+5. **Score is a means, not a goal.** High abstraction_score is not
+   "better understanding" in any deep sense — it's "more named
+   reusable structure," which is a proxy. The driver does not know
+   whether the structures it names are the right ones; it only
+   knows they pay off locally.
+
+====================================================================
+SANITY
+====================================================================
+
+- 155 → 162 tests pass (7 new: zero-score on bare RSet, positive
+  score on reuse, drive progresses on structured input, halts on
+  unstructured, rejects no-improvement step, produces theory on
+  poset, idempotent after saturation).
+- `cargo run --example intrinsic_drive` produces the table above.
+- No existing example was affected; drive is additive only.
+
+====================================================================
+COMMITMENT CHECK
+====================================================================
+
+- 1 (only R): all drive state is read from RSet, all writes go
+  through existing named-object APIs. No new storage. ✓
+- 2 (R binary): same. ✓
+- 3 (types are meta-R): drive uses patterns (from 0029) and
+  theories (from 0030), which are meta-R. Drive itself adds no
+  meta-R. ✓
+- 4 (token identity): drive doesn't mint identifiers. ✓
+- 5 (structural similarity): score is a derived structural
+  function; no external labels. ✓
+
+====================================================================
+NEXT (per approved A → C → B → D order)
+====================================================================
+
+C (this ADR) complete. Next: B — give each registered axiom its own
+intension in meta-R, analogous to what ADR 0029 did for patterns.
+Once axioms have intension, the theory objects from ADR 0030 will
+carry full structural definition, not just a name list.

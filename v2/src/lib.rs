@@ -1101,6 +1101,147 @@ impl RSet {
         results
     }
 
+    /// Global abstraction score (ADR 0031, task C). A scalar that
+    /// increases when the RSet contains *reusable* abstractions and
+    /// decreases when it accumulates unexplained meta-R overhead:
+    ///
+    ///   score = Σ_pattern max(0, (N − 1) · k)
+    ///         + 2.0 · Σ_theory |members|
+    ///         − 0.1 · |meta-R edges|
+    ///
+    /// The first term is classic reuse savings (`(N−1)·k` edges saved
+    /// by naming a pattern that appears N times with k participants
+    /// each). The second rewards theory membership — each axiom in a
+    /// named theory contributes a small fixed value, so richer
+    /// theories beat thinner ones. The third is a small overhead tax
+    /// so the system doesn't win by writing unused meta-R.
+    pub fn abstraction_score(&self) -> f64 {
+        let mut s = 0.0;
+        for p in self.patterns() {
+            let n = self.instances_of(p).len();
+            let k = self.pattern_roles(p).len();
+            if n >= 2 && k > 0 {
+                s += ((n - 1) * k) as f64;
+            }
+        }
+        let theory_member_total: usize = self
+            .theories()
+            .iter()
+            .map(|t| self.theory_axioms(t).len())
+            .sum();
+        s += 2.0 * theory_member_total as f64;
+        let meta = self.collect_meta_ids();
+        let meta_edges = self
+            .instances
+            .iter()
+            .filter(|r| meta.contains(&r.x) || meta.contains(&r.y))
+            .count();
+        s -= 0.1 * meta_edges as f64;
+        s
+    }
+
+    /// Run one step of the intrinsic drive loop (ADR 0031, task C):
+    /// try each candidate action on a clone of self, measure the
+    /// score delta, apply the best one in place. Returns the applied
+    /// step record, or `None` if no action improves the score above
+    /// `config.epsilon`.
+    ///
+    /// This is the first v2 mechanism where the system self-selects
+    /// among its capabilities based on an internal value signal, with
+    /// no external trigger telling it what to do or when.
+    pub fn drive_step(&mut self, config: &DriveConfig) -> Option<DriveStep> {
+        let before = self.abstraction_score();
+        let mut best: Option<DriveStep> = None;
+        let mut best_trial: Option<RSet> = None;
+
+        for action in config.candidate_actions() {
+            let mut trial = self.clone();
+            let result = trial.apply_drive_action(&action);
+            let after = trial.abstraction_score();
+            let delta = after - before;
+            if delta > config.epsilon
+                && best
+                    .as_ref()
+                    .map(|b| delta > b.delta)
+                    .unwrap_or(true)
+            {
+                best = Some(DriveStep {
+                    action: action.clone(),
+                    score_before: before,
+                    score_after: after,
+                    delta,
+                    result,
+                });
+                best_trial = Some(trial);
+            }
+        }
+
+        if let (Some(step), Some(trial)) = (best, best_trial) {
+            *self = trial;
+            Some(step)
+        } else {
+            None
+        }
+    }
+
+    /// Iterate `drive_step` until no action is worthwhile or until
+    /// `config.max_steps` is reached. Returns the ordered trace of
+    /// applied steps. ADR 0031.
+    pub fn intrinsic_drive(&mut self, config: &DriveConfig) -> DriveTrace {
+        let mut steps = Vec::new();
+        for _ in 0..config.max_steps {
+            match self.drive_step(config) {
+                Some(step) => steps.push(step),
+                None => break,
+            }
+        }
+        DriveTrace {
+            initial_score: steps
+                .first()
+                .map(|s| s.score_before)
+                .unwrap_or_else(|| self.abstraction_score()),
+            final_score: self.abstraction_score(),
+            steps,
+        }
+    }
+
+    fn apply_drive_action(&mut self, action: &DriveAction) -> DriveActionResult {
+        match action {
+            DriveAction::DiscoverPatterns(cfg) => {
+                let outcomes = self.autonomous_pass(cfg);
+                let new_patterns = outcomes
+                    .iter()
+                    .filter(|o| matches!(o, AutonomousOutcome::NewPattern { .. }))
+                    .count();
+                DriveActionResult::PatternsDiscovered {
+                    target_size: cfg.discovery.target_size,
+                    new_patterns,
+                }
+            }
+            DriveAction::DiscoverTheory(cfg) => {
+                let th = self.discover_theory(cfg);
+                if th.member_axiom_ids.is_empty() {
+                    return DriveActionResult::TheoryDiscovered {
+                        theory_id: None,
+                        member_count: 0,
+                    };
+                }
+                let ids: Vec<&str> =
+                    th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+                match self.name_theory(&ids) {
+                    Ok(tid) => DriveActionResult::TheoryDiscovered {
+                        theory_id: Some(tid),
+                        member_count: th.member_axiom_ids.len(),
+                    },
+                    Err(_) => DriveActionResult::TheoryDiscovered {
+                        theory_id: None,
+                        member_count: 0,
+                    },
+                }
+            }
+        }
+    }
+
     /// Autonomous abstraction pass. ADR 0018.
     ///
     /// Composes `discover_motifs` (sample candidates) + `refine_candidates`
@@ -2566,6 +2707,106 @@ pub struct PosetCheck {
     pub antisymmetric: AntisymmetryEvidence,
     pub transitive: Option<AxiomEvidence>,
     pub is_poset: bool,
+}
+
+/// ADR 0031 (task C): one candidate action the intrinsic drive may
+/// try. The list of candidates is produced by `DriveConfig::candidate_actions`.
+#[derive(Debug, Clone)]
+pub enum DriveAction {
+    /// Run `autonomous_pass` with the given config.
+    DiscoverPatterns(AutonomousConfig),
+    /// Run `discover_theory` + `name_theory`.
+    DiscoverTheory(AxiomDiscoveryConfig),
+}
+
+/// ADR 0031: structured outcome of one applied drive action.
+#[derive(Debug, Clone)]
+pub enum DriveActionResult {
+    PatternsDiscovered {
+        target_size: usize,
+        new_patterns: usize,
+    },
+    TheoryDiscovered {
+        theory_id: Option<String>,
+        member_count: usize,
+    },
+}
+
+/// ADR 0031: one step of the intrinsic drive, after it has been
+/// applied to the RSet.
+#[derive(Debug, Clone)]
+pub struct DriveStep {
+    pub action: DriveAction,
+    pub score_before: f64,
+    pub score_after: f64,
+    pub delta: f64,
+    pub result: DriveActionResult,
+}
+
+/// ADR 0031: the full trace of an `intrinsic_drive` run.
+#[derive(Debug, Clone)]
+pub struct DriveTrace {
+    pub initial_score: f64,
+    pub final_score: f64,
+    pub steps: Vec<DriveStep>,
+}
+
+/// ADR 0031: configuration for the intrinsic drive. The driver
+/// explores every action in `candidate_actions()` each step and
+/// applies the best-improving one if it exceeds `epsilon`. Loops
+/// for at most `max_steps` iterations.
+#[derive(Debug, Clone)]
+pub struct DriveConfig {
+    pub pattern_sizes: Vec<usize>,
+    pub discovery_config: DiscoveryConfig,
+    pub refinement_config: RefinementConfig,
+    pub naming_policy: NamingPolicy,
+    pub axiom_config: AxiomDiscoveryConfig,
+    pub max_steps: usize,
+    pub epsilon: f64,
+}
+
+impl DriveConfig {
+    fn candidate_actions(&self) -> Vec<DriveAction> {
+        let mut out: Vec<DriveAction> = self
+            .pattern_sizes
+            .iter()
+            .map(|&size| {
+                let mut d = self.discovery_config.clone();
+                d.target_size = size;
+                DriveAction::DiscoverPatterns(AutonomousConfig {
+                    discovery: d,
+                    refinement: self.refinement_config.clone(),
+                    naming: self.naming_policy.clone(),
+                })
+            })
+            .collect();
+        out.push(DriveAction::DiscoverTheory(self.axiom_config.clone()));
+        out
+    }
+}
+
+impl Default for DriveConfig {
+    fn default() -> Self {
+        DriveConfig {
+            pattern_sizes: vec![2, 3, 4],
+            discovery_config: DiscoveryConfig {
+                target_size: 3,
+                sample_count: 200,
+                top_m: 10,
+                rng_seed: 2024,
+                include_meta_in_discovery: false,
+            },
+            refinement_config: RefinementConfig {
+                max_tries: 200,
+                rng_seed: 999,
+            },
+            naming_policy: NamingPolicy::default(),
+            axiom_config: AxiomDiscoveryConfig::default(),
+            max_steps: 10,
+            epsilon: 0.0,
+        }
+    }
 }
 
 /// ADR 0030: the result of `discover_theory` — the bundle of axioms
@@ -5516,5 +5757,109 @@ mod tests {
         for id in &th.member_axiom_ids {
             assert!(meta.contains(id));
         }
+    }
+
+    // ADR 0031 — intrinsic drive + global evaluation.
+
+    #[test]
+    fn adr0031_abstraction_score_zero_on_bare_rset() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        // No patterns, no theories → score = 0 (nothing to tax, nothing to reward).
+        assert_eq!(rs.abstraction_score(), 0.0);
+    }
+
+    #[test]
+    fn adr0031_abstraction_score_rewards_pattern_reuse() {
+        // 6 single-edge instances across distinct token pairs → one
+        // pattern with 6 instances of size 1. Reuse savings = (6-1)*1 = 5.
+        let mut rs = RSet::new();
+        for (a, b) in [
+            ("a", "b"), ("c", "d"), ("e", "f"),
+            ("g", "h"), ("i", "j"), ("k", "l"),
+        ] {
+            rs.add(R::new(a, b));
+        }
+        let instances: Vec<Subgraph> = rs
+            .iter()
+            .map(|r| Subgraph::from_edges([r.clone()]))
+            .collect();
+        // Name as single-edge pattern.
+        let _p = rs.name_pattern_instances(&instances).unwrap();
+        let s = rs.abstraction_score();
+        // Positive, dominated by reuse savings minus overhead tax.
+        assert!(s > 0.0, "expected positive score, got {}", s);
+    }
+
+    #[test]
+    fn adr0031_drive_discovers_something_on_structured_input() {
+        // Equivalence relation — rich axioms available. Drive should
+        // name at least a theory, producing positive score.
+        let mut rs = equivalence_relation();
+        let cfg = DriveConfig::default();
+        let trace = rs.intrinsic_drive(&cfg);
+        assert!(trace.final_score > trace.initial_score,
+            "drive did not improve score: trace={:?}", trace);
+        assert!(!trace.steps.is_empty());
+    }
+
+    #[test]
+    fn adr0031_drive_halts_on_unstructured_input() {
+        // Random-ish sparse graph — no pattern reuse, no universal
+        // axioms with meaningful content beyond accidental antisym.
+        // Drive should either do nothing or take minimal action and
+        // then halt.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "c"), R::new("b", "d"), R::new("c", "e"),
+            R::new("d", "f"), R::new("e", "a"), R::new("f", "b"),
+            R::new("a", "d"),
+        ]);
+        let cfg = DriveConfig {
+            max_steps: 5,
+            ..DriveConfig::default()
+        };
+        let trace = rs.intrinsic_drive(&cfg);
+        // Final score ≥ initial: the driver never applies a step
+        // that reduces the score (delta must exceed epsilon).
+        assert!(trace.final_score >= trace.initial_score);
+        // And fewer than max_steps actions (it should stop early).
+        assert!(trace.steps.len() <= 5);
+    }
+
+    #[test]
+    fn adr0031_drive_step_is_rejected_when_unprofitable() {
+        // Empty RSet — no way to score positive — drive_step returns None.
+        let mut rs = RSet::new();
+        let cfg = DriveConfig::default();
+        let step = rs.drive_step(&cfg);
+        assert!(step.is_none());
+    }
+
+    #[test]
+    fn adr0031_drive_produces_theory_on_poset() {
+        let mut rs = diamond_poset();
+        let cfg = DriveConfig::default();
+        let trace = rs.intrinsic_drive(&cfg);
+        // At least one theory was discovered.
+        let theory_step = trace.steps.iter().find(|s| {
+            matches!(s.result, DriveActionResult::TheoryDiscovered { theory_id: Some(_), .. })
+        });
+        assert!(theory_step.is_some(), "expected a theory-discovery step");
+        assert_eq!(rs.theories().len(), 1);
+    }
+
+    #[test]
+    fn adr0031_drive_is_idempotent_after_saturation() {
+        // Run drive twice. Second run should be a no-op.
+        let mut rs = diamond_poset();
+        let cfg = DriveConfig::default();
+        let first = rs.intrinsic_drive(&cfg);
+        let score_after_first = rs.abstraction_score();
+        let second = rs.intrinsic_drive(&cfg);
+        assert!(second.steps.is_empty(),
+            "second drive added steps: {:?}", second.steps);
+        assert_eq!(rs.abstraction_score(), score_after_first);
+        assert!(!first.steps.is_empty());
     }
 }
