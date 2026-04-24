@@ -1203,3 +1203,18 @@ No external dependencies (no serde / no JSON). v2 stays zero-dep.
 Tests: 200 → 209 (9 new).
 
 Decision: [0038-persistence](decisions/0038-persistence.md).
+
+### Totality as predicate axiom (ADR 0039)
+Task 1 of the second five-step extension (1'→4'). Adds the third
+predicate axiom on par with reflexivity / antisymmetry. `check_
+totality` verifies every unordered pair (x, y) satisfies
+`R(x,y) ∨ R(y,x)`; `discover_theory` now includes `ax_totality`
+when it holds; `name_theory` accepts and verifies it.
+
+Total orders now have a distinguishing fingerprint (`{trans, refl,
+antisym, totality}`) vs. non-total posets. Predicate-only — template
+language cannot yet express disjunctive conclusions.
+
+Tests: 209 → 217 (8 new).
+
+Decision: [0039-totality-predicate](decisions/0039-totality-predicate.md).

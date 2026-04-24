@@ -78,3 +78,4 @@ Commit hash(es), file pointers.
 - [0036](0036-empty-premise-templates.md) — Empty-premise templates (reflexivity as template)
 - [0037](0037-compositional-subsumption.md) — Compositional subsumption (forward-chaining derivation)
 - [0038](0038-persistence.md) — RSet text persistence
+- [0039](0039-totality-predicate.md) — Totality as predicate axiom

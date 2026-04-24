@@ -58,6 +58,11 @@ pub const AX_REFLEXIVITY: &str = "ax_reflexivity";
 /// axiom (conclusion "x = y" is not an edge). ADR 0030.
 pub const AX_ANTISYMMETRY: &str = "ax_antisymmetry";
 
+/// Stable axiom id for totality: every pair of distinct data
+/// identifiers (x, y) satisfies `R(x, y) ∨ R(y, x)`. Not a template
+/// axiom (disjunctive conclusion). ADR 0039.
+pub const AX_TOTALITY: &str = "ax_totality";
+
 /// Reserved registry marker for axiom-variable identifiers (ADR 0032).
 /// `R(AXIOMVAR_MARKER, ax_X_var_i)` declares `ax_X_var_i` as the i-th
 /// variable slot in axiom `ax_X`'s intension.
@@ -1522,6 +1527,10 @@ impl RSet {
         if anti.holds && anti.directed_pairs_checked > 0 {
             ids.push(AX_ANTISYMMETRY.to_string());
         }
+        let tot = self.check_totality();
+        if tot.holds {
+            ids.push(AX_TOTALITY.to_string());
+        }
         Theory {
             id: String::new(),
             member_axiom_ids: ids,
@@ -1592,7 +1601,7 @@ impl RSet {
         }
         self.add(R::new(AXIOM_MARKER, id.to_string()));
         // Predicate axioms: registry only.
-        if id == AX_REFLEXIVITY || id == AX_ANTISYMMETRY {
+        if id == AX_REFLEXIVITY || id == AX_ANTISYMMETRY || id == AX_TOTALITY {
             return true;
         }
         // Template axioms: write the intension.
@@ -1694,7 +1703,10 @@ impl RSet {
     /// Reconstruct an `AxiomTemplate` from the stored intension.
     /// Returns `None` for predicate axioms or unregistered ids. ADR 0032.
     pub fn reconstruct_axiom_template(&self, axiom_id: &str) -> Option<AxiomTemplate> {
-        if axiom_id == AX_REFLEXIVITY || axiom_id == AX_ANTISYMMETRY {
+        if axiom_id == AX_REFLEXIVITY
+            || axiom_id == AX_ANTISYMMETRY
+            || axiom_id == AX_TOTALITY
+        {
             return None;
         }
         let vars = self.axiom_variables(axiom_id);
@@ -1811,6 +1823,13 @@ impl RSet {
         if id == AX_ANTISYMMETRY {
             let a = self.check_antisymmetry();
             if a.holds && a.directed_pairs_checked > 0 {
+                return Ok(());
+            }
+            return Err(TheoryError::UnsatisfiedMember(id.to_string()));
+        }
+        if id == AX_TOTALITY {
+            let t = self.check_totality();
+            if t.holds {
                 return Ok(());
             }
             return Err(TheoryError::UnsatisfiedMember(id.to_string()));
@@ -2238,6 +2257,41 @@ impl RSet {
             identifiers_total: total,
             self_loops_present: present,
             rate,
+        }
+    }
+
+    /// Totality: for every pair of distinct data identifiers (x, y),
+    /// at least one of `R(x, y)` or `R(y, x)` holds. ADR 0039.
+    pub fn check_totality(&self) -> TotalityEvidence {
+        let meta = self.collect_meta_ids();
+        let ids: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .filter(|id| !meta.contains(*id))
+            .map(str::to_owned)
+            .collect();
+        let mut sorted_ids = ids.clone();
+        sorted_ids.sort();
+        let mut unordered_pairs_checked = 0usize;
+        let mut violations = 0usize;
+        for i in 0..sorted_ids.len() {
+            for j in (i + 1)..sorted_ids.len() {
+                unordered_pairs_checked += 1;
+                let a = &sorted_ids[i];
+                let b = &sorted_ids[j];
+                let forward = R::new(a.clone(), b.clone());
+                let backward = R::new(b.clone(), a.clone());
+                if !self.instances.contains(&forward)
+                    && !self.instances.contains(&backward)
+                {
+                    violations += 1;
+                }
+            }
+        }
+        TotalityEvidence {
+            unordered_pairs_checked,
+            violations,
+            holds: violations == 0 && unordered_pairs_checked > 0,
         }
     }
 
@@ -3488,6 +3542,15 @@ pub struct ReflexivityEvidence {
 #[derive(Debug, Clone)]
 pub struct AntisymmetryEvidence {
     pub directed_pairs_checked: usize,
+    pub violations: usize,
+    pub holds: bool,
+}
+
+/// Totality check result. ADR 0039. Does not fit the template
+/// (disjunctive conclusion).
+#[derive(Debug, Clone)]
+pub struct TotalityEvidence {
+    pub unordered_pairs_checked: usize,
     pub violations: usize,
     pub holds: bool,
 }
@@ -7378,5 +7441,87 @@ mod tests {
         let b = RSet::from_text(&text1).unwrap();
         let text2 = b.to_text().unwrap();
         assert_eq!(text1, text2);
+    }
+
+    // ADR 0039 — totality predicate axiom.
+
+    fn total_order_closure() -> RSet {
+        let mut rs = RSet::new();
+        let nodes = ["1", "2", "3", "4", "5"];
+        for i in 0..nodes.len() {
+            rs.add(R::new(nodes[i], nodes[i]));
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        rs
+    }
+
+    #[test]
+    fn adr0039_check_totality_holds_on_total_order() {
+        let rs = total_order_closure();
+        let t = rs.check_totality();
+        assert!(t.holds);
+        assert_eq!(t.violations, 0);
+        assert_eq!(t.unordered_pairs_checked, 10); // C(5,2)
+    }
+
+    #[test]
+    fn adr0039_check_totality_fails_on_diamond_poset() {
+        let rs = diamond_poset();
+        let t = rs.check_totality();
+        // Diamond has {a,b,c,d}. Pair (b,c) is incomparable.
+        assert!(!t.holds);
+        assert!(t.violations >= 1);
+    }
+
+    #[test]
+    fn adr0039_check_totality_empty_rset_does_not_hold() {
+        // No pairs → vacuously? We return holds=false when no pairs
+        // checked (consistent with antisymmetry's "needs at least one
+        // directed pair" rule).
+        let rs = RSet::new();
+        let t = rs.check_totality();
+        assert!(!t.holds);
+        assert_eq!(t.unordered_pairs_checked, 0);
+    }
+
+    #[test]
+    fn adr0039_discover_theory_includes_totality_on_total_order() {
+        let rs = total_order_closure();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        assert!(th.member_axiom_ids.iter().any(|id| id == AX_TOTALITY));
+    }
+
+    #[test]
+    fn adr0039_discover_theory_omits_totality_on_diamond() {
+        let rs = diamond_poset();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        assert!(!th.member_axiom_ids.iter().any(|id| id == AX_TOTALITY));
+    }
+
+    #[test]
+    fn adr0039_name_theory_rejects_totality_when_not_holding() {
+        let mut rs = diamond_poset();
+        assert!(rs.name_theory(&[AX_TOTALITY]).is_err());
+    }
+
+    #[test]
+    fn adr0039_name_theory_accepts_totality_on_total_order() {
+        let mut rs = total_order_closure();
+        let ids = [AX_TOTALITY];
+        let t_id = rs.name_theory(&ids).unwrap();
+        assert!(rs.theory_axioms(&t_id).contains(&AX_TOTALITY));
+    }
+
+    #[test]
+    fn adr0039_totality_is_predicate_only() {
+        // Verify reconstruct returns None (predicate axioms have no
+        // template intension).
+        let mut rs = total_order_closure();
+        let _ = rs.name_theory(&[AX_TOTALITY]).unwrap();
+        assert!(rs.reconstruct_axiom_template(AX_TOTALITY).is_none());
+        // axiom_variables for predicate is empty.
+        assert!(rs.axiom_variables(AX_TOTALITY).is_empty());
     }
 }
