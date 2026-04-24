@@ -79,3 +79,4 @@ Commit hash(es), file pointers.
 - [0037](0037-compositional-subsumption.md) — Compositional subsumption (forward-chaining derivation)
 - [0038](0038-persistence.md) — RSet text persistence
 - [0039](0039-totality-predicate.md) — Totality as predicate axiom
+- [0040](0040-auto-prune.md) — Drive auto-prune via counterfactual value

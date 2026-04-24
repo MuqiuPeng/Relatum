@@ -1218,3 +1218,26 @@ language cannot yet express disjunctive conclusions.
 Tests: 209 → 217 (8 new).
 
 Decision: [0039-totality-predicate](decisions/0039-totality-predicate.md).
+
+### Drive auto-prune via counterfactual value (ADR 0040)
+Task 2 of 1'→4'. Closes the "nothing auto-prunes" limit from ADR
+0035. Drive gains a third candidate action `Prune(threshold)` that
+retracts every named object with counterfactual value strictly
+below the threshold.
+
+Metric extended with `+ 1.0 · |extension_edges|` so extensions
+(ADR 0034) are no longer net-negative under overhead tax. Gives
+them positive CV, keeping auto-prune from eating them.
+
+`DriveConfig` gains `enable_prune: bool` (default true) and
+`prune_threshold: f64` (default 0.0). Drive is now a two-way
+process — add via Discover actions, remove via Prune — while
+remaining idempotent at saturation.
+
+Retraction order inside Prune: theories first (release axiom
+refs), extensions, patterns. Avoids retract_axiom's "still
+referenced" failure.
+
+Tests: 217 → 222 (5 new).
+
+Decision: [0040-auto-prune](decisions/0040-auto-prune.md).

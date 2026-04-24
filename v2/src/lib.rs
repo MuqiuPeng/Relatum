@@ -1192,20 +1192,23 @@ impl RSet {
         results
     }
 
-    /// Global abstraction score (ADR 0031, task C). A scalar that
-    /// increases when the RSet contains *reusable* abstractions and
-    /// decreases when it accumulates unexplained meta-R overhead:
+    /// Global abstraction score (ADR 0031, extended by ADR 0040).
+    /// A scalar that increases when the RSet contains *reusable* or
+    /// *structurally related* abstractions and decreases when it
+    /// accumulates unexplained meta-R overhead:
     ///
     ///   score = Σ_pattern max(0, (N − 1) · k)
     ///         + 2.0 · Σ_theory |members|
+    ///         + 1.0 · |extension_edges|
     ///         − 0.1 · |meta-R edges|
     ///
-    /// The first term is classic reuse savings (`(N−1)·k` edges saved
-    /// by naming a pattern that appears N times with k participants
-    /// each). The second rewards theory membership — each axiom in a
-    /// named theory contributes a small fixed value, so richer
-    /// theories beat thinner ones. The third is a small overhead tax
-    /// so the system doesn't win by writing unused meta-R.
+    /// - Reuse savings: `(N−1)·k` per pattern that names a recurrent
+    ///   k-edge subgraph occurring N times.
+    /// - Theory membership: each axiom in a named theory is rewarded.
+    /// - Extension relations (ADR 0034) are rewarded as load-bearing
+    ///   higher-order meta-R — ADR 0040 added this term so auto-prune
+    ///   doesn't eat them.
+    /// - Overhead tax on total meta-R to discourage write-and-forget.
     pub fn abstraction_score(&self) -> f64 {
         let mut s = 0.0;
         for p in self.patterns() {
@@ -1221,6 +1224,7 @@ impl RSet {
             .map(|t| self.theory_axioms(t).len())
             .sum();
         s += 2.0 * theory_member_total as f64;
+        s += 1.0 * self.extension_edges().len() as f64;
         let meta = self.collect_meta_ids();
         let meta_edges = self
             .instances
@@ -1329,6 +1333,55 @@ impl RSet {
                         member_count: 0,
                     },
                 }
+            }
+            DriveAction::Prune(threshold) => {
+                let ranked = self.rank_by_counterfactual();
+                let victims: Vec<String> = ranked
+                    .into_iter()
+                    .filter(|(_, v)| *v < *threshold)
+                    .map(|(id, _)| id)
+                    .collect();
+                let mut pruned: Vec<String> = Vec::new();
+                let pattern_set: HashSet<String> = self
+                    .patterns()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                let theory_set: HashSet<String> = self
+                    .theories()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                let ext_set: HashSet<String> = self
+                    .extension_edges()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                // Retract theories first (they may reference axioms that
+                // would also be prunable; retract order matters for
+                // axioms though we only prune objects listed here).
+                for id in &victims {
+                    if theory_set.contains(id) {
+                        if self.retract_theory(id).is_ok() {
+                            pruned.push(id.clone());
+                        }
+                    }
+                }
+                for id in &victims {
+                    if ext_set.contains(id) {
+                        if self.retract_extension(id).is_ok() {
+                            pruned.push(id.clone());
+                        }
+                    }
+                }
+                for id in &victims {
+                    if pattern_set.contains(id) {
+                        if self.retract_pattern(id).is_ok() {
+                            pruned.push(id.clone());
+                        }
+                    }
+                }
+                DriveActionResult::Pruned { object_ids: pruned }
             }
         }
     }
@@ -3572,6 +3625,9 @@ pub enum DriveAction {
     DiscoverPatterns(AutonomousConfig),
     /// Run `discover_theory` + `name_theory`.
     DiscoverTheory(AxiomDiscoveryConfig),
+    /// Retract every named object whose counterfactual value is
+    /// strictly below `threshold`. ADR 0040.
+    Prune(f64),
 }
 
 /// ADR 0031: structured outcome of one applied drive action.
@@ -3584,6 +3640,9 @@ pub enum DriveActionResult {
     TheoryDiscovered {
         theory_id: Option<String>,
         member_count: usize,
+    },
+    Pruned {
+        object_ids: Vec<String>,
     },
 }
 
@@ -3619,6 +3678,12 @@ pub struct DriveConfig {
     pub axiom_config: AxiomDiscoveryConfig,
     pub max_steps: usize,
     pub epsilon: f64,
+    /// When true, include `DriveAction::Prune(prune_threshold)` as a
+    /// candidate action each step. ADR 0040. Default `true`.
+    pub enable_prune: bool,
+    /// Counterfactual-value threshold below which Prune retracts an
+    /// object. Default `0.0` (retract only net-negative contributors).
+    pub prune_threshold: f64,
 }
 
 impl DriveConfig {
@@ -3637,6 +3702,9 @@ impl DriveConfig {
             })
             .collect();
         out.push(DriveAction::DiscoverTheory(self.axiom_config.clone()));
+        if self.enable_prune {
+            out.push(DriveAction::Prune(self.prune_threshold));
+        }
         out
     }
 }
@@ -3660,6 +3728,8 @@ impl Default for DriveConfig {
             axiom_config: AxiomDiscoveryConfig::default(),
             max_steps: 10,
             epsilon: 0.0,
+            enable_prune: true,
+            prune_threshold: 0.0,
         }
     }
 }
@@ -7523,5 +7593,96 @@ mod tests {
         assert!(rs.reconstruct_axiom_template(AX_TOTALITY).is_none());
         // axiom_variables for predicate is empty.
         assert!(rs.axiom_variables(AX_TOTALITY).is_empty());
+    }
+
+    // ADR 0040 — drive auto-prune via counterfactual.
+
+    #[test]
+    fn adr0040_extension_edges_now_reward_the_score() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        let before = rs.abstraction_score();
+        let _ = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        let after = rs.abstraction_score();
+        // +1 reward per extension; -0.1×3 overhead = net +0.7 minimum.
+        assert!(after > before);
+    }
+
+    #[test]
+    fn adr0040_counterfactual_for_extension_is_positive_now() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        let ext = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        let v = rs.counterfactual_value(&ext).unwrap();
+        assert!(v > 0.0, "extension should have positive CV, got {}", v);
+    }
+
+    #[test]
+    fn adr0040_prune_action_retracts_negative_cv_objects() {
+        // Build an RSet where an object exists but has negative CV.
+        // Simplest: name a single-edge pattern with just one instance
+        // (N=1 → reuse savings = 0, only overhead).
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b")]);
+        let sg = Subgraph::from_edges([R::new("a", "b")]);
+        let p = rs.name_pattern_instances(&[sg]).unwrap();
+        let cv = rs.counterfactual_value(&p).unwrap();
+        assert!(cv < 0.0,
+            "singleton pattern should have negative CV, got {}", cv);
+        // Drive with prune enabled should retract it.
+        let mut rs2 = rs.clone();
+        let cfg = DriveConfig {
+            pattern_sizes: vec![],    // don't re-discover
+            enable_prune: true,
+            prune_threshold: 0.0,
+            ..DriveConfig::default()
+        };
+        let trace = rs2.intrinsic_drive(&cfg);
+        let pruned_step = trace
+            .steps
+            .iter()
+            .any(|s| matches!(s.result, DriveActionResult::Pruned { .. }));
+        assert!(pruned_step, "drive should have taken a Prune step");
+        assert!(!rs2.patterns().iter().any(|q| *q == p.as_str()),
+            "negative-CV pattern should have been pruned");
+    }
+
+    #[test]
+    fn adr0040_prune_leaves_positive_cv_objects_alone() {
+        // Diamond poset with a theory named: theory CV is positive.
+        let mut rs = diamond_poset();
+        let _t = name_theory_from_rset(&mut rs);
+        let theories_before = rs.theories().len();
+        let cfg = DriveConfig {
+            pattern_sizes: vec![],
+            enable_prune: true,
+            prune_threshold: 0.0,
+            ..DriveConfig::default()
+        };
+        let mut rs2 = rs.clone();
+        let _ = rs2.intrinsic_drive(&cfg);
+        assert_eq!(rs2.theories().len(), theories_before,
+            "positive-CV theory should survive pruning");
+    }
+
+    #[test]
+    fn adr0040_prune_disabled_by_default_via_flag() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b")]);
+        let sg = Subgraph::from_edges([R::new("a", "b")]);
+        let p = rs.name_pattern_instances(&[sg]).unwrap();
+        let cfg = DriveConfig {
+            pattern_sizes: vec![],
+            enable_prune: false,
+            ..DriveConfig::default()
+        };
+        let mut rs2 = rs.clone();
+        let _ = rs2.intrinsic_drive(&cfg);
+        // Disabled → pattern still there.
+        assert!(rs2.patterns().iter().any(|q| *q == p.as_str()));
     }
 }
