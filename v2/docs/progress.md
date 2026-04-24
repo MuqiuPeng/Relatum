@@ -1372,3 +1372,30 @@ level).
 Tests: 243 → 249 (6 new).
 
 Decision: [0045-axiom-confidence](decisions/0045-axiom-confidence.md).
+
+### Theory parallel relations (ADR 0046)
+Task 5 of 1''→5''. Fills the gap between extends (one subsumes the
+other) and independent (no overlap): **parallel** — two theories
+share some members but neither is a subset of the other.
+
+Marker `__parallel__`, chain encoding `R(T_lo, par_N) + R(par_N,
+T_hi)` (canonical direction, lex-smaller first), same shape as
+independence.
+
+API: `name_theory_parallel`, `parallel_edges`,
+`parallel_endpoints`, `theories_parallel_to` (symmetric),
+`discover_theory_parallels`, `retract_parallel`. Name-time
+verification rejects disjoint pairs (use independence) and subset
+pairs (use extends), with helpful messages.
+
+The three theory-space relations now partition every
+pair-of-distinct-theories:
+- extends: one strictly contains the other
+- independent: empty intersection
+- parallel: non-empty intersection, neither contains the other
+
+Plus the trivial `equal` case handled by `name_theory`'s id-reuse.
+
+Tests: 249 → 257 (8 new).
+
+Decision: [0046-theory-parallel](decisions/0046-theory-parallel.md).

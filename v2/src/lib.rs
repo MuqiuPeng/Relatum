@@ -107,6 +107,13 @@ pub const EXTENDS_MARKER: &str = "__extends__";
 /// `T_a < T_b` lexicographically.
 pub const INDEPENDENT_MARKER: &str = "__independent__";
 
+/// Reserved registry marker for theory-parallel relations (ADR 0046).
+/// Two theories are *parallel* iff they overlap non-trivially but
+/// neither extends the other — some shared members, plus members
+/// unique to each side. Symmetric; same canonical-direction chain
+/// as independence.
+pub const PARALLEL_MARKER: &str = "__parallel__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -2441,6 +2448,190 @@ impl RSet {
         }
     }
 
+    // ─── ADR 0046: theory parallel relations ───────────────────────
+
+    /// Name a "T_a || T_b" (parallel) relation in meta-R. ADR 0046.
+    ///
+    /// Two theories are parallel iff they share a nonempty member
+    /// subset but neither is a subset of the other — i.e. they have
+    /// common ground but diverge. Symmetric — chain stores canonical
+    /// direction (`T_lo, par_N, T_hi` with `T_lo < T_hi` lex).
+    pub fn name_theory_parallel(
+        &mut self,
+        a: &str,
+        b: &str,
+    ) -> Result<String, TheoryError> {
+        if !self.is_theory(a) {
+            return Err(TheoryError::UnsatisfiedMember(a.to_string()));
+        }
+        if !self.is_theory(b) {
+            return Err(TheoryError::UnsatisfiedMember(b.to_string()));
+        }
+        if a == b {
+            return Err(TheoryError::UnsatisfiedMember(
+                "a theory is not parallel to itself".to_string(),
+            ));
+        }
+        let a_members: HashSet<String> = self
+            .theory_axioms(a)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let b_members: HashSet<String> = self
+            .theory_axioms(b)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let intersection: HashSet<_> = a_members.intersection(&b_members).collect();
+        if intersection.is_empty() {
+            return Err(TheoryError::UnsatisfiedMember(format!(
+                "{} and {} have no shared axioms (use independence instead)",
+                a, b
+            )));
+        }
+        if a_members.is_subset(&b_members) || b_members.is_subset(&a_members) {
+            return Err(TheoryError::UnsatisfiedMember(format!(
+                "{} and {} are in an extends relation, not parallel",
+                a, b
+            )));
+        }
+        let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+        for existing in self.parallel_edges() {
+            let (el, eh) = self.parallel_endpoints(existing).unwrap_or_default();
+            if el == lo && eh == hi {
+                return Ok(existing.to_string());
+            }
+        }
+        let par_id = self.mint_parallel_id();
+        self.add(R::new(PARALLEL_MARKER, par_id.clone()));
+        self.add(R::new(lo.to_string(), par_id.clone()));
+        self.add(R::new(par_id.clone(), hi.to_string()));
+        Ok(par_id)
+    }
+
+    /// Every named parallel-edge id. ADR 0046.
+    pub fn parallel_edges(&self) -> Vec<&str> {
+        self.left_of(PARALLEL_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Decode a parallel-edge's endpoints: `(T_lo, T_hi)` where
+    /// `T_lo < T_hi` lexicographically. ADR 0046.
+    pub fn parallel_endpoints(&self, par_id: &str) -> Option<(String, String)> {
+        if !self.instances.contains(&R::new(PARALLEL_MARKER, par_id)) {
+            return None;
+        }
+        let lo = self
+            .right_of(par_id)
+            .into_iter()
+            .find_map(|r| {
+                if self.is_theory(r.x.as_str()) {
+                    Some(r.x.clone())
+                } else {
+                    None
+                }
+            })?;
+        let hi = self
+            .left_of(par_id)
+            .into_iter()
+            .find_map(|r| {
+                if self.is_theory(r.y.as_str()) {
+                    Some(r.y.clone())
+                } else {
+                    None
+                }
+            })?;
+        Some((lo, hi))
+    }
+
+    /// All theories parallel to `theory`. ADR 0046.
+    pub fn theories_parallel_to(&self, theory: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for par in self.parallel_edges() {
+            if let Some((lo, hi)) = self.parallel_endpoints(par) {
+                if lo == theory {
+                    out.push(hi);
+                } else if hi == theory {
+                    out.push(lo);
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Scan named theories for all parallel pairs. Read-only. ADR 0046.
+    pub fn discover_theory_parallels(&self) -> Vec<(String, String)> {
+        let theories: Vec<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        let member_sets: HashMap<String, HashSet<String>> = theories
+            .iter()
+            .map(|t| {
+                let m: HashSet<String> = self
+                    .theory_axioms(t)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                (t.clone(), m)
+            })
+            .collect();
+        let mut out: Vec<(String, String)> = Vec::new();
+        for i in 0..theories.len() {
+            for j in (i + 1)..theories.len() {
+                let a = &theories[i];
+                let b = &theories[j];
+                let am = &member_sets[a];
+                let bm = &member_sets[b];
+                let shares = !am.is_disjoint(bm);
+                let neither_subset =
+                    !am.is_subset(bm) && !bm.is_subset(am);
+                if shares && neither_subset {
+                    let (lo, hi) = if a < b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
+                    out.push((lo, hi));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Retract a parallel-relation edge. ADR 0046.
+    pub fn retract_parallel(&mut self, par_id: &str) -> Result<usize, TheoryError> {
+        if !self.instances.contains(&R::new(PARALLEL_MARKER, par_id)) {
+            return Err(TheoryError::UnsatisfiedMember(par_id.to_string()));
+        }
+        let mut removed = 0usize;
+        let to_remove: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| r.x == par_id || r.y == par_id)
+            .cloned()
+            .collect();
+        for e in to_remove {
+            if self.remove(&e) {
+                removed += 1;
+            }
+        }
+        if self.remove(&R::new(PARALLEL_MARKER, par_id.to_string())) {
+            removed += 1;
+        }
+        Ok(removed)
+    }
+
+    fn mint_parallel_id(&self) -> String {
+        let existing = self.identifiers();
+        let mut n = self.parallel_edges().len();
+        loop {
+            let candidate = format!("par_{}", n);
+            if !existing.contains(candidate.as_str()) {
+                return candidate;
+            }
+            n += 1;
+        }
+    }
+
     /// Retract an extension-relation edge. ADR 0034 / 0035.
     pub fn retract_extension(&mut self, ext_id: &str) -> Result<usize, TheoryError> {
         if !self.instances.contains(&R::new(EXTENDS_MARKER, ext_id)) {
@@ -3024,6 +3215,10 @@ impl RSet {
         s.insert(INDEPENDENT_MARKER.to_string());
         for ind in self.independence_edges() {
             s.insert(ind.to_string());
+        }
+        s.insert(PARALLEL_MARKER.to_string());
+        for par in self.parallel_edges() {
+            s.insert(par.to_string());
         }
         for role in self.roles() {
             s.insert(role.to_string());
@@ -8671,5 +8866,111 @@ mod tests {
         let (lo, _) = wilson_score_95(ev.conclusion_satisfied, ev.premise_bindings);
         // CI lower at N=2 should be well below rate=1
         assert!(lo < 0.5);
+    }
+
+    // ADR 0046 — theory parallel relation.
+
+    fn three_way_theory_setup(rs: &mut RSet) -> (String, String, String) {
+        // t_a: sym + refl
+        // t_b: sym + antisym  ← shares sym with t_a, not a subset
+        // t_c: refl + antisym ← shares refl with t_a, not a subset
+        // All should be mutually parallel.
+        // But: do these axioms actually hold on diamond_poset?
+        //   sym: no. refl: yes. antisym: yes.
+        // So only refl + antisym are discoverable on poset.
+        // Use name_theory to build synthetic theories from ids that
+        // DO hold on the source.
+        // Use reflexivity + antisymmetry + (template) transitivity as
+        // our three-axiom pool from diamond_poset.
+        let t_a = rs.name_theory(&[AX_REFLEXIVITY, AX_ANTISYMMETRY]).unwrap();
+        let t_b = rs
+            .name_theory(&[AX_ANTISYMMETRY, "ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        let t_c = rs
+            .name_theory(&[AX_REFLEXIVITY, "ax_tpl_v3_p0-1_p1-2_c0-2"])
+            .unwrap();
+        (t_a, t_b, t_c)
+    }
+
+    #[test]
+    fn adr0046_parallel_on_overlapping_non_subset_theories() {
+        let mut rs = diamond_poset();
+        let (t_a, t_b, _t_c) = three_way_theory_setup(&mut rs);
+        // t_a (refl, antisym) and t_b (antisym, trans) share antisym.
+        // Neither is subset of the other.
+        let par = rs.name_theory_parallel(&t_a, &t_b).unwrap();
+        assert!(rs.parallel_edges().contains(&par.as_str()));
+        let (lo, hi) = rs.parallel_endpoints(&par).unwrap();
+        assert!(lo < hi);
+    }
+
+    #[test]
+    fn adr0046_rejects_disjoint_theories() {
+        let mut rs = diamond_poset();
+        let t_a = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let t_b = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        // Disjoint → not parallel, use independence instead.
+        assert!(rs.name_theory_parallel(&t_a, &t_b).is_err());
+    }
+
+    #[test]
+    fn adr0046_rejects_subset_theories() {
+        let mut rs = diamond_poset();
+        let t_small = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let t_big = rs.name_theory(&[AX_REFLEXIVITY, AX_ANTISYMMETRY]).unwrap();
+        // Subset → extends relation, not parallel.
+        assert!(rs.name_theory_parallel(&t_small, &t_big).is_err());
+    }
+
+    #[test]
+    fn adr0046_canonical_ordering_deterministic() {
+        let mut rs = diamond_poset();
+        let (t_a, t_b, _t_c) = three_way_theory_setup(&mut rs);
+        let p1 = rs.name_theory_parallel(&t_a, &t_b).unwrap();
+        let p2 = rs.name_theory_parallel(&t_b, &t_a).unwrap();
+        assert_eq!(p1, p2);
+    }
+
+    #[test]
+    fn adr0046_discover_parallels_pairs() {
+        let mut rs = diamond_poset();
+        let (t_a, t_b, t_c) = three_way_theory_setup(&mut rs);
+        let found = rs.discover_theory_parallels();
+        // All three pairs should be mutually parallel.
+        let pair_ab = (t_a.clone().min(t_b.clone()), t_a.clone().max(t_b.clone()));
+        let pair_ac = (t_a.clone().min(t_c.clone()), t_a.clone().max(t_c.clone()));
+        let pair_bc = (t_b.clone().min(t_c.clone()), t_b.clone().max(t_c.clone()));
+        assert!(found.contains(&pair_ab));
+        assert!(found.contains(&pair_ac));
+        assert!(found.contains(&pair_bc));
+    }
+
+    #[test]
+    fn adr0046_symmetric_query() {
+        let mut rs = diamond_poset();
+        let (t_a, t_b, _t_c) = three_way_theory_setup(&mut rs);
+        let _ = rs.name_theory_parallel(&t_a, &t_b).unwrap();
+        assert!(rs.theories_parallel_to(&t_a).contains(&t_b));
+        assert!(rs.theories_parallel_to(&t_b).contains(&t_a));
+    }
+
+    #[test]
+    fn adr0046_retract_clears_three_edges() {
+        let mut rs = diamond_poset();
+        let (t_a, t_b, _t_c) = three_way_theory_setup(&mut rs);
+        let par = rs.name_theory_parallel(&t_a, &t_b).unwrap();
+        let removed = rs.retract_parallel(&par).unwrap();
+        assert_eq!(removed, 3);
+        assert!(rs.parallel_edges().is_empty());
+    }
+
+    #[test]
+    fn adr0046_collect_meta_ids_includes_parallel() {
+        let mut rs = diamond_poset();
+        let (t_a, t_b, _t_c) = three_way_theory_setup(&mut rs);
+        let par = rs.name_theory_parallel(&t_a, &t_b).unwrap();
+        let meta = rs.collect_meta_ids();
+        assert!(meta.contains(PARALLEL_MARKER));
+        assert!(meta.contains(&par));
     }
 }

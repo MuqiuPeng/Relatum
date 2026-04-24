@@ -85,3 +85,4 @@ Commit hash(es), file pointers.
 - [0043](0043-indexed-rset-and-sampling-path.md) — Indexed RSet + sampling-path for autonomous_pass
 - [0044](0044-extended-template-language.md) — Extended template language (equality + disjunctive conclusions)
 - [0045](0045-axiom-confidence.md) — Axiom confidence (Wilson score + null-baseline probability)
+- [0046](0046-theory-parallel.md) — Theory parallel relations
