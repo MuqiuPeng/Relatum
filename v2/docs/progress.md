@@ -1319,3 +1319,29 @@ matters.
 Tests: 230 → 236 (6 new). Zero public API regression.
 
 Decision: [0043-indexed-rset-and-sampling-path](decisions/0043-indexed-rset-and-sampling-path.md).
+
+### Extended template language: equality + disjunction (ADR 0044)
+Task 2 of 1''→5''. Antisymmetry and totality enter the template
+family, without disturbing the existing `AxiomTemplate` type.
+
+Two new sibling types: `EqualityAxiomTemplate` (conclusion is
+`v_a = v_b`) and `DisjunctiveAxiomTemplate` (conclusion is
+`R(c_1) ∨ R(c_2) ∨ …`). Unified `ExtendedAxiomEvidence` enum
+carries rate + support across all three families.
+
+`discover_antisymmetry_template`, `discover_totality_template`,
+`discover_extended_axioms` merge all three families with shared
+`min_rate` / `min_evidence` filtering. Rate behavior on the
+rigorous battery:
+- diamond poset: antisym rate 1.0 (premise only met at self-loops)
+- equivalence: antisym rate < 1.0 (R(a,b) ∧ R(b,a) holds for a ≠ b)
+- total order: totality rate 1.0
+- diamond: totality rate < 1.0 (incomparable pair exists)
+
+Not yet integrated: meta-R intension, subsumption, composition,
+discover_theory fingerprint — all edge-family only. Documented
+as deferrals.
+
+Tests: 236 → 243 (7 new).
+
+Decision: [0044-extended-template-language](decisions/0044-extended-template-language.md).

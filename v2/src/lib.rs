@@ -2660,6 +2660,194 @@ impl RSet {
         }
     }
 
+    /// Evaluate an `EqualityAxiomTemplate`. ADR 0044.
+    fn evaluate_equality_template(
+        &self,
+        template: &EqualityAxiomTemplate,
+        ids: &[String],
+    ) -> (usize, usize) {
+        let mut binding: Vec<usize> = vec![0; template.num_vars];
+        let mut premise_bindings = 0usize;
+        let mut conclusion_satisfied = 0usize;
+        fn rec(
+            rs: &RSet,
+            template: &EqualityAxiomTemplate,
+            ids: &[String],
+            binding: &mut [usize],
+            depth: usize,
+            premise_bindings: &mut usize,
+            conclusion_satisfied: &mut usize,
+        ) {
+            if depth == binding.len() {
+                for e in &template.premise {
+                    let x = &ids[binding[e.x_var]];
+                    let y = &ids[binding[e.y_var]];
+                    if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                        return;
+                    }
+                }
+                *premise_bindings += 1;
+                let a = binding[template.equal_vars.0];
+                let b = binding[template.equal_vars.1];
+                if ids[a] == ids[b] {
+                    *conclusion_satisfied += 1;
+                }
+                return;
+            }
+            for i in 0..ids.len() {
+                binding[depth] = i;
+                rec(rs, template, ids, binding, depth + 1, premise_bindings, conclusion_satisfied);
+            }
+        }
+        rec(self, template, ids, &mut binding, 0,
+            &mut premise_bindings, &mut conclusion_satisfied);
+        (premise_bindings, conclusion_satisfied)
+    }
+
+    /// Evaluate a `DisjunctiveAxiomTemplate`. ADR 0044. Conclusion is
+    /// satisfied for a binding iff at least one of its disjuncts holds.
+    fn evaluate_disjunctive_template(
+        &self,
+        template: &DisjunctiveAxiomTemplate,
+        ids: &[String],
+    ) -> (usize, usize) {
+        let mut binding: Vec<usize> = vec![0; template.num_vars];
+        let mut premise_bindings = 0usize;
+        let mut conclusion_satisfied = 0usize;
+        fn rec(
+            rs: &RSet,
+            template: &DisjunctiveAxiomTemplate,
+            ids: &[String],
+            binding: &mut [usize],
+            depth: usize,
+            premise_bindings: &mut usize,
+            conclusion_satisfied: &mut usize,
+        ) {
+            if depth == binding.len() {
+                for e in &template.premise {
+                    let x = &ids[binding[e.x_var]];
+                    let y = &ids[binding[e.y_var]];
+                    if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                        return;
+                    }
+                }
+                *premise_bindings += 1;
+                let any_holds = template.conclusions.iter().any(|c| {
+                    let x = &ids[binding[c.x_var]];
+                    let y = &ids[binding[c.y_var]];
+                    rs.instances.contains(&R::new(x.clone(), y.clone()))
+                });
+                if any_holds {
+                    *conclusion_satisfied += 1;
+                }
+                return;
+            }
+            for i in 0..ids.len() {
+                binding[depth] = i;
+                rec(rs, template, ids, binding, depth + 1, premise_bindings, conclusion_satisfied);
+            }
+        }
+        rec(self, template, ids, &mut binding, 0,
+            &mut premise_bindings, &mut conclusion_satisfied);
+        (premise_bindings, conclusion_satisfied)
+    }
+
+    /// Discover antisymmetry as an equality-conclusion template:
+    /// `R(0,1) ∧ R(1,0) ⇒ v_0 = v_1`. ADR 0044.
+    pub fn discover_antisymmetry_template(&self) -> Option<ExtendedAxiomEvidence> {
+        let meta = self.collect_meta_ids();
+        let ids: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .filter(|id| !meta.contains(*id))
+            .map(str::to_owned)
+            .collect();
+        if ids.is_empty() {
+            return None;
+        }
+        let tpl = EqualityAxiomTemplate {
+            num_vars: 2,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 0 },
+            ],
+            equal_vars: (0, 1),
+        };
+        let (bindings, satisfied) = self.evaluate_equality_template(&tpl, &ids);
+        if bindings == 0 {
+            return None;
+        }
+        let rate = satisfied as f64 / bindings as f64;
+        Some(ExtendedAxiomEvidence::Equality {
+            template: tpl,
+            premise_bindings: bindings,
+            conclusion_satisfied: satisfied,
+            rate,
+        })
+    }
+
+    /// Discover totality as a disjunctive-conclusion template:
+    /// `(empty premise) ⇒ R(0,1) ∨ R(1,0)`. ADR 0044.
+    pub fn discover_totality_template(&self) -> Option<ExtendedAxiomEvidence> {
+        let meta = self.collect_meta_ids();
+        let ids: Vec<String> = self
+            .identifiers()
+            .into_iter()
+            .filter(|id| !meta.contains(*id))
+            .map(str::to_owned)
+            .collect();
+        if ids.is_empty() {
+            return None;
+        }
+        let tpl = DisjunctiveAxiomTemplate {
+            num_vars: 2,
+            premise: vec![],
+            conclusions: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 0 },
+            ],
+        };
+        let (bindings, satisfied) = self.evaluate_disjunctive_template(&tpl, &ids);
+        if bindings == 0 {
+            return None;
+        }
+        let rate = satisfied as f64 / bindings as f64;
+        Some(ExtendedAxiomEvidence::Disjunctive {
+            template: tpl,
+            premise_bindings: bindings,
+            conclusion_satisfied: satisfied,
+            rate,
+        })
+    }
+
+    /// Discover all three axiom families (edge / equality / disjunctive)
+    /// and return a merged evidence list. ADR 0044.
+    pub fn discover_extended_axioms(
+        &self,
+        config: &AxiomDiscoveryConfig,
+    ) -> Vec<ExtendedAxiomEvidence> {
+        let mut out: Vec<ExtendedAxiomEvidence> = self
+            .discover_axioms(config)
+            .into_iter()
+            .map(ExtendedAxiomEvidence::Edge)
+            .collect();
+        if let Some(ev) = self.discover_antisymmetry_template() {
+            if ev.rate() >= config.min_rate
+                && ev.premise_bindings() >= config.min_evidence
+            {
+                out.push(ev);
+            }
+        }
+        if let Some(ev) = self.discover_totality_template() {
+            if ev.rate() >= config.min_rate
+                && ev.premise_bindings() >= config.min_evidence
+            {
+                out.push(ev);
+            }
+        }
+        out
+    }
+
     /// Evaluate one axiom template: count premise bindings and
     /// conclusion satisfactions over data-only identifiers. ADR 0027.
     fn evaluate_axiom_template(
@@ -3788,6 +3976,61 @@ pub struct AxiomTemplate {
     pub num_vars: usize,
     pub premise: Vec<EdgeTemplate>,
     pub conclusion: EdgeTemplate,
+}
+
+/// Axiom discovery — equality-conclusion family. ADR 0044. A rule
+/// `premise ⇒ (v_a = v_b)`. The canonical instance is antisymmetry:
+/// `R(0, 1) ∧ R(1, 0) ⇒ v_0 = v_1`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EqualityAxiomTemplate {
+    pub num_vars: usize,
+    pub premise: Vec<EdgeTemplate>,
+    pub equal_vars: (usize, usize),
+}
+
+/// Axiom discovery — disjunctive-conclusion family. ADR 0044. A rule
+/// `premise ⇒ R(c_1) ∨ R(c_2) ∨ …`. The canonical instance is
+/// totality: `(empty) ⇒ R(0, 1) ∨ R(1, 0)`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DisjunctiveAxiomTemplate {
+    pub num_vars: usize,
+    pub premise: Vec<EdgeTemplate>,
+    pub conclusions: Vec<EdgeTemplate>,
+}
+
+/// ADR 0044: unified evidence for an extended-axiom-family template.
+#[derive(Debug, Clone)]
+pub enum ExtendedAxiomEvidence {
+    Edge(AxiomEvidence),
+    Equality {
+        template: EqualityAxiomTemplate,
+        premise_bindings: usize,
+        conclusion_satisfied: usize,
+        rate: f64,
+    },
+    Disjunctive {
+        template: DisjunctiveAxiomTemplate,
+        premise_bindings: usize,
+        conclusion_satisfied: usize,
+        rate: f64,
+    },
+}
+
+impl ExtendedAxiomEvidence {
+    pub fn rate(&self) -> f64 {
+        match self {
+            ExtendedAxiomEvidence::Edge(e) => e.rate,
+            ExtendedAxiomEvidence::Equality { rate, .. } => *rate,
+            ExtendedAxiomEvidence::Disjunctive { rate, .. } => *rate,
+        }
+    }
+    pub fn premise_bindings(&self) -> usize {
+        match self {
+            ExtendedAxiomEvidence::Edge(e) => e.premise_bindings,
+            ExtendedAxiomEvidence::Equality { premise_bindings, .. } => *premise_bindings,
+            ExtendedAxiomEvidence::Disjunctive { premise_bindings, .. } => *premise_bindings,
+        }
+    }
 }
 
 /// Axiom discovery: evidence for one template against an RSet.
@@ -8152,5 +8395,87 @@ mod tests {
         let trace = rs.intrinsic_drive(&cfg);
         // Just a smoke test — drive runs without panicking.
         let _ = trace.final_score;
+    }
+
+    // ADR 0044 — template-language extension (equality + disjunction).
+
+    #[test]
+    fn adr0044_antisymmetry_template_holds_on_poset() {
+        let rs = diamond_poset();
+        let ev = rs.discover_antisymmetry_template().unwrap();
+        assert_eq!(ev.rate(), 1.0);
+    }
+
+    #[test]
+    fn adr0044_antisymmetry_template_fails_on_equivalence() {
+        let rs = equivalence_relation();
+        let ev = rs.discover_antisymmetry_template().unwrap();
+        // On equivalence, R(a,b) AND R(b,a) holds for many distinct
+        // pairs — antisymmetry's premise is met but equality isn't.
+        assert!(ev.rate() < 1.0);
+    }
+
+    #[test]
+    fn adr0044_totality_template_holds_on_total_order() {
+        let rs = total_order_closure();
+        let ev = rs.discover_totality_template().unwrap();
+        assert_eq!(ev.rate(), 1.0);
+    }
+
+    #[test]
+    fn adr0044_totality_template_fails_on_diamond() {
+        let rs = diamond_poset();
+        let ev = rs.discover_totality_template().unwrap();
+        assert!(ev.rate() < 1.0);
+    }
+
+    #[test]
+    fn adr0044_discover_extended_axioms_merges_all_three() {
+        let rs = total_order_closure();
+        let cfg = AxiomDiscoveryConfig::default();
+        let extended = rs.discover_extended_axioms(&cfg);
+        // Expect: edge-family transitivity + totality (disjunctive).
+        let has_edge = extended.iter().any(|e|
+            matches!(e, ExtendedAxiomEvidence::Edge(_))
+        );
+        let has_disj = extended.iter().any(|e|
+            matches!(e, ExtendedAxiomEvidence::Disjunctive { .. })
+        );
+        assert!(has_edge);
+        assert!(has_disj);
+    }
+
+    #[test]
+    fn adr0044_equality_template_rate_is_binding_based() {
+        // On diamond poset, premise R(x,y) ∧ R(y,x) holds only when
+        // x == y (self-loops). Those are 4 bindings (one per id),
+        // and equality holds for all of them → rate 1.0.
+        let rs = diamond_poset();
+        let ev = rs.discover_antisymmetry_template().unwrap();
+        if let ExtendedAxiomEvidence::Equality {
+            premise_bindings,
+            conclusion_satisfied,
+            ..
+        } = ev
+        {
+            assert!(premise_bindings >= 1);
+            assert_eq!(premise_bindings, conclusion_satisfied);
+        } else {
+            panic!("expected equality evidence");
+        }
+    }
+
+    #[test]
+    fn adr0044_extended_respects_defeasible_threshold() {
+        // Defeasible mode accepts partial antisymmetry.
+        let rs = equivalence_relation();
+        let loose = AxiomDiscoveryConfig {
+            min_rate: 0.1,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let strict = AxiomDiscoveryConfig::default();
+        let loose_ev = rs.discover_extended_axioms(&loose);
+        let strict_ev = rs.discover_extended_axioms(&strict);
+        assert!(loose_ev.len() >= strict_ev.len());
     }
 }
