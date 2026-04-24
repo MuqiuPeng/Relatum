@@ -1421,3 +1421,23 @@ edge axioms. Deferred.
 Tests: 257 → 265 (8 new).
 
 Decision: [0047-extended-axiom-ids](decisions/0047-extended-axiom-ids.md).
+
+### Confidence filters in discovery config (ADR 0048)
+Task 2 of 1'''→5'''. Finishes ADR 0045 — the posterior and null-
+baseline fields are now wirable through `AxiomDiscoveryConfig`:
+- `min_posterior_lower: f64` (default 0.0) — drops small-support
+  axioms whose Wilson CI lower falls below threshold.
+- `max_null_baseline: f64` (default 1.0) — drops dense-random
+  accidents whose null probability exceeds threshold.
+
+Defaults preserve ADR 0027 behavior. `discover_axioms`,
+`discover_axioms_minimal`, `discover_axioms_minimal_compositional`
+all compose the filters automatically.
+
+Demonstrated on complete-graph-on-4-ids: `max_null_baseline = 0.5`
+drops every axiom as accidental. On diamond poset:
+`min_posterior_lower = 0.7` drops transitivity (only 2 bindings).
+
+Tests: 265 → 270 (5 new).
+
+Decision: [0048-confidence-filters](decisions/0048-confidence-filters.md).

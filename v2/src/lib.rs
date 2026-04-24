@@ -1560,7 +1560,11 @@ impl RSet {
         let mut results = Vec::new();
         for template in templates {
             let ev = self.evaluate_axiom_template(&template, &ids, &meta);
-            if ev.premise_bindings >= config.min_evidence && ev.rate >= config.min_rate {
+            if ev.premise_bindings >= config.min_evidence
+                && ev.rate >= config.min_rate
+                && ev.posterior_lower_95 >= config.min_posterior_lower
+                && ev.null_baseline_prob <= config.max_null_baseline
+            {
                 results.push(ev);
             }
         }
@@ -4359,6 +4363,18 @@ pub struct AxiomDiscoveryConfig {
     /// reflexivity in template form). Default `false` preserves
     /// ADR 0027's "premise must have at least one edge" shape. ADR 0036.
     pub include_empty_premise: bool,
+    /// Minimum posterior lower-95 bound for an axiom to be reported
+    /// (uses ADR 0045's Wilson score). Default `0.0` = no filter.
+    /// Raising to e.g. 0.8 rejects axioms that are technically at
+    /// rate 1.0 but have too few premise bindings for meaningful
+    /// confidence. ADR 0048.
+    pub min_posterior_lower: f64,
+    /// Maximum null-baseline probability (iid-Bernoulli-edges null)
+    /// for an axiom to be reported. Default `1.0` = no filter.
+    /// Lowering to e.g. 0.01 rejects axioms whose rate = 1.0 is
+    /// explainable as a coincidence under uniform-random edges.
+    /// ADR 0048.
+    pub max_null_baseline: f64,
 }
 
 impl Default for AxiomDiscoveryConfig {
@@ -4369,6 +4385,8 @@ impl Default for AxiomDiscoveryConfig {
             min_evidence: 1,
             min_rate: 1.0,
             include_empty_premise: false,
+            min_posterior_lower: 0.0,
+            max_null_baseline: 1.0,
         }
     }
 }
@@ -9187,5 +9205,93 @@ mod tests {
         for id in &ids {
             assert!(members.contains(id));
         }
+    }
+
+    // ADR 0048 — confidence thresholds in discovery config.
+
+    #[test]
+    fn adr0048_default_has_no_effect() {
+        let rs = diamond_poset();
+        let default_cfg = AxiomDiscoveryConfig::default();
+        let axioms = rs.discover_axioms(&default_cfg);
+        assert!(!axioms.is_empty());
+    }
+
+    #[test]
+    fn adr0048_high_posterior_threshold_drops_small_support() {
+        // Diamond poset: transitivity has bindings=2; Wilson CI lower
+        // at n=2 is well under 0.5. Raising min_posterior_lower to
+        // 0.7 should drop it.
+        let rs = diamond_poset();
+        let strict = AxiomDiscoveryConfig {
+            min_posterior_lower: 0.7,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let axioms = rs.discover_axioms(&strict);
+        for ev in &axioms {
+            assert!(ev.posterior_lower_95 >= 0.7);
+        }
+    }
+
+    #[test]
+    fn adr0048_low_null_threshold_drops_dense_accidents() {
+        // Complete graph on 4 ids: everything holds, p_edge = 1.0,
+        // null_baseline_prob = 1.0 on every axiom. max_null_baseline
+        // below 1.0 should drop all of them.
+        let mut rs = RSet::new();
+        let nodes = vec!["a", "b", "c", "d"];
+        for a in &nodes {
+            for b in &nodes {
+                rs.add(R::new(*a, *b));
+            }
+        }
+        let filter = AxiomDiscoveryConfig {
+            max_null_baseline: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let axioms = rs.discover_axioms(&filter);
+        assert!(axioms.is_empty(),
+            "all axioms should be filtered as accidental; got {}",
+            axioms.len());
+    }
+
+    #[test]
+    fn adr0048_thresholds_compose_additively() {
+        // Both filters active should drop at least as many as each alone.
+        let rs = diamond_poset();
+        let alone_post = AxiomDiscoveryConfig {
+            min_posterior_lower: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let alone_null = AxiomDiscoveryConfig {
+            max_null_baseline: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let both = AxiomDiscoveryConfig {
+            min_posterior_lower: 0.5,
+            max_null_baseline: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let n_post = rs.discover_axioms(&alone_post).len();
+        let n_null = rs.discover_axioms(&alone_null).len();
+        let n_both = rs.discover_axioms(&both).len();
+        assert!(n_both <= n_post);
+        assert!(n_both <= n_null);
+    }
+
+    #[test]
+    fn adr0048_high_posterior_preserved_by_large_support() {
+        // Equivalence relation on 2 classes of 2+3: ~36 bindings for
+        // transitivity → Wilson CI lower is close to 1.0. Should pass
+        // min_posterior_lower = 0.9.
+        let rs = equivalence_relation();
+        let strict = AxiomDiscoveryConfig {
+            min_posterior_lower: 0.9,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let axioms = rs.discover_axioms(&strict);
+        // At least one axiom should survive — specifically one with
+        // enough support to breach 0.9.
+        assert!(!axioms.is_empty());
     }
 }

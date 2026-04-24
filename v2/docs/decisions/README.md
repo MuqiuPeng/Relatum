@@ -87,3 +87,4 @@ Commit hash(es), file pointers.
 - [0045](0045-axiom-confidence.md) — Axiom confidence (Wilson score + null-baseline probability)
 - [0046](0046-theory-parallel.md) — Theory parallel relations
 - [0047](0047-extended-axiom-ids.md) — Extended axiom id codec (equality + disjunctive)
+- [0048](0048-confidence-filters.md) — Confidence thresholds in AxiomDiscoveryConfig
