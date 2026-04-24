@@ -1102,3 +1102,27 @@ objects to definitions; this links objects to each other. Tests:
 ext_N.
 
 Decision: [0034-theory-extension-relations](decisions/0034-theory-extension-relations.md).
+
+### Counterfactual value / meta-metric (ADR 0035)
+Task 2 of 1→5. Adds a second-order signal on top of ADR 0031's
+drive: for each named object, how much does it contribute to the
+global score?
+
+`counterfactual_value(id) -> Option<f64>` clones self, retracts the
+object, returns (before − after). `rank_by_counterfactual()` gives
+a descending ranking of all retractable named objects.
+
+Also added `retract_extension` (symmetric with retract_theory /
+_pattern / _axiom).
+
+Supported object kinds: patterns, theories, extensions, and axioms
+not yet bound to any theory (blocked for axioms in theories since
+retract_axiom refuses; caller must retract theories first).
+
+Truth invariant: predicted drop ≡ actual drop after retract,
+verified numerically (`adr0035_counterfactual_respects_actual_
+retract_behavior`).
+
+Tests: 182 → 188 (6 new).
+
+Decision: [0035-counterfactual-value](decisions/0035-counterfactual-value.md).

@@ -2041,6 +2041,101 @@ impl RSet {
         }
     }
 
+    /// Retract an extension-relation edge. ADR 0034 / 0035.
+    pub fn retract_extension(&mut self, ext_id: &str) -> Result<usize, TheoryError> {
+        if !self.instances.contains(&R::new(EXTENDS_MARKER, ext_id)) {
+            return Err(TheoryError::UnsatisfiedMember(ext_id.to_string()));
+        }
+        let mut removed = 0usize;
+        // Remove sub-side and super-side edges (whichever exist).
+        let to_remove: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| r.x == ext_id || r.y == ext_id)
+            .cloned()
+            .collect();
+        for e in to_remove {
+            if self.remove(&e) {
+                removed += 1;
+            }
+        }
+        if self.remove(&R::new(EXTENDS_MARKER, ext_id.to_string())) {
+            removed += 1;
+        }
+        Ok(removed)
+    }
+
+    // ─── ADR 0035: meta-metric / counterfactual value ──────────────────
+
+    /// Counterfactual value of a named object: the drop in
+    /// `abstraction_score` that would result from retracting it.
+    /// Positive = the object is "load-bearing"; near zero = it
+    /// contributes little; negative = it's a net cost. ADR 0035.
+    ///
+    /// Works for patterns, theories, and extensions. Returns `None`
+    /// for ids that are not one of these, or when retraction fails
+    /// (e.g., an axiom still referenced by a theory — use
+    /// `retract_theory` first).
+    pub fn counterfactual_value(&self, id: &str) -> Option<f64> {
+        let before = self.abstraction_score();
+        let mut trial = self.clone();
+        let is_pat: HashSet<&str> =
+            self.patterns().into_iter().collect();
+        let is_th: HashSet<&str> =
+            self.theories().into_iter().collect();
+        let is_ext: HashSet<&str> =
+            self.extension_edges().into_iter().collect();
+        let is_ax: HashSet<&str> =
+            self.axioms().into_iter().collect();
+
+        let retracted = if is_pat.contains(id) {
+            trial.retract_pattern(id).is_ok()
+        } else if is_th.contains(id) {
+            trial.retract_theory(id).is_ok()
+        } else if is_ext.contains(id) {
+            trial.retract_extension(id).is_ok()
+        } else if is_ax.contains(id) {
+            trial.retract_axiom(id).is_ok()
+        } else {
+            return None;
+        };
+        if !retracted {
+            return None;
+        }
+        Some(before - trial.abstraction_score())
+    }
+
+    /// Rank every retractable named object by its counterfactual
+    /// value, descending. Items with equal value order by id. ADR 0035.
+    ///
+    /// Gives a global picture of which abstractions carry the score
+    /// and which are passengers. Useful as a second-order ("was my
+    /// drive choice any good?") signal on top of ADR 0031's drive.
+    pub fn rank_by_counterfactual(&self) -> Vec<(String, f64)> {
+        let mut items: Vec<(String, f64)> = Vec::new();
+        for p in self.patterns() {
+            if let Some(v) = self.counterfactual_value(p) {
+                items.push((p.to_string(), v));
+            }
+        }
+        for t in self.theories() {
+            if let Some(v) = self.counterfactual_value(t) {
+                items.push((t.to_string(), v));
+            }
+        }
+        for e in self.extension_edges() {
+            if let Some(v) = self.counterfactual_value(e) {
+                items.push((e.to_string(), v));
+            }
+        }
+        items.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        items
+    }
+
     /// Reflexivity: every data identifier has a self-loop `R(x, x)`.
     /// ADR 0027.
     pub fn check_reflexivity(&self) -> ReflexivityEvidence {
@@ -6668,5 +6763,79 @@ mod tests {
         let meta = rs.collect_meta_ids();
         assert!(meta.contains(EXTENDS_MARKER));
         assert!(meta.contains(&ext));
+    }
+
+    // ADR 0035 — counterfactual value / meta-metric.
+
+    #[test]
+    fn adr0035_counterfactual_for_theory_is_positive() {
+        let mut rs = diamond_poset();
+        let t = name_theory_from_rset(&mut rs);
+        let v = rs.counterfactual_value(&t).expect("theory is retractable");
+        // Theory has 3 members; removing it drops 2.0 * 3 = 6.0 from reward
+        // minus some overhead savings. Net should still be > 0 because
+        // the reward exceeds the tax-savings.
+        assert!(v > 0.0, "expected positive counterfactual, got {}", v);
+    }
+
+    #[test]
+    fn adr0035_counterfactual_returns_none_for_unknown_id() {
+        let rs = diamond_poset();
+        assert!(rs.counterfactual_value("definitely_not_named").is_none());
+    }
+
+    #[test]
+    fn adr0035_counterfactual_blocked_by_theory_reference_for_axiom() {
+        let mut rs = diamond_poset();
+        let _ = name_theory_from_rset(&mut rs);
+        // Transitivity is used by the theory, so retract_axiom would fail.
+        let v = rs.counterfactual_value("ax_tpl_v3_p0-1_p1-2_c0-2");
+        assert!(v.is_none(),
+            "axiom still referenced by a theory should return None");
+    }
+
+    #[test]
+    fn adr0035_rank_orders_by_value_descending() {
+        let mut rs = diamond_poset();
+        let _t = name_theory_from_rset(&mut rs);
+        let ranked = rs.rank_by_counterfactual();
+        assert!(!ranked.is_empty());
+        // Monotone descending.
+        for w in ranked.windows(2) {
+            assert!(w[0].1 >= w[1].1);
+        }
+    }
+
+    #[test]
+    fn adr0035_counterfactual_respects_actual_retract_behavior() {
+        let mut rs = diamond_poset();
+        let _t = name_theory_from_rset(&mut rs);
+        let before = rs.abstraction_score();
+        // Pick any retractable id from the ranking.
+        let ranked = rs.rank_by_counterfactual();
+        let (id, predicted_drop) = ranked.first().cloned().unwrap();
+        // Actually retract, compare.
+        let mut trial = rs.clone();
+        if trial.is_theory(&id) {
+            let _ = trial.retract_theory(&id);
+        } else if trial.patterns().iter().any(|p| *p == id) {
+            let _ = trial.retract_pattern(&id);
+        } else if trial.extension_edges().iter().any(|e| *e == id) {
+            let _ = trial.retract_extension(&id);
+        }
+        let actual_drop = before - trial.abstraction_score();
+        assert!((predicted_drop - actual_drop).abs() < 1e-9);
+    }
+
+    #[test]
+    fn adr0035_retract_extension_clears_all_three_edges() {
+        let mut rs = diamond_poset();
+        let t_full = name_theory_from_rset(&mut rs);
+        let strict_ids = ["ax_tpl_v3_p0-1_p1-2_c0-2", AX_ANTISYMMETRY];
+        let t_strict = rs.name_theory(&strict_ids).unwrap();
+        let ext = rs.name_theory_extension(&t_full, &t_strict).unwrap();
+        let removed = rs.retract_extension(&ext).unwrap();
+        assert_eq!(removed, 3);
+        assert!(rs.extension_edges().is_empty());
     }
 }
