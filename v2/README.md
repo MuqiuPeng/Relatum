@@ -154,6 +154,17 @@ now lands for every named meta-R object in v2 (patterns, theories,
 template axioms) — predicate axioms remain registry-only because
 the current template language can't express them.
 
+ADR 0033 added **defeasible axioms** via `AxiomDiscoveryConfig::min_rate`
+(default 1.0, preserves strict ADR 0027 behavior). Lowering the
+threshold admits rules that hold on a fraction of premise bindings,
+with rate and support reported on every `AxiomEvidence`. `discover_
+axioms_minimal` gates subsumption to strict mode only, since the
+soundness arguments behind ADR 0028's subsumption break under
+rate < 1.0. On the "almost-transitive" case that previously returned
+nothing, defeasible discovery surfaces transitivity at rate 0.667
+(support 2/3) — the system can now report "this almost holds"
+rather than stay silent.
+
 Open directions (refinements, not completions): multi-size
 autonomous passes, attach-only integration, cross-graph pattern
 transfer, sampling-based `find_instances_of` replacement,

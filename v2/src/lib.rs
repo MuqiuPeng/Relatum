@@ -1365,7 +1365,7 @@ impl RSet {
         let mut results = Vec::new();
         for template in templates {
             let ev = self.evaluate_axiom_template(&template, &ids, &meta);
-            if ev.premise_bindings >= config.min_evidence && ev.rate == 1.0 {
+            if ev.premise_bindings >= config.min_evidence && ev.rate >= config.min_rate {
                 results.push(ev);
             }
         }
@@ -1391,6 +1391,14 @@ impl RSet {
         config: &AxiomDiscoveryConfig,
     ) -> Vec<AxiomEvidence> {
         let raw = self.discover_axioms(config);
+        // Subsumption relies on strict "A implies B" reasoning which
+        // only holds when both A and B are universally satisfied
+        // (rate == 1.0). In defeasible mode (min_rate < 1.0) we skip
+        // subsumption entirely and return the raw filtered set.
+        // ADR 0033.
+        if config.min_rate < 1.0 {
+            return raw;
+        }
         let reflexive_holds = {
             let r = self.check_reflexivity();
             r.identifiers_total > 0 && r.rate == 1.0
@@ -2923,12 +2931,18 @@ pub struct AxiomEvidence {
     pub rate: f64,
 }
 
-/// Configuration for axiom discovery. ADR 0027.
+/// Configuration for axiom discovery. ADR 0027, extended by ADR
+/// 0033 (defeasible rules).
 #[derive(Debug, Clone)]
 pub struct AxiomDiscoveryConfig {
     pub max_premise_edges: usize,
     pub max_vars: usize,
     pub min_evidence: usize,
+    /// Minimum satisfaction rate for a template to be reported. Default
+    /// `1.0` preserves ADR 0027's strict "holds universally" semantics.
+    /// Lowering it to e.g. `0.8` admits defeasible rules that hold on
+    /// ≥ 80% of premise bindings. ADR 0033.
+    pub min_rate: f64,
 }
 
 impl Default for AxiomDiscoveryConfig {
@@ -2937,6 +2951,7 @@ impl Default for AxiomDiscoveryConfig {
             max_premise_edges: 2,
             max_vars: 3,
             min_evidence: 1,
+            min_rate: 1.0,
         }
     }
 }
@@ -6255,5 +6270,110 @@ mod tests {
         let after = rs.discover_axioms(&AxiomDiscoveryConfig::default());
         assert_eq!(before.len(), after.len(),
             "axiom discovery must be stable — meta-R should be filtered");
+    }
+
+    // ADR 0033 — defeasible axioms (rate < 1.0).
+
+    fn almost_transitive() -> RSet {
+        // 4-chain transitive closure minus one closure edge: transitivity
+        // holds on all but one binding out of many.
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c", "d"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        rs.remove(&R::new("b", "d"));
+        rs
+    }
+
+    #[test]
+    fn adr0033_default_strict_mode_unchanged() {
+        let rs = almost_transitive();
+        // Default min_rate=1.0: transitivity fails because of the one
+        // missing closure edge → zero strict axioms.
+        let strict = rs.discover_axioms(&AxiomDiscoveryConfig::default());
+        assert_eq!(strict.len(), 0);
+    }
+
+    #[test]
+    fn adr0033_defeasible_mode_surfaces_near_axioms() {
+        let rs = almost_transitive();
+        let cfg = AxiomDiscoveryConfig {
+            min_rate: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let defeasible = rs.discover_axioms(&cfg);
+        assert!(!defeasible.is_empty(),
+            "defeasible discovery should return non-empty on almost-transitive");
+        // Transitivity template shows up with rate < 1.0.
+        let trans = AxiomTemplate {
+            num_vars: 3,
+            premise: vec![
+                EdgeTemplate { x_var: 0, y_var: 1 },
+                EdgeTemplate { x_var: 1, y_var: 2 },
+            ],
+            conclusion: EdgeTemplate { x_var: 0, y_var: 2 },
+        };
+        let trans_ev = defeasible.iter().find(|e| e.template == trans)
+            .expect("transitivity at rate ≥ 0.5 on almost-transitive");
+        assert!(trans_ev.rate < 1.0,
+            "defeasible transitivity should have rate < 1.0, got {}", trans_ev.rate);
+        assert!(trans_ev.rate >= 0.5);
+    }
+
+    #[test]
+    fn adr0033_defeasible_minimal_skips_subsumption() {
+        // In defeasible mode, discover_axioms_minimal returns the raw
+        // output without the subsumption filter (soundness guard).
+        let rs = almost_transitive();
+        let cfg = AxiomDiscoveryConfig {
+            min_rate: 0.5,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let raw = rs.discover_axioms(&cfg);
+        let minimal = rs.discover_axioms_minimal(&cfg);
+        assert_eq!(raw.len(), minimal.len());
+    }
+
+    #[test]
+    fn adr0033_strict_minimal_still_subsumes() {
+        // min_rate=1.0 path unchanged — subsumption still fires.
+        let rs = equivalence_relation();
+        let cfg = AxiomDiscoveryConfig::default(); // strict
+        let raw = rs.discover_axioms(&cfg);
+        let minimal = rs.discover_axioms_minimal(&cfg);
+        assert!(minimal.len() < raw.len(),
+            "strict minimal should subsume; raw={}, minimal={}", raw.len(), minimal.len());
+    }
+
+    #[test]
+    fn adr0033_rate_is_reported_on_every_evidence() {
+        let rs = almost_transitive();
+        let cfg = AxiomDiscoveryConfig {
+            min_rate: 0.1,
+            ..AxiomDiscoveryConfig::default()
+        };
+        let defeasible = rs.discover_axioms(&cfg);
+        for ev in &defeasible {
+            assert!(ev.rate >= 0.1);
+            assert!(ev.rate <= 1.0);
+            assert!(ev.premise_bindings >= 1);
+            assert!(ev.conclusion_satisfied <= ev.premise_bindings);
+            // rate = satisfied / bindings
+            let expected = ev.conclusion_satisfied as f64 / ev.premise_bindings as f64;
+            assert!((ev.rate - expected).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn adr0033_near_zero_rate_threshold_yields_more() {
+        let rs = almost_transitive();
+        let tight = AxiomDiscoveryConfig { min_rate: 0.9, ..AxiomDiscoveryConfig::default() };
+        let loose = AxiomDiscoveryConfig { min_rate: 0.1, ..AxiomDiscoveryConfig::default() };
+        let a = rs.discover_axioms(&tight);
+        let b = rs.discover_axioms(&loose);
+        assert!(b.len() >= a.len());
     }
 }

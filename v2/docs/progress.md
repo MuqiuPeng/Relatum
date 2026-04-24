@@ -1057,3 +1057,28 @@ axioms) except predicate axioms, which require a richer template
 language.
 
 Decision: [0032-axiom-intension](decisions/0032-axiom-intension.md).
+
+### Defeasible axioms (ADR 0033)
+Task D of the A→C→B→D sequence, final phase. Admits axioms at
+rate < 1.0 with support threshold. Motivating case: the "almost-
+transitive" rigorous battery input (4-chain closure minus one
+edge) previously returned zero axioms under strict `rate == 1.0`;
+now at `min_rate = 0.5` it surfaces transitivity with rate 0.667,
+support 2/3 — the system can report "this almost holds."
+
+Added `AxiomDiscoveryConfig::min_rate: f64` (default 1.0, preserves
+strict behavior). Relaxed the `discover_axioms` check from
+`rate == 1.0` to `rate >= min_rate`. Guarded `discover_axioms_minimal`
+to skip subsumption when `min_rate < 1.0` (subsumption assumes
+strict soundness and would not compose correctly on defeasible
+rules).
+
+Preserved: discover_theory still strict; intrinsic_drive still
+scores strict axioms only; subsume_* free functions unchanged.
+
+Tests: 170 → 176 (6 new: strict-default unchanged, defeasible
+surfaces near-axioms, minimal skips subsumption in defeasible,
+strict minimal still subsumes, rate invariant across evidence,
+loose threshold yields at least as many).
+
+Decision: [0033-defeasible-axioms](decisions/0033-defeasible-axioms.md).

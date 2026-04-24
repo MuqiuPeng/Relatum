@@ -72,3 +72,4 @@ Commit hash(es), file pointers.
 - [0030](0030-theory-objects.md) — Theory objects (conjunctive concept naming)
 - [0031](0031-intrinsic-drive.md) — Intrinsic drive + global abstraction score
 - [0032](0032-axiom-intension.md) — Axiom intension as meta-R (extends 0030)
+- [0033](0033-defeasible-axioms.md) — Defeasible axioms (rate < 1.0 with support threshold)
