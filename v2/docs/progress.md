@@ -1183,3 +1183,23 @@ compositionally subsumed" gap noted since ADR 0030 is finally
 closed.
 
 Decision: [0037-compositional-subsumption](decisions/0037-compositional-subsumption.md).
+
+### RSet text persistence (ADR 0038)
+Final task 5 of 1→5. Smallest-possible persistence: line-oriented
+TSV, `x\ty\n`, sorted lex so byte-identical across processes.
+Blank / `#`-prefixed lines are skipped on read for hand editing.
+
+`RSet::to_text()` / `RSet::from_text(&str)` with `PersistenceError`
+enum for tab / newline / malformed-line. `RSet` now derives
+`PartialEq, Eq` so roundtrip tests can use `assert_eq!`.
+
+Because every named meta-R object (patterns, roles, theories,
+axioms with intension, extensions) is already encoded as R
+instances, persistence is a single Set round-trip — nothing
+special-cased. Tested end-to-end.
+
+No external dependencies (no serde / no JSON). v2 stays zero-dep.
+
+Tests: 200 → 209 (9 new).
+
+Decision: [0038-persistence](decisions/0038-persistence.md).

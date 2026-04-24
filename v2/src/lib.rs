@@ -75,6 +75,19 @@ pub const PREMISE_MARKER: &str = "__premise__";
 /// premise marker.
 pub const CONCLUSION_MARKER: &str = "__conclusion__";
 
+/// Errors returned by `RSet::to_text` and `RSet::from_text`. ADR 0038.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PersistenceError {
+    /// Serialization format is line-based TSV; tab characters in an
+    /// identifier would break parsing. Names the offending identifier.
+    TabInIdentifier(String),
+    /// Newlines would break line-based parsing. Names the identifier.
+    NewlineInIdentifier(String),
+    /// A line in the input does not split into exactly two tab-separated
+    /// fields. Reports the 1-based line number.
+    MalformedLine(usize),
+}
+
 /// Reserved registry marker for theory-extension relations (ADR 0034).
 /// `R(EXTENDS_MARKER, ext_N)` declares `ext_N` as a named "T_sub
 /// extends T_super" edge. The two sides are encoded by the chain
@@ -184,7 +197,7 @@ pub enum NamingDecision {
 ///
 /// This is the observation surface abstraction mechanisms will hook into.
 /// It adds no interpretation: just storage, ingestion, and structural lookups.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RSet {
     instances: HashSet<R>,
 }
@@ -223,6 +236,55 @@ impl RSet {
 
     pub fn iter(&self) -> impl Iterator<Item = &R> {
         self.instances.iter()
+    }
+
+    /// Serialize the RSet to a deterministic text form (ADR 0038).
+    ///
+    /// One R instance per line, two tab-separated fields: `x\ty`. The
+    /// output is sorted lexicographically by (x, y) so the same RSet
+    /// always serializes to the same bytes across processes.
+    /// Identifiers containing tab or newline are rejected — they would
+    /// break the line-based format.
+    pub fn to_text(&self) -> Result<String, PersistenceError> {
+        for r in &self.instances {
+            for id in [&r.x, &r.y] {
+                if id.contains('\t') {
+                    return Err(PersistenceError::TabInIdentifier(id.clone()));
+                }
+                if id.contains('\n') {
+                    return Err(PersistenceError::NewlineInIdentifier(id.clone()));
+                }
+            }
+        }
+        let mut edges: Vec<&R> = self.instances.iter().collect();
+        edges.sort_by(|a, b| {
+            (a.x.as_str(), a.y.as_str()).cmp(&(b.x.as_str(), b.y.as_str()))
+        });
+        let mut out = String::new();
+        for r in edges {
+            out.push_str(&r.x);
+            out.push('\t');
+            out.push_str(&r.y);
+            out.push('\n');
+        }
+        Ok(out)
+    }
+
+    /// Parse an RSet from the text form produced by `to_text`.
+    /// Blank lines and lines beginning with `#` are skipped. ADR 0038.
+    pub fn from_text(s: &str) -> Result<RSet, PersistenceError> {
+        let mut rs = RSet::new();
+        for (i, line) in s.lines().enumerate() {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.splitn(2, '\t').collect();
+            if parts.len() != 2 || parts[0].is_empty() {
+                return Err(PersistenceError::MalformedLine(i + 1));
+            }
+            rs.add(R::new(parts[0], parts[1]));
+        }
+        Ok(rs)
     }
 
     /// All identifiers appearing anywhere in R instances, on either side.
@@ -7224,5 +7286,97 @@ mod tests {
         };
         let out = subsume_by_composition(vec![ev]);
         assert_eq!(out.len(), 1);
+    }
+
+    // ADR 0038 — persistence / serialization.
+
+    #[test]
+    fn adr0038_empty_rset_roundtrip() {
+        let a = RSet::new();
+        let text = a.to_text().unwrap();
+        let b = RSet::from_text(&text).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn adr0038_simple_rset_roundtrip() {
+        let mut a = RSet::new();
+        a.extend([R::new("x", "y"), R::new("y", "z"), R::new("z", "x")]);
+        let text = a.to_text().unwrap();
+        let b = RSet::from_text(&text).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn adr0038_serialization_is_deterministic() {
+        let mut a = RSet::new();
+        a.extend([R::new("b", "c"), R::new("a", "b"), R::new("c", "a")]);
+        let mut b = RSet::new();
+        b.extend([R::new("c", "a"), R::new("a", "b"), R::new("b", "c")]);
+        assert_eq!(a.to_text().unwrap(), b.to_text().unwrap());
+    }
+
+    #[test]
+    fn adr0038_roundtrip_preserves_full_meta_r() {
+        // Build a rich RSet: data + patterns + theories + axioms + ext.
+        let mut a = diamond_poset();
+        let _ = a
+            .name_pattern_instances(&[Subgraph::from_edges([
+                R::new("a", "b"),
+                R::new("b", "d"),
+            ])])
+            .unwrap();
+        let th = a.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> =
+            th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let _ = a.name_theory(&ids).unwrap();
+        let text = a.to_text().unwrap();
+        let b = RSet::from_text(&text).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn adr0038_rejects_tab_in_identifier() {
+        let mut a = RSet::new();
+        a.add(R::new("has\ttab", "ok"));
+        let err = a.to_text().unwrap_err();
+        assert!(matches!(err, PersistenceError::TabInIdentifier(_)));
+    }
+
+    #[test]
+    fn adr0038_rejects_newline_in_identifier() {
+        let mut a = RSet::new();
+        a.add(R::new("ok", "has\nnewline"));
+        let err = a.to_text().unwrap_err();
+        assert!(matches!(err, PersistenceError::NewlineInIdentifier(_)));
+    }
+
+    #[test]
+    fn adr0038_rejects_malformed_line() {
+        let err = RSet::from_text("just_one_field").unwrap_err();
+        assert_eq!(err, PersistenceError::MalformedLine(1));
+    }
+
+    #[test]
+    fn adr0038_skips_blank_and_comment_lines() {
+        let text = "# a comment\n\n\
+                    a\tb\n\
+                    # another comment\n\
+                    c\td\n\
+                    \n";
+        let rs = RSet::from_text(text).unwrap();
+        assert_eq!(rs.len(), 2);
+        assert!(rs.contains(&R::new("a", "b")));
+        assert!(rs.contains(&R::new("c", "d")));
+    }
+
+    #[test]
+    fn adr0038_bytes_reproduce_exactly() {
+        let mut a = RSet::new();
+        a.extend([R::new("a", "b"), R::new("a", "c")]);
+        let text1 = a.to_text().unwrap();
+        let b = RSet::from_text(&text1).unwrap();
+        let text2 = b.to_text().unwrap();
+        assert_eq!(text1, text2);
     }
 }

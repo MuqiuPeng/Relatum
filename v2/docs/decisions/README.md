@@ -77,3 +77,4 @@ Commit hash(es), file pointers.
 - [0035](0035-counterfactual-value.md) — Counterfactual value / meta-metric (second-order signal)
 - [0036](0036-empty-premise-templates.md) — Empty-premise templates (reflexivity as template)
 - [0037](0037-compositional-subsumption.md) — Compositional subsumption (forward-chaining derivation)
+- [0038](0038-persistence.md) — RSet text persistence
