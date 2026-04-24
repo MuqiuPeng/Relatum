@@ -1538,3 +1538,44 @@ queued. No v3 rename.
 Tests: 282 → 292 (10 new).
 
 Decision: [0052-autonomous-runtime-architecture](decisions/0052-autonomous-runtime-architecture.md).
+
+### Runtime Phase A1 — Frontier + Rule-based Scheduler
+Continuing ADR 0052. A1 moves from "stub spin loop" to
+"value-guided loop":
+
+- `FrontierKind` (TheoryCandidate / PatternCandidate /
+  LowValueObjectForPrune), `FrontierStatus`, `FrontierItem`,
+  `Frontier` with `refresh(rset, tick)` enumerating candidates from
+  current state, sorted by priority descending, `mark_dirty()`
+  flag.
+- `FrontierTarget` (WholeRSet / PatternSize / Pattern / Theory)
+  added to `ActionPlan` so actions know where to operate.
+- `SchedulerContext<'a>` bundles rset + memory + frontier + mode +
+  tick for the scheduler. `Scheduler::choose` trait signature
+  changed accordingly.
+- `RuleBasedScheduler` — picks top frontier item, maps kind to
+  `ActionKind`, returns `Sleep` on empty frontier or after
+  `max_zero_streak` unproductive episodes.
+- `execute_action` now handles `DiscoverPatterns` (wires to
+  `autonomous_pass` with per-target size) and
+  `PruneLowValueObjects` (retracts by target kind or bulk-negative-CV).
+- `collect_meta_ids` made `pub(crate)` so runtime can compute
+  data-edge counts.
+- `run_bounded` main loop: poll events → apply → mark dirty →
+  refresh if dirty → scheduler.choose(&ctx) → dispatch.
+
+Tests (11 new):
+- `a1_frontier_proposes_theory_candidate_on_diamond`
+- `a1_frontier_omits_theory_candidate_after_naming`
+- `a1_frontier_proposes_pattern_candidates`
+- `a1_rule_based_runs_and_sleeps` — full diamond poset run
+- `a1_deterministic_trace_reproducible` — same seed twice → byte-
+  identical episode trace
+- `a1_empty_frontier_triggers_sleep`
+- `a1_frontier_dirty_after_action`
+- `a1_pattern_candidate_priority_decreases_with_size`
+- `a1_frontier_sorted_by_priority_desc`
+- `a1_mark_dirty_leaves_items_intact`
+- `a1_rule_based_zero_streak_triggers_sleep`
+
+Tests: 292 → 303 (11 new). Phase A2 next (mode machine).

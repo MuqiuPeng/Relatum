@@ -3369,7 +3369,7 @@ impl RSet {
     /// `run_naming_pass` for the meta-subgraph skip. ADR 0012,
     /// extended by ADR 0029 (roles), ADR 0030 (axioms, theories),
     /// and ADR 0032 (axiom-intension variables and edge nodes).
-    fn collect_meta_ids(&self) -> HashSet<String> {
+    pub(crate) fn collect_meta_ids(&self) -> HashSet<String> {
         let mut s = HashSet::new();
         s.insert(PATTERN_MARKER.to_string());
         s.insert(ROLE_MARKER.to_string());
