@@ -1811,3 +1811,38 @@ ADR 0052 § Verification plan:
 Tests: 337 → 340 (+3 verification tests). All five Phase-A
 verification predicates of ADR 0052 are now satisfied. Phase A
 is closed; Phase B1 is the next ADR-0052 work item.
+
+### Runtime Phase B1 — mode-thrash gate (first stats-driven rule)
+ADR 0052 § Phase B / B1 first deliverable. The scheduler now
+**queries** the stats pipeline B0 set up. Concretely: the
+RuleBasedScheduler refuses a `SwitchMode(target)` once the pair
+`(current, target)` has accumulated `>= max_mode_oscillations`
+transitions in either direction in
+`policy_stats.mode_transition_counts`. The decision becomes
+`Sleep` instead.
+
+Default `max_mode_oscillations = 4`. Rationale: each
+Expand↔Consolidate round-trip costs two transitions; 4 = two
+round-trips. After two unproductive cycles, the rset is most
+likely stable and re-evaluating from cold (post-wake) is cheaper
+than thrashing.
+
+Implementation: every previous direct
+`SchedulerDecision::SwitchMode(target)` site now goes through
+`switch_or_sleep(ctx, target)`, which consults
+`would_thrash(ctx, current, target)` first. The Reflect-mode
+"all out of work" `Sleep` path is unchanged.
+
+Tests (4 new B1):
+- `would_thrash` with empty stats returns false.
+- `would_thrash` triggers when forward + reverse counts hit
+  the threshold; an unrelated pair stays untouched.
+- Reflect mode with thrashed (Expand, Reflect) pair returns
+  `Sleep` even though expand work exists.
+- Below-threshold case still returns `SwitchMode(target)` —
+  guards against off-by-one.
+
+Tests: 340 → 344 (+4). B2 next: checkpoint coverage of
+`object_history` + `policy_stats` so resumed runtimes inherit
+their thrash history (without it, the gate is reset on every
+boot).

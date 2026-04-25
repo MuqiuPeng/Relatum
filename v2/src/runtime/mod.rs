@@ -150,6 +150,15 @@ pub struct RuleBasedScheduler {
     /// Minimum positive-delta Discovers in `recent_window` to
     /// consider a switch to Consolidate.
     pub min_recent_gains: usize,
+    /// Anti-thrash gate. ADR 0052 / B1.
+    ///
+    /// If two modes A↔B together account for at least this many
+    /// transitions in `policy_stats.mode_transition_counts`, refuse
+    /// further A↔B switches and Sleep instead. Prevents the
+    /// scheduler from oscillating forever between Expand and
+    /// Consolidate (or any other pair) when the rset has nothing
+    /// new to offer either side.
+    pub max_mode_oscillations: u64,
 }
 
 impl Default for RuleBasedScheduler {
@@ -158,6 +167,7 @@ impl Default for RuleBasedScheduler {
             max_zero_streak: 3,
             recent_window: 5,
             min_recent_gains: 2,
+            max_mode_oscillations: 4,
         }
     }
 }
@@ -226,6 +236,39 @@ impl RuleBasedScheduler {
             })
             .count()
     }
+
+    /// Anti-thrash gate. Returns true iff transitions in EITHER
+    /// direction between `current` and `target` already total
+    /// `max_mode_oscillations` or more in `policy_stats`.
+    /// ADR 0052 / B1.
+    fn would_thrash(
+        &self,
+        ctx: &SchedulerContext<'_>,
+        current: RuntimeMode,
+        target: RuntimeMode,
+    ) -> bool {
+        if current == target {
+            return false;
+        }
+        let counts = &ctx.memory.policy_stats.mode_transition_counts;
+        let forward = counts.get(&(current, target)).copied().unwrap_or(0);
+        let back = counts.get(&(target, current)).copied().unwrap_or(0);
+        forward + back >= self.max_mode_oscillations
+    }
+
+    /// Switch-or-sleep helper: returns SwitchMode(target) unless the
+    /// pair already thrashed, in which case Sleep.
+    fn switch_or_sleep(
+        &self,
+        ctx: &SchedulerContext<'_>,
+        target: RuntimeMode,
+    ) -> SchedulerDecision {
+        if self.would_thrash(ctx, ctx.mode, target) {
+            SchedulerDecision::Sleep
+        } else {
+            SchedulerDecision::SwitchMode(target)
+        }
+    }
 }
 
 impl Scheduler for RuleBasedScheduler {
@@ -241,9 +284,7 @@ impl Scheduler for RuleBasedScheduler {
                 if self.recent_positive_discovers(ctx) >= self.min_recent_gains
                     && Self::has_consolidate_work(ctx)
                 {
-                    return SchedulerDecision::SwitchMode(
-                        RuntimeMode::Consolidate,
-                    );
+                    return self.switch_or_sleep(ctx, RuntimeMode::Consolidate);
                 }
                 // Pick an Expand-shaped action.
                 if let Some(item) = Self::pick_top(ctx, |it| {
@@ -260,15 +301,15 @@ impl Scheduler for RuleBasedScheduler {
                 }
                 // No expand work. Try consolidate or reflect.
                 if Self::has_consolidate_work(ctx) {
-                    SchedulerDecision::SwitchMode(RuntimeMode::Consolidate)
+                    self.switch_or_sleep(ctx, RuntimeMode::Consolidate)
                 } else {
-                    SchedulerDecision::SwitchMode(RuntimeMode::Reflect)
+                    self.switch_or_sleep(ctx, RuntimeMode::Reflect)
                 }
             }
 
             RuntimeMode::Consolidate => {
                 if !Self::has_consolidate_work(ctx) {
-                    return SchedulerDecision::SwitchMode(RuntimeMode::Reflect);
+                    return self.switch_or_sleep(ctx, RuntimeMode::Reflect);
                 }
                 if let Some(item) = Self::pick_top(ctx, |it| {
                     matches!(
@@ -282,15 +323,15 @@ impl Scheduler for RuleBasedScheduler {
                         target: item.target.clone(),
                     });
                 }
-                SchedulerDecision::SwitchMode(RuntimeMode::Reflect)
+                self.switch_or_sleep(ctx, RuntimeMode::Reflect)
             }
 
             RuntimeMode::Reflect => {
                 // Pure state-machine mode: no Execute, no episode added.
                 if Self::has_expand_work(ctx) {
-                    SchedulerDecision::SwitchMode(RuntimeMode::Expand)
+                    self.switch_or_sleep(ctx, RuntimeMode::Expand)
                 } else if Self::has_consolidate_work(ctx) {
-                    SchedulerDecision::SwitchMode(RuntimeMode::Consolidate)
+                    self.switch_or_sleep(ctx, RuntimeMode::Consolidate)
                 } else {
                     SchedulerDecision::Sleep
                 }
@@ -2734,6 +2775,126 @@ mod tests {
         let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
         assert!(restored.memory.policy_stats.action_counts.is_empty());
         assert!(restored.memory.object_history.theories.is_empty());
+    }
+
+    // ─── Phase B1 tests — mode-thrash gate ──────────────────────
+
+    #[test]
+    fn b1_would_thrash_returns_false_with_no_history() {
+        let rs = diamond_poset();
+        let frontier = Frontier::default();
+        let memory = Memory::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(!sched.would_thrash(&ctx, RuntimeMode::Expand, RuntimeMode::Consolidate));
+    }
+
+    #[test]
+    fn b1_would_thrash_triggers_when_pair_count_meets_threshold() {
+        let rs = diamond_poset();
+        let frontier = Frontier::default();
+        let mut memory = Memory::default();
+        // Fake a thrashing history: 3 Expand→Consolidate + 1 reverse.
+        for _ in 0..3 {
+            *memory
+                .policy_stats
+                .mode_transition_counts
+                .entry((RuntimeMode::Expand, RuntimeMode::Consolidate))
+                .or_insert(0) += 1;
+        }
+        *memory
+            .policy_stats
+            .mode_transition_counts
+            .entry((RuntimeMode::Consolidate, RuntimeMode::Expand))
+            .or_insert(0) += 1;
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler {
+            max_mode_oscillations: 4,
+            ..RuleBasedScheduler::default()
+        };
+        // 3 + 1 = 4, hits the threshold.
+        assert!(sched.would_thrash(&ctx, RuntimeMode::Expand, RuntimeMode::Consolidate));
+        // Pair Reflect is untouched.
+        assert!(!sched.would_thrash(&ctx, RuntimeMode::Expand, RuntimeMode::Reflect));
+    }
+
+    #[test]
+    fn b1_thrashed_pair_yields_sleep_decision() {
+        // Drive Reflect mode with a frontier that has expand work
+        // (so Reflect would normally SwitchMode→Expand) but with
+        // mode-transition history that makes Expand↔Reflect thrashing.
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        *memory
+            .policy_stats
+            .mode_transition_counts
+            .entry((RuntimeMode::Reflect, RuntimeMode::Expand))
+            .or_insert(0) = 2;
+        *memory
+            .policy_stats
+            .mode_transition_counts
+            .entry((RuntimeMode::Expand, RuntimeMode::Reflect))
+            .or_insert(0) = 2;
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Reflect,
+            tick: 0,
+        };
+        let mut sched = RuleBasedScheduler {
+            max_mode_oscillations: 4,
+            ..RuleBasedScheduler::default()
+        };
+        match sched.choose(&ctx) {
+            SchedulerDecision::Sleep => {}
+            other => panic!(
+                "expected Sleep when Expand↔Reflect thrashed; got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn b1_below_threshold_still_switches() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        *memory
+            .policy_stats
+            .mode_transition_counts
+            .entry((RuntimeMode::Reflect, RuntimeMode::Expand))
+            .or_insert(0) = 1;
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Reflect,
+            tick: 0,
+        };
+        let mut sched = RuleBasedScheduler {
+            max_mode_oscillations: 4,
+            ..RuleBasedScheduler::default()
+        };
+        match sched.choose(&ctx) {
+            SchedulerDecision::SwitchMode(RuntimeMode::Expand) => {}
+            other => panic!("expected SwitchMode(Expand); got {:?}", other),
+        }
     }
 
     // ─── Phase A verification — 8-case rigorous battery ─────────
