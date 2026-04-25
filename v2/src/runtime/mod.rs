@@ -159,6 +159,19 @@ pub struct RuleBasedScheduler {
     /// Consolidate (or any other pair) when the rset has nothing
     /// new to offer either side.
     pub max_mode_oscillations: u64,
+    /// Cooldown threshold for PatternCandidate selection.
+    /// ADR 0052 / B1+.
+    ///
+    /// If `DiscoverPatterns` has been attempted at least
+    /// `min_pattern_attempts_before_cooldown` times AND the rate
+    /// `action_positive_delta_counts / action_counts` is below
+    /// `min_pattern_hit_rate`, skip PatternCandidate items. The
+    /// scheduler falls back to TheoryCandidate; if neither has
+    /// work, walks the normal mode chain (Consolidate / Reflect /
+    /// Sleep). Prevents the runtime from burning ticks on
+    /// pattern-discovery passes that consistently produce nothing.
+    pub min_pattern_hit_rate: f64,
+    pub min_pattern_attempts_before_cooldown: u64,
 }
 
 impl Default for RuleBasedScheduler {
@@ -168,6 +181,8 @@ impl Default for RuleBasedScheduler {
             recent_window: 5,
             min_recent_gains: 2,
             max_mode_oscillations: 4,
+            min_pattern_hit_rate: 0.1,
+            min_pattern_attempts_before_cooldown: 5,
         }
     }
 }
@@ -193,12 +208,12 @@ impl RuleBasedScheduler {
         }
     }
 
-    fn has_expand_work(ctx: &SchedulerContext<'_>) -> bool {
-        ctx.frontier.items.iter().any(|it| {
-            matches!(
-                it.kind,
-                FrontierKind::TheoryCandidate | FrontierKind::PatternCandidate
-            )
+    fn has_expand_work(&self, ctx: &SchedulerContext<'_>) -> bool {
+        let pattern_cool = self.pattern_cooldown_active(ctx);
+        ctx.frontier.items.iter().any(|it| match it.kind {
+            FrontierKind::TheoryCandidate => true,
+            FrontierKind::PatternCandidate => !pattern_cool,
+            _ => false,
         })
     }
 
@@ -269,6 +284,29 @@ impl RuleBasedScheduler {
             SchedulerDecision::SwitchMode(target)
         }
     }
+
+    /// Pattern-discovery cooldown gate. Returns true iff
+    /// `DiscoverPatterns` has been attempted enough times to assess
+    /// AND its positive-delta hit rate is below threshold.
+    /// ADR 0052 / B1+.
+    fn pattern_cooldown_active(&self, ctx: &SchedulerContext<'_>) -> bool {
+        let stats = &ctx.memory.policy_stats;
+        let attempts = stats
+            .action_counts
+            .get(&ActionKind::DiscoverPatterns)
+            .copied()
+            .unwrap_or(0);
+        if attempts < self.min_pattern_attempts_before_cooldown {
+            return false;
+        }
+        let hits = stats
+            .action_positive_delta_counts
+            .get(&ActionKind::DiscoverPatterns)
+            .copied()
+            .unwrap_or(0);
+        let rate = hits as f64 / attempts as f64;
+        rate < self.min_pattern_hit_rate
+    }
 }
 
 impl Scheduler for RuleBasedScheduler {
@@ -286,13 +324,17 @@ impl Scheduler for RuleBasedScheduler {
                 {
                     return self.switch_or_sleep(ctx, RuntimeMode::Consolidate);
                 }
-                // Pick an Expand-shaped action.
+                // Pick an Expand-shaped action. Pattern-cooldown
+                // gate: when DiscoverPatterns is consistently
+                // unproductive, skip those items and prefer
+                // TheoryCandidate. ADR 0052 / B1+.
+                let pattern_cool = self.pattern_cooldown_active(ctx);
                 if let Some(item) = Self::pick_top(ctx, |it| {
-                    matches!(
-                        it.kind,
-                        FrontierKind::TheoryCandidate
-                            | FrontierKind::PatternCandidate
-                    )
+                    match it.kind {
+                        FrontierKind::TheoryCandidate => true,
+                        FrontierKind::PatternCandidate => !pattern_cool,
+                        _ => false,
+                    }
                 }) {
                     return SchedulerDecision::Execute(ActionPlan {
                         action_kind: Self::execute_for_kind(item.kind),
@@ -328,7 +370,7 @@ impl Scheduler for RuleBasedScheduler {
 
             RuntimeMode::Reflect => {
                 // Pure state-machine mode: no Execute, no episode added.
-                if Self::has_expand_work(ctx) {
+                if self.has_expand_work(ctx) {
                     self.switch_or_sleep(ctx, RuntimeMode::Expand)
                 } else if Self::has_consolidate_work(ctx) {
                     self.switch_or_sleep(ctx, RuntimeMode::Consolidate)
@@ -3315,6 +3357,205 @@ mod tests {
             SchedulerDecision::Sleep => {}
             other => panic!(
                 "expected Sleep when Expand↔Reflect thrashed; got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn b1plus_pattern_cooldown_inactive_with_few_attempts() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        // 3 attempts, 0 hits — bad rate but below the 5-attempt
+        // floor, so cooldown should NOT activate.
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 3);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(!sched.pattern_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn b1plus_pattern_cooldown_activates_on_low_hit_rate() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 20);
+        memory
+            .policy_stats
+            .action_positive_delta_counts
+            .insert(ActionKind::DiscoverPatterns, 1);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(sched.pattern_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn b1plus_pattern_cooldown_inactive_on_healthy_hit_rate() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 10);
+        memory
+            .policy_stats
+            .action_positive_delta_counts
+            .insert(ActionKind::DiscoverPatterns, 5);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(!sched.pattern_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn b1plus_cooled_pattern_falls_back_to_theory_candidate() {
+        // Frontier with both kinds; cooldown must steer the
+        // selection to TheoryCandidate even if PatternCandidate
+        // priority would normally be higher.
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        // Inject a high-priority synthetic PatternCandidate so it
+        // would dominate without the cooldown.
+        frontier.items.insert(
+            0,
+            FrontierItem {
+                id: "synth_pat".to_string(),
+                kind: FrontierKind::PatternCandidate,
+                target: FrontierTarget::PatternSize(3),
+                priority: 999.0,
+                estimated_value: 999.0,
+                estimated_cost: 1.0,
+                novelty_score: 1.0,
+                first_seen_tick: 0,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            },
+        );
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 20);
+        memory
+            .policy_stats
+            .action_positive_delta_counts
+            .insert(ActionKind::DiscoverPatterns, 0);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 1,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        match sched.choose(&ctx) {
+            SchedulerDecision::Execute(plan) => {
+                assert_eq!(
+                    plan.action_kind,
+                    ActionKind::DiscoverTheory,
+                    "cooled pattern should yield TheoryCandidate, got {:?}",
+                    plan
+                );
+            }
+            other => {
+                panic!("expected Execute(DiscoverTheory); got {:?}", other)
+            }
+        }
+    }
+
+    #[test]
+    fn b1plus_cooled_pattern_with_no_theory_falls_back_to_consolidate() {
+        // Frontier has only PatternCandidate; cooldown blocks it,
+        // and there's no TheoryCandidate to fall back to. With a
+        // consolidate work item present, scheduler should
+        // SwitchMode(Consolidate) — not Sleep.
+        let rs = diamond_poset();
+        let frontier = Frontier {
+            items: vec![
+                FrontierItem {
+                    id: "synth_pat".to_string(),
+                    kind: FrontierKind::PatternCandidate,
+                    target: FrontierTarget::PatternSize(3),
+                    priority: 5.0,
+                    estimated_value: 5.0,
+                    estimated_cost: 1.0,
+                    novelty_score: 1.0,
+                    first_seen_tick: 0,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                },
+                FrontierItem {
+                    id: "synth_prune".to_string(),
+                    kind: FrontierKind::LowValueObjectForPrune,
+                    target: FrontierTarget::Pattern("p_x".to_string()),
+                    priority: 3.0,
+                    estimated_value: 1.0,
+                    estimated_cost: 1.0,
+                    novelty_score: 0.0,
+                    first_seen_tick: 0,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                },
+            ],
+            last_full_refresh_tick: 0,
+            dirty: false,
+        };
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 10);
+        memory
+            .policy_stats
+            .action_positive_delta_counts
+            .insert(ActionKind::DiscoverPatterns, 0);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 1,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        match sched.choose(&ctx) {
+            SchedulerDecision::SwitchMode(RuntimeMode::Consolidate) => {}
+            other => panic!(
+                "expected SwitchMode(Consolidate); got {:?}",
                 other
             ),
         }

@@ -1930,3 +1930,45 @@ Snapshot summary (B2 era, 2026-04-25):
   reflexivity + symmetry + a transitivity-shaped axiom.
 
 To regenerate: `cargo run --example phase_a_verification`.
+
+### Runtime Phase B1+ — DiscoverPatterns hit-rate cooldown
+Second stats-driven scheduling rule on top of B1's mode-thrash
+gate. RuleBasedScheduler now consults
+`policy_stats.action_counts` and `action_positive_delta_counts`
+for `ActionKind::DiscoverPatterns`. When the runtime has tried
+DiscoverPatterns at least
+`min_pattern_attempts_before_cooldown` times (default 5) AND
+the positive-delta hit rate is below `min_pattern_hit_rate`
+(default 0.1 = 10%), PatternCandidate items are skipped and the
+scheduler prefers TheoryCandidate.
+
+Falls back through the normal mode chain when no TheoryCandidate
+exists either: Consolidate work → Reflect → Sleep. The
+mode-thrash gate from B1 still applies at every SwitchMode site,
+so a cooled-out runtime cannot oscillate forever between Expand
+and Reflect.
+
+Implementation seam: `pattern_cooldown_active(ctx)` reads stats;
+`has_expand_work(ctx)` was upgraded from associated to method
+form so it can consult cooldown state — Reflect now reports
+"no expand work" when the only available expand work is
+cooled-out PatternCandidate, avoiding a wasted Reflect → Expand
+→ Reflect bounce.
+
+Tests (5 new B1+):
+- Cooldown inactive when attempts < threshold (3 < 5).
+- Cooldown active on bad rate above the floor (1/20 < 10% with
+  20 ≥ 5).
+- Cooldown inactive on healthy rate (5/10 = 50%).
+- Cooled scheduler falls back to TheoryCandidate even when
+  PatternCandidate has higher priority (synthetic priority=999).
+- Cooled scheduler with no TheoryCandidate available falls back
+  to SwitchMode(Consolidate), not Sleep — confirms the chain
+  walks correctly past cooldown.
+
+Existing 347 tests stayed green: their attempt counts on
+DiscoverPatterns either stay below the 5-attempt floor or the
+hit rate stays well above 10%, so the gate never fires
+spuriously.
+
+Tests: 347 → 352 (+5).
