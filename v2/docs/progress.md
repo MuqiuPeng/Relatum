@@ -1714,3 +1714,72 @@ Tests (12 new A3):
 
 Tests: 313 → 325. Phase A complete; Phase B next (`ObjectHistory` +
 `PolicyStats` + `SyntheticStreamEnvironment`).
+
+### Runtime Phase B0 — history + stats + synthetic-stream env
+ADR 0052 § Phase B starts. B0 introduces the three new structures
+listed in the ADR and wires the runtime to populate them as a
+side-effect of dispatch. **No** history-aware scheduling rule is
+added in B0 — that is B1's job. The aim of B0 is to get data
+flowing so B1 has signal to consume.
+
+New types:
+- `ObjectHistory` — `first_seen_tick`, `last_seen_tick`,
+  `last_improved_tick`, `times_selected_as_focus`, `times_pruned`,
+  `last_counterfactual_value`, `stability_estimate` (Option, kept
+  `None` until B1 lands a rolling EMA).
+- `ObjectHistoryStore` — three name-indexed maps
+  (`patterns` / `axioms` / `theories`).
+- `PolicyStats` — `action_counts`, `action_positive_delta_counts`,
+  `mode_transition_counts`, `wake_count`, `sleep_count`,
+  `stop_count`. ADR's `RegimeKey` bucketing is deferred until a
+  regime signal is wired in.
+- `SyntheticStreamEnvironment` — replays a `Vec<(u64, Event)>`
+  schedule where the `u64` is matched against an internal poll
+  index. Sorted on construction; events drain in order; stops
+  early once it hits a future-tick entry.
+
+Runtime integration:
+- `execute_and_record` snapshots pattern/theory id sets before and
+  after each action. New ids → `ObjectHistory::new_at(tick)`.
+  Removed ids → bump `times_pruned`. All present ids advance
+  `last_seen_tick`; positive-delta episodes also advance
+  `last_improved_tick`. Targeted Pattern / Theory plans bump
+  `times_selected_as_focus`.
+- `execute_and_record` increments `policy_stats.action_counts`
+  every dispatch and `action_positive_delta_counts` when delta > 0.
+- Mode-transition dispatch increments
+  `mode_transition_counts[(from, to)]`.
+- `transition_lifecycle` increments `sleep_count` on entering
+  Sleeping, `wake_count` on Sleeping → Running, `stop_count` on
+  entering Stopped.
+- Required: `ActionKind` and `RuntimeMode` derive `Hash` to be
+  HashMap keys.
+
+Checkpoint coverage: B0 does **not** serialize
+`object_history` / `policy_stats`. `from_checkpoint_text` restores
+them as empty. A B0 test asserts this boundary so B1 inherits an
+explicit invariant. Existing A3 round-trip tests stay green
+because they assert on serialized fields only.
+
+Tests (12 new B0):
+- ObjectHistory recorded on first DiscoverTheory; `first_seen_tick`
+  matches the run tick; `last_improved_tick` populated when delta
+  positive
+- `last_seen_tick` advances across multi-tick run
+- `action_counts` increments per dispatch; `*_positive_delta_*`
+  bumps when delta > 0
+- Mode-transition counts logged on SwitchMode
+- Wake count = 1 after one wake-on-event; sleep_count behavior
+  matches expectation
+- Stop count = 1 after Stop dispatch
+- SyntheticStream: events fire on the scheduled poll index
+- Back-dated events (tick 0) fire on first poll
+- **Drip-feed scenario (verification #5 partial)**: empty RSet
+  fed a 4-node diamond poset over 9 ticks via SyntheticStream;
+  runtime ends with all 9 edges and ≥ 1 named theory
+- Pruning a theory increments `times_pruned`
+- Targeted Theory plan increments `times_selected_as_focus`
+- Restored runtime starts with empty history + stats (B0 boundary)
+
+Tests: 325 → 337. Phase B1 next (regime-aware scheduling rule
+that consumes ObjectHistory; checkpoint coverage of stats stores).

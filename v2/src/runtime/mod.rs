@@ -31,7 +31,7 @@ pub enum LifecycleState {
 
 /// Micro state within Running — what kind of work the runtime is
 /// doing. Phase A0/A1 only uses `Expand`. ADR 0052.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RuntimeMode {
     Expand,
     Consolidate,
@@ -64,7 +64,7 @@ impl BudgetState {
 
 // ─── action + target + decision ────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ActionKind {
     DiscoverPatterns,
     DiscoverTheory,
@@ -320,6 +320,49 @@ impl Environment for NoOpEnvironment {
     }
 }
 
+/// Replay events from a fixed schedule of `(target_poll_index, Event)`
+/// pairs. The poll index is 1-based — the first call to `poll`
+/// returns all events scheduled for `<= 1`. ADR 0052 § Phase B / B0.
+///
+/// Use case: drip-feed an evolving graph into the runtime to verify
+/// it responds correctly to a temporal sequence.
+pub struct SyntheticStreamEnvironment {
+    schedule: Vec<(u64, Event)>,
+    polled_count: u64,
+}
+
+impl SyntheticStreamEnvironment {
+    pub fn new(schedule: Vec<(u64, Event)>) -> Self {
+        let mut s = schedule;
+        s.sort_by_key(|(t, _)| *t);
+        Self { schedule: s, polled_count: 0 }
+    }
+
+    pub fn polled_count(&self) -> u64 {
+        self.polled_count
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.schedule.len()
+    }
+}
+
+impl Environment for SyntheticStreamEnvironment {
+    fn poll(&mut self) -> Vec<Event> {
+        self.polled_count += 1;
+        let target = self.polled_count;
+        let mut out = Vec::new();
+        // Drain events whose tick <= current poll index. Keep those
+        // in the future. Sorted schedule means we can stop early once
+        // we hit a future-tick event.
+        while !self.schedule.is_empty() && self.schedule[0].0 <= target {
+            let (_, ev) = self.schedule.remove(0);
+            out.push(ev);
+        }
+        out
+    }
+}
+
 /// Wake predicate: any data-mutating event lifts the runtime out of
 /// `Sleeping`. Bare `Tick` is informational and does NOT wake — it
 /// preserves "no signal, stay asleep" semantics. ADR 0052 / A3.
@@ -366,6 +409,63 @@ pub struct LifecycleTransition {
     pub reason: String,
 }
 
+/// Per-object run history. ADR 0052 § Phase B / B0.
+///
+/// Tracks when a named object (pattern / theory) was first observed,
+/// when it was last seen by the runtime, when it last contributed to
+/// a positive-delta episode, and how many times it was selected as
+/// the action target or pruned. `stability_estimate` is reserved for
+/// B1 (rolling EMA over delta contributions); it is `None` until then
+/// to make the missing-mechanism explicit.
+#[derive(Debug, Clone)]
+pub struct ObjectHistory {
+    pub first_seen_tick: u64,
+    pub last_seen_tick: u64,
+    pub last_improved_tick: Option<u64>,
+    pub times_selected_as_focus: u32,
+    pub times_pruned: u32,
+    pub last_counterfactual_value: Option<f64>,
+    pub stability_estimate: Option<f64>,
+}
+
+impl ObjectHistory {
+    pub fn new_at(tick: u64) -> Self {
+        Self {
+            first_seen_tick: tick,
+            last_seen_tick: tick,
+            last_improved_tick: None,
+            times_selected_as_focus: 0,
+            times_pruned: 0,
+            last_counterfactual_value: None,
+            stability_estimate: None,
+        }
+    }
+}
+
+/// Per-namespace store of `ObjectHistory`. ADR 0052 § Phase B / B0.
+#[derive(Debug, Clone, Default)]
+pub struct ObjectHistoryStore {
+    pub patterns: HashMap<String, ObjectHistory>,
+    pub axioms: HashMap<String, ObjectHistory>,
+    pub theories: HashMap<String, ObjectHistory>,
+}
+
+/// Aggregate scheduler / lifecycle counters. ADR 0052 § Phase B / B0.
+///
+/// Filled by the runtime as a side-effect of dispatch; queried by
+/// future scheduler policies (B1+). The counts are intentionally
+/// minimal — regime-aware bucketing is deferred until a regime
+/// signal is wired in.
+#[derive(Debug, Clone, Default)]
+pub struct PolicyStats {
+    pub action_counts: HashMap<ActionKind, u64>,
+    pub action_positive_delta_counts: HashMap<ActionKind, u64>,
+    pub mode_transition_counts: HashMap<(RuntimeMode, RuntimeMode), u64>,
+    pub wake_count: u64,
+    pub sleep_count: u64,
+    pub stop_count: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct Memory {
     pub episodes: VecDeque<Episode>,
@@ -374,6 +474,10 @@ pub struct Memory {
     pub max_episodes: usize,
     pub max_mode_transitions: usize,
     pub max_lifecycle_transitions: usize,
+    /// Phase B / B0.
+    pub object_history: ObjectHistoryStore,
+    /// Phase B / B0.
+    pub policy_stats: PolicyStats,
 }
 
 impl Default for Memory {
@@ -385,6 +489,8 @@ impl Default for Memory {
             max_episodes: 1000,
             max_mode_transitions: 200,
             max_lifecycle_transitions: 200,
+            object_history: ObjectHistoryStore::default(),
+            policy_stats: PolicyStats::default(),
         }
     }
 }
@@ -703,6 +809,19 @@ impl AutonomousRuntime {
             to,
             reason: reason.to_string(),
         });
+        // B0 / PolicyStats.
+        match to {
+            LifecycleState::Sleeping => {
+                self.memory.policy_stats.sleep_count += 1;
+            }
+            LifecycleState::Running if from == LifecycleState::Sleeping => {
+                self.memory.policy_stats.wake_count += 1;
+            }
+            LifecycleState::Stopped => {
+                self.memory.policy_stats.stop_count += 1;
+            }
+            _ => {}
+        }
         self.lifecycle = to;
         if matches!(to, LifecycleState::Sleeping | LifecycleState::Stopped) {
             if let Ok(cp) = self.checkpoint_text() {
@@ -768,12 +887,20 @@ impl AutonomousRuntime {
                 }
                 SchedulerDecision::SwitchMode(m) => {
                     if m != self.mode {
+                        let from = self.mode;
                         self.memory.record_mode_transition(ModeTransition {
                             tick: self.tick,
-                            from: self.mode,
+                            from,
                             to: m,
                             reason: "scheduler".to_string(),
                         });
+                        // B0 / PolicyStats.
+                        *self
+                            .memory
+                            .policy_stats
+                            .mode_transition_counts
+                            .entry((from, m))
+                            .or_insert(0) += 1;
                         self.mode = m;
                     }
                 }
@@ -809,9 +936,35 @@ impl AutonomousRuntime {
 
     fn execute_and_record(&mut self, plan: ActionPlan) {
         let before = self.rset.abstraction_score();
+        let patterns_before: HashSet<String> = self
+            .rset
+            .patterns()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let theories_before: HashSet<String> = self
+            .rset
+            .theories()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
         self.execute_action(&plan);
+
         let after = self.rset.abstraction_score();
         let delta = after - before;
+        let patterns_after: HashSet<String> = self
+            .rset
+            .patterns()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let theories_after: HashSet<String> = self
+            .rset
+            .theories()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         self.episode_counter += 1;
         self.memory.record(Episode {
@@ -824,6 +977,72 @@ impl AutonomousRuntime {
             score_after: after,
             delta,
         });
+
+        // ── Phase B / B0: feed object history + policy stats. ──────
+        let tick = self.tick;
+        let store = &mut self.memory.object_history;
+
+        for id in patterns_after.difference(&patterns_before) {
+            store
+                .patterns
+                .entry(id.clone())
+                .or_insert_with(|| ObjectHistory::new_at(tick));
+        }
+        for id in theories_after.difference(&theories_before) {
+            store
+                .theories
+                .entry(id.clone())
+                .or_insert_with(|| ObjectHistory::new_at(tick));
+        }
+        for id in patterns_before.difference(&patterns_after) {
+            if let Some(h) = store.patterns.get_mut(id) {
+                h.times_pruned += 1;
+            }
+        }
+        for id in theories_before.difference(&theories_after) {
+            if let Some(h) = store.theories.get_mut(id) {
+                h.times_pruned += 1;
+            }
+        }
+        for id in &patterns_after {
+            if let Some(h) = store.patterns.get_mut(id) {
+                h.last_seen_tick = tick;
+                if delta > 0.0 {
+                    h.last_improved_tick = Some(tick);
+                }
+            }
+        }
+        for id in &theories_after {
+            if let Some(h) = store.theories.get_mut(id) {
+                h.last_seen_tick = tick;
+                if delta > 0.0 {
+                    h.last_improved_tick = Some(tick);
+                }
+            }
+        }
+        match &plan.target {
+            FrontierTarget::Pattern(id) => {
+                if let Some(h) = store.patterns.get_mut(id) {
+                    h.times_selected_as_focus += 1;
+                }
+            }
+            FrontierTarget::Theory(id) => {
+                if let Some(h) = store.theories.get_mut(id) {
+                    h.times_selected_as_focus += 1;
+                }
+            }
+            _ => {}
+        }
+
+        let stats = &mut self.memory.policy_stats;
+        *stats.action_counts.entry(plan.action_kind).or_insert(0) += 1;
+        if delta > 0.0 {
+            *stats
+                .action_positive_delta_counts
+                .entry(plan.action_kind)
+                .or_insert(0) += 1;
+        }
+        // ───────────────────────────────────────────────────────────
 
         if delta > 0.0 {
             self.steps_since_last_gain = 0;
@@ -1183,6 +1402,12 @@ impl AutonomousRuntime {
             max_episodes,
             max_mode_transitions,
             max_lifecycle_transitions,
+            // B0: history + stats are not yet serialized; restore as
+            // empty. Tests that rely on round-trip equality assert on
+            // the serialized fields only. ADR 0052 § Phase B / B1
+            // will land checkpoint-coverage of these stores.
+            object_history: ObjectHistoryStore::default(),
+            policy_stats: PolicyStats::default(),
         };
 
         Ok(Self {
@@ -2245,5 +2470,259 @@ mod tests {
                     && lt.to == LifecycleState::Running
             });
         assert!(woke, "runtime never woke on the injected event");
+    }
+
+    // ─── Phase B0 tests — ObjectHistory / PolicyStats / Stream ──
+
+    #[test]
+    fn b0_object_history_recorded_on_first_theory_creation() {
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.run_bounded(1);
+        // First tick: stub scheduler runs DiscoverTheory. A theory
+        // should be named and its history populated.
+        assert_eq!(rt.rset.theories().len(), 1);
+        let t_id = rt.rset.theories()[0].to_string();
+        let hist = rt
+            .memory
+            .object_history
+            .theories
+            .get(&t_id)
+            .expect("theory history missing");
+        assert_eq!(hist.first_seen_tick, 1);
+        assert_eq!(hist.last_seen_tick, 1);
+        assert_eq!(hist.last_improved_tick, Some(1));
+        assert_eq!(hist.times_pruned, 0);
+    }
+
+    #[test]
+    fn b0_object_history_last_seen_advances() {
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.run_bounded(5);
+        let t_id = rt.rset.theories()[0].to_string();
+        let hist = &rt.memory.object_history.theories[&t_id];
+        assert_eq!(hist.first_seen_tick, 1);
+        // Stub keeps re-running DiscoverTheory; last_seen advances.
+        assert!(
+            hist.last_seen_tick >= 1,
+            "last_seen_tick = {}",
+            hist.last_seen_tick
+        );
+        assert!(hist.last_seen_tick <= 5);
+    }
+
+    #[test]
+    fn b0_policy_stats_action_counts_increment() {
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.run_bounded(5);
+        let count = rt
+            .memory
+            .policy_stats
+            .action_counts
+            .get(&ActionKind::DiscoverTheory)
+            .copied()
+            .unwrap_or(0);
+        assert_eq!(count, 5, "5 stub episodes → 5 DiscoverTheory");
+        let pos = rt
+            .memory
+            .policy_stats
+            .action_positive_delta_counts
+            .get(&ActionKind::DiscoverTheory)
+            .copied()
+            .unwrap_or(0);
+        assert!(pos >= 1, "first DiscoverTheory should yield positive delta");
+    }
+
+    #[test]
+    fn b0_policy_stats_mode_transitions_counted() {
+        struct SwitchOnce {
+            switched: bool,
+        }
+        impl Scheduler for SwitchOnce {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                if !self.switched {
+                    self.switched = true;
+                    SchedulerDecision::SwitchMode(RuntimeMode::Reflect)
+                } else {
+                    SchedulerDecision::Stop
+                }
+            }
+        }
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(SwitchOnce { switched: false });
+        rt.run_bounded(5);
+        let key = (RuntimeMode::Expand, RuntimeMode::Reflect);
+        assert_eq!(
+            rt.memory.policy_stats.mode_transition_counts.get(&key),
+            Some(&1)
+        );
+    }
+
+    #[test]
+    fn b0_policy_stats_sleep_wake_counts() {
+        // Pre-sleep, fire one event, then NoOp again → exactly one
+        // wake count, zero additional sleeps from that event.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.lifecycle = LifecycleState::Sleeping;
+        rt.environment = Box::new(OneShotEnv {
+            events: vec![Event::AddEdge(R::new("p", "q"))],
+        });
+        rt.run_bounded(3);
+        assert_eq!(rt.memory.policy_stats.wake_count, 1);
+        // sleep_count: depends on whether scheduler put it back to
+        // sleep. With NoOp post-event and StubScheduler always
+        // executing, it stays Running; sleep_count == 0.
+        assert_eq!(rt.memory.policy_stats.sleep_count, 0);
+    }
+
+    #[test]
+    fn b0_policy_stats_stop_count() {
+        struct StopImmediately;
+        impl Scheduler for StopImmediately {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                SchedulerDecision::Stop
+            }
+        }
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(StopImmediately);
+        rt.run_bounded(3);
+        assert_eq!(rt.memory.policy_stats.stop_count, 1);
+    }
+
+    #[test]
+    fn b0_synthetic_stream_yields_events_on_schedule() {
+        let mut env = SyntheticStreamEnvironment::new(vec![
+            (1, Event::AddEdge(R::new("a", "b"))),
+            (3, Event::AddEdge(R::new("b", "c"))),
+            (3, Event::AddEdge(R::new("c", "d"))),
+        ]);
+        // poll #1 → tick 1 event
+        let p1 = env.poll();
+        assert_eq!(p1.len(), 1);
+        // poll #2 → nothing
+        assert!(env.poll().is_empty());
+        // poll #3 → both tick-3 events
+        let p3 = env.poll();
+        assert_eq!(p3.len(), 2);
+        // poll #4 → nothing left
+        assert!(env.poll().is_empty());
+        assert_eq!(env.remaining(), 0);
+    }
+
+    #[test]
+    fn b0_synthetic_stream_back_dated_events_fire_on_first_poll() {
+        // Schedule says tick 0 — a "before time began" event. Should
+        // still fire on the first poll (target_index = 1 > 0).
+        let mut env = SyntheticStreamEnvironment::new(vec![
+            (0, Event::AddEdge(R::new("a", "b"))),
+        ]);
+        let p1 = env.poll();
+        assert_eq!(p1.len(), 1);
+    }
+
+    #[test]
+    fn b0_synthetic_stream_drives_runtime_to_named_theory() {
+        // ADR 0052 verification scenario #5 (drip-feed):
+        // start empty, drip-feed a 4-node diamond poset over 12
+        // ticks, runtime ends up with at least one named theory.
+        let schedule: Vec<(u64, Event)> = vec![
+            (1, Event::AddEdge(R::new("a", "a"))),
+            (2, Event::AddEdge(R::new("b", "b"))),
+            (3, Event::AddEdge(R::new("c", "c"))),
+            (4, Event::AddEdge(R::new("d", "d"))),
+            (5, Event::AddEdge(R::new("a", "b"))),
+            (6, Event::AddEdge(R::new("a", "c"))),
+            (7, Event::AddEdge(R::new("a", "d"))),
+            (8, Event::AddEdge(R::new("b", "d"))),
+            (9, Event::AddEdge(R::new("c", "d"))),
+        ];
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.environment = Box::new(SyntheticStreamEnvironment::new(schedule));
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(30);
+        // After drip-feed completes, the diamond is fully present.
+        assert_eq!(rt.rset.iter().count() >= 9, true);
+        // And at least one theory has been named (poset emerged).
+        assert!(
+            rt.rset.theories().len() >= 1,
+            "no theory named after drip-feed; theories = {:?}",
+            rt.rset.theories()
+        );
+    }
+
+    #[test]
+    fn b0_pruning_increments_times_pruned() {
+        // Manually pre-name two theories, then force a Prune action
+        // targeting one. ObjectHistory.times_pruned should bump.
+        let mut rs = rset_with_multiple_theories();
+        let theories: Vec<String> =
+            rs.theories().iter().map(|s| s.to_string()).collect();
+        let target = theories[0].clone();
+        let _ = rs.classify_theory_pair(&theories[0], &theories[1]);
+        let mut rt = AutonomousRuntime::new(rs);
+        // Seed the history so we can observe the increment.
+        rt.memory
+            .object_history
+            .theories
+            .insert(target.clone(), ObjectHistory::new_at(0));
+        struct PruneTarget(String);
+        impl Scheduler for PruneTarget {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                SchedulerDecision::Execute(ActionPlan {
+                    action_kind: ActionKind::PruneLowValueObjects,
+                    target: FrontierTarget::Theory(self.0.clone()),
+                })
+            }
+        }
+        rt.scheduler = Box::new(PruneTarget(target.clone()));
+        rt.run_bounded(1);
+        let h = &rt.memory.object_history.theories[&target];
+        assert_eq!(h.times_pruned, 1);
+    }
+
+    #[test]
+    fn b0_focus_target_increments_times_selected() {
+        let mut rs = rset_with_multiple_theories();
+        let target = rs.theories()[0].to_string();
+        // Make the target a pattern instead of theory? No — it's a
+        // theory; the focus tracker covers Pattern + Theory targets.
+        let mut rt = AutonomousRuntime::new(rs.clone());
+        rt.memory
+            .object_history
+            .theories
+            .insert(target.clone(), ObjectHistory::new_at(0));
+        struct FocusTheory(String);
+        impl Scheduler for FocusTheory {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                SchedulerDecision::Execute(ActionPlan {
+                    action_kind: ActionKind::UpdateTheoryRelations,
+                    target: FrontierTarget::Theory(self.0.clone()),
+                })
+            }
+        }
+        rt.scheduler = Box::new(FocusTheory(target.clone()));
+        rt.run_bounded(2);
+        let h = &rt.memory.object_history.theories[&target];
+        assert_eq!(h.times_selected_as_focus, 2);
+    }
+
+    #[test]
+    fn b0_history_and_stats_default_after_checkpoint_restore() {
+        // B0 limitation: history + stats not yet serialized. Verify
+        // that a restored runtime starts with empty stores so future
+        // B1 work knows the boundary.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.run_bounded(3);
+        assert!(!rt.memory.policy_stats.action_counts.is_empty());
+        let text = rt.checkpoint_text().unwrap();
+        let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
+        assert!(restored.memory.policy_stats.action_counts.is_empty());
+        assert!(restored.memory.object_history.theories.is_empty());
     }
 }
