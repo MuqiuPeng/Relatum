@@ -1783,3 +1783,31 @@ Tests (12 new B0):
 
 Tests: 325 → 337. Phase B1 next (regime-aware scheduling rule
 that consumes ObjectHistory; checkpoint coverage of stats stores).
+
+### Phase A verification — 8-case battery + drip-feed
+ADR 0052 § Verification plan:
+- #1 (282 prior tests pass) — verified continuously throughout
+  A0–B0; nothing broken.
+- #2 (≥ 30 new runtime tests across the three families) — far
+  exceeded: 55 runtime tests across A0–B0 (10 + 11 + 10 + 12 + 12).
+- #3 (8-case rigorous battery, fingerprint match) — landed.
+  `a_verification_8_case_battery_matches_direct_discovery`
+  reuses the cases from ADR 0027's
+  `examples/axiom_rigorous_test.rs`; for each case, asserts the
+  runtime's named theory's member axioms (sorted) equal what
+  `rs.discover_theory(&cfg)` returns when called directly. Also
+  checks the runtime stabilizes (`Sleeping`) within 60 ticks.
+  `a_verification_8_case_battery_is_deterministic` runs each
+  case twice and asserts byte-identical `(members, tick,
+  lifecycle)`.
+- #4 (NoOp termination) — covered by A3's
+  `a3_runtime_stays_sleeping_under_noop_environment`.
+- #5 (drip-feed) — covered first by B0's
+  `b0_synthetic_stream_drives_runtime_to_named_theory` (existence
+  check) and now fully by
+  `a_verification_drip_feed_diamond_full` (all 9 edges arrive,
+  ≥ 1 theory named, `is_poset == true` at the end).
+
+Tests: 337 → 340 (+3 verification tests). All five Phase-A
+verification predicates of ADR 0052 are now satisfied. Phase A
+is closed; Phase B1 is the next ADR-0052 work item.

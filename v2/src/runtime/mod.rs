@@ -2641,12 +2641,22 @@ mod tests {
             (8, Event::AddEdge(R::new("b", "d"))),
             (9, Event::AddEdge(R::new("c", "d"))),
         ];
+        let expected = [
+            R::new("a", "a"), R::new("b", "b"), R::new("c", "c"),
+            R::new("d", "d"), R::new("a", "b"), R::new("a", "c"),
+            R::new("a", "d"), R::new("b", "d"), R::new("c", "d"),
+        ];
         let mut rt = AutonomousRuntime::new(RSet::new());
         rt.environment = Box::new(SyntheticStreamEnvironment::new(schedule));
         rt.scheduler = Box::new(RuleBasedScheduler::default());
         rt.run_bounded(30);
-        // After drip-feed completes, the diamond is fully present.
-        assert_eq!(rt.rset.iter().count() >= 9, true);
+        for r in &expected {
+            assert!(
+                rt.rset.iter().any(|got| got == r),
+                "missing scheduled edge {:?}",
+                r
+            );
+        }
         // And at least one theory has been named (poset emerged).
         assert!(
             rt.rset.theories().len() >= 1,
@@ -2724,5 +2734,242 @@ mod tests {
         let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
         assert!(restored.memory.policy_stats.action_counts.is_empty());
         assert!(restored.memory.object_history.theories.is_empty());
+    }
+
+    // ─── Phase A verification — 8-case rigorous battery ─────────
+    //
+    // ADR 0052 § Verification plan #3: bounded-tick runs on the 8
+    // cases from ADR 0027 must reach a stable state and produce
+    // theory output matching what a direct
+    // `rset.discover_theory(...)` call would produce on the same
+    // input. Cases below mirror examples/axiom_rigorous_test.rs.
+
+    fn rig_case_transitive_chain() -> RSet {
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c", "d", "e"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        rs
+    }
+
+    fn rig_case_equivalence() -> RSet {
+        let mut rs = RSet::new();
+        let classes: &[&[&str]] = &[&["a", "b"], &["c", "d", "e"], &["f"]];
+        for cls in classes {
+            for x in cls.iter() {
+                for y in cls.iter() {
+                    rs.add(R::new(*x, *y));
+                }
+            }
+        }
+        rs
+    }
+
+    fn rig_case_strict_partial_order() -> RSet {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"), R::new("a", "c"), R::new("a", "d"),
+            R::new("b", "d"), R::new("c", "d"),
+        ]);
+        rs
+    }
+
+    fn rig_case_almost_transitive() -> RSet {
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c", "d"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        rs.remove(&R::new("b", "d"));
+        rs
+    }
+
+    fn rig_case_random_sparse() -> RSet {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "c"), R::new("b", "d"), R::new("c", "e"),
+            R::new("d", "f"), R::new("e", "a"), R::new("f", "b"),
+            R::new("a", "d"),
+        ]);
+        rs
+    }
+
+    fn rig_case_tolerance() -> RSet {
+        let mut rs = RSet::new();
+        for n in ["a", "b", "c"] {
+            rs.add(R::new(n, n));
+        }
+        rs.extend([
+            R::new("a", "b"), R::new("b", "a"),
+            R::new("b", "c"), R::new("c", "b"),
+        ]);
+        rs
+    }
+
+    fn rig_case_total_order() -> RSet {
+        let mut rs = RSet::new();
+        let nodes = ["1", "2", "3", "4", "5"];
+        for i in 0..nodes.len() {
+            rs.add(R::new(nodes[i], nodes[i]));
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        rs
+    }
+
+    fn rig_case_complete_bipartite() -> RSet {
+        let mut rs = RSet::new();
+        for a in ["a1", "a2", "a3"] {
+            for b in ["b1", "b2", "b3"] {
+                rs.add(R::new(a, b));
+            }
+        }
+        rs
+    }
+
+    fn rigorous_battery() -> Vec<(&'static str, RSet)> {
+        vec![
+            ("transitive_chain", rig_case_transitive_chain()),
+            ("equivalence_3_classes", rig_case_equivalence()),
+            ("strict_partial_order_diamond", rig_case_strict_partial_order()),
+            ("almost_transitive", rig_case_almost_transitive()),
+            ("random_sparse", rig_case_random_sparse()),
+            ("tolerance", rig_case_tolerance()),
+            ("total_order", rig_case_total_order()),
+            ("complete_bipartite", rig_case_complete_bipartite()),
+        ]
+    }
+
+    #[test]
+    fn a_verification_8_case_battery_matches_direct_discovery() {
+        let cfg = AxiomDiscoveryConfig::default();
+        for (label, rs) in rigorous_battery() {
+            // Direct fingerprint: what discover_theory says about
+            // this rset, called outside the runtime.
+            let direct = rs.discover_theory(&cfg);
+            let mut direct_members: Vec<String> =
+                direct.member_axiom_ids.clone();
+            direct_members.sort();
+
+            // Run the same rset under the autonomous runtime.
+            let mut rt = AutonomousRuntime::new(rs);
+            rt.scheduler = Box::new(RuleBasedScheduler::default());
+            rt.run_bounded(60);
+
+            // The runtime should have settled (Sleeping). It might
+            // still be Running on cases where the budget runs out,
+            // but for these 8 cases 60 ticks is generous enough.
+            assert_eq!(
+                rt.lifecycle,
+                LifecycleState::Sleeping,
+                "case {}: runtime did not stabilize (lifecycle={:?})",
+                label,
+                rt.lifecycle
+            );
+
+            // Compare fingerprints.
+            let theories = rt.rset.theories();
+            assert!(
+                theories.len() <= 1,
+                "case {}: expected at most one theory, got {}",
+                label,
+                theories.len()
+            );
+            let runtime_members: Vec<String> = if theories.is_empty() {
+                Vec::new()
+            } else {
+                let mut v: Vec<String> = rt
+                    .rset
+                    .theory_axioms(theories[0])
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                v.sort();
+                v
+            };
+            assert_eq!(
+                runtime_members, direct_members,
+                "case {}: runtime theory fingerprint differs from \
+                 direct discover_theory output",
+                label
+            );
+        }
+    }
+
+    #[test]
+    fn a_verification_8_case_battery_is_deterministic() {
+        // Same case twice → same final state. Locks down the
+        // determinism guarantee that A1's deterministic-trace test
+        // proves on a single graph.
+        for (label, rs) in rigorous_battery() {
+            let run = |rs: RSet| -> (Vec<String>, u64, LifecycleState) {
+                let mut rt = AutonomousRuntime::new(rs);
+                rt.scheduler = Box::new(RuleBasedScheduler::default());
+                rt.run_bounded(60);
+                let theories = rt.rset.theories();
+                let mut members: Vec<String> = if theories.is_empty() {
+                    Vec::new()
+                } else {
+                    rt.rset
+                        .theory_axioms(theories[0])
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                };
+                members.sort();
+                (members, rt.tick, rt.lifecycle)
+            };
+            let a = run(rs.clone());
+            let b = run(rs);
+            assert_eq!(a, b, "case {}: non-deterministic outcome", label);
+        }
+    }
+
+    #[test]
+    fn a_verification_drip_feed_diamond_full() {
+        // ADR 0052 verification #5 (full version): start empty,
+        // drip-feed a 4-node diamond poset over 9 ticks. Final
+        // state: rset contains all 9 edges, ≥ 1 theory named, AND
+        // is_poset is true.
+        let schedule: Vec<(u64, Event)> = vec![
+            (1, Event::AddEdge(R::new("a", "a"))),
+            (2, Event::AddEdge(R::new("b", "b"))),
+            (3, Event::AddEdge(R::new("c", "c"))),
+            (4, Event::AddEdge(R::new("d", "d"))),
+            (5, Event::AddEdge(R::new("a", "b"))),
+            (6, Event::AddEdge(R::new("a", "c"))),
+            (7, Event::AddEdge(R::new("a", "d"))),
+            (8, Event::AddEdge(R::new("b", "d"))),
+            (9, Event::AddEdge(R::new("c", "d"))),
+        ];
+        let expected = [
+            R::new("a", "a"), R::new("b", "b"), R::new("c", "c"),
+            R::new("d", "d"), R::new("a", "b"), R::new("a", "c"),
+            R::new("a", "d"), R::new("b", "d"), R::new("c", "d"),
+        ];
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.environment = Box::new(SyntheticStreamEnvironment::new(schedule));
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(40);
+        // Every scheduled edge ended up in the rset (regardless of
+        // any meta-R the runtime added on top).
+        for r in &expected {
+            assert!(
+                rt.rset.iter().any(|got| got == r),
+                "missing scheduled edge {:?}",
+                r
+            );
+        }
+        // Theory named.
+        assert!(rt.rset.theories().len() >= 1);
+        // Structural assertion: is_poset.
+        let poset = rt.rset.check_poset();
+        assert!(poset.is_poset, "drip-fed diamond should be a poset");
     }
 }
