@@ -1,0 +1,47 @@
+=== ADR 0052 Phase-A verification report ===
+
+--- 8-case rigorous battery (verification #3) ---
+case transitive_chain: tick=60 lifecycle=Sleeping match=OK direct_axioms=3 runtime_axioms=3
+    - ax_antisymmetry
+    - ax_totality
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+case equivalence_3_classes: tick=60 lifecycle=Sleeping match=OK direct_axioms=6 runtime_axioms=6
+    - ax_reflexivity
+    - ax_tpl_v2_p0-1_c1-0
+    - ax_tpl_v3_p0-1_p0-2_c1-2
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+    - ax_tpl_v3_p0-1_p1-2_c2-0
+    - ax_tpl_v3_p0-1_p2-1_c0-2
+case strict_partial_order_diamond: tick=60 lifecycle=Sleeping match=OK direct_axioms=2 runtime_axioms=2
+    - ax_antisymmetry
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+case almost_transitive: tick=60 lifecycle=Sleeping match=OK direct_axioms=1 runtime_axioms=1
+    - ax_antisymmetry
+case random_sparse: tick=60 lifecycle=Sleeping match=OK direct_axioms=1 runtime_axioms=1
+    - ax_antisymmetry
+case tolerance: tick=60 lifecycle=Sleeping match=OK direct_axioms=2 runtime_axioms=2
+    - ax_reflexivity
+    - ax_tpl_v2_p0-1_c1-0
+case total_order: tick=60 lifecycle=Sleeping match=OK direct_axioms=4 runtime_axioms=4
+    - ax_antisymmetry
+    - ax_reflexivity
+    - ax_totality
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+case complete_bipartite: tick=60 lifecycle=Sleeping match=OK direct_axioms=1 runtime_axioms=1
+    - ax_antisymmetry
+
+--- drip-feed diamond (verification #5) ---
+drip_feed: tick=40 lifecycle=Sleeping theories=3 is_poset=true
+    named theory: t_0
+    - ax_reflexivity
+    - ax_tpl_v2_p0-1_c1-0
+    - ax_tpl_v3_p0-0_p1-2_c0-1
+    - ax_tpl_v3_p0-0_p1-2_c0-2
+    - ax_tpl_v3_p0-0_p1-2_c1-0
+    - ax_tpl_v3_p0-0_p1-2_c2-0
+    - ax_tpl_v3_p0-1_p0-2_c1-2
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+    - ax_tpl_v3_p0-1_p1-2_c2-0
+    - ax_tpl_v3_p0-1_p2-1_c0-2
+
+--- end ---

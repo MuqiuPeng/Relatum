@@ -1908,3 +1908,25 @@ losing its accrued thrash gate or pattern lifetime data. Next
 step is open — possible directions include richer history-aware
 rules (cool down patterns whose `last_improved_tick` is stale)
 or starting Phase C (selective declarativization to meta-R).
+
+### Phase A verification — captured run report
+Added a rerunnable reporter
+`examples/phase_a_verification.rs` that prints, per case, the
+runtime's tick / lifecycle / theory fingerprint match status
+plus the named axioms. Captured a snapshot of its output into
+`logs/2026-04-25_phase_a_verification.log`.
+
+Snapshot summary (B2 era, 2026-04-25):
+- All 8 rigorous-battery cases reach `Sleeping` and **match=OK**
+  against direct `discover_theory`. Axiom counts:
+  transitive_chain 3 · equivalence_3_classes 6 ·
+  strict_partial_order_diamond 2 · almost_transitive 1 ·
+  random_sparse 1 · tolerance 2 · total_order 4 ·
+  complete_bipartite 1.
+- Drip-feed diamond ends with `is_poset=true`, 3 named theories
+  (one per "settled" intermediate state during edge ingestion;
+  the runtime correctly names a theory at each plateau as the
+  rset evolves). The first theory `t_0` already contains
+  reflexivity + symmetry + a transitivity-shaped axiom.
+
+To regenerate: `cargo run --example phase_a_verification`.
