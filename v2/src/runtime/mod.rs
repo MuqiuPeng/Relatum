@@ -647,11 +647,38 @@ pub struct FrontierItem {
     pub status: FrontierStatus,
 }
 
+/// Threshold config for staleness-based prune injection.
+/// ADR 0052 / B3.
+///
+/// A named pattern is "stale" if it has been around long enough
+/// (`first_seen_tick` ≥ `min_pattern_age_for_staleness` ticks ago)
+/// but its `last_improved_tick` has not advanced for at least
+/// `max_pattern_staleness_ticks`. Stale patterns become
+/// `LowValueObjectForPrune` candidates with a low fixed priority,
+/// so the existing Consolidate / Prune lane retires them without
+/// the scheduler needing a new dispatch path.
+#[derive(Debug, Clone, Copy)]
+pub struct StalenessConfig {
+    pub max_pattern_staleness_ticks: u64,
+    pub min_pattern_age_for_staleness: u64,
+}
+
+impl Default for StalenessConfig {
+    fn default() -> Self {
+        Self {
+            max_pattern_staleness_ticks: 30,
+            min_pattern_age_for_staleness: 50,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Frontier {
     pub items: Vec<FrontierItem>,
     pub last_full_refresh_tick: u64,
     pub dirty: bool,
+    /// ADR 0052 / B3.
+    pub staleness: StalenessConfig,
 }
 
 impl Default for Frontier {
@@ -660,6 +687,7 @@ impl Default for Frontier {
             items: Vec::new(),
             last_full_refresh_tick: 0,
             dirty: true,
+            staleness: StalenessConfig::default(),
         }
     }
 }
@@ -804,6 +832,68 @@ impl Frontier {
         self.last_full_refresh_tick = tick;
         self.dirty = false;
     }
+
+    /// Append `LowValueObjectForPrune` items for named patterns whose
+    /// `last_improved_tick` is too stale relative to `tick`. Idempotent
+    /// against repeat calls in the same tick (skips targets that
+    /// already have a Prune item) and re-sorts items by priority on
+    /// exit. ADR 0052 / B3.
+    pub fn refresh_stale_prune(
+        &mut self,
+        history: &ObjectHistoryStore,
+        tick: u64,
+    ) {
+        let cfg = self.staleness;
+        let mut added = false;
+        for (id, h) in &history.patterns {
+            let age = tick.saturating_sub(h.first_seen_tick);
+            if age < cfg.min_pattern_age_for_staleness {
+                continue;
+            }
+            let stale_since = match h.last_improved_tick {
+                Some(t) => tick.saturating_sub(t),
+                None => age,
+            };
+            if stale_since < cfg.max_pattern_staleness_ticks {
+                continue;
+            }
+            let target = FrontierTarget::Pattern(id.clone());
+            let already = self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::LowValueObjectForPrune)
+                    && it.target == target
+            });
+            if already {
+                continue;
+            }
+            self.items.push(FrontierItem {
+                id: format!("prune_stale_{}_{}", id, tick),
+                kind: FrontierKind::LowValueObjectForPrune,
+                target,
+                // Below the typical negative-cv prune priority
+                // (≈ -cv * 2.0, normally ≥ 1.0). Staleness is a
+                // softer signal so it should not preempt a
+                // counterfactually-bad object.
+                priority: 0.5,
+                estimated_value: 0.5,
+                estimated_cost: 1.0,
+                novelty_score: 0.0,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
+            added = true;
+        }
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
 }
 
 fn theory_pair_has_relation(rset: &RSet, a: &str, b: &str) -> bool {
@@ -945,9 +1035,15 @@ impl AutonomousRuntime {
                 }
             }
 
-            // 3. Refresh frontier when dirty (cheap at β-scale).
+            // 3. Refresh frontier when dirty (cheap at β-scale). The
+            //    staleness pass (B3) consults object_history, so it
+            //    runs alongside refresh whenever items are recomputed.
             if self.frontier.dirty {
                 self.frontier.refresh(&self.rset, self.tick);
+                self.frontier.refresh_stale_prune(
+                    &self.memory.object_history,
+                    self.tick,
+                );
             }
 
             // 4. Scheduler decision.
@@ -3534,6 +3630,7 @@ mod tests {
             ],
             last_full_refresh_tick: 0,
             dirty: false,
+            staleness: StalenessConfig::default(),
         };
         let mut memory = Memory::default();
         memory
@@ -3559,6 +3656,185 @@ mod tests {
                 other
             ),
         }
+    }
+
+    #[test]
+    fn b3_stale_pattern_below_age_floor_skipped() {
+        // Pattern's age (20) is below the 50-tick floor, so it is
+        // not eligible for staleness pruning even though
+        // last_improved_tick is None and the staleness window
+        // has elapsed since first_seen.
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_x".to_string(),
+            ObjectHistory {
+                first_seen_tick: 10,
+                last_seen_tick: 30,
+                last_improved_tick: None,
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_stale_prune(&history, 30);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn b3_long_unimproved_pattern_injected() {
+        // first_seen=0, never improved, tick=100. Age=100 ≥ 50
+        // and stale_since=100 ≥ 30 → injected.
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_old".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 100,
+                last_improved_tick: None,
+                times_selected_as_focus: 1,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_stale_prune(&history, 100);
+        assert_eq!(frontier.items.len(), 1);
+        let it = &frontier.items[0];
+        assert!(matches!(it.kind, FrontierKind::LowValueObjectForPrune));
+        assert_eq!(
+            it.target,
+            FrontierTarget::Pattern("p_old".to_string())
+        );
+        assert!(it.id.starts_with("prune_stale_p_old_"));
+    }
+
+    #[test]
+    fn b3_recently_improved_pattern_skipped() {
+        // Age=100 ≥ 50 but last_improved=95 → stale_since=5 < 30,
+        // so not stale.
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_active".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 100,
+                last_improved_tick: Some(95),
+                times_selected_as_focus: 5,
+                times_pruned: 0,
+                last_counterfactual_value: Some(2.0),
+                stability_estimate: Some(0.8),
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_stale_prune(&history, 100);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn b3_stale_prune_does_not_double_existing() {
+        // Frontier already has a Prune for this pattern (e.g. from
+        // negative counterfactual value); staleness pass must skip.
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_neg".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 100,
+                last_improved_tick: None,
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: Some(-1.0),
+                stability_estimate: None,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.items.push(FrontierItem {
+            id: "prune_p_neg_50".to_string(),
+            kind: FrontierKind::LowValueObjectForPrune,
+            target: FrontierTarget::Pattern("p_neg".to_string()),
+            priority: 2.0,
+            estimated_value: 1.0,
+            estimated_cost: 1.0,
+            novelty_score: 0.0,
+            first_seen_tick: 50,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        });
+        frontier.refresh_stale_prune(&history, 100);
+        assert_eq!(frontier.items.len(), 1);
+        assert_eq!(frontier.items[0].priority, 2.0);
+        assert_eq!(frontier.items[0].id, "prune_p_neg_50");
+    }
+
+    #[test]
+    fn b3_stale_prune_idempotent() {
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_old".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 100,
+                last_improved_tick: None,
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_stale_prune(&history, 100);
+        let len1 = frontier.items.len();
+        frontier.refresh_stale_prune(&history, 100);
+        assert_eq!(frontier.items.len(), len1);
+    }
+
+    #[test]
+    fn b3_stale_priority_below_negative_cv_prune() {
+        // Negative-cv prune at priority 2.0 must rank above the
+        // staleness-injected prune at priority 0.5.
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_stale".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 100,
+                last_improved_tick: None,
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.items.push(FrontierItem {
+            id: "prune_p_neg_50".to_string(),
+            kind: FrontierKind::LowValueObjectForPrune,
+            target: FrontierTarget::Pattern("p_neg".to_string()),
+            priority: 2.0,
+            estimated_value: 1.0,
+            estimated_cost: 1.0,
+            novelty_score: 0.0,
+            first_seen_tick: 50,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        });
+        frontier.refresh_stale_prune(&history, 100);
+        assert_eq!(frontier.items.len(), 2);
+        assert!(
+            frontier.items[0].priority >= frontier.items[1].priority,
+            "items not in priority-descending order"
+        );
+        assert_eq!(
+            frontier.items[0].target,
+            FrontierTarget::Pattern("p_neg".to_string())
+        );
     }
 
     #[test]

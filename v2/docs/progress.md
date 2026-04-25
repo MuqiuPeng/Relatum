@@ -1972,3 +1972,60 @@ hit rate stays well above 10%, so the gate never fires
 spuriously.
 
 Tests: 347 → 352 (+5).
+
+### Runtime Phase B3 — stale-pattern Prune injection
+Third stats-driven scheduling rule. Closes the Phase B
+history → action loop in the simplest way: `ObjectHistory.last_improved_tick`
+now gates a *new* `LowValueObjectForPrune` source on the frontier.
+A named pattern becomes a stale-prune candidate when both:
+
+- its age (`tick - first_seen_tick`) ≥ `min_pattern_age_for_staleness`
+  (default 50), AND
+- its staleness (`tick - last_improved_tick`, or `age` when
+  `last_improved_tick` is `None`) ≥ `max_pattern_staleness_ticks`
+  (default 30).
+
+Stale prune items piggyback on the existing Consolidate / Prune
+lane — no new dispatch path. Priority is fixed at 0.5, below the
+typical negative-counterfactual prune (`-cv * 2.0`, normally ≥ 1.0),
+so a counterfactually-bad pattern still preempts a merely-stale
+one. If the same pattern already has a Prune item (e.g. from
+negative cv), the staleness pass skips it — no double-injection.
+
+Implementation seam:
+- `StalenessConfig { max_pattern_staleness_ticks, min_pattern_age_for_staleness }`
+  added next to `Frontier`; `Frontier` gains a `staleness` field
+  with a sensible default.
+- `Frontier::refresh_stale_prune(&ObjectHistoryStore, tick)`
+  appends staleness items and re-sorts by priority. Idempotent
+  against repeat calls in the same tick.
+- Main loop in `AutonomousRuntime::run` calls
+  `refresh_stale_prune` immediately after `refresh`, scoped to
+  the same `dirty` gate. No checkpoint changes — frontier is
+  recomputed on resume.
+- Theory staleness deferred. Theories are harder-won than
+  patterns; pruning a stale theory is a stronger signal than a
+  staleness threshold can carry. Will revisit when the runtime
+  has both stale-theory data and a counterfactual signal to
+  combine.
+
+Tests (6 new B3):
+- Pattern age below the 50-tick floor → no injection (even when
+  staleness window has elapsed since `first_seen`).
+- Long-unimproved pattern (`first_seen=0`, `last_improved=None`,
+  `tick=100`) → injected with `prune_stale_<id>_<tick>` id.
+- Recently-improved pattern (`stale_since=5 < 30`) → skipped.
+- Staleness pass leaves the existing negative-cv Prune item alone
+  (no duplicate, original priority preserved).
+- Two consecutive `refresh_stale_prune` calls on the same state
+  produce the same item count (idempotent).
+- When both negative-cv and stale items exist, the negative-cv
+  one ranks first after sort.
+
+Existing 352 tests stayed green: their horizons are well below
+50 ticks, so the staleness floor is never reached.
+
+Tests: 352 → 358 (+6). Phase B0/B1/B1+/B2/B3 complete; the
+runtime now feeds history *and* acts on it. Phase C
+("selective declarativization to meta-R") is a deferred follow-on
+ADR — drafted separately as ADR 0053.
