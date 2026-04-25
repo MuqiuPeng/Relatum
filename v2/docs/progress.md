@@ -1579,3 +1579,138 @@ Tests (11 new):
 - `a1_rule_based_zero_streak_triggers_sleep`
 
 Tests: 292 → 303 (11 new). Phase A2 next (mode machine).
+
+### Runtime Phase A2 — mode machine
+ADR 0052 Phase A2. Adds Expand / Consolidate / Reflect transitions
+on top of A1's frontier-driven scheduler.
+
+New types:
+- `ActionKind::UpdateTheoryRelations` — execute scans named theory
+  pairs and persists missing extension/independence/parallel edges
+  via `classify_theory_pair`.
+- `FrontierKind::TheoryNeedsRelations` — Frontier proposes when
+  ≥ 2 named theories have at least one pair lacking a relation
+  edge.
+- `ModeTransition` struct + `Memory.mode_transitions: VecDeque`
+  with `record_mode_transition` and `max_mode_transitions` cap.
+
+Mode-aware scheduler:
+- **Expand**: pick TheoryCandidate / PatternCandidate items.
+  Switch to Consolidate when `recent_positive_discovers >=
+  min_recent_gains` AND consolidate work exists. Falls back to
+  Reflect when no expand work.
+- **Consolidate**: pick LowValueObjectForPrune /
+  TheoryNeedsRelations items. Switch to Reflect when consolidate
+  work is empty.
+- **Reflect**: pure state-machine — no Execute. Returns SwitchMode
+  to Expand or Consolidate if work exists, else Sleep.
+
+`SwitchMode` to the same mode is a no-op (no log entry); only
+real transitions get logged.
+
+`MinimizeAxioms` deferred — its semantics (rename theories with
+smaller member sets) requires careful design around object
+identity; future ADR.
+
+Tests (10 new A2):
+- Frontier proposes / omits TheoryNeedsRelations correctly
+- UpdateTheoryRelations actually persists independence edges
+- Mode transitions logged; same-mode is no-op
+- Consolidate mode processes consolidate work
+- Reflect never returns Execute
+- Multi-theory chain walks Expand → Consolidate or Reflect
+- Mode transitions cap respected
+- Deterministic-trace property holds across modes
+
+Tests: 303 → 313. Phase A3 next (sleep/wake + checkpoint).
+
+### Runtime Phase A3 — sleep/wake + checkpoint round-trip
+ADR 0052 Phase A3. The runtime now stays inside the main loop while
+`Sleeping` and wakes on data events; it also serializes its mutable
+state to text and rebuilds itself from that text.
+
+New types:
+- `LifecycleTransition` (and `Memory.lifecycle_transitions: VecDeque`
+  with `record_lifecycle_transition` and
+  `max_lifecycle_transitions` cap, default 200).
+- `should_wake(events: &[Event]) -> bool` — public free fn. True iff
+  any event is `AddEdge` / `RemoveEdge`. Bare `Tick` does NOT wake.
+
+Main-loop changes (`run_bounded`):
+- Loop condition no longer breaks on `Sleeping`; only `Stopped`
+  exits.
+- Each tick: poll env → compute `wake_signal = should_wake(&events)`
+  → apply events → if `Sleeping` and `wake_signal`: transition to
+  Running; if `Sleeping` and not: `continue` (skip scheduler /
+  frontier-refresh / dispatch entirely — no episode added).
+- New helper `transition_lifecycle(to, reason)` is the single seam
+  for state changes: records the transition in memory, mutates
+  `self.lifecycle`, and on entry to `Sleeping` or `Stopped`
+  snapshots a checkpoint into `last_checkpoint: Option<String>`.
+
+Checkpoint format (hand-rolled, no serde — mirrors `RSet::to_text`
+TSV, ADR 0038):
+
+```
+# v2 runtime checkpoint v1
+[meta]
+tick<TAB>N
+episode_counter<TAB>N
+steps_since_last_gain<TAB>N
+current_score<TAB>F
+lifecycle<TAB>Running|Sleeping|Stopped|Booting
+mode<TAB>Expand|Consolidate|Reflect
+max_episodes<TAB>N
+max_mode_transitions<TAB>N
+max_lifecycle_transitions<TAB>N
+actions_per_tick_cap<TAB>N
+
+[rset]
+<RSet::to_text() output>
+
+[episodes]
+id<TAB>tick<TAB>mode<TAB>action<TAB>tgt_kind<TAB>tgt_value<TAB>before<TAB>after<TAB>delta
+
+[mode_transitions]
+tick<TAB>from<TAB>to<TAB>reason
+
+[lifecycle_transitions]
+tick<TAB>from<TAB>to<TAB>reason
+```
+
+API:
+- `AutonomousRuntime::checkpoint_text(&self) -> Result<String, String>`
+- `AutonomousRuntime::from_checkpoint_text(text: &str) -> Result<Self, String>`
+  — restores rset / lifecycle / mode / tick / counters / score /
+  memory; uses default `StubScheduler` + `NoOpEnvironment`. Caller
+  swaps in real scheduler / environment before resuming.
+- File I/O is the **caller's** responsibility; the runtime stays
+  pure. ADR 0052 § Memory M0 ("durability vs. declarativeness").
+
+Side change: `ModeTransition.reason` and
+`LifecycleTransition.reason` are `String` (not `&'static str`) so
+they round-trip through serialization. One existing A2 test updated
+accordingly.
+
+Tests (12 new A3):
+- `should_wake` truth table (data events / Tick / empty)
+- Pre-sleeping runtime stays asleep under NoOpEnvironment for
+  full tick budget; no episodes added
+- Sleeping runtime wakes on AddEdge (verified via lifecycle log,
+  not final state — wake may be followed by another Sleep)
+- Bare `Tick` event does not wake
+- Sleep entry logs a `LifecycleTransition` with reason
+  `scheduler_sleep`
+- `last_checkpoint` populated on sleep entry; format header
+  matches
+- Round-trip preserves rset, lifecycle, mode, tick, episodes,
+  transitions, caps
+- Round-trip is byte-idempotent (`text → restore → text` equals
+  original)
+- Resumed runtime can advance further ticks
+- Lifecycle-transition cap respected (LRU eviction)
+- End-to-end Running → Sleeping → Running cycle in one bounded run
+  (TickGatedEnv injects an event mid-flight)
+
+Tests: 313 → 325. Phase A complete; Phase B next (`ObjectHistory` +
+`PolicyStats` + `SyntheticStreamEnvironment`).

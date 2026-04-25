@@ -1,19 +1,22 @@
-//! Autonomous runtime layer for v2. ADR 0052 Phases A0–A1.
+//! Autonomous runtime layer for v2. ADR 0052 Phases A0–A3.
 //!
 //! - A0: spin loop, stub scheduler, NoOp environment, bounded ticks.
 //! - A1: `Frontier` with candidate enumeration + cooldown via dirty
 //!   tracking; `RuleBasedScheduler` picking top frontier items;
 //!   action-plan `target`; pattern and prune actions wired in
 //!   addition to `DiscoverTheory`.
-//!
-//! Frontier / mode switching / sleep policy keeps expanding in
-//! A2–A3. Scheduler / environment / memory interfaces are stable.
+//! - A2: Expand / Consolidate / Reflect modes; `UpdateTheoryRelations`
+//!   action; mode-transition log.
+//! - A3: lifecycle stays in the loop while `Sleeping` and wakes on
+//!   any data event (`AddEdge` / `RemoveEdge`); lifecycle transitions
+//!   logged in `Memory`; `checkpoint_text` / `from_checkpoint_text`
+//!   round-trip serialization (no file I/O — caller's job).
 
 use crate::{
     AutonomousConfig, AxiomDiscoveryConfig, DiscoveryConfig, NamingPolicy,
-    RefinementConfig, RSet, R,
+    RefinementConfig, RSet, TheoryRelationKind, R,
 };
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 // ─── lifecycle + mode ──────────────────────────────────────────────
 
@@ -66,6 +69,9 @@ pub enum ActionKind {
     DiscoverPatterns,
     DiscoverTheory,
     PruneLowValueObjects,
+    /// Scan named theories pairwise, persist any missing
+    /// extension / independence / parallel edges. ADR 0052 / A2.
+    UpdateTheoryRelations,
 }
 
 /// Where (in the RSet) the action should apply. ADR 0052 / A1.
@@ -119,48 +125,176 @@ impl Scheduler for StubScheduler {
     }
 }
 
-/// A1 scheduler: pick the top frontier item; Sleep when the frontier
-/// is empty or when the last few episodes all had zero delta.
+/// Rule-based scheduler with mode-aware filtering and Expand /
+/// Consolidate / Reflect transitions. ADR 0052 / A1 + A2.
+///
+/// Mode policy:
+/// - **Expand**: pick TheoryCandidate / PatternCandidate items.
+///   Switch to Consolidate when recent expansion produced multiple
+///   gains AND consolidate work exists. Switch to Reflect on
+///   stagnation.
+/// - **Consolidate**: pick LowValueObjectForPrune /
+///   TheoryNeedsRelations items. Switch to Reflect when consolidate
+///   work is empty.
+/// - **Reflect**: pure state-machine mode — no Execute, only
+///   SwitchMode or Sleep. Decides Expand if fresh discovery work
+///   exists, else Sleep.
+///
+/// Stagnation falls back to Sleep after `max_zero_streak`
+/// non-positive episodes regardless of mode.
 pub struct RuleBasedScheduler {
-    /// If the last `max_zero_streak` episodes all delivered
-    /// `delta <= 0`, return Sleep. Prevents spin on saturated RSets.
     pub max_zero_streak: usize,
+    /// Window over which `should_enter_consolidate` looks for
+    /// recent positive-delta Discover episodes.
+    pub recent_window: usize,
+    /// Minimum positive-delta Discovers in `recent_window` to
+    /// consider a switch to Consolidate.
+    pub min_recent_gains: usize,
 }
 
 impl Default for RuleBasedScheduler {
     fn default() -> Self {
-        Self { max_zero_streak: 3 }
+        Self {
+            max_zero_streak: 3,
+            recent_window: 5,
+            min_recent_gains: 2,
+        }
+    }
+}
+
+impl RuleBasedScheduler {
+    fn pick_top<'a, F: Fn(&FrontierItem) -> bool>(
+        ctx: &'a SchedulerContext<'_>,
+        accept: F,
+    ) -> Option<&'a FrontierItem> {
+        ctx.frontier.items.iter().find(|it| accept(it))
+    }
+
+    fn execute_for_kind(kind: FrontierKind) -> ActionKind {
+        match kind {
+            FrontierKind::TheoryCandidate => ActionKind::DiscoverTheory,
+            FrontierKind::PatternCandidate => ActionKind::DiscoverPatterns,
+            FrontierKind::LowValueObjectForPrune => {
+                ActionKind::PruneLowValueObjects
+            }
+            FrontierKind::TheoryNeedsRelations => {
+                ActionKind::UpdateTheoryRelations
+            }
+        }
+    }
+
+    fn has_expand_work(ctx: &SchedulerContext<'_>) -> bool {
+        ctx.frontier.items.iter().any(|it| {
+            matches!(
+                it.kind,
+                FrontierKind::TheoryCandidate | FrontierKind::PatternCandidate
+            )
+        })
+    }
+
+    fn has_consolidate_work(ctx: &SchedulerContext<'_>) -> bool {
+        ctx.frontier.items.iter().any(|it| {
+            matches!(
+                it.kind,
+                FrontierKind::LowValueObjectForPrune
+                    | FrontierKind::TheoryNeedsRelations
+            )
+        })
+    }
+
+    fn zero_streak(ctx: &SchedulerContext<'_>) -> usize {
+        ctx.memory
+            .episodes
+            .iter()
+            .rev()
+            .take_while(|ep| ep.delta <= 0.0)
+            .count()
+    }
+
+    fn recent_positive_discovers(&self, ctx: &SchedulerContext<'_>) -> usize {
+        ctx.memory
+            .episodes
+            .iter()
+            .rev()
+            .take(self.recent_window)
+            .filter(|ep| {
+                ep.delta > 0.0
+                    && matches!(
+                        ep.action_kind,
+                        ActionKind::DiscoverPatterns | ActionKind::DiscoverTheory
+                    )
+            })
+            .count()
     }
 }
 
 impl Scheduler for RuleBasedScheduler {
     fn choose(&mut self, ctx: &SchedulerContext<'_>) -> SchedulerDecision {
-        // Unproductive-streak detection.
-        let zero_streak = ctx
-            .memory
-            .episodes
-            .iter()
-            .rev()
-            .take_while(|ep| ep.delta <= 0.0)
-            .count();
-        if zero_streak >= self.max_zero_streak {
+        // Global stagnation always wins.
+        if Self::zero_streak(ctx) >= self.max_zero_streak {
             return SchedulerDecision::Sleep;
         }
-        match ctx.frontier.items.first() {
-            Some(item) => {
-                let action_kind = match item.kind {
-                    FrontierKind::TheoryCandidate => ActionKind::DiscoverTheory,
-                    FrontierKind::PatternCandidate => ActionKind::DiscoverPatterns,
-                    FrontierKind::LowValueObjectForPrune => {
-                        ActionKind::PruneLowValueObjects
-                    }
-                };
-                SchedulerDecision::Execute(ActionPlan {
-                    action_kind,
-                    target: item.target.clone(),
-                })
+
+        match ctx.mode {
+            RuntimeMode::Expand => {
+                // Should we transition to Consolidate?
+                if self.recent_positive_discovers(ctx) >= self.min_recent_gains
+                    && Self::has_consolidate_work(ctx)
+                {
+                    return SchedulerDecision::SwitchMode(
+                        RuntimeMode::Consolidate,
+                    );
+                }
+                // Pick an Expand-shaped action.
+                if let Some(item) = Self::pick_top(ctx, |it| {
+                    matches!(
+                        it.kind,
+                        FrontierKind::TheoryCandidate
+                            | FrontierKind::PatternCandidate
+                    )
+                }) {
+                    return SchedulerDecision::Execute(ActionPlan {
+                        action_kind: Self::execute_for_kind(item.kind),
+                        target: item.target.clone(),
+                    });
+                }
+                // No expand work. Try consolidate or reflect.
+                if Self::has_consolidate_work(ctx) {
+                    SchedulerDecision::SwitchMode(RuntimeMode::Consolidate)
+                } else {
+                    SchedulerDecision::SwitchMode(RuntimeMode::Reflect)
+                }
             }
-            None => SchedulerDecision::Sleep,
+
+            RuntimeMode::Consolidate => {
+                if !Self::has_consolidate_work(ctx) {
+                    return SchedulerDecision::SwitchMode(RuntimeMode::Reflect);
+                }
+                if let Some(item) = Self::pick_top(ctx, |it| {
+                    matches!(
+                        it.kind,
+                        FrontierKind::LowValueObjectForPrune
+                            | FrontierKind::TheoryNeedsRelations
+                    )
+                }) {
+                    return SchedulerDecision::Execute(ActionPlan {
+                        action_kind: Self::execute_for_kind(item.kind),
+                        target: item.target.clone(),
+                    });
+                }
+                SchedulerDecision::SwitchMode(RuntimeMode::Reflect)
+            }
+
+            RuntimeMode::Reflect => {
+                // Pure state-machine mode: no Execute, no episode added.
+                if Self::has_expand_work(ctx) {
+                    SchedulerDecision::SwitchMode(RuntimeMode::Expand)
+                } else if Self::has_consolidate_work(ctx) {
+                    SchedulerDecision::SwitchMode(RuntimeMode::Consolidate)
+                } else {
+                    SchedulerDecision::Sleep
+                }
+            }
         }
     }
 }
@@ -186,6 +320,19 @@ impl Environment for NoOpEnvironment {
     }
 }
 
+/// Wake predicate: any data-mutating event lifts the runtime out of
+/// `Sleeping`. Bare `Tick` is informational and does NOT wake — it
+/// preserves "no signal, stay asleep" semantics. ADR 0052 / A3.
+///
+/// Ordering: this predicate is evaluated *after* `Environment::poll`
+/// but *before* `apply_events`, so any add/remove arriving in this
+/// tick will both wake the runtime AND modify the rset on the same
+/// pass — the next iteration (or the rest of this iteration) sees a
+/// dirty frontier.
+pub fn should_wake(events: &[Event]) -> bool {
+    events.iter().any(|e| matches!(e, Event::AddEdge(_) | Event::RemoveEdge(_)))
+}
+
 // ─── memory (M0) ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -200,17 +347,44 @@ pub struct Episode {
     pub delta: f64,
 }
 
+/// Recorded mode transition. ADR 0052 / A2.
+#[derive(Debug, Clone)]
+pub struct ModeTransition {
+    pub tick: u64,
+    pub from: RuntimeMode,
+    pub to: RuntimeMode,
+    pub reason: String,
+}
+
+/// Recorded lifecycle transition (Running ↔ Sleeping / → Stopped).
+/// ADR 0052 / A3.
+#[derive(Debug, Clone)]
+pub struct LifecycleTransition {
+    pub tick: u64,
+    pub from: LifecycleState,
+    pub to: LifecycleState,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Memory {
     pub episodes: VecDeque<Episode>,
+    pub mode_transitions: VecDeque<ModeTransition>,
+    pub lifecycle_transitions: VecDeque<LifecycleTransition>,
     pub max_episodes: usize,
+    pub max_mode_transitions: usize,
+    pub max_lifecycle_transitions: usize,
 }
 
 impl Default for Memory {
     fn default() -> Self {
         Self {
             episodes: VecDeque::new(),
+            mode_transitions: VecDeque::new(),
+            lifecycle_transitions: VecDeque::new(),
             max_episodes: 1000,
+            max_mode_transitions: 200,
+            max_lifecycle_transitions: 200,
         }
     }
 }
@@ -222,6 +396,23 @@ impl Memory {
             self.episodes.pop_front();
         }
     }
+
+    /// Append a mode-transition record. ADR 0052 / A2.
+    pub fn record_mode_transition(&mut self, mt: ModeTransition) {
+        self.mode_transitions.push_back(mt);
+        while self.mode_transitions.len() > self.max_mode_transitions {
+            self.mode_transitions.pop_front();
+        }
+    }
+
+    /// Append a lifecycle-transition record. ADR 0052 / A3.
+    pub fn record_lifecycle_transition(&mut self, lt: LifecycleTransition) {
+        self.lifecycle_transitions.push_back(lt);
+        while self.lifecycle_transitions.len() > self.max_lifecycle_transitions {
+            self.lifecycle_transitions.pop_front();
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.episodes.len()
     }
@@ -237,6 +428,9 @@ pub enum FrontierKind {
     TheoryCandidate,
     PatternCandidate,
     LowValueObjectForPrune,
+    /// At least two named theories exist with no recorded relation
+    /// edge between them. ADR 0052 / A2.
+    TheoryNeedsRelations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -379,6 +573,37 @@ impl Frontier {
             }
         }
 
+        // 4. TheoryNeedsRelations: ≥ 2 named theories AND at least one
+        //    pair has no extension/independence/parallel edge between
+        //    them. ADR 0052 / A2.
+        let theories: Vec<String> =
+            rset.theories().iter().map(|s| s.to_string()).collect();
+        if theories.len() >= 2 {
+            let missing_pair = (0..theories.len()).any(|i| {
+                ((i + 1)..theories.len()).any(|j| {
+                    !theory_pair_has_relation(rset, &theories[i], &theories[j])
+                })
+            });
+            if missing_pair {
+                items.push(FrontierItem {
+                    id: format!("theory_relations_{}", tick),
+                    kind: FrontierKind::TheoryNeedsRelations,
+                    target: FrontierTarget::WholeRSet,
+                    // Mid priority — slightly below pruning, above
+                    // pattern-discovery on small graphs.
+                    priority: 1.5,
+                    estimated_value: 1.0,
+                    estimated_cost: 1.0,
+                    novelty_score: 0.5,
+                    first_seen_tick: tick,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                });
+            }
+        }
+
         items.sort_by(|a, b| {
             b.priority
                 .partial_cmp(&a.priority)
@@ -390,6 +615,28 @@ impl Frontier {
         self.last_full_refresh_tick = tick;
         self.dirty = false;
     }
+}
+
+fn theory_pair_has_relation(rset: &RSet, a: &str, b: &str) -> bool {
+    rset.extension_edges().iter().any(|e| {
+        if let Some((sub, sup)) = rset.extension_endpoints(e) {
+            (sub == a && sup == b) || (sub == b && sup == a)
+        } else {
+            false
+        }
+    }) || rset.independence_edges().iter().any(|e| {
+        if let Some((lo, hi)) = rset.independence_endpoints(e) {
+            (lo == a && hi == b) || (lo == b && hi == a)
+        } else {
+            false
+        }
+    }) || rset.parallel_edges().iter().any(|e| {
+        if let Some((lo, hi)) = rset.parallel_endpoints(e) {
+            (lo == a && hi == b) || (lo == b && hi == a)
+        } else {
+            false
+        }
+    })
 }
 
 // ─── runtime ───────────────────────────────────────────────────────
@@ -408,6 +655,11 @@ pub struct AutonomousRuntime {
     pub steps_since_last_gain: u64,
     pub budget: BudgetState,
     pub current_score: f64,
+
+    /// Snapshot of `checkpoint_text()` taken on the last entry into
+    /// `Sleeping` or `Stopped`. ADR 0052 / A3. Caller persists to disk
+    /// at its discretion; the runtime itself does no I/O.
+    pub last_checkpoint: Option<String>,
 }
 
 impl AutonomousRuntime {
@@ -429,6 +681,33 @@ impl AutonomousRuntime {
             steps_since_last_gain: 0,
             budget: BudgetState::new(1),
             current_score,
+            last_checkpoint: None,
+        }
+    }
+
+    /// Record a lifecycle transition and update `self.lifecycle`.
+    /// Snapshot a checkpoint when entering `Sleeping` or `Stopped`.
+    /// No-op if `to == self.lifecycle`. ADR 0052 / A3.
+    fn transition_lifecycle(
+        &mut self,
+        to: LifecycleState,
+        reason: &str,
+    ) {
+        if to == self.lifecycle {
+            return;
+        }
+        let from = self.lifecycle;
+        self.memory.record_lifecycle_transition(LifecycleTransition {
+            tick: self.tick,
+            from,
+            to,
+            reason: reason.to_string(),
+        });
+        self.lifecycle = to;
+        if matches!(to, LifecycleState::Sleeping | LifecycleState::Stopped) {
+            if let Ok(cp) = self.checkpoint_text() {
+                self.last_checkpoint = Some(cp);
+            }
         }
     }
 
@@ -437,24 +716,39 @@ impl AutonomousRuntime {
 
         while self.tick - start_tick < max_ticks
             && self.lifecycle != LifecycleState::Stopped
-            && self.lifecycle != LifecycleState::Sleeping
         {
             self.tick += 1;
             self.budget.reset_per_tick();
 
-            // 1. Ingest events and mark frontier dirty if changed.
+            // 1. Ingest events. Decide wake-on-event before applying so
+            //    the predicate's input matches the events we just got.
             let events = self.environment.poll();
+            let wake_signal = should_wake(&events);
             if !events.is_empty() {
                 self.apply_events(events);
                 self.frontier.mark_dirty();
             }
 
-            // 2. Refresh frontier when dirty (cheap at β-scale).
+            // 2. Sleeping short-circuit. Wake on any data event,
+            //    otherwise spend the tick asleep (no scheduler call,
+            //    no episode). ADR 0052 / A3.
+            if self.lifecycle == LifecycleState::Sleeping {
+                if wake_signal {
+                    self.transition_lifecycle(
+                        LifecycleState::Running,
+                        "wake_on_event",
+                    );
+                } else {
+                    continue;
+                }
+            }
+
+            // 3. Refresh frontier when dirty (cheap at β-scale).
             if self.frontier.dirty {
                 self.frontier.refresh(&self.rset, self.tick);
             }
 
-            // 3. Scheduler decision.
+            // 4. Scheduler decision.
             let decision = {
                 let ctx = SchedulerContext {
                     rset: &self.rset,
@@ -466,20 +760,34 @@ impl AutonomousRuntime {
                 self.scheduler.choose(&ctx)
             };
 
-            // 4. Dispatch.
+            // 5. Dispatch.
             match decision {
                 SchedulerDecision::Execute(plan) => {
                     self.execute_and_record(plan);
                     self.frontier.mark_dirty();
                 }
                 SchedulerDecision::SwitchMode(m) => {
-                    self.mode = m;
+                    if m != self.mode {
+                        self.memory.record_mode_transition(ModeTransition {
+                            tick: self.tick,
+                            from: self.mode,
+                            to: m,
+                            reason: "scheduler".to_string(),
+                        });
+                        self.mode = m;
+                    }
                 }
                 SchedulerDecision::Sleep => {
-                    self.lifecycle = LifecycleState::Sleeping;
+                    self.transition_lifecycle(
+                        LifecycleState::Sleeping,
+                        "scheduler_sleep",
+                    );
                 }
                 SchedulerDecision::Stop => {
-                    self.lifecycle = LifecycleState::Stopped;
+                    self.transition_lifecycle(
+                        LifecycleState::Stopped,
+                        "scheduler_stop",
+                    );
                 }
             }
         }
@@ -561,6 +869,36 @@ impl AutonomousRuntime {
                 };
                 let _ = self.rset.autonomous_pass(&cfg);
             }
+            ActionKind::UpdateTheoryRelations => {
+                // Snapshot ids so we can mutate self.rset inside the loop.
+                let theories: Vec<String> = self
+                    .rset
+                    .theories()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                for i in 0..theories.len() {
+                    for j in (i + 1)..theories.len() {
+                        let a = theories[i].clone();
+                        let b = theories[j].clone();
+                        match self.rset.classify_theory_pair(&a, &b) {
+                            Some(TheoryRelationKind::Extends) => {
+                                let _ = self.rset.name_theory_extension(&a, &b);
+                            }
+                            Some(TheoryRelationKind::ExtendedBy) => {
+                                let _ = self.rset.name_theory_extension(&b, &a);
+                            }
+                            Some(TheoryRelationKind::Independent) => {
+                                let _ = self.rset.name_theory_independence(&a, &b);
+                            }
+                            Some(TheoryRelationKind::Parallel) => {
+                                let _ = self.rset.name_theory_parallel(&a, &b);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
             ActionKind::PruneLowValueObjects => {
                 // Prune at the object pointed at by the plan, or all
                 // negative-CV if `WholeRSet`.
@@ -604,6 +942,459 @@ impl AutonomousRuntime {
             }
         }
     }
+
+    // ─── A3: checkpoint round-trip ─────────────────────────────────
+
+    /// Serialize the runtime's mutable state into a hand-rolled
+    /// section-based text format. Mirrors `RSet::to_text`'s TSV style
+    /// (ADR 0038). Does NOT serialize scheduler / environment / frontier
+    /// — those are behavior or rederivable. ADR 0052 / A3.
+    ///
+    /// Format (sections in fixed order, blank line between sections):
+    ///
+    /// ```text
+    /// # v2 runtime checkpoint v1
+    /// [meta]
+    /// tick<TAB>N
+    /// episode_counter<TAB>N
+    /// steps_since_last_gain<TAB>N
+    /// current_score<TAB>F
+    /// lifecycle<TAB>Running|Sleeping|Stopped|Booting
+    /// mode<TAB>Expand|Consolidate|Reflect
+    /// max_episodes<TAB>N
+    /// max_mode_transitions<TAB>N
+    /// max_lifecycle_transitions<TAB>N
+    /// actions_per_tick_cap<TAB>N
+    ///
+    /// [rset]
+    /// <RSet::to_text() output>
+    ///
+    /// [episodes]
+    /// id<TAB>tick<TAB>mode<TAB>action<TAB>tgt_kind<TAB>tgt_value<TAB>before<TAB>after<TAB>delta
+    ///
+    /// [mode_transitions]
+    /// tick<TAB>from<TAB>to<TAB>reason
+    ///
+    /// [lifecycle_transitions]
+    /// tick<TAB>from<TAB>to<TAB>reason
+    /// ```
+    pub fn checkpoint_text(&self) -> Result<String, String> {
+        let mut out = String::new();
+        out.push_str("# v2 runtime checkpoint v1\n");
+
+        // [meta]
+        out.push_str("[meta]\n");
+        out.push_str(&format!("tick\t{}\n", self.tick));
+        out.push_str(&format!("episode_counter\t{}\n", self.episode_counter));
+        out.push_str(&format!(
+            "steps_since_last_gain\t{}\n",
+            self.steps_since_last_gain
+        ));
+        out.push_str(&format!("current_score\t{:?}\n", self.current_score));
+        out.push_str(&format!(
+            "lifecycle\t{}\n",
+            lifecycle_to_str(self.lifecycle)
+        ));
+        out.push_str(&format!("mode\t{}\n", mode_to_str(self.mode)));
+        out.push_str(&format!(
+            "max_episodes\t{}\n",
+            self.memory.max_episodes
+        ));
+        out.push_str(&format!(
+            "max_mode_transitions\t{}\n",
+            self.memory.max_mode_transitions
+        ));
+        out.push_str(&format!(
+            "max_lifecycle_transitions\t{}\n",
+            self.memory.max_lifecycle_transitions
+        ));
+        out.push_str(&format!(
+            "actions_per_tick_cap\t{}\n",
+            self.budget.actions_per_tick_cap
+        ));
+        out.push('\n');
+
+        // [rset]
+        out.push_str("[rset]\n");
+        let rset_text = self
+            .rset
+            .to_text()
+            .map_err(|e| format!("rset serialization failed: {:?}", e))?;
+        out.push_str(&rset_text);
+        if !rset_text.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push('\n');
+
+        // [episodes]
+        out.push_str("[episodes]\n");
+        for ep in &self.memory.episodes {
+            check_no_tab_or_newline(&ep.target, "episode target")?;
+            let (tk, tv) = target_to_pair(&ep.target);
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{:?}\t{:?}\t{:?}\n",
+                ep.id,
+                ep.tick,
+                mode_to_str(ep.mode),
+                action_kind_to_str(ep.action_kind),
+                tk,
+                tv,
+                ep.score_before,
+                ep.score_after,
+                ep.delta,
+            ));
+        }
+        out.push('\n');
+
+        // [mode_transitions]
+        out.push_str("[mode_transitions]\n");
+        for mt in &self.memory.mode_transitions {
+            check_reason(&mt.reason, "mode_transition")?;
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                mt.tick,
+                mode_to_str(mt.from),
+                mode_to_str(mt.to),
+                mt.reason,
+            ));
+        }
+        out.push('\n');
+
+        // [lifecycle_transitions]
+        out.push_str("[lifecycle_transitions]\n");
+        for lt in &self.memory.lifecycle_transitions {
+            check_reason(&lt.reason, "lifecycle_transition")?;
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                lt.tick,
+                lifecycle_to_str(lt.from),
+                lifecycle_to_str(lt.to),
+                lt.reason,
+            ));
+        }
+
+        Ok(out)
+    }
+
+    /// Reverse of `checkpoint_text`. Returns a runtime with default
+    /// `StubScheduler` + `NoOpEnvironment`; caller swaps these in
+    /// before calling `run_bounded`. Frontier starts dirty (empty
+    /// items) and is rebuilt on the next tick. ADR 0052 / A3.
+    pub fn from_checkpoint_text(text: &str) -> Result<Self, String> {
+        let parsed = parse_checkpoint(text)?;
+
+        // Rebuild rset from its dedicated section.
+        let rset_blob = parsed.rset_lines.join("\n");
+        let rset = RSet::from_text(&rset_blob)
+            .map_err(|e| format!("rset parse failed: {:?}", e))?;
+
+        // Pull required meta fields.
+        let meta = &parsed.meta;
+        let get = |k: &str| -> Result<&String, String> {
+            meta.get(k).ok_or_else(|| format!("missing meta key '{}'", k))
+        };
+        let tick = parse_u64(get("tick")?, "tick")?;
+        let episode_counter = parse_u64(get("episode_counter")?, "episode_counter")?;
+        let steps_since_last_gain =
+            parse_u64(get("steps_since_last_gain")?, "steps_since_last_gain")?;
+        let current_score = parse_f64(get("current_score")?, "current_score")?;
+        let lifecycle = parse_lifecycle(get("lifecycle")?)?;
+        let mode = parse_mode(get("mode")?)?;
+        let max_episodes =
+            parse_usize(get("max_episodes")?, "max_episodes")?;
+        let max_mode_transitions =
+            parse_usize(get("max_mode_transitions")?, "max_mode_transitions")?;
+        let max_lifecycle_transitions = parse_usize(
+            get("max_lifecycle_transitions")?,
+            "max_lifecycle_transitions",
+        )?;
+        let actions_per_tick_cap = parse_u32(
+            get("actions_per_tick_cap")?,
+            "actions_per_tick_cap",
+        )?;
+
+        // Episodes.
+        let mut episodes: VecDeque<Episode> = VecDeque::new();
+        for (idx, raw) in parsed.episode_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.split('\t').collect();
+            if fields.len() != 9 {
+                return Err(format!(
+                    "episode line {} has {} fields, expected 9",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            let target = pair_to_target(fields[4], fields[5])?;
+            episodes.push_back(Episode {
+                id: parse_u64(fields[0], "episode.id")?,
+                tick: parse_u64(fields[1], "episode.tick")?,
+                mode: parse_mode(fields[2])?,
+                action_kind: parse_action_kind(fields[3])?,
+                target,
+                score_before: parse_f64(fields[6], "episode.score_before")?,
+                score_after: parse_f64(fields[7], "episode.score_after")?,
+                delta: parse_f64(fields[8], "episode.delta")?,
+            });
+        }
+
+        // Mode transitions.
+        let mut mode_transitions: VecDeque<ModeTransition> = VecDeque::new();
+        for (idx, raw) in parsed.mode_transition_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.splitn(4, '\t').collect();
+            if fields.len() != 4 {
+                return Err(format!(
+                    "mode_transition line {} has {} fields, expected 4",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            mode_transitions.push_back(ModeTransition {
+                tick: parse_u64(fields[0], "mode_transition.tick")?,
+                from: parse_mode(fields[1])?,
+                to: parse_mode(fields[2])?,
+                reason: fields[3].to_string(),
+            });
+        }
+
+        // Lifecycle transitions.
+        let mut lifecycle_transitions: VecDeque<LifecycleTransition> =
+            VecDeque::new();
+        for (idx, raw) in parsed.lifecycle_transition_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.splitn(4, '\t').collect();
+            if fields.len() != 4 {
+                return Err(format!(
+                    "lifecycle_transition line {} has {} fields, expected 4",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            lifecycle_transitions.push_back(LifecycleTransition {
+                tick: parse_u64(fields[0], "lifecycle_transition.tick")?,
+                from: parse_lifecycle(fields[1])?,
+                to: parse_lifecycle(fields[2])?,
+                reason: fields[3].to_string(),
+            });
+        }
+
+        let memory = Memory {
+            episodes,
+            mode_transitions,
+            lifecycle_transitions,
+            max_episodes,
+            max_mode_transitions,
+            max_lifecycle_transitions,
+        };
+
+        Ok(Self {
+            rset,
+            lifecycle,
+            mode,
+            memory,
+            scheduler: Box::new(StubScheduler),
+            environment: Box::new(NoOpEnvironment),
+            frontier: Frontier::default(),
+            tick,
+            episode_counter,
+            steps_since_last_gain,
+            budget: BudgetState::new(actions_per_tick_cap),
+            current_score,
+            last_checkpoint: None,
+        })
+    }
+}
+
+// ─── A3: serialization helpers ─────────────────────────────────────
+
+fn mode_to_str(m: RuntimeMode) -> &'static str {
+    match m {
+        RuntimeMode::Expand => "Expand",
+        RuntimeMode::Consolidate => "Consolidate",
+        RuntimeMode::Reflect => "Reflect",
+    }
+}
+
+fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
+    match s {
+        "Expand" => Ok(RuntimeMode::Expand),
+        "Consolidate" => Ok(RuntimeMode::Consolidate),
+        "Reflect" => Ok(RuntimeMode::Reflect),
+        other => Err(format!("unknown RuntimeMode '{}'", other)),
+    }
+}
+
+fn lifecycle_to_str(l: LifecycleState) -> &'static str {
+    match l {
+        LifecycleState::Booting => "Booting",
+        LifecycleState::Running => "Running",
+        LifecycleState::Sleeping => "Sleeping",
+        LifecycleState::Stopped => "Stopped",
+    }
+}
+
+fn parse_lifecycle(s: &str) -> Result<LifecycleState, String> {
+    match s {
+        "Booting" => Ok(LifecycleState::Booting),
+        "Running" => Ok(LifecycleState::Running),
+        "Sleeping" => Ok(LifecycleState::Sleeping),
+        "Stopped" => Ok(LifecycleState::Stopped),
+        other => Err(format!("unknown LifecycleState '{}'", other)),
+    }
+}
+
+fn action_kind_to_str(a: ActionKind) -> &'static str {
+    match a {
+        ActionKind::DiscoverPatterns => "DiscoverPatterns",
+        ActionKind::DiscoverTheory => "DiscoverTheory",
+        ActionKind::PruneLowValueObjects => "PruneLowValueObjects",
+        ActionKind::UpdateTheoryRelations => "UpdateTheoryRelations",
+    }
+}
+
+fn parse_action_kind(s: &str) -> Result<ActionKind, String> {
+    match s {
+        "DiscoverPatterns" => Ok(ActionKind::DiscoverPatterns),
+        "DiscoverTheory" => Ok(ActionKind::DiscoverTheory),
+        "PruneLowValueObjects" => Ok(ActionKind::PruneLowValueObjects),
+        "UpdateTheoryRelations" => Ok(ActionKind::UpdateTheoryRelations),
+        other => Err(format!("unknown ActionKind '{}'", other)),
+    }
+}
+
+fn target_to_pair(t: &FrontierTarget) -> (&'static str, String) {
+    match t {
+        FrontierTarget::WholeRSet => ("WholeRSet", String::new()),
+        FrontierTarget::PatternSize(s) => ("PatternSize", s.to_string()),
+        FrontierTarget::Pattern(id) => ("Pattern", id.clone()),
+        FrontierTarget::Theory(id) => ("Theory", id.clone()),
+    }
+}
+
+fn pair_to_target(kind: &str, value: &str) -> Result<FrontierTarget, String> {
+    match kind {
+        "WholeRSet" => Ok(FrontierTarget::WholeRSet),
+        "PatternSize" => Ok(FrontierTarget::PatternSize(
+            parse_usize(value, "PatternSize.value")?,
+        )),
+        "Pattern" => Ok(FrontierTarget::Pattern(value.to_string())),
+        "Theory" => Ok(FrontierTarget::Theory(value.to_string())),
+        other => Err(format!("unknown FrontierTarget kind '{}'", other)),
+    }
+}
+
+fn parse_u64(s: &str, ctx: &str) -> Result<u64, String> {
+    s.parse::<u64>()
+        .map_err(|e| format!("{}: parse u64 '{}' failed: {}", ctx, s, e))
+}
+
+fn parse_u32(s: &str, ctx: &str) -> Result<u32, String> {
+    s.parse::<u32>()
+        .map_err(|e| format!("{}: parse u32 '{}' failed: {}", ctx, s, e))
+}
+
+fn parse_usize(s: &str, ctx: &str) -> Result<usize, String> {
+    s.parse::<usize>()
+        .map_err(|e| format!("{}: parse usize '{}' failed: {}", ctx, s, e))
+}
+
+fn parse_f64(s: &str, ctx: &str) -> Result<f64, String> {
+    s.parse::<f64>()
+        .map_err(|e| format!("{}: parse f64 '{}' failed: {}", ctx, s, e))
+}
+
+fn check_reason(reason: &str, ctx: &str) -> Result<(), String> {
+    if reason.contains('\t') || reason.contains('\n') {
+        return Err(format!(
+            "{} reason '{}' contains tab or newline",
+            ctx, reason
+        ));
+    }
+    Ok(())
+}
+
+fn check_no_tab_or_newline(t: &FrontierTarget, ctx: &str) -> Result<(), String> {
+    let id = match t {
+        FrontierTarget::WholeRSet | FrontierTarget::PatternSize(_) => return Ok(()),
+        FrontierTarget::Pattern(s) | FrontierTarget::Theory(s) => s,
+    };
+    if id.contains('\t') || id.contains('\n') {
+        return Err(format!(
+            "{} target id '{}' contains tab or newline",
+            ctx, id
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct ParsedCheckpoint {
+    meta: HashMap<String, String>,
+    rset_lines: Vec<String>,
+    episode_lines: Vec<String>,
+    mode_transition_lines: Vec<String>,
+    lifecycle_transition_lines: Vec<String>,
+}
+
+fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
+    let mut out = ParsedCheckpoint::default();
+    let mut section: Option<&str> = None;
+
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.trim_end_matches('\r');
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            match name {
+                "meta" | "rset" | "episodes" | "mode_transitions"
+                | "lifecycle_transitions" => {
+                    section = Some(match name {
+                        "meta" => "meta",
+                        "rset" => "rset",
+                        "episodes" => "episodes",
+                        "mode_transitions" => "mode_transitions",
+                        _ => "lifecycle_transitions",
+                    });
+                }
+                other => {
+                    return Err(format!(
+                        "unknown section '[{}]' at line {}",
+                        other,
+                        i + 1
+                    ))
+                }
+            }
+            continue;
+        }
+        match section {
+            Some("meta") => {
+                let (k, v) = line.split_once('\t').ok_or_else(|| {
+                    format!(
+                        "meta line {} not key<TAB>value: '{}'",
+                        i + 1,
+                        line
+                    )
+                })?;
+                out.meta.insert(k.to_string(), v.to_string());
+            }
+            Some("rset") => out.rset_lines.push(line.to_string()),
+            Some("episodes") => out.episode_lines.push(line.to_string()),
+            Some("mode_transitions") => {
+                out.mode_transition_lines.push(line.to_string())
+            }
+            Some("lifecycle_transitions") => {
+                out.lifecycle_transition_lines.push(line.to_string())
+            }
+            None => {
+                return Err(format!(
+                    "data line {} has no enclosing section: '{}'",
+                    i + 1,
+                    line
+                ))
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(out)
 }
 
 // ─── tests ─────────────────────────────────────────────────────────
@@ -927,8 +1718,532 @@ mod tests {
         let mut rt = AutonomousRuntime::new(rs);
         rt.scheduler = Box::new(RuleBasedScheduler {
             max_zero_streak: 2,
+            ..RuleBasedScheduler::default()
         });
         rt.run_bounded(30);
         assert_eq!(rt.lifecycle, LifecycleState::Sleeping);
+    }
+
+    // ─── Phase A2 tests ─────────────────────────────────────────
+
+    /// Build an RSet with multiple distinct theories so
+    /// TheoryNeedsRelations gets generated.
+    fn rset_with_multiple_theories() -> RSet {
+        let mut rs = diamond_poset();
+        // Manually name two distinct theories so the runtime later
+        // has consolidate work to do.
+        let _t1 = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let _t2 = rs.name_theory(&[AX_ANTISYMMETRY]).unwrap();
+        rs
+    }
+
+    #[test]
+    fn a2_frontier_proposes_relations_when_theories_lack_them() {
+        let rs = rset_with_multiple_theories();
+        let mut fr = Frontier::default();
+        fr.refresh(&rs, 1);
+        assert!(fr.items.iter().any(|it|
+            it.kind == FrontierKind::TheoryNeedsRelations
+        ));
+    }
+
+    #[test]
+    fn a2_frontier_omits_relations_when_all_pairs_have_them() {
+        let mut rs = rset_with_multiple_theories();
+        // Manually classify and persist relations between every pair.
+        let theories: Vec<String> =
+            rs.theories().iter().map(|s| s.to_string()).collect();
+        for i in 0..theories.len() {
+            for j in (i + 1)..theories.len() {
+                let a = &theories[i];
+                let b = &theories[j];
+                match rs.classify_theory_pair(a, b) {
+                    Some(crate::TheoryRelationKind::Independent) => {
+                        let _ = rs.name_theory_independence(a, b);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut fr = Frontier::default();
+        fr.refresh(&rs, 1);
+        assert!(!fr.items.iter().any(|it|
+            it.kind == FrontierKind::TheoryNeedsRelations
+        ));
+    }
+
+    #[test]
+    fn a2_update_theory_relations_persists_independence() {
+        let mut rs = rset_with_multiple_theories();
+        // Verify no relation edges before.
+        assert!(rs.independence_edges().is_empty());
+
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        // Force one execution of the relation action by injecting a
+        // scheduler that always picks UpdateTheoryRelations.
+        struct OnlyRelations;
+        impl Scheduler for OnlyRelations {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                SchedulerDecision::Execute(ActionPlan {
+                    action_kind: ActionKind::UpdateTheoryRelations,
+                    target: FrontierTarget::WholeRSet,
+                })
+            }
+        }
+        rt.scheduler = Box::new(OnlyRelations);
+        rt.run_bounded(1);
+        // After one tick, the {AX_REFLEXIVITY} and {AX_ANTISYMMETRY}
+        // theories are independent → independence edge created.
+        assert!(!rt.rset.independence_edges().is_empty());
+    }
+
+    #[test]
+    fn a2_mode_transition_logged() {
+        // Force a SwitchMode by handing scheduler that switches first.
+        struct SwitchOnce {
+            switched: bool,
+        }
+        impl Scheduler for SwitchOnce {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                if !self.switched {
+                    self.switched = true;
+                    SchedulerDecision::SwitchMode(RuntimeMode::Reflect)
+                } else {
+                    SchedulerDecision::Stop
+                }
+            }
+        }
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(SwitchOnce { switched: false });
+        rt.run_bounded(10);
+        assert_eq!(rt.memory.mode_transitions.len(), 1);
+        let mt = rt.memory.mode_transitions.front().unwrap();
+        assert_eq!(mt.from, RuntimeMode::Expand);
+        assert_eq!(mt.to, RuntimeMode::Reflect);
+    }
+
+    #[test]
+    fn a2_same_mode_switch_is_noop() {
+        // SwitchMode to current mode should NOT log a transition.
+        struct StaySame;
+        impl Scheduler for StaySame {
+            fn choose(&mut self, _ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+                SchedulerDecision::SwitchMode(RuntimeMode::Expand)
+            }
+        }
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(StaySame);
+        rt.run_bounded(5);
+        assert!(rt.memory.mode_transitions.is_empty());
+    }
+
+    #[test]
+    fn a2_consolidate_mode_processes_consolidate_work() {
+        let rs = rset_with_multiple_theories();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.mode = RuntimeMode::Consolidate;
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(5);
+        // Consolidate should have triggered UpdateTheoryRelations,
+        // which named at least one independence edge.
+        let any_relation_action = rt
+            .memory
+            .episodes
+            .iter()
+            .any(|ep| ep.action_kind == ActionKind::UpdateTheoryRelations);
+        assert!(any_relation_action);
+    }
+
+    #[test]
+    fn a2_reflect_mode_does_not_execute() {
+        // In Reflect, scheduler::choose should never return Execute.
+        // Unit-test the scheduler directly so we don't get cascading
+        // mode changes confusing the assertion.
+        let rs = diamond_poset();
+        let frontier = {
+            let mut f = Frontier::default();
+            f.refresh(&rs, 0);
+            f
+        };
+        let memory = Memory::default();
+        let mut scheduler = RuleBasedScheduler::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Reflect,
+            tick: 0,
+        };
+        let decision = scheduler.choose(&ctx);
+        match decision {
+            SchedulerDecision::SwitchMode(_) | SchedulerDecision::Sleep => {}
+            _ => panic!("Reflect must not Execute; got {:?}", decision),
+        }
+    }
+
+    #[test]
+    fn a2_expand_to_consolidate_to_reflect_chain() {
+        // On a multi-theory rset, the rule-based scheduler should
+        // walk Expand → Consolidate → Reflect → Sleep over the run.
+        // Lower min_recent_gains so transition triggers within the
+        // test's tick budget.
+        let rs = rset_with_multiple_theories();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler {
+            min_recent_gains: 1,
+            ..RuleBasedScheduler::default()
+        });
+        rt.run_bounded(40);
+        let modes_visited: Vec<RuntimeMode> = rt
+            .memory
+            .mode_transitions
+            .iter()
+            .map(|mt| mt.to)
+            .collect();
+        assert!(
+            modes_visited.contains(&RuntimeMode::Consolidate)
+                || modes_visited.contains(&RuntimeMode::Reflect),
+            "expected mode walk; got {:?}", modes_visited
+        );
+    }
+
+    #[test]
+    fn a2_mode_transition_cap_respected() {
+        let mut mem = Memory::default();
+        mem.max_mode_transitions = 3;
+        for i in 0..10 {
+            mem.record_mode_transition(ModeTransition {
+                tick: i,
+                from: RuntimeMode::Expand,
+                to: RuntimeMode::Reflect,
+                reason: "test".to_string(),
+            });
+        }
+        assert_eq!(mem.mode_transitions.len(), 3);
+        let kept: Vec<u64> =
+            mem.mode_transitions.iter().map(|mt| mt.tick).collect();
+        assert_eq!(kept, vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn a2_deterministic_trace_with_modes() {
+        // Mode-aware run also reproducible across identical inputs.
+        fn run_once() -> (Vec<RuntimeMode>, Vec<RuntimeMode>) {
+            let rs = rset_with_multiple_theories();
+            let mut rt = AutonomousRuntime::new(rs);
+            rt.scheduler = Box::new(RuleBasedScheduler::default());
+            rt.run_bounded(20);
+            let episode_modes: Vec<RuntimeMode> =
+                rt.memory.episodes.iter().map(|ep| ep.mode).collect();
+            let transition_modes: Vec<RuntimeMode> = rt
+                .memory
+                .mode_transitions
+                .iter()
+                .map(|mt| mt.to)
+                .collect();
+            (episode_modes, transition_modes)
+        }
+        let a = run_once();
+        let b = run_once();
+        assert_eq!(a, b);
+    }
+
+    // ─── Phase A3 tests ─────────────────────────────────────────
+
+    /// Environment that returns a fixed list of events on the first
+    /// `poll`, then nothing. Used to inject one wake-up event.
+    struct OneShotEnv {
+        events: Vec<Event>,
+    }
+
+    impl Environment for OneShotEnv {
+        fn poll(&mut self) -> Vec<Event> {
+            std::mem::take(&mut self.events)
+        }
+    }
+
+    /// Environment that fires the given events on a specific tick
+    /// (matched against `polled_count`). Useful for "wake on the Nth
+    /// tick" scenarios.
+    struct TickGatedEnv {
+        events: Vec<Event>,
+        fire_after_polls: u64,
+        polled: u64,
+    }
+
+    impl Environment for TickGatedEnv {
+        fn poll(&mut self) -> Vec<Event> {
+            self.polled += 1;
+            if self.polled == self.fire_after_polls {
+                std::mem::take(&mut self.events)
+            } else {
+                Vec::new()
+            }
+        }
+    }
+
+    #[test]
+    fn a3_should_wake_returns_true_for_data_events() {
+        let add = vec![Event::AddEdge(R::new("a", "b"))];
+        let rem = vec![Event::RemoveEdge(R::new("a", "b"))];
+        let mixed = vec![Event::Tick, Event::AddEdge(R::new("x", "y"))];
+        assert!(should_wake(&add));
+        assert!(should_wake(&rem));
+        assert!(should_wake(&mixed));
+    }
+
+    #[test]
+    fn a3_should_wake_false_for_tick_or_empty() {
+        assert!(!should_wake(&[]));
+        assert!(!should_wake(&[Event::Tick]));
+        assert!(!should_wake(&[Event::Tick, Event::Tick]));
+    }
+
+    #[test]
+    fn a3_runtime_stays_sleeping_under_noop_environment() {
+        // Pre-sleep, NoOp env: runtime stays asleep across all ticks.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.lifecycle = LifecycleState::Sleeping;
+        rt.run_bounded(10);
+        assert_eq!(rt.lifecycle, LifecycleState::Sleeping);
+        assert_eq!(rt.tick, 10);
+        // No episodes added while sleeping.
+        assert!(rt.memory.episodes.is_empty());
+    }
+
+    #[test]
+    fn a3_sleeping_runtime_wakes_on_event() {
+        // The runtime may go back to sleep after waking (no fresh
+        // work). The durable signal is the lifecycle log, not the
+        // final state.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.lifecycle = LifecycleState::Sleeping;
+        rt.environment = Box::new(OneShotEnv {
+            events: vec![Event::AddEdge(R::new("xx", "yy"))],
+        });
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(5);
+        let lts: Vec<_> = rt
+            .memory
+            .lifecycle_transitions
+            .iter()
+            .map(|lt| (lt.from, lt.to, lt.reason.clone()))
+            .collect();
+        let has_wake = lts.iter().any(|(f, t, r)| {
+            *f == LifecycleState::Sleeping
+                && *t == LifecycleState::Running
+                && r == "wake_on_event"
+        });
+        assert!(has_wake, "missing wake transition; got {:?}", lts);
+    }
+
+    #[test]
+    fn a3_tick_event_does_not_wake() {
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.lifecycle = LifecycleState::Sleeping;
+        rt.environment = Box::new(OneShotEnv {
+            events: vec![Event::Tick],
+        });
+        rt.run_bounded(3);
+        assert_eq!(rt.lifecycle, LifecycleState::Sleeping);
+    }
+
+    #[test]
+    fn a3_lifecycle_transition_logged_on_sleep_entry() {
+        struct SleepImmediately;
+        impl Scheduler for SleepImmediately {
+            fn choose(
+                &mut self,
+                _ctx: &SchedulerContext<'_>,
+            ) -> SchedulerDecision {
+                SchedulerDecision::Sleep
+            }
+        }
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(SleepImmediately);
+        rt.run_bounded(3);
+        assert_eq!(rt.lifecycle, LifecycleState::Sleeping);
+        let lts: Vec<_> = rt
+            .memory
+            .lifecycle_transitions
+            .iter()
+            .map(|lt| (lt.from, lt.to, lt.reason.clone()))
+            .collect();
+        assert_eq!(lts.len(), 1);
+        assert_eq!(lts[0].0, LifecycleState::Running);
+        assert_eq!(lts[0].1, LifecycleState::Sleeping);
+        assert_eq!(lts[0].2, "scheduler_sleep");
+    }
+
+    #[test]
+    fn a3_last_checkpoint_populated_on_sleep_entry() {
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(50);
+        assert_eq!(rt.lifecycle, LifecycleState::Sleeping);
+        assert!(
+            rt.last_checkpoint.is_some(),
+            "expected checkpoint snapshot on sleep entry"
+        );
+        let cp = rt.last_checkpoint.as_ref().unwrap();
+        assert!(cp.starts_with("# v2 runtime checkpoint"));
+        assert!(cp.contains("[meta]"));
+        assert!(cp.contains("[rset]"));
+    }
+
+    #[test]
+    fn a3_checkpoint_round_trip_preserves_state() {
+        // Run a real session, checkpoint, restore, compare.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(20);
+        let text = rt.checkpoint_text().unwrap();
+
+        let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
+
+        assert_eq!(restored.tick, rt.tick);
+        assert_eq!(restored.episode_counter, rt.episode_counter);
+        assert_eq!(restored.lifecycle, rt.lifecycle);
+        assert_eq!(restored.mode, rt.mode);
+        assert_eq!(restored.current_score, rt.current_score);
+        assert_eq!(
+            restored.steps_since_last_gain,
+            rt.steps_since_last_gain
+        );
+        assert_eq!(
+            restored.budget.actions_per_tick_cap,
+            rt.budget.actions_per_tick_cap
+        );
+
+        // RSet equality via to_text.
+        let a_text = rt.rset.to_text().unwrap();
+        let b_text = restored.rset.to_text().unwrap();
+        assert_eq!(a_text, b_text);
+
+        // Episodes deeply equal.
+        assert_eq!(restored.memory.episodes.len(), rt.memory.episodes.len());
+        for (a, b) in restored.memory.episodes.iter().zip(rt.memory.episodes.iter()) {
+            assert_eq!(a.id, b.id);
+            assert_eq!(a.tick, b.tick);
+            assert_eq!(a.mode, b.mode);
+            assert_eq!(a.action_kind, b.action_kind);
+            assert_eq!(a.target, b.target);
+            assert_eq!(a.score_before, b.score_before);
+            assert_eq!(a.score_after, b.score_after);
+            assert_eq!(a.delta, b.delta);
+        }
+
+        // Mode + lifecycle transitions.
+        assert_eq!(
+            restored.memory.mode_transitions.len(),
+            rt.memory.mode_transitions.len()
+        );
+        assert_eq!(
+            restored.memory.lifecycle_transitions.len(),
+            rt.memory.lifecycle_transitions.len()
+        );
+
+        // Caps preserved.
+        assert_eq!(restored.memory.max_episodes, rt.memory.max_episodes);
+        assert_eq!(
+            restored.memory.max_mode_transitions,
+            rt.memory.max_mode_transitions
+        );
+        assert_eq!(
+            restored.memory.max_lifecycle_transitions,
+            rt.memory.max_lifecycle_transitions
+        );
+    }
+
+    #[test]
+    fn a3_checkpoint_round_trip_is_idempotent() {
+        // checkpoint → load → checkpoint again → text identical.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(15);
+        let t1 = rt.checkpoint_text().unwrap();
+        let restored = AutonomousRuntime::from_checkpoint_text(&t1).unwrap();
+        let t2 = restored.checkpoint_text().unwrap();
+        assert_eq!(t1, t2);
+    }
+
+    #[test]
+    fn a3_resume_continues_correctly() {
+        // Run, checkpoint, restore with a fresh scheduler, run more —
+        // tick advances, no panic.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(5);
+        let snapshot_tick = rt.tick;
+        let text = rt.checkpoint_text().unwrap();
+
+        let mut restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
+        restored.scheduler = Box::new(RuleBasedScheduler::default());
+        restored.run_bounded(5);
+        assert!(restored.tick > snapshot_tick);
+    }
+
+    #[test]
+    fn a3_lifecycle_transition_cap_respected() {
+        let mut mem = Memory::default();
+        mem.max_lifecycle_transitions = 3;
+        for i in 0..10 {
+            mem.record_lifecycle_transition(LifecycleTransition {
+                tick: i,
+                from: LifecycleState::Running,
+                to: LifecycleState::Sleeping,
+                reason: "test".to_string(),
+            });
+        }
+        assert_eq!(mem.lifecycle_transitions.len(), 3);
+        let kept: Vec<u64> = mem
+            .lifecycle_transitions
+            .iter()
+            .map(|lt| lt.tick)
+            .collect();
+        assert_eq!(kept, vec![7, 8, 9]);
+    }
+
+    #[test]
+    fn a3_resume_runs_full_run_to_completion() {
+        // End-to-end: a runtime that woke on event then resumed and
+        // sleeps again — a full Running → Sleeping → Running →
+        // Sleeping cycle in one bounded run. Verifies wake doesn't
+        // leave the runtime stuck.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        // Inject one AddEdge mid-run via TickGatedEnv. Pick a tick
+        // count that is well after first sleep (RuleBased on a
+        // diamond sleeps within a handful of ticks).
+        rt.environment = Box::new(TickGatedEnv {
+            events: vec![Event::AddEdge(R::new("ext", "ext"))],
+            fire_after_polls: 10,
+            polled: 0,
+        });
+        rt.run_bounded(40);
+        // Eventually settles. The runtime received a wake at tick 10
+        // and either kept running or slept again — but at least one
+        // wake transition is in the log.
+        let woke = rt
+            .memory
+            .lifecycle_transitions
+            .iter()
+            .any(|lt| {
+                lt.from == LifecycleState::Sleeping
+                    && lt.to == LifecycleState::Running
+            });
+        assert!(woke, "runtime never woke on the injected event");
     }
 }
