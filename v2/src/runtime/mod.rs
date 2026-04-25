@@ -1332,6 +1332,101 @@ impl AutonomousRuntime {
                 lt.reason,
             ));
         }
+        out.push('\n');
+
+        // B2 — object_history sections (sorted by id for idempotency).
+        write_history_section(
+            &mut out,
+            "[object_history_patterns]",
+            &self.memory.object_history.patterns,
+        )?;
+        out.push('\n');
+        write_history_section(
+            &mut out,
+            "[object_history_axioms]",
+            &self.memory.object_history.axioms,
+        )?;
+        out.push('\n');
+        write_history_section(
+            &mut out,
+            "[object_history_theories]",
+            &self.memory.object_history.theories,
+        )?;
+        out.push('\n');
+
+        // B2 — policy_stats sections.
+        out.push_str("[policy_stats_action_counts]\n");
+        let mut action_keys: Vec<&ActionKind> =
+            self.memory.policy_stats.action_counts.keys().collect();
+        // Also include keys present only in positive_delta_counts.
+        for k in self.memory.policy_stats.action_positive_delta_counts.keys() {
+            if !action_keys.contains(&k) {
+                action_keys.push(k);
+            }
+        }
+        action_keys.sort_by_key(|a| action_kind_to_str(**a));
+        for k in action_keys {
+            let total = self
+                .memory
+                .policy_stats
+                .action_counts
+                .get(k)
+                .copied()
+                .unwrap_or(0);
+            let pos = self
+                .memory
+                .policy_stats
+                .action_positive_delta_counts
+                .get(k)
+                .copied()
+                .unwrap_or(0);
+            out.push_str(&format!(
+                "{}\t{}\t{}\n",
+                action_kind_to_str(*k),
+                total,
+                pos
+            ));
+        }
+        out.push('\n');
+
+        out.push_str("[policy_stats_mode_transition_counts]\n");
+        let mut mtc_keys: Vec<&(RuntimeMode, RuntimeMode)> = self
+            .memory
+            .policy_stats
+            .mode_transition_counts
+            .keys()
+            .collect();
+        mtc_keys.sort_by_key(|(f, t)| (mode_to_str(*f), mode_to_str(*t)));
+        for k in mtc_keys {
+            let n = self
+                .memory
+                .policy_stats
+                .mode_transition_counts
+                .get(k)
+                .copied()
+                .unwrap_or(0);
+            out.push_str(&format!(
+                "{}\t{}\t{}\n",
+                mode_to_str(k.0),
+                mode_to_str(k.1),
+                n
+            ));
+        }
+        out.push('\n');
+
+        out.push_str("[policy_stats_lifecycle_counts]\n");
+        out.push_str(&format!(
+            "wake\t{}\n",
+            self.memory.policy_stats.wake_count
+        ));
+        out.push_str(&format!(
+            "sleep\t{}\n",
+            self.memory.policy_stats.sleep_count
+        ));
+        out.push_str(&format!(
+            "stop\t{}\n",
+            self.memory.policy_stats.stop_count
+        ));
 
         Ok(out)
     }
@@ -1436,6 +1531,84 @@ impl AutonomousRuntime {
             });
         }
 
+        // B2 — object history.
+        let object_history = ObjectHistoryStore {
+            patterns: parse_history_lines(
+                &parsed.history_patterns_lines,
+                "object_history_patterns",
+            )?,
+            axioms: parse_history_lines(
+                &parsed.history_axioms_lines,
+                "object_history_axioms",
+            )?,
+            theories: parse_history_lines(
+                &parsed.history_theories_lines,
+                "object_history_theories",
+            )?,
+        };
+
+        // B2 — policy stats.
+        let mut policy_stats = PolicyStats::default();
+        for (idx, raw) in parsed.action_count_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.splitn(3, '\t').collect();
+            if fields.len() != 3 {
+                return Err(format!(
+                    "action_count line {} has {} fields, expected 3",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            let kind = parse_action_kind(fields[0])?;
+            let total = parse_u64(fields[1], "action_count.total")?;
+            let pos = parse_u64(fields[2], "action_count.positive")?;
+            if total > 0 {
+                policy_stats.action_counts.insert(kind, total);
+            }
+            if pos > 0 {
+                policy_stats.action_positive_delta_counts.insert(kind, pos);
+            }
+        }
+        for (idx, raw) in parsed.mode_transition_count_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.splitn(3, '\t').collect();
+            if fields.len() != 3 {
+                return Err(format!(
+                    "mode_transition_count line {} has {} fields, expected 3",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            let from = parse_mode(fields[0])?;
+            let to = parse_mode(fields[1])?;
+            let n = parse_u64(fields[2], "mode_transition_count.n")?;
+            if n > 0 {
+                policy_stats
+                    .mode_transition_counts
+                    .insert((from, to), n);
+            }
+        }
+        for (idx, raw) in parsed.lifecycle_count_lines.iter().enumerate() {
+            let (k, v) = raw.split_once('\t').ok_or_else(|| {
+                format!(
+                    "lifecycle_count line {} not key<TAB>value: '{}'",
+                    idx + 1,
+                    raw
+                )
+            })?;
+            let n = parse_u64(v, "lifecycle_count.value")?;
+            match k {
+                "wake" => policy_stats.wake_count = n,
+                "sleep" => policy_stats.sleep_count = n,
+                "stop" => policy_stats.stop_count = n,
+                other => {
+                    return Err(format!(
+                        "unknown lifecycle_count key '{}' (line {})",
+                        other,
+                        idx + 1
+                    ))
+                }
+            }
+        }
+
         let memory = Memory {
             episodes,
             mode_transitions,
@@ -1443,12 +1616,8 @@ impl AutonomousRuntime {
             max_episodes,
             max_mode_transitions,
             max_lifecycle_transitions,
-            // B0: history + stats are not yet serialized; restore as
-            // empty. Tests that rely on round-trip equality assert on
-            // the serialized fields only. ADR 0052 § Phase B / B1
-            // will land checkpoint-coverage of these stores.
-            object_history: ObjectHistoryStore::default(),
-            policy_stats: PolicyStats::default(),
+            object_history,
+            policy_stats,
         };
 
         Ok(Self {
@@ -1577,6 +1746,119 @@ fn check_reason(reason: &str, ctx: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Sentinel for missing optional values in the checkpoint format.
+/// `parse_opt_*` accept this and return `None`; `format_opt_*` write
+/// it when the value is `None`. Chosen because `-` is not a legal
+/// prefix for the unsigned and float values we serialize, so it
+/// can't ambiguously parse as data.
+const OPT_NONE: &str = "-";
+
+fn format_opt_u64(v: Option<u64>) -> String {
+    match v {
+        Some(n) => n.to_string(),
+        None => OPT_NONE.to_string(),
+    }
+}
+
+fn parse_opt_u64(s: &str, ctx: &str) -> Result<Option<u64>, String> {
+    if s == OPT_NONE {
+        Ok(None)
+    } else {
+        Ok(Some(parse_u64(s, ctx)?))
+    }
+}
+
+fn format_opt_f64(v: Option<f64>) -> String {
+    match v {
+        Some(n) => format!("{:?}", n),
+        None => OPT_NONE.to_string(),
+    }
+}
+
+fn parse_opt_f64(s: &str, ctx: &str) -> Result<Option<f64>, String> {
+    if s == OPT_NONE {
+        Ok(None)
+    } else {
+        Ok(Some(parse_f64(s, ctx)?))
+    }
+}
+
+/// Format: `<id>\t<first>\t<last_seen>\t<last_improved>\t<focus>\t<pruned>\t<cv>\t<stability>`
+/// where `last_improved`, `cv`, `stability` use `-` for `None`.
+fn write_history_section(
+    out: &mut String,
+    header: &str,
+    map: &HashMap<String, ObjectHistory>,
+) -> Result<(), String> {
+    out.push_str(header);
+    out.push('\n');
+    let mut keys: Vec<&String> = map.keys().collect();
+    keys.sort();
+    for k in keys {
+        if k.contains('\t') || k.contains('\n') {
+            return Err(format!(
+                "history id '{}' contains tab or newline",
+                k
+            ));
+        }
+        let h = &map[k];
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            k,
+            h.first_seen_tick,
+            h.last_seen_tick,
+            format_opt_u64(h.last_improved_tick),
+            h.times_selected_as_focus,
+            h.times_pruned,
+            format_opt_f64(h.last_counterfactual_value),
+            format_opt_f64(h.stability_estimate),
+        ));
+    }
+    Ok(())
+}
+
+fn parse_history_lines(
+    lines: &[String],
+    label: &str,
+) -> Result<HashMap<String, ObjectHistory>, String> {
+    let mut out: HashMap<String, ObjectHistory> = HashMap::new();
+    for (idx, raw) in lines.iter().enumerate() {
+        let fields: Vec<&str> = raw.split('\t').collect();
+        if fields.len() != 8 {
+            return Err(format!(
+                "{} line {} has {} fields, expected 8",
+                label,
+                idx + 1,
+                fields.len()
+            ));
+        }
+        let id = fields[0].to_string();
+        let h = ObjectHistory {
+            first_seen_tick: parse_u64(fields[1], &format!("{}.first", label))?,
+            last_seen_tick: parse_u64(fields[2], &format!("{}.last", label))?,
+            last_improved_tick: parse_opt_u64(
+                fields[3],
+                &format!("{}.last_improved", label),
+            )?,
+            times_selected_as_focus: parse_u32(
+                fields[4],
+                &format!("{}.focus", label),
+            )?,
+            times_pruned: parse_u32(fields[5], &format!("{}.pruned", label))?,
+            last_counterfactual_value: parse_opt_f64(
+                fields[6],
+                &format!("{}.cv", label),
+            )?,
+            stability_estimate: parse_opt_f64(
+                fields[7],
+                &format!("{}.stability", label),
+            )?,
+        };
+        out.insert(id, h);
+    }
+    Ok(out)
+}
+
 fn check_no_tab_or_newline(t: &FrontierTarget, ctx: &str) -> Result<(), String> {
     let id = match t {
         FrontierTarget::WholeRSet | FrontierTarget::PatternSize(_) => return Ok(()),
@@ -1598,6 +1880,13 @@ struct ParsedCheckpoint {
     episode_lines: Vec<String>,
     mode_transition_lines: Vec<String>,
     lifecycle_transition_lines: Vec<String>,
+    // B2 — history + stats sections.
+    history_patterns_lines: Vec<String>,
+    history_axioms_lines: Vec<String>,
+    history_theories_lines: Vec<String>,
+    action_count_lines: Vec<String>,
+    mode_transition_count_lines: Vec<String>,
+    lifecycle_count_lines: Vec<String>,
 }
 
 fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
@@ -1612,13 +1901,27 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
         if let Some(name) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
             match name {
                 "meta" | "rset" | "episodes" | "mode_transitions"
-                | "lifecycle_transitions" => {
+                | "lifecycle_transitions"
+                | "object_history_patterns"
+                | "object_history_axioms"
+                | "object_history_theories"
+                | "policy_stats_action_counts"
+                | "policy_stats_mode_transition_counts"
+                | "policy_stats_lifecycle_counts" => {
                     section = Some(match name {
                         "meta" => "meta",
                         "rset" => "rset",
                         "episodes" => "episodes",
                         "mode_transitions" => "mode_transitions",
-                        _ => "lifecycle_transitions",
+                        "lifecycle_transitions" => "lifecycle_transitions",
+                        "object_history_patterns" => "object_history_patterns",
+                        "object_history_axioms" => "object_history_axioms",
+                        "object_history_theories" => "object_history_theories",
+                        "policy_stats_action_counts" => "policy_stats_action_counts",
+                        "policy_stats_mode_transition_counts" => {
+                            "policy_stats_mode_transition_counts"
+                        }
+                        _ => "policy_stats_lifecycle_counts",
                     });
                 }
                 other => {
@@ -1649,6 +1952,24 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
             }
             Some("lifecycle_transitions") => {
                 out.lifecycle_transition_lines.push(line.to_string())
+            }
+            Some("object_history_patterns") => {
+                out.history_patterns_lines.push(line.to_string())
+            }
+            Some("object_history_axioms") => {
+                out.history_axioms_lines.push(line.to_string())
+            }
+            Some("object_history_theories") => {
+                out.history_theories_lines.push(line.to_string())
+            }
+            Some("policy_stats_action_counts") => {
+                out.action_count_lines.push(line.to_string())
+            }
+            Some("policy_stats_mode_transition_counts") => {
+                out.mode_transition_count_lines.push(line.to_string())
+            }
+            Some("policy_stats_lifecycle_counts") => {
+                out.lifecycle_count_lines.push(line.to_string())
             }
             None => {
                 return Err(format!(
@@ -2763,18 +3084,148 @@ mod tests {
     }
 
     #[test]
-    fn b0_history_and_stats_default_after_checkpoint_restore() {
-        // B0 limitation: history + stats not yet serialized. Verify
-        // that a restored runtime starts with empty stores so future
-        // B1 work knows the boundary.
+    fn b2_history_and_stats_round_trip() {
+        // B2 closes the boundary B0 left open: object_history and
+        // policy_stats now round-trip through the checkpoint.
         let rs = diamond_poset();
         let mut rt = AutonomousRuntime::new(rs);
         rt.run_bounded(3);
         assert!(!rt.memory.policy_stats.action_counts.is_empty());
+        assert!(!rt.memory.object_history.theories.is_empty());
+
         let text = rt.checkpoint_text().unwrap();
         let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
-        assert!(restored.memory.policy_stats.action_counts.is_empty());
-        assert!(restored.memory.object_history.theories.is_empty());
+
+        assert_eq!(
+            restored.memory.policy_stats.action_counts,
+            rt.memory.policy_stats.action_counts
+        );
+        assert_eq!(
+            restored.memory.policy_stats.action_positive_delta_counts,
+            rt.memory.policy_stats.action_positive_delta_counts
+        );
+        assert_eq!(
+            restored.memory.policy_stats.mode_transition_counts,
+            rt.memory.policy_stats.mode_transition_counts
+        );
+        assert_eq!(
+            restored.memory.policy_stats.wake_count,
+            rt.memory.policy_stats.wake_count
+        );
+        assert_eq!(
+            restored.memory.policy_stats.sleep_count,
+            rt.memory.policy_stats.sleep_count
+        );
+        assert_eq!(
+            restored.memory.policy_stats.stop_count,
+            rt.memory.policy_stats.stop_count
+        );
+
+        // ObjectHistory deeply equal across all three namespaces.
+        for ns in ["patterns", "axioms", "theories"] {
+            let (a, b) = match ns {
+                "patterns" => (
+                    &rt.memory.object_history.patterns,
+                    &restored.memory.object_history.patterns,
+                ),
+                "axioms" => (
+                    &rt.memory.object_history.axioms,
+                    &restored.memory.object_history.axioms,
+                ),
+                _ => (
+                    &rt.memory.object_history.theories,
+                    &restored.memory.object_history.theories,
+                ),
+            };
+            assert_eq!(a.len(), b.len(), "{} namespace size mismatch", ns);
+            for (id, h_a) in a {
+                let h_b = b.get(id).expect("missing id in restored");
+                assert_eq!(h_a.first_seen_tick, h_b.first_seen_tick);
+                assert_eq!(h_a.last_seen_tick, h_b.last_seen_tick);
+                assert_eq!(h_a.last_improved_tick, h_b.last_improved_tick);
+                assert_eq!(h_a.times_selected_as_focus, h_b.times_selected_as_focus);
+                assert_eq!(h_a.times_pruned, h_b.times_pruned);
+                assert_eq!(
+                    h_a.last_counterfactual_value,
+                    h_b.last_counterfactual_value
+                );
+                assert_eq!(h_a.stability_estimate, h_b.stability_estimate);
+            }
+        }
+    }
+
+    #[test]
+    fn b2_checkpoint_with_stats_is_idempotent() {
+        // After B2, the existing A3 idempotent property must still
+        // hold across the larger format.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(15);
+        let t1 = rt.checkpoint_text().unwrap();
+        let restored = AutonomousRuntime::from_checkpoint_text(&t1).unwrap();
+        let t2 = restored.checkpoint_text().unwrap();
+        assert_eq!(t1, t2);
+    }
+
+    #[test]
+    fn b2_thrash_history_survives_resume() {
+        // Seed a runtime with a thrash record, checkpoint, restore,
+        // and verify the gate still fires on the resumed runtime.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        // Plant a thrashed pair directly.
+        *rt.memory
+            .policy_stats
+            .mode_transition_counts
+            .entry((RuntimeMode::Expand, RuntimeMode::Reflect))
+            .or_insert(0) = 4;
+        let text = rt.checkpoint_text().unwrap();
+        let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
+        let count = restored
+            .memory
+            .policy_stats
+            .mode_transition_counts
+            .get(&(RuntimeMode::Expand, RuntimeMode::Reflect))
+            .copied()
+            .unwrap_or(0);
+        assert_eq!(count, 4, "thrash count lost on round-trip");
+    }
+
+    #[test]
+    fn b2_optional_fields_round_trip_none_and_some() {
+        // ObjectHistory's three Option fields must round-trip both
+        // None and Some values correctly.
+        let rs = diamond_poset();
+        let mut rt = AutonomousRuntime::new(rs);
+        let mut h_none = ObjectHistory::new_at(7);
+        h_none.times_selected_as_focus = 3;
+        let mut h_some = ObjectHistory::new_at(2);
+        h_some.last_improved_tick = Some(5);
+        h_some.last_counterfactual_value = Some(-1.25);
+        h_some.stability_estimate = Some(0.875);
+        rt.memory
+            .object_history
+            .patterns
+            .insert("p_none".to_string(), h_none.clone());
+        rt.memory
+            .object_history
+            .patterns
+            .insert("p_some".to_string(), h_some.clone());
+
+        let text = rt.checkpoint_text().unwrap();
+        let restored = AutonomousRuntime::from_checkpoint_text(&text).unwrap();
+        let r_none = &restored.memory.object_history.patterns["p_none"];
+        let r_some = &restored.memory.object_history.patterns["p_some"];
+
+        assert_eq!(r_none.last_improved_tick, None);
+        assert_eq!(r_none.last_counterfactual_value, None);
+        assert_eq!(r_none.stability_estimate, None);
+        assert_eq!(r_none.times_selected_as_focus, 3);
+
+        assert_eq!(r_some.last_improved_tick, Some(5));
+        assert_eq!(r_some.last_counterfactual_value, Some(-1.25));
+        assert_eq!(r_some.stability_estimate, Some(0.875));
     }
 
     // ─── Phase B1 tests — mode-thrash gate ──────────────────────

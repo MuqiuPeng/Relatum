@@ -1846,3 +1846,65 @@ Tests: 340 → 344 (+4). B2 next: checkpoint coverage of
 `object_history` + `policy_stats` so resumed runtimes inherit
 their thrash history (without it, the gate is reset on every
 boot).
+
+### Runtime Phase B2 — checkpoint covers history + stats
+ADR 0052 § Phase B / B2. Closes the boundary B0 left explicit:
+`object_history` and `policy_stats` now round-trip through the
+checkpoint. A resumed runtime inherits the B1 thrash gate's
+input — without this, the gate resets on every boot.
+
+Six new sections appended to the checkpoint format, after
+`[lifecycle_transitions]`:
+
+```
+[object_history_patterns]
+<id>\t<first>\t<last_seen>\t<last_improved>\t<focus>\t<pruned>\t<cv>\t<stability>
+
+[object_history_axioms]
+<same row schema>
+
+[object_history_theories]
+<same row schema>
+
+[policy_stats_action_counts]
+<action_kind>\t<total>\t<positive>
+
+[policy_stats_mode_transition_counts]
+<from>\t<to>\t<count>
+
+[policy_stats_lifecycle_counts]
+wake\t<n>
+sleep\t<n>
+stop\t<n>
+```
+
+Encoding choices:
+- `Option<u64>` and `Option<f64>` use the sentinel `-` for `None`.
+  `-` cannot legally start an unsigned integer, and we don't
+  serialize negative zeros that begin with `-`, so it is
+  unambiguous.
+- All maps are emitted in sorted-key order so `text → restore →
+  text` is byte-identical (preserves the A3 idempotent property).
+- Action counts that are 0 are not written; the parser drops zero
+  entries to keep the in-memory map sparse.
+
+Tests:
+- The B0 boundary test
+  `b0_history_and_stats_default_after_checkpoint_restore` is
+  replaced by `b2_history_and_stats_round_trip` — full equality
+  for both stores after a real run.
+- `b2_checkpoint_with_stats_is_idempotent` extends A3's idempotent
+  property to the larger format.
+- `b2_thrash_history_survives_resume` plants a thrash count of 4
+  in `(Expand, Reflect)`, round-trips, and asserts the count is
+  preserved.
+- `b2_optional_fields_round_trip_none_and_some` covers both
+  branches of every `Option` field on `ObjectHistory`.
+
+Tests: 344 → 347 (net +3 — one B0 boundary test was repurposed
+into a B2 test, three new B2 tests added). Phase B0/B1/B2
+complete; the runtime can now be hibernated and resumed without
+losing its accrued thrash gate or pattern lifetime data. Next
+step is open — possible directions include richer history-aware
+rules (cool down patterns whose `last_improved_tick` is stale)
+or starting Phase C (selective declarativization to meta-R).
