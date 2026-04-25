@@ -1,6 +1,6 @@
 # 0053: Selective declarativization (M1)
 
-Status: Proposed
+Status: Accepted (Phase C0 implemented)
 Date: 2026-04-26
 
 ## Context
@@ -130,13 +130,26 @@ becomes stale enough to be pruned, ESTABLISHED falls with it.)
 
 ### Where the gate runs
 
-In the main loop, after the existing dispatch step. A new
-helper `Memory::declarativize_eligible(&self, tick) -> Vec<String>`
-returns ids that meet the gate. The runtime calls it on entry to
-Reflect (which is already the "look at the system holistically"
-mode), promotes each id, and records a `Memory::record` Episode
-of kind `Declarativize` (new `ActionKind` variant — purely
-side-effect-free relative to discovery; just emits an edge).
+Implementation reuses the Frontier / scheduler path rather than
+adding a Reflect-entry hook:
+
+- `Frontier::refresh_established_promotions(&rset, &history, tick)`
+  runs alongside `refresh()` and `refresh_stale_prune()` whenever
+  the frontier is dirty. Eligible patterns become
+  `FrontierKind::EstablishedPromotion` items at fixed priority
+  1.5 — above stale-prune (0.5), below typical negative-cv
+  prune (≥ 1.0).
+- Scheduler picks promotion items in Consolidate mode (alongside
+  the existing `LowValueObjectForPrune` /
+  `TheoryNeedsRelations`).
+- Dispatch runs `ActionKind::Declarativize`, which calls
+  `rset.add(R::new(id, ESTABLISHED_MARKER))`. The episode records
+  with whatever `abstraction_score` delta the new edge produces;
+  the runtime already handles non-positive episodes uniformly.
+
+This was cleaner than a Reflect-entry hook: it reuses the
+mode-thrash gate, the budget mechanism, and the episode log
+without special-casing declarativization.
 
 ## Alternatives considered
 

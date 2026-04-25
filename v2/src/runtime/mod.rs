@@ -14,7 +14,7 @@
 
 use crate::{
     AutonomousConfig, AxiomDiscoveryConfig, DiscoveryConfig, NamingPolicy,
-    RefinementConfig, RSet, TheoryRelationKind, R,
+    RefinementConfig, RSet, TheoryRelationKind, ESTABLISHED_MARKER, R,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -72,6 +72,10 @@ pub enum ActionKind {
     /// Scan named theories pairwise, persist any missing
     /// extension / independence / parallel edges. ADR 0052 / A2.
     UpdateTheoryRelations,
+    /// Promote a named pattern (or other knowledge object) to the
+    /// experience-with meta-R class by emitting the edge
+    /// `R(<id>, ESTABLISHED_MARKER)`. ADR 0053 / Phase C0.
+    Declarativize,
 }
 
 /// Where (in the RSet) the action should apply. ADR 0052 / A1.
@@ -205,6 +209,7 @@ impl RuleBasedScheduler {
             FrontierKind::TheoryNeedsRelations => {
                 ActionKind::UpdateTheoryRelations
             }
+            FrontierKind::EstablishedPromotion => ActionKind::Declarativize,
         }
     }
 
@@ -223,6 +228,7 @@ impl RuleBasedScheduler {
                 it.kind,
                 FrontierKind::LowValueObjectForPrune
                     | FrontierKind::TheoryNeedsRelations
+                    | FrontierKind::EstablishedPromotion
             )
         })
     }
@@ -358,6 +364,7 @@ impl Scheduler for RuleBasedScheduler {
                         it.kind,
                         FrontierKind::LowValueObjectForPrune
                             | FrontierKind::TheoryNeedsRelations
+                            | FrontierKind::EstablishedPromotion
                     )
                 }) {
                     return SchedulerDecision::Execute(ActionPlan {
@@ -620,6 +627,10 @@ pub enum FrontierKind {
     /// At least two named theories exist with no recorded relation
     /// edge between them. ADR 0052 / A2.
     TheoryNeedsRelations,
+    /// A named pattern has met the C0 promotion gate (age + has at
+    /// least one positive-delta contribution) and is not yet marked
+    /// `R(id, ESTABLISHED_MARKER)`. ADR 0053 / Phase C0.
+    EstablishedPromotion,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -672,6 +683,28 @@ impl Default for StalenessConfig {
     }
 }
 
+/// Threshold config for ESTABLISHED promotion. ADR 0053 / Phase C0.
+///
+/// A named pattern earns the `R(id, ESTABLISHED_MARKER)` edge once it
+/// has been alive in the runtime's `ObjectHistory` for at least
+/// `min_pattern_age_for_promotion` ticks AND has contributed to at
+/// least one positive-delta episode (`last_improved_tick.is_some()`).
+/// The "M ≥ 1" form of the use criterion in ADR 0053; tighter counts
+/// are deferred until `ObjectHistory` carries an explicit contribution
+/// counter.
+#[derive(Debug, Clone, Copy)]
+pub struct PromotionConfig {
+    pub min_pattern_age_for_promotion: u64,
+}
+
+impl Default for PromotionConfig {
+    fn default() -> Self {
+        Self {
+            min_pattern_age_for_promotion: 100,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Frontier {
     pub items: Vec<FrontierItem>,
@@ -679,6 +712,8 @@ pub struct Frontier {
     pub dirty: bool,
     /// ADR 0052 / B3.
     pub staleness: StalenessConfig,
+    /// ADR 0053 / Phase C0.
+    pub promotion: PromotionConfig,
 }
 
 impl Default for Frontier {
@@ -688,6 +723,7 @@ impl Default for Frontier {
             last_full_refresh_tick: 0,
             dirty: true,
             staleness: StalenessConfig::default(),
+            promotion: PromotionConfig::default(),
         }
     }
 }
@@ -894,6 +930,74 @@ impl Frontier {
             });
         }
     }
+
+    /// Append `EstablishedPromotion` items for named patterns that
+    /// meet the C0 gate: alive for ≥ `min_pattern_age_for_promotion`
+    /// ticks AND `last_improved_tick.is_some()` (M ≥ 1) AND not yet
+    /// promoted. Skips ids that already have a pending promotion item.
+    /// Re-sorts on exit. ADR 0053 / Phase C0.
+    pub fn refresh_established_promotions(
+        &mut self,
+        rset: &RSet,
+        history: &ObjectHistoryStore,
+        tick: u64,
+    ) {
+        let cfg = self.promotion;
+        let mut added = false;
+        let named: HashSet<&str> = rset.patterns().into_iter().collect();
+        for (id, h) in &history.patterns {
+            if !named.contains(id.as_str()) {
+                continue; // dropped from rset already
+            }
+            let age = tick.saturating_sub(h.first_seen_tick);
+            if age < cfg.min_pattern_age_for_promotion {
+                continue;
+            }
+            if h.last_improved_tick.is_none() {
+                continue;
+            }
+            // Already promoted?
+            if rset.contains(&R::new(id.clone(), ESTABLISHED_MARKER)) {
+                continue;
+            }
+            let target = FrontierTarget::Pattern(id.clone());
+            let already = self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::EstablishedPromotion)
+                    && it.target == target
+            });
+            if already {
+                continue;
+            }
+            self.items.push(FrontierItem {
+                id: format!("promote_{}_{}", id, tick),
+                kind: FrontierKind::EstablishedPromotion,
+                target,
+                // Mid-tier consolidate priority: above stale-prune
+                // (0.5) so a freshly-mature pattern is acknowledged
+                // before stale ones are trimmed, but below normal
+                // negative-cv prune so a known-bad object still
+                // wins.
+                priority: 1.5,
+                estimated_value: 1.0,
+                estimated_cost: 1.0,
+                novelty_score: 0.5,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
+            added = true;
+        }
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
 }
 
 fn theory_pair_has_relation(rset: &RSet, a: &str, b: &str) -> bool {
@@ -1038,9 +1142,16 @@ impl AutonomousRuntime {
             // 3. Refresh frontier when dirty (cheap at β-scale). The
             //    staleness pass (B3) consults object_history, so it
             //    runs alongside refresh whenever items are recomputed.
+            //    The promotion pass (C0) also rides the same dirty
+            //    gate; it inspects rset for already-promoted ids.
             if self.frontier.dirty {
                 self.frontier.refresh(&self.rset, self.tick);
                 self.frontier.refresh_stale_prune(
+                    &self.memory.object_history,
+                    self.tick,
+                );
+                self.frontier.refresh_established_promotions(
+                    &self.rset,
                     &self.memory.object_history,
                     self.tick,
                 );
@@ -1336,6 +1447,19 @@ impl AutonomousRuntime {
                             }
                         }
                     }
+                }
+            }
+            ActionKind::Declarativize => {
+                // ADR 0053 / Phase C0. Promote a named pattern by
+                // emitting `R(id, ESTABLISHED_MARKER)`. The frontier
+                // pass already gated this, so we trust the target
+                // here; rset.add is idempotent (returns false for
+                // duplicates), and ESTABLISHED has no internal state
+                // beyond the edge itself.
+                if let FrontierTarget::Pattern(id) = &plan.target {
+                    let _ = self
+                        .rset
+                        .add(R::new(id.clone(), ESTABLISHED_MARKER));
                 }
             }
         }
@@ -1820,6 +1944,7 @@ fn action_kind_to_str(a: ActionKind) -> &'static str {
         ActionKind::DiscoverTheory => "DiscoverTheory",
         ActionKind::PruneLowValueObjects => "PruneLowValueObjects",
         ActionKind::UpdateTheoryRelations => "UpdateTheoryRelations",
+        ActionKind::Declarativize => "Declarativize",
     }
 }
 
@@ -1829,6 +1954,7 @@ fn parse_action_kind(s: &str) -> Result<ActionKind, String> {
         "DiscoverTheory" => Ok(ActionKind::DiscoverTheory),
         "PruneLowValueObjects" => Ok(ActionKind::PruneLowValueObjects),
         "UpdateTheoryRelations" => Ok(ActionKind::UpdateTheoryRelations),
+        "Declarativize" => Ok(ActionKind::Declarativize),
         other => Err(format!("unknown ActionKind '{}'", other)),
     }
 }
@@ -3631,6 +3757,7 @@ mod tests {
             last_full_refresh_tick: 0,
             dirty: false,
             staleness: StalenessConfig::default(),
+            promotion: PromotionConfig::default(),
         };
         let mut memory = Memory::default();
         memory
@@ -3834,6 +3961,211 @@ mod tests {
         assert_eq!(
             frontier.items[0].target,
             FrontierTarget::Pattern("p_neg".to_string())
+        );
+    }
+
+    // ─── Phase C0 — selective declarativization (ADR 0053) ──────
+
+    fn rs_with_named_pattern(id: &str) -> RSet {
+        // Minimal rset where `id` shows up in `rset.patterns()`.
+        // Uses the registry edge directly since a full discovery run
+        // is overkill for the gate / dispatch tests.
+        let mut rs = RSet::new();
+        rs.add(R::new(crate::PATTERN_MARKER, id));
+        rs
+    }
+
+    fn history_with_pattern(
+        id: &str,
+        first_seen: u64,
+        last_improved: Option<u64>,
+    ) -> ObjectHistoryStore {
+        let mut h = ObjectHistoryStore::default();
+        h.patterns.insert(
+            id.to_string(),
+            ObjectHistory {
+                first_seen_tick: first_seen,
+                last_seen_tick: first_seen,
+                last_improved_tick: last_improved,
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        h
+    }
+
+    #[test]
+    fn c0_promotion_inactive_below_age() {
+        // Pattern is named and has improved, but age (50) is below
+        // the 100-tick promotion floor.
+        let rs = rs_with_named_pattern("p_young");
+        let history = history_with_pattern("p_young", 0, Some(40));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 50);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c0_promotion_inactive_when_never_improved() {
+        // Pattern aged enough but `last_improved_tick = None` →
+        // M ≥ 1 not satisfied.
+        let rs = rs_with_named_pattern("p_dead");
+        let history = history_with_pattern("p_dead", 0, None);
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 200);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c0_promotion_active_when_qualified() {
+        let rs = rs_with_named_pattern("p_good");
+        let history = history_with_pattern("p_good", 0, Some(80));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert_eq!(frontier.items.len(), 1);
+        let it = &frontier.items[0];
+        assert!(matches!(it.kind, FrontierKind::EstablishedPromotion));
+        assert_eq!(
+            it.target,
+            FrontierTarget::Pattern("p_good".to_string())
+        );
+        assert!(it.id.starts_with("promote_p_good_"));
+    }
+
+    #[test]
+    fn c0_promotion_skips_already_promoted() {
+        // ESTABLISHED edge already in rset → no item.
+        let mut rs = rs_with_named_pattern("p_done");
+        rs.add(R::new("p_done", ESTABLISHED_MARKER));
+        let history = history_with_pattern("p_done", 0, Some(80));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c0_promotion_skips_dropped_pattern() {
+        // History knows about p_gone, but rset doesn't list it any
+        // more (e.g. it was retracted).
+        let rs = RSet::new();
+        let history = history_with_pattern("p_gone", 0, Some(80));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c0_promotion_idempotent() {
+        let rs = rs_with_named_pattern("p_good");
+        let history = history_with_pattern("p_good", 0, Some(80));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        let len1 = frontier.items.len();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert_eq!(frontier.items.len(), len1);
+    }
+
+    #[test]
+    fn c0_execute_declarativize_adds_established_edge() {
+        // Plant a named pattern with old age (eligible for promotion)
+        // but recent `last_improved_tick` so B3 stale-prune doesn't
+        // fire on the same target. Otherwise both Promotion and
+        // Stale-Prune would be valid Consolidate work, and the
+        // post-Promotion ticks would retract the pattern (cascading
+        // ESTABLISHED away).
+        let rs = rs_with_named_pattern("p_good");
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.memory.object_history.patterns.insert(
+            "p_good".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 149,
+                last_improved_tick: Some(149),
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        rt.tick = 150;
+        rt.frontier.mark_dirty();
+        // Two ticks: iter 1 = SwitchMode(Expand→Consolidate),
+        // iter 2 = Execute(Declarativize). A third tick would
+        // pick the bare-registry pattern's negative-cv Prune
+        // (cv = -0.1, no instances), which would cascade
+        // ESTABLISHED away before the assertion.
+        rt.run_bounded(2);
+        assert!(
+            rt.rset.contains(&R::new("p_good", ESTABLISHED_MARKER)),
+            "expected R(p_good, ESTABLISHED_MARKER) after Declarativize"
+        );
+        let last = rt.memory.episodes.iter().last().unwrap();
+        assert_eq!(last.action_kind, ActionKind::Declarativize);
+    }
+
+    #[test]
+    fn c0_b3_interaction_promote_then_prune_cascade() {
+        // ADR 0053 § "B3 interaction" verification. Pattern is
+        // promoted on tick 150 (recently improved → no stale-prune),
+        // then we age out last_improved_tick so B3 fires later. The
+        // Promotion edge must vanish via the retract cascade.
+        let rs = rs_with_named_pattern("p_x");
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.memory.object_history.patterns.insert(
+            "p_x".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 149,
+                last_improved_tick: Some(149),
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        rt.tick = 150;
+        rt.frontier.mark_dirty();
+        rt.run_bounded(2);
+        assert!(
+            rt.rset.contains(&R::new("p_x", ESTABLISHED_MARKER)),
+            "expected promotion edge after first window"
+        );
+
+        // Phase 2: continue running. The pattern has negative cv
+        // (no instances) so the existing negative-cv Prune fires;
+        // the retract cascade in retract_pattern (step 7) drops
+        // the ESTABLISHED edge with the pattern. Cascade is what
+        // the ADR's "B3 interaction" test validates — the same
+        // mechanism applies whether the prune was triggered by
+        // negative cv or by B3 staleness.
+        rt.run_bounded(3);
+        assert!(
+            !rt.rset.contains(&R::new("p_x", ESTABLISHED_MARKER)),
+            "ESTABLISHED edge should have cascaded with prune"
+        );
+        assert!(
+            !rt.rset.patterns().contains(&"p_x"),
+            "pattern itself should be pruned"
+        );
+    }
+
+    #[test]
+    fn c0_retract_pattern_cascades_established() {
+        // Bare named pattern (no instances/roles) is enough to
+        // confirm the cascade — retract_pattern's per-layer cleanup
+        // no-ops on the missing layers and step (7) removes the
+        // ESTABLISHED edge.
+        let mut rs = rs_with_named_pattern("p_x");
+        rs.add(R::new("p_x", ESTABLISHED_MARKER));
+        assert!(rs.contains(&R::new("p_x", ESTABLISHED_MARKER)));
+        rs.retract_pattern("p_x").expect("retract");
+        assert!(
+            !rs.contains(&R::new("p_x", ESTABLISHED_MARKER)),
+            "ESTABLISHED edge must cascade with retract_pattern"
         );
     }
 

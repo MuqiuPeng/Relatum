@@ -142,6 +142,16 @@ pub const INDEPENDENT_MARKER: &str = "__independent__";
 /// as independence.
 pub const PARALLEL_MARKER: &str = "__parallel__";
 
+/// Reserved registry marker for "experience-with" facts about named
+/// objects. ADR 0053 / Phase C0. The runtime emits the edge
+/// `R(<pattern_id>, ESTABLISHED_MARKER)` once a pattern has been
+/// alive long enough AND has contributed to at least one positive-delta
+/// episode. Demoted on retract via the `retract_pattern` cascade. This
+/// is the M1 / declarativized layer described in ADR 0052; it does
+/// NOT replace `PATTERN_MARKER` ("kind-of") — it sits next to it as
+/// a second meta-R class about the runtime's *use* of the object.
+pub const ESTABLISHED_MARKER: &str = "__established__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -3390,6 +3400,7 @@ impl RSet {
         for par in self.parallel_edges() {
             s.insert(par.to_string());
         }
+        s.insert(ESTABLISHED_MARKER.to_string());
         for role in self.roles() {
             s.insert(role.to_string());
         }
@@ -3503,6 +3514,12 @@ impl RSet {
 
         // (6) Remove the registry edge R(PATTERN_MARKER, pattern_id).
         if self.remove(&R::new(PATTERN_MARKER, pattern_id_owned.clone())) {
+            removed += 1;
+        }
+
+        // (7) Remove the experience-with edge R(pattern_id, ESTABLISHED_MARKER)
+        //     if it was promoted via Phase C0. ADR 0053.
+        if self.remove(&R::new(pattern_id_owned.clone(), ESTABLISHED_MARKER)) {
             removed += 1;
         }
 

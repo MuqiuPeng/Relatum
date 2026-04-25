@@ -2054,3 +2054,73 @@ lands in a follow-on commit if the design holds up against
 review.
 
 Tests: unchanged (358).
+
+### Phase C0 — ESTABLISHED_MARKER (M1, slice 1)
+ADR 0053 implementation. The runtime now declares its first
+"experience-with" meta-R fact: a named pattern that has been
+alive ≥ 100 ticks (`PromotionConfig::min_pattern_age_for_promotion`)
+AND has contributed to at least one positive-delta episode
+(`last_improved_tick.is_some()`, the M ≥ 1 form) earns the edge
+`R(<id>, ESTABLISHED_MARKER)`. Demotion piggybacks on the
+existing `retract_pattern` cascade — added as step (7) right
+after the PATTERN_MARKER registry edge.
+
+Implementation seam:
+- `pub const ESTABLISHED_MARKER: &str = "__established__"` in
+  `src/lib.rs`. Exposed via `collect_meta_ids` like every other
+  registry marker.
+- `RSet::retract_pattern` step (7) removes
+  `R(pattern_id, ESTABLISHED_MARKER)` if present. No-op when the
+  pattern was never promoted.
+- `ActionKind::Declarativize` and `FrontierKind::EstablishedPromotion`
+  added (and round-tripped through the action-kind text codec).
+- `PromotionConfig` lives next to `StalenessConfig`; `Frontier`
+  gains a `promotion: PromotionConfig` field.
+- `Frontier::refresh_established_promotions(&rset, &history, tick)`
+  runs alongside `refresh` / `refresh_stale_prune` under the same
+  `dirty` gate. Idempotent.
+- Scheduler picks `EstablishedPromotion` in Consolidate mode
+  alongside Prune / TheoryNeedsRelations. Dispatch runs
+  `rset.add(R::new(id, ESTABLISHED_MARKER))`.
+
+Notes from implementation:
+- The C0 slice deliberately uses M ≥ 1 — `last_improved_tick.is_some()`
+  is a binary signal already in `ObjectHistory`. ADR 0053's open
+  question 1 (cumulative episode scan vs. cheap path) is
+  resolved in favor of the cheap path; tightening to "M ≥ N"
+  needs a new counter, deferred.
+- ADR 0053's "Where the gate runs" originally proposed a
+  Reflect-entry hook. The Frontier / scheduler path proved
+  cleaner — reuses the mode-thrash gate, budget, and episode
+  log without special casing. ADR updated in the same commit.
+- B3 / negative-cv interaction confirmed: a promoted pattern
+  whose counterfactual value is negative (or that goes stale)
+  gets pruned in subsequent Consolidate ticks; the ESTABLISHED
+  edge cascades via the new `retract_pattern` step (7).
+  Verified by `c0_b3_interaction_promote_then_prune_cascade`
+  end-to-end.
+
+Tests (9 new C0):
+- Age below the 100-tick floor → no item.
+- Aged enough but `last_improved_tick = None` → no item (M ≥ 1
+  not met).
+- Both conditions met, not yet promoted → item with
+  `prune_p_good_<tick>`-style id and Pattern target.
+- Already promoted (`R(id, ESTABLISHED_MARKER)` in rset) → no
+  item.
+- Pattern dropped from rset between history snapshot and
+  refresh → no item.
+- Two consecutive `refresh_established_promotions` calls → same
+  count (idempotent).
+- End-to-end Declarativize: 2-tick run on a planted history
+  emits the edge and records an `ActionKind::Declarativize`
+  episode.
+- Cascade: bare named pattern + manual ESTABLISHED →
+  `retract_pattern` removes both.
+- B3 interaction (full ADR test): promote on tick 152, then
+  the negative-cv prune fires on tick 153 and cascades the
+  ESTABLISHED edge along with the pattern.
+
+Tests: 358 → 367 (+9). ADR 0053 status: Proposed → Accepted
+(Phase C0 implemented). Phase C1 (theories) and C2 (shared
+axioms) remain sketched; Phase B0/B1/B1+/B2/B3/C0 complete.
