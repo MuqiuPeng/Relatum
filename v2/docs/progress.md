@@ -2029,3 +2029,28 @@ Tests: 352 → 358 (+6). Phase B0/B1/B1+/B2/B3 complete; the
 runtime now feeds history *and* acts on it. Phase C
 ("selective declarativization to meta-R") is a deferred follow-on
 ADR — drafted separately as ADR 0053.
+
+### ADR 0053 (Proposed) — selective declarativization (M1)
+Phase C of ADR 0052, scoped before any code lands. Splits meta-R
+into two classes: the existing "kind-of" facts (PATTERN_MARKER,
+THEORY_MARKER, …) and a new "experience-with" class — facts the
+runtime declares about how it has *used* the things in the first
+class.
+
+Phase C0 (smallest viable slice): a single new marker
+`ESTABLISHED_MARKER`. A named pattern earns
+`R(p_x, ESTABLISHED_MARKER)` when it has been stable for ≥ K
+ticks (default 100) AND has been referenced by ≥ M episodes
+(default 5). Promotion runs on Reflect entry; demotion piggybacks
+on `retract_pattern` (cascade — no separate demotion machinery).
+C1 and C2 (theories, shared axioms) are sketched and deferred.
+
+No code yet. ADR carries the verification plan (5 tests +
+end-to-end), open questions (counter source for M, reentry across
+checkpoint), and four explicit alternatives that were rejected
+(skip C; numeric attribute on existing edges; per-tick churn;
+sub-categorized markers). Status: Proposed — implementation
+lands in a follow-on commit if the design holds up against
+review.
+
+Tests: unchanged (358).
