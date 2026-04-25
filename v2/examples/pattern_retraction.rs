@@ -25,6 +25,7 @@ fn main() {
         },
         refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
         naming: NamingPolicy::default(),
+        instance_sampling: None,
     };
 
     println!("=== Step 1 — autonomous_pass names patterns ===");

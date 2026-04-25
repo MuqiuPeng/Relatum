@@ -66,6 +66,7 @@ fn show_autonomous_with_and_without_mdl_filter() {
             attach_only: false,
             min_mdl_gain,
         },
+        instance_sampling: None,
     };
 
     println!("=== autonomous_pass, target_size=3, min_mdl_gain=0 (default) ===");

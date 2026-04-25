@@ -35,6 +35,9 @@ fn main() {
                 relatum_v2::DriveAction::DiscoverTheory(_) => {
                     "DiscoverTheory".to_string()
                 }
+                relatum_v2::DriveAction::Prune(threshold) => {
+                    format!("Prune(threshold={:.2})", threshold)
+                }
             };
             println!(
                 "    step {}: {}  Δ={:+.2}  (score {:.2} → {:.2})",

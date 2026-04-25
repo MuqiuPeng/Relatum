@@ -21,6 +21,7 @@ fn main() {
         },
         refinement: RefinementConfig { max_tries: 200, rng_seed: 999 },
         naming: NamingPolicy::default(),
+        instance_sampling: None,
     };
     rs.autonomous_pass(&cfg_autonomous);
 

@@ -67,6 +67,7 @@ fn default_config() -> AutonomousConfig {
             rng_seed: 999,
         },
         naming: NamingPolicy::default(),
+        instance_sampling: None,
     }
 }
 
