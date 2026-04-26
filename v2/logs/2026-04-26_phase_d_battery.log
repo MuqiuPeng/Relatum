@@ -69,12 +69,12 @@ verdict: CONVERGED (new patterns named: 0)
 === seed: stream_diamond ===
   tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
      0         0         0           0         0         0       0         0 Running
-    50         0         3           0         6         0       0        22 Sleeping
-   100         0         3           0         6         0       0        23 Running
-   150         3         3           0         6         3       0        34 Sleeping
-   200         3         3           0         6         3       0        35 Running
-   250         0         3           3         6         5       0        53 Sleeping
-   300         0         3           3         6         5       0        53 Sleeping
+    50         0         3           0         6         0       0        23 Running
+   100         3         3           0         6         3       0        35 Running
+   150         0         3           0         6         5       0        49 Running
+   200         0         3           0         6         5       0        62 Running
+   250         0         3           2         6         5       0        77 Running
+   300         0         3           3         6         5       0        89 Sleeping
 verdict: STILL GROWING (new patterns named: 0)
 
 === battery summary ===

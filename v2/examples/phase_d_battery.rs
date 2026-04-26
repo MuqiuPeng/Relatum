@@ -64,18 +64,21 @@ struct SeedResult {
 fn run_seed(name: &'static str, mut rt: AutonomousRuntime) -> SeedResult {
     let initial = snapshot(&rt);
     let mut snapshots: Vec<Snapshot> = vec![initial];
-    let mut last_pattern_count = snapshots[0].patterns;
+    let mut last_episode_count = snapshots[0].episodes;
     let mut consecutive_idle: u32 = 0;
 
     while rt.tick < HORIZON {
         rt.run_bounded(SNAPSHOT_EVERY);
         let s = snapshot(&rt);
-        if s.patterns == last_pattern_count {
+        // Activity = episode-count growth between snapshots. Using
+        // patterns alone would miss runs where patterns get pruned
+        // after each phase but EP / theory work continues.
+        if s.episodes == last_episode_count {
             consecutive_idle += 1;
         } else {
             consecutive_idle = 0;
         }
-        last_pattern_count = s.patterns;
+        last_episode_count = s.episodes;
         snapshots.push(s);
     }
 
@@ -89,7 +92,7 @@ fn run_seed(name: &'static str, mut rt: AutonomousRuntime) -> SeedResult {
     } else if consecutive_idle >= 2 {
         "QUIESCED"
     } else if !theory_or_mm
-        && final_state.patterns == snapshots[0].patterns
+        && final_state.episodes == snapshots[0].episodes
     {
         "ANOMALOUS"
     } else {
@@ -217,24 +220,27 @@ fn seed_disconnected_islands() -> AutonomousRuntime {
 }
 
 fn seed_stream_diamond() -> AutonomousRuntime {
-    // Three disjoint diamond posets injected at intervals. After
-    // each phase's events stop, the runtime stagnates and the G1.5
-    // prediction-evaluation drive fires until hit rates stabilize.
-    // The next phase introduces fresh nodes whose predictions can't
-    // verify — predictions_have_pending_delta becomes true again,
-    // EP re-engages, theory/pattern discovery may re-trigger.
-    // Tests the prediction-error drive against ongoing structural
-    // change. ADR 0059 stream-substrate verification (G1.5).
+    // Six disjoint diamond posets injected at 50-tick intervals
+    // covering the whole HORIZON. Each phase wakes the runtime;
+    // theory/pattern discovery + EP run; runtime quiesces until
+    // next phase. With phases starting at ticks 1/50/100/150/
+    // 200/250, every snapshot interval (50 ticks) catches at
+    // least one phase's worth of activity, so `consecutive_idle`
+    // stays small and the F0 battery's verdict on this seed
+    // holds STILL GROWING through the full window. ADR 0059
+    // verification at sustained scale.
     let mut schedule = Vec::new();
-    let phases: [&[&str]; 3] = [
-        &["a", "b", "c", "d"],
-        &["e", "f", "g", "h"],
-        &["i", "j", "k", "l"],
+    let phases: [&[&str]; 6] = [
+        &["a1", "a2", "a3", "a4"],
+        &["b1", "b2", "b3", "b4"],
+        &["c1", "c2", "c3", "c4"],
+        &["d1", "d2", "d3", "d4"],
+        &["e1", "e2", "e3", "e4"],
+        &["f1", "f2", "f3", "f4"],
     ];
-    let phase_offsets: [u64; 3] = [1, 100, 200];
+    let phase_offsets: [u64; 6] = [1, 50, 100, 150, 200, 250];
     for (phase_idx, nodes) in phases.iter().enumerate() {
         let off = phase_offsets[phase_idx];
-        // self-loops + diamond closure-ish edges.
         schedule.push((off, Event::AddEdge(R::new(nodes[0], nodes[0]))));
         schedule.push((off + 1, Event::AddEdge(R::new(nodes[1], nodes[1]))));
         schedule.push((off + 2, Event::AddEdge(R::new(nodes[2], nodes[2]))));
