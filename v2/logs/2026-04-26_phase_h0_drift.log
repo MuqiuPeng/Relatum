@@ -1,0 +1,27 @@
+=== ADR 0060 Phase H0 — meta-scheduler drift demo ===
+
+  tick  episodes  EP_in_window     EP_delta_sum
+    50        23             7           6.2335
+   100        35             9           0.0267
+   150        49             7           0.0074
+   200        66             7           0.0015
+   250        79             8           0.0048
+   300        94             5           0.0205
+   350        94             0          -0.0000
+   400        94             0          -0.0000
+   450        94             0          -0.0000
+   500        94             0          -0.0000
+
+--- final episode kinds ---
+  Declarativize = 9
+  DiscoverMetaMetaPatterns = 5
+  DiscoverPatterns = 5
+  DiscoverTheory = 3
+  EvaluatePredictions = 43
+  PruneLowValueObjects = 27
+  UpdateTheoryRelations = 2
+
+--- EP delta sum (positive only): 6.2944 ---
+final lifecycle: Sleeping mode: Consolidate
+
+--- end ---
