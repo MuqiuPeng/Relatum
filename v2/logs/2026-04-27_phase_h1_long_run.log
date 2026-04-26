@@ -1,0 +1,100 @@
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: variable does not need to be mutable
+    --> src\runtime\mod.rs:1936:13
+     |
+1936 |         let mut try_add = |seq_id: &str,
+     |             ----^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4488:9
+     |
+4488 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4990:9
+     |
+4990 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4994:9
+     |
+4994 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\mod.rs:371:8
+    |
+263 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+371 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:60
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:72
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 7 warnings (run `cargo fix --lib -p relatum-v2` to apply 4 suggestions)
+    Finished `release` profile [optimized] target(s) in 9.99s
+     Running `E:\projects\Relatum\v2\target\release\examples\phase_h1_long_run.exe`
+=== ADR 0062 retrospective #1 — long-run empirics (HORIZON=2000, multi-regime) ===
+
+Regimes: A=diamonds (1–490) | B=bipartite (501–990) | C=cliques (1001–1490) | D=diamonds+patterns (1501–1990)
+
+ tick  pat  thy   est  shAx   epis     ep   mmA    mmH  comp  pairs  tri lifecycle
+    0    0    0     0     0      0      0     0      0     0      0    0 Running
+  200    3    4     0     7     39     15     4      0     0      1    1 Sleeping
+  +pair: ("EvaluatePredictions", "EvaluatePredictions")
+  +triple: ("EvaluatePredictions", "EvaluatePredictions", "EvaluatePredictions")
+  400    4    4     0     7     48     23     5      0     0      0    1 Sleeping
+  -pair: ("EvaluatePredictions", "EvaluatePredictions")
+  600    4    5     0     7     49     23     5      0     0      1    1 Sleeping
+  +pair: ("EvaluatePredictions", "EvaluatePredictions")
+  800    4    5     0     7     49     23     5      0     0      1    1 Sleeping
+ 1000    4    5     0     7     49     23     5      0     0      1    1 Sleeping
+ 1200    4    5     0     7     49     23     5      0     0      1    1 Sleeping
+ 1400    4    5     0     7     49     23     5      0     0      1    1 Sleeping
+ 1600    5    5     1     7     49     23     5      0     0      1    1 Sleeping
+ 1800    7    5     3     7     49     23     5      0     0      1    1 Sleeping
+ 2000    9    5     5     7     49     23     5      0     0      1    1 Sleeping
+
+=== summary ===
+horizon: 2000 ticks, 10 snapshots
+patterns: 0 → 9 (Δ 9)
+theories: 0 → 5 (Δ 5)
+episodes: 0 → 49 (Δ 49)
+EP attempts: 23, composite attempts: 0
+MM attempts: 5, MM hits: 0
+pair promotions ever: 1 | currently named: 1 | demotions: 0
+triple promotions ever: 1 | currently named: 1 | demotions: 0
+
+currently-named pairs:
+  ("EvaluatePredictions", "EvaluatePredictions")
+currently-named triples:
+  ("EvaluatePredictions", "EvaluatePredictions", "EvaluatePredictions")
+
+--- end ---

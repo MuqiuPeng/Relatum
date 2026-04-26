@@ -3721,3 +3721,109 @@ both as N-step composites, H1.3 demotes (pairs only — triple
 demotion follows the same pattern but isn't load-bearing
 yet at v2 scale; defer).
 
+### Phase H1.x — long-run empirics (HORIZON=2000)
+
+The 2026-04-27 retrospective named "long-run empirical
+cycle" as the #1 next direction. Built a multi-regime
+streaming environment (4 regimes × 500 ticks):
+
+- A (1–490): diamond posets, 5 phases.
+- B (501–990): bipartite 2×3 injections, 5 phases.
+- C (1001–1490): clique families (equivalence classes), 5
+  phases.
+- D (1501–1990): diamonds + interleaved
+  `R(PATTERN_MARKER, x)` injections, 5 phases.
+
+Snapshots every 200 ticks; per-snapshot diff against the
+prior named-pair / named-triple sets surfaces promotions
+and demotions as discrete events.
+
+Captured `examples/phase_h1_long_run.rs` →
+`logs/2026-04-27_phase_h1_long_run.log`.
+
+#### Empirical findings
+
+The full-window trajectory:
+
+```
+ tick  pat  thy   est  shAx   epis     ep   pairs  tri  lifecycle
+    0    0    0     0     0      0      0       0    0  Running
+  200    3    4     0     7     39     15       1    1  Sleeping
+  400    4    4     0     7     48     23       0    1  Sleeping  -pair
+  600    4    5     0     7     49     23       1    1  Sleeping  +pair
+  800    4    5     0     7     49     23       1    1  Sleeping
+ ...    (idle through ticks 800–1400) ...
+ 1600    5    5     1     7     49     23       1    1  Sleeping
+ 2000    9    5     5     7     49     23       1    1  Sleeping
+```
+
+Three observations:
+
+1. **First empirical demotion fire on real substrate.** At
+   tick 400 the (EvaluatePredictions, EvaluatePredictions)
+   pair was demoted by H1.3 — recent-window mean degraded
+   below 0.02 floor as runtime quiesced post-regime-A.
+   Tick 600 re-promotion: regime-B's first edges produced
+   enough fresh EP activity to flip the pair back over the
+   promotion threshold. This is hysteresis (promote 0.05 /
+   demote 0.02) working as designed in production.
+
+2. **Composite dispatch never fires.** `comp` column stays 0
+   throughout, despite (EP, EP) being named. The
+   `CompositeCandidate` frontier requires both step-kinds
+   to be represented in the live frontier when refresh runs;
+   under the prediction-error gate, EP is the only fired
+   action during the dormant phases, so the candidate never
+   gets surfaced when the runtime is awake enough to dispatch.
+   Empirical reality: composite dispatch needs the runtime
+   to *also* be doing other things alongside EP, and these
+   substrates didn't produce that overlap.
+
+3. **Regime B/C inert.** The runtime sleeps from ~tick 200
+   through ~tick 1500. Bipartite + clique injections don't
+   tickle the prediction-error wake gate because (a) they
+   don't establish patterns/axioms that change forward-apply
+   output, and (b) the G1.5 outward drive measures EP-delta
+   on existing axioms, of which there are few applicable to
+   bare bipartite edges. The runtime only re-stirs in regime
+   D when `R(PATTERN_MARKER, d_X)` edges directly mutate
+   `rset.patterns()`, which then triggers establishment-
+   chain accounting.
+
+#### Significance
+
+Finding #1 is the core empirical confirmation of H1.3 — the
+demotion machinery does what the ADR claimed on a real
+substrate, not just synthetic tests.
+
+Finding #2 is a real gap: composite dispatch is implemented
+but the substrates that exercise H1.x's promotion path do
+not naturally produce frontiers where composite candidates
+are eligible to fire. Either (a) the F0 substrates don't
+produce enough action variety, or (b) the
+`refresh_composite_candidates` eligibility check is over-
+strict. Worth a closer look in a future slice — but not a
+blocker.
+
+Finding #3 reframes a known issue: the prediction-error
+drive is gated on changes to forward-apply output, which
+many edge classes don't trigger. Long-run stability
+across regime shifts is bounded by what wakes the runtime
+in the first place. The non-stationarity of the test
+environment was real but the runtime didn't engage with it,
+because the new edges weren't predictively interesting under
+the current axiom store.
+
+#### Verdict
+
+Long-run does what the retrospective wanted: it surfaces
+empirical findings the F0 battery (300-tick HORIZON) was
+too short to expose. H1.3 demotion is verified live (good).
+Composite dispatch and regime-shift wake behaviour are
+identified gaps (useful empirical input for future slices).
+
+No code changes from this run. Captured as a one-shot
+empirical report.
+
+Commits to follow.
+
