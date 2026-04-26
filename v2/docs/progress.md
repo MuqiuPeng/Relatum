@@ -3866,3 +3866,97 @@ implemented. The H1 suite is now strictly feature-complete
 across both promotion and demotion for both pair and triple
 sequences.
 
+### ADR 0063 (Proposed) — drive self-modification (Phase H2)
+
+The 2026-04-27 retrospective listed "H2 ADR drafting" as
+the #4 priority direction with the framing: H2 has more
+potential for getting wrong than any prior phase, so a
+careful design ahead of any code is the load-bearing move.
+
+Drafted [`0063-drive-self-modification.md`](decisions/0063-drive-self-modification.md).
+Status: Proposed; no code yet.
+
+#### Three slices, ordered by ambition
+
+- **H2.0** — multi-drive blend (compression / prediction-
+  error / mode-thrash) with weights mutated under EP-delta
+  feedback. Mirror of H0's MetaScheduler design, scaled to
+  weight space. Drive function bodies remain compile-time;
+  only weights mutate. Smallest viable slice.
+- **H2.1** — drives registered as meta-R objects under a
+  new `DRIVE_MARKER` class, with the existing ESTABLISHED-
+  promotion / demotion lifecycle applied to the drive set
+  (same shape as PATTERN, AXIOM, THEORY chains). Drive set
+  becomes self-managing.
+- **H2.2** — drive synthesis from a small grammar over
+  primitive metrics (mean / variance / ratio / lag-diff).
+  Synthesized candidates enter the H2.1 lifecycle; the
+  ESTABLISHED-via-EP-delta gate decides which actually
+  contribute. Research-mode; out of scope for this ADR's
+  commit.
+
+#### Constitutional review
+
+The ADR scores all five v2 commitments against H2.0
+explicitly:
+
+- Commitments 1, 2, 4, 5: PASS by construction (no new R
+  class, no new relations, drive ids are compile-time
+  string constants, no similarity claim made).
+- Commitment 3 (types are meta-R instances): H2.0
+  *constrains itself* to compile-time drive identities,
+  deferring drive-as-type to H2.1. PASS — but called out
+  as the load-bearing constraint.
+
+For H2.1, commitment 3 becomes the hinge: drives must
+register under DRIVE_MARKER as `R(DRIVE_MARKER, drive_X)`
+(same shape as PATTERN_MARKER chains). Constitution-
+compatible by construction.
+
+For H2.2, commitments 3 and 4 both get tested. Synthesized
+drives need (a) deterministic, structural identifiers
+(commitment 4 — proposed: hash of the composition
+expression), (b) registration as meta-R (commitment 3).
+Neither is broken if the synthesizer follows these
+constraints. The ADR flags this as the highest-risk
+constitutional surface and recommends careful identifier
+design before any H2.2 code.
+
+#### Why H2.0 is the recommended starting slice
+
+Per the ADR's "alternatives considered":
+
+- Smallest implementation surface (`Drive` trait + 3
+  baseline impls + `DriveMix` parallel to `MetaScheduler`).
+- Reuses H0's A/B-mutation pattern unchanged — the
+  empirical risk profile is well-understood.
+- Constitutionally clean (deferred drive-as-type via
+  commitment 3).
+- H2.0 produces validation data that H2.1 needs (does
+  weight-tuning even matter empirically? if not, H2.1's
+  promotion machinery has nothing to bite on).
+
+#### Open questions raised in the ADR
+
+1. Initial weights — hand-tuned baseline vs. all-equal.
+2. Window size sensitivity (50 episodes/window from H0;
+   may need shorter for drive responsiveness).
+3. Mutation step magnitude (×0.8 / ×1.25 from H0 vs.
+   additive ±0.1 — drive weights live in [0, 1] so
+   different scale).
+4. Negative drives (penalties as negative `evaluate`
+   return values vs. negative weights).
+5. Interaction with H0's MetaScheduler — two A/B loops
+   on the same EP-delta signal need phase-shifted
+   windows to avoid stepping on each other.
+
+These are all empirical questions; the ADR recommends
+deciding on adoption rather than ahead of code.
+
+#### Status
+
+ADR 0063 is **Proposed**, not Accepted. The retrospective
+called for "a careful ADR before any implementation"; this
+file is that ADR. Acceptance + H2.0 implementation is a
+future commit when the user signals readiness.
+
