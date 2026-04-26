@@ -1060,6 +1060,14 @@ pub struct SequenceStats {
         HashMap<(ActionKind, ActionKind, ActionKind), u64>,
     pub triple_post_ep_delta_sum:
         HashMap<(ActionKind, ActionKind, ActionKind), f64>,
+    /// Recent-window triple counters. Mirror of pair recent fields
+    /// for triple demotion. ADR 0062 retrospective #2 (triple
+    /// demotion). Reset on the same `H1_3_RECENT_WINDOW_TICKS`
+    /// boundary as pairs.
+    pub triple_recent_post_ep_count:
+        HashMap<(ActionKind, ActionKind, ActionKind), u64>,
+    pub triple_recent_post_ep_delta_sum:
+        HashMap<(ActionKind, ActionKind, ActionKind), f64>,
 }
 
 const H1_LOOKAHEAD_K: usize = 5;
@@ -1113,7 +1121,32 @@ impl SequenceStats {
     pub fn reset_recent_window(&mut self, current_tick: u64) {
         self.pair_recent_post_ep_count.clear();
         self.pair_recent_post_ep_delta_sum.clear();
+        self.triple_recent_post_ep_count.clear();
+        self.triple_recent_post_ep_delta_sum.clear();
         self.last_recent_reset_tick = current_tick;
+    }
+
+    /// Recent-window mean post-EP delta for a triple. ADR 0062
+    /// retrospective #2 (triple demotion). Mirror of
+    /// `pair_recent_mean_post_ep_delta`.
+    pub fn triple_recent_mean_post_ep_delta(
+        &self,
+        triple: (ActionKind, ActionKind, ActionKind),
+    ) -> Option<f64> {
+        let count = self
+            .triple_recent_post_ep_count
+            .get(&triple)
+            .copied()
+            .unwrap_or(0);
+        if count == 0 {
+            return None;
+        }
+        let sum = self
+            .triple_recent_post_ep_delta_sum
+            .get(&triple)
+            .copied()
+            .unwrap_or(0.0);
+        Some(sum / count as f64)
     }
 
     /// Mean post-EP delta for a triple, or `None` when no
@@ -1304,7 +1337,9 @@ impl Memory {
                     .entry(pair)
                     .or_insert(0.0) += cur_delta;
             }
-            // Triple credits — ADR 0062 / Phase H1.4.
+            // Triple credits — ADR 0062 / Phase H1.4. Recent-
+            // window mirror added by retrospective #2 for triple
+            // demotion.
             for triple in triples_seen {
                 *self
                     .sequence_stats
@@ -1314,6 +1349,16 @@ impl Memory {
                 *self
                     .sequence_stats
                     .triple_post_ep_delta_sum
+                    .entry(triple)
+                    .or_insert(0.0) += cur_delta;
+                *self
+                    .sequence_stats
+                    .triple_recent_post_ep_count
+                    .entry(triple)
+                    .or_insert(0) += 1;
+                *self
+                    .sequence_stats
+                    .triple_recent_post_ep_delta_sum
                     .entry(triple)
                     .or_insert(0.0) += cur_delta;
             }
@@ -2532,6 +2577,51 @@ impl AutonomousRuntime {
         }
         for (prefix, suffix) in to_demote {
             self.rset.retract_action_sequence_pair(&prefix, &suffix);
+        }
+
+        // ADR 0062 retrospective #2 — triple demotion. Same
+        // floor + minimum-recent-count gate as pairs, applied to
+        // every named triple.
+        let triples = self.rset.action_sequence_triples();
+        let mut to_demote_t: Vec<(String, String, String)> = Vec::new();
+        for (_seq_id, a_name, b_name, c_name) in triples {
+            let a_kind = match parse_action_kind(&a_name) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            let b_kind = match parse_action_kind(&b_name) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            let c_kind = match parse_action_kind(&c_name) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            let triple = (a_kind, b_kind, c_kind);
+            let recent_count = self
+                .memory
+                .sequence_stats
+                .triple_recent_post_ep_count
+                .get(&triple)
+                .copied()
+                .unwrap_or(0);
+            if recent_count < MIN_RECENT_COUNT_FOR_DEMOTE {
+                continue;
+            }
+            let recent_mean = match self
+                .memory
+                .sequence_stats
+                .triple_recent_mean_post_ep_delta(triple)
+            {
+                Some(m) => m,
+                None => continue,
+            };
+            if recent_mean < MIN_RECENT_MEAN_FOR_RETENTION {
+                to_demote_t.push((a_name, b_name, c_name));
+            }
+        }
+        for (a, b, c) in to_demote_t {
+            self.rset.retract_action_sequence_triple(&a, &b, &c);
         }
     }
 
@@ -7282,6 +7372,115 @@ mod tests {
             })
             .count();
         assert_eq!(composite_count, 1);
+    }
+
+    // ─── ADR 0062 retrospective #2 — triple demotion tests ────────
+
+    #[test]
+    fn h1_3_triple_demote_retracts_named_triple_with_low_recent_mean() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.rset.name_action_sequence_triple(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+            "Declarativize",
+        );
+        let triple = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+            ActionKind::Declarativize,
+        );
+        rt.memory
+            .sequence_stats
+            .triple_recent_post_ep_count
+            .insert(triple, 3);
+        rt.memory
+            .sequence_stats
+            .triple_recent_post_ep_delta_sum
+            .insert(triple, 0.03);
+        rt.maybe_demote_action_sequences();
+        assert!(
+            !rt.rset.has_action_sequence_triple(
+                "DiscoverTheory",
+                "DiscoverPatterns",
+                "Declarativize",
+            ),
+            "low recent mean → demotion sweep should retract triple"
+        );
+    }
+
+    #[test]
+    fn h1_3_triple_demote_skips_with_healthy_recent_mean() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.rset.name_action_sequence_triple(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+            "Declarativize",
+        );
+        let triple = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+            ActionKind::Declarativize,
+        );
+        rt.memory
+            .sequence_stats
+            .triple_recent_post_ep_count
+            .insert(triple, 5);
+        rt.memory
+            .sequence_stats
+            .triple_recent_post_ep_delta_sum
+            .insert(triple, 2.5);
+        rt.maybe_demote_action_sequences();
+        assert!(rt.rset.has_action_sequence_triple(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+            "Declarativize",
+        ));
+    }
+
+    #[test]
+    fn h1_3_triple_demote_skips_when_recent_count_below_floor() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.rset.name_action_sequence_triple(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+            "Declarativize",
+        );
+        let triple = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+            ActionKind::Declarativize,
+        );
+        // 2 < MIN_RECENT_COUNT_FOR_DEMOTE (3) → skip even with low mean.
+        rt.memory
+            .sequence_stats
+            .triple_recent_post_ep_count
+            .insert(triple, 2);
+        rt.memory
+            .sequence_stats
+            .triple_recent_post_ep_delta_sum
+            .insert(triple, 0.0);
+        rt.maybe_demote_action_sequences();
+        assert!(rt.rset.has_action_sequence_triple(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+            "Declarativize",
+        ));
+    }
+
+    #[test]
+    fn h1_3_reset_recent_window_clears_triple_counters() {
+        let mut ss = SequenceStats::default();
+        let triple = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+            ActionKind::Declarativize,
+        );
+        ss.triple_recent_post_ep_count.insert(triple, 4);
+        ss.triple_recent_post_ep_delta_sum.insert(triple, 0.4);
+        ss.reset_recent_window(100);
+        assert!(ss.triple_recent_post_ep_count.is_empty());
+        assert!(ss.triple_recent_post_ep_delta_sum.is_empty());
+        assert_eq!(ss.last_recent_reset_tick, 100);
     }
 
     #[test]

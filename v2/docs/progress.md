@@ -3827,3 +3827,42 @@ empirical report.
 
 Commits to follow.
 
+### Phase H1.x — triple demotion (ADR 0062 retro #2)
+
+The 2026-04-27 retrospective noted that H1.3 demoted pairs
+only — triple demotion was deferred as "same mechanism with
+the larger map". Followed up with the small slice.
+
+Changes (extending ADR 0062):
+
+- `SequenceStats` gains `triple_recent_post_ep_count` and
+  `triple_recent_post_ep_delta_sum` mirrors of the pair
+  recent-window fields.
+- `SequenceStats::triple_recent_mean_post_ep_delta` accessor.
+- `reset_recent_window` clears both pair and triple recent
+  counters on the same `H1_3_RECENT_WINDOW_TICKS` (50) tick
+  boundary.
+- `Memory::record` triple-credit loop now writes both
+  cumulative AND recent counters (mirrors what the pair
+  loop does for H1.3).
+- `maybe_demote_action_sequences` extended: after the pair
+  pass, iterate `rset.action_sequence_triples()` and apply
+  the same gate (recent count ≥ 3 AND recent mean < 0.02);
+  retract via `RSet::retract_action_sequence_triple`.
+
+No new constants; reuses `MIN_RECENT_COUNT_FOR_DEMOTE = 3`
+and `MIN_RECENT_MEAN_FOR_RETENTION = 0.02` from H1.3 —
+identical hysteresis curve for both pair and triple
+demotion (asymmetric vs. promotion's mean > 0.05 floor).
+
+Tests: 466 → 470 (+4):
+- `h1_3_triple_demote_retracts_named_triple_with_low_recent_mean`
+- `h1_3_triple_demote_skips_with_healthy_recent_mean`
+- `h1_3_triple_demote_skips_when_recent_count_below_floor`
+- `h1_3_reset_recent_window_clears_triple_counters`
+
+ADR 0062 status: H1.3 + H1.4 + triple-demotion follow-up
+implemented. The H1 suite is now strictly feature-complete
+across both promotion and demotion for both pair and triple
+sequences.
+
