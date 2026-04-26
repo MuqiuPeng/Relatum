@@ -3866,6 +3866,77 @@ implemented. The H1 suite is now strictly feature-complete
 across both promotion and demotion for both pair and triple
 sequences.
 
+### Phase H1.x — composite dispatch EP gap fix (ADR 0062 retro #3)
+
+The 2026-04-27 long-run flagged composite dispatch firing
+0 times across the whole 2000-tick window despite (EP, EP)
+being named. Diagnosed root cause:
+
+`EvaluatePredictions` is dispatched outside the frontier —
+the scheduler's special anti-stagnation path
+([mod.rs:583](../src/runtime/mod.rs)) fires EP when
+`zero_streak >= max_zero_streak` AND axioms exist AND
+predictions have pending delta. **No `FrontierKind` maps
+to `EvaluatePredictions`** via `execute_for_kind` — the 7
+existing FrontierKind variants cover the other 7
+ActionKinds, but EP is structurally non-frontier.
+
+Two consequences:
+
+1. `Frontier::refresh_composite_candidates` builds
+   `kinds_present` by mapping each frontier item's kind
+   through `execute_for_kind`. EP is never in that set,
+   so any pair containing EP fails the eligibility gate
+   (`kinds.iter().any(|k| !kinds_present.contains(k))`
+   always true). On stream-shaped substrates, EP-EP is
+   the dominant promoted pair; CompositeCandidate never
+   surfaces.
+2. Even if it did surface, the `ExecuteComposite` arm
+   collects step targets via
+   `find(|it| execute_for_kind_static(it.kind) == k)`,
+   which returns `None` for EP steps → step skipped →
+   composite is a no-op for any EP-containing pair.
+
+Fix (small, targeted):
+
+- `refresh_composite_candidates` inserts
+  `EvaluatePredictions` into `kinds_present` unconditionally
+  (universally dispatchable; the scheduler's own EP gating
+  controls when the synthetic step actually fires).
+- `ExecuteComposite` arm short-circuits the frontier-item
+  lookup when the step kind is EP and synthesizes
+  `FrontierTarget::WholeRSet` directly.
+
+Tests: 470 → 472 (+2):
+- `retro3_composite_candidate_surfaces_for_ep_pair`
+- `retro3_execute_composite_dispatches_ep_via_whole_rset`
+
+Empirical impact — long-run rerun
+([logs/2026-04-27_phase_h1_long_run_postfix.log](../logs/2026-04-27_phase_h1_long_run_postfix.log)):
+
+| metric | pre-fix | post-fix | Δ |
+|---|---|---|---|
+| episodes | 49 | 268 | +5.5× |
+| EP attempts | 23 | 129 | +5.6× |
+| composite attempts | 0 | 1 | first fire |
+| pairs currently named | 1 | 4 | +3 |
+| triples currently named | 1 | 8 | +7 |
+| pair demotions ever | 0 | 1 | first non-(EP,EP) demote |
+| triple demotions ever | 0 | 1 | first triple demote on real substrate |
+
+Notable: post-fix the runtime discovers diverse non-EP
+sequences — `(Declarativize, Declarativize, Declarativize)`,
+`(PruneLowValueObjects, EvaluatePredictions, PruneLowValueObjects)`,
+etc. These were inaccessible pre-fix because the runtime
+quiesced before stringing more than two action kinds
+together. The EP-frontier-eligibility gap was load-bearing —
+it was preventing the H1.x machinery from engaging at scale,
+not the substrate.
+
+This is the kind of finding the long-run was meant to
+surface. ADR 0062 status augmented with retrospective
+finding #3 implemented.
+
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
 
 The 2026-04-27 retrospective listed "H2 ADR drafting" as

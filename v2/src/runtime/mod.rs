@@ -1972,11 +1972,18 @@ impl Frontier {
         if pairs.is_empty() && triples.is_empty() {
             return;
         }
-        let kinds_present: HashSet<ActionKind> = self
+        // ADR 0062 retrospective #3 — EP is dispatched outside the
+        // frontier (zero-streak anti-stagnation path), so no
+        // FrontierKind maps to it. Treat it as always-present here
+        // to permit composite eligibility for EP-containing pairs;
+        // the scheduler's own EP gating still controls when the
+        // synthetic step actually fires.
+        let mut kinds_present: HashSet<ActionKind> = self
             .items
             .iter()
             .map(|it| RuleBasedScheduler::execute_for_kind(it.kind))
             .collect();
+        kinds_present.insert(ActionKind::EvaluatePredictions);
         let mut added = false;
         let mut try_add = |seq_id: &str,
                            kinds: Vec<ActionKind>,
@@ -2994,10 +3001,15 @@ impl AutonomousRuntime {
                 }
                 // Snapshot all targets by step kind upfront — frontier
                 // could change shape between sub-actions if rset
-                // mutates.
+                // mutates. ADR 0062 retrospective #3 — EP has no
+                // FrontierKind; synthesize a `WholeRSet` target so
+                // EP-containing composites can actually fire.
                 let targets: Vec<Option<FrontierTarget>> = kinds
                     .iter()
                     .map(|k| {
+                        if *k == ActionKind::EvaluatePredictions {
+                            return Some(FrontierTarget::WholeRSet);
+                        }
                         self.frontier
                             .items
                             .iter()
@@ -7465,6 +7477,84 @@ mod tests {
             "DiscoverPatterns",
             "Declarativize",
         ));
+    }
+
+    // ─── ADR 0062 retrospective #3 — EP composite eligibility ───
+
+    #[test]
+    fn retro3_composite_candidate_surfaces_for_ep_pair() {
+        // Long-run #2 finding: (EP, EP) named but composite never
+        // surfaces because no FrontierKind maps to EP, so the
+        // eligibility check fails. Fix treats EP as always-present.
+        let mut rs = RSet::new();
+        rs.name_action_sequence_pair(
+            "EvaluatePredictions",
+            "EvaluatePredictions",
+        );
+        let mut frontier = Frontier::default();
+        // Empty frontier — no frontier items at all. Pre-fix this
+        // would never surface CompositeCandidate; post-fix it should.
+        frontier.refresh_composite_candidates(&rs, 0);
+        let composite_count = frontier
+            .items
+            .iter()
+            .filter(|it| {
+                matches!(it.kind, FrontierKind::CompositeCandidate)
+            })
+            .count();
+        assert_eq!(
+            composite_count, 1,
+            "EP-only pair should surface as CompositeCandidate via \
+             the always-present treatment"
+        );
+    }
+
+    #[test]
+    fn retro3_execute_composite_dispatches_ep_via_whole_rset() {
+        // The ExecuteComposite arm must dispatch EP steps with a
+        // WholeRSet target even when no frontier item matches
+        // (which is always — EP has no FrontierKind).
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        // Force at least one axiom into rset so EP has work.
+        rt.rset.add(R::new("x", "y"));
+        // Quick discovery to register some axioms.
+        rt.run_bounded(20);
+        rt.rset.name_action_sequence_pair(
+            "EvaluatePredictions",
+            "EvaluatePredictions",
+        );
+        // Refresh to surface the composite.
+        rt.frontier.refresh(&rt.rset, rt.tick);
+        rt.frontier.refresh_composite_candidates(&rt.rset, rt.tick);
+        let composite_id = rt
+            .frontier
+            .items
+            .iter()
+            .find(|it| {
+                matches!(it.kind, FrontierKind::CompositeCandidate)
+            })
+            .map(|it| match &it.target {
+                FrontierTarget::ActionSequence(s) => s.clone(),
+                _ => String::new(),
+            });
+        assert!(
+            composite_id.is_some(),
+            "expected CompositeCandidate for EP-EP pair after fix"
+        );
+        // Dispatch the composite directly. Should not panic; should
+        // return Some(_) (delta sum from the two EP runs).
+        let plan = ActionPlan {
+            action_kind: ActionKind::ExecuteComposite,
+            target: FrontierTarget::ActionSequence(
+                composite_id.unwrap(),
+            ),
+        };
+        let delta = rt.execute_action(&plan);
+        assert!(
+            delta.is_some(),
+            "ExecuteComposite for EP-EP should return Some(_) — \
+             EP steps must dispatch even with no frontier item"
+        );
     }
 
     #[test]
