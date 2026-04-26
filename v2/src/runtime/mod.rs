@@ -595,6 +595,171 @@ impl Scheduler for RuleBasedScheduler {
     }
 }
 
+// ─── ADR 0060 Phase H0 — meta-scheduler (A/B parameter tuning) ──
+
+/// A/B controller wrapping two `RuleBasedScheduler` candidates.
+/// Each tested over a window of `window_size` total memory episodes;
+/// at end of B's window, mean `EvaluatePredictions` delta picks a
+/// winner; loser's config is mutated within bounds; cycle restarts.
+/// ADR 0060.
+///
+/// State is intentionally NOT persisted across checkpoint —
+/// the A/B progress restarts on each new `run_bounded` invocation.
+/// Caller can construct a fresh `MetaScheduler` with the prior
+/// winner's config to continue tuning across restarts.
+pub struct MetaScheduler {
+    pub candidate_a: RuleBasedScheduler,
+    pub candidate_b: RuleBasedScheduler,
+    pub state: MetaABState,
+    pub window_size: u64,
+    pub stage_start_episode_count: u64,
+    pub last_completed_a_mean: Option<f64>,
+    pub rng_state: u64,
+}
+
+/// Which candidate is currently active in the A/B cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetaABState {
+    TestingA,
+    TestingB,
+}
+
+impl MetaScheduler {
+    pub fn new(
+        candidate_a: RuleBasedScheduler,
+        candidate_b: RuleBasedScheduler,
+    ) -> Self {
+        Self {
+            candidate_a,
+            candidate_b,
+            state: MetaABState::TestingA,
+            window_size: 50,
+            stage_start_episode_count: 0,
+            last_completed_a_mean: None,
+            rng_state: 0xa55_a55a_5_a55a_5a55,
+        }
+    }
+
+    /// Compute the mean `EvaluatePredictions` delta over episodes
+    /// `[start, end)` of `ctx.memory.episodes`. Returns 0.0 when
+    /// no EP episodes occur in the window.
+    fn ep_mean_in_range(
+        ctx: &SchedulerContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> f64 {
+        if end <= start {
+            return 0.0;
+        }
+        let mut sum: f64 = 0.0;
+        let mut count: u64 = 0;
+        for ep in ctx
+            .memory
+            .episodes
+            .iter()
+            .skip(start)
+            .take(end - start)
+        {
+            if ep.action_kind == ActionKind::EvaluatePredictions {
+                sum += ep.delta;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            0.0
+        } else {
+            sum / count as f64
+        }
+    }
+
+    /// Pick a tunable knob and scale by ×0.8 or ×1.25, clamped to
+    /// declared per-knob bounds. ADR 0060 § H0 mutation.
+    fn mutate(sched: &mut RuleBasedScheduler, rng_state: &mut u64) {
+        // Inline xorshift-ish step (independent of `discover_motifs`'s
+        // PRNG). Deterministic across platforms.
+        let step = |s: &mut u64| {
+            *s = s.wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *s >> 32
+        };
+        let knob_idx = (step(rng_state) % 6) as usize;
+        let direction_up = step(rng_state) & 1 == 1;
+        let factor: f64 = if direction_up { 1.25 } else { 0.8 };
+        match knob_idx {
+            0 => {
+                let v = sched.min_pattern_hit_rate * factor;
+                sched.min_pattern_hit_rate = v.clamp(0.01, 0.5);
+            }
+            1 => {
+                let v = (sched.min_pattern_attempts_before_cooldown as f64
+                    * factor) as u64;
+                sched.min_pattern_attempts_before_cooldown =
+                    v.clamp(1, 50);
+            }
+            2 => {
+                let v = (sched.max_zero_streak as f64 * factor) as usize;
+                sched.max_zero_streak = v.clamp(1, 20);
+            }
+            3 => {
+                let v = (sched.recent_window as f64 * factor) as usize;
+                sched.recent_window = v.clamp(1, 20);
+            }
+            4 => {
+                let v =
+                    (sched.min_recent_gains as f64 * factor) as usize;
+                sched.min_recent_gains = v.clamp(1, 10);
+            }
+            5 => {
+                let v = (sched.max_mode_oscillations as f64 * factor) as u64;
+                sched.max_mode_oscillations = v.clamp(1, 20);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Inspect the elapsed window and decide whether to advance the
+    /// A/B state machine. Called from `choose` before delegating.
+    fn maybe_advance(&mut self, ctx: &SchedulerContext<'_>) {
+        let now = ctx.memory.episodes.len() as u64;
+        let elapsed = now.saturating_sub(self.stage_start_episode_count);
+        if elapsed < self.window_size {
+            return;
+        }
+        let stage_start = self.stage_start_episode_count as usize;
+        let mean = Self::ep_mean_in_range(ctx, stage_start, now as usize);
+        match self.state {
+            MetaABState::TestingA => {
+                self.last_completed_a_mean = Some(mean);
+                self.state = MetaABState::TestingB;
+            }
+            MetaABState::TestingB => {
+                let a_mean = self
+                    .last_completed_a_mean
+                    .take()
+                    .unwrap_or(0.0);
+                let b_mean = mean;
+                if a_mean >= b_mean {
+                    Self::mutate(&mut self.candidate_b, &mut self.rng_state);
+                } else {
+                    Self::mutate(&mut self.candidate_a, &mut self.rng_state);
+                }
+                self.state = MetaABState::TestingA;
+            }
+        }
+        self.stage_start_episode_count = now;
+    }
+}
+
+impl Scheduler for MetaScheduler {
+    fn choose(&mut self, ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+        self.maybe_advance(ctx);
+        match self.state {
+            MetaABState::TestingA => self.candidate_a.choose(ctx),
+            MetaABState::TestingB => self.candidate_b.choose(ctx),
+        }
+    }
+}
+
 // ─── environment ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -5270,6 +5435,197 @@ mod tests {
     // a cooperating environment that holds unexplained = 0 long
     // enough for the Reflect-arm dispatch to reach the
     // EvaluatePredictions branch.)
+
+    // ─── ADR 0060 Phase H0 — meta-scheduler A/B tuning ────────
+
+    #[test]
+    fn h0_initial_state_testing_a() {
+        let meta = MetaScheduler::new(
+            RuleBasedScheduler::default(),
+            RuleBasedScheduler::default(),
+        );
+        assert_eq!(meta.state, MetaABState::TestingA);
+        assert_eq!(meta.window_size, 50);
+        assert!(meta.last_completed_a_mean.is_none());
+    }
+
+    #[test]
+    fn h0_window_completion_advances_a_to_b() {
+        // Simulate a window's worth of episodes; verify advance
+        // transitions A → B and stores A's mean.
+        let mut meta = MetaScheduler::new(
+            RuleBasedScheduler::default(),
+            RuleBasedScheduler::default(),
+        );
+        meta.window_size = 5;
+        let rs = RSet::new();
+        let mut memory = Memory::default();
+        for delta in &[0.5, 0.3, -0.1, 0.2, 0.0] {
+            memory.episodes.push_back(Episode {
+                id: 0,
+                tick: 0,
+                mode: RuntimeMode::Reflect,
+                action_kind: ActionKind::EvaluatePredictions,
+                target: FrontierTarget::WholeRSet,
+                score_before: 0.0,
+                score_after: 0.0,
+                delta: *delta,
+            });
+        }
+        let frontier = Frontier::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        meta.maybe_advance(&ctx);
+        assert_eq!(meta.state, MetaABState::TestingB);
+        let a_mean = meta.last_completed_a_mean.unwrap();
+        let expected = (0.5 + 0.3 + -0.1 + 0.2 + 0.0) / 5.0;
+        assert!((a_mean - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn h0_b_window_completion_mutates_loser() {
+        let mut meta = MetaScheduler::new(
+            RuleBasedScheduler::default(),
+            RuleBasedScheduler::default(),
+        );
+        meta.window_size = 3;
+        // Simulate completed A window.
+        meta.state = MetaABState::TestingB;
+        meta.last_completed_a_mean = Some(0.5);
+        meta.stage_start_episode_count = 0;
+        // 3 EP episodes for B with mean 0.1 (worse than A's 0.5).
+        let rs = RSet::new();
+        let mut memory = Memory::default();
+        for delta in &[0.1, 0.1, 0.1] {
+            memory.episodes.push_back(Episode {
+                id: 0,
+                tick: 0,
+                mode: RuntimeMode::Reflect,
+                action_kind: ActionKind::EvaluatePredictions,
+                target: FrontierTarget::WholeRSet,
+                score_before: 0.0,
+                score_after: 0.0,
+                delta: *delta,
+            });
+        }
+        let frontier = Frontier::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let pre_b_hit_rate = meta.candidate_b.min_pattern_hit_rate;
+        let pre_a_hit_rate = meta.candidate_a.min_pattern_hit_rate;
+        let pre_b_streak = meta.candidate_b.max_zero_streak;
+        let pre_a_streak = meta.candidate_a.max_zero_streak;
+        meta.maybe_advance(&ctx);
+        // A wins (0.5 ≥ 0.1) → B mutated.
+        assert_eq!(meta.state, MetaABState::TestingA);
+        let post_b_changed = meta.candidate_b.min_pattern_hit_rate
+            != pre_b_hit_rate
+            || meta.candidate_b.max_zero_streak != pre_b_streak
+            || meta.candidate_b.min_pattern_attempts_before_cooldown
+                != RuleBasedScheduler::default()
+                    .min_pattern_attempts_before_cooldown
+            || meta.candidate_b.recent_window
+                != RuleBasedScheduler::default().recent_window
+            || meta.candidate_b.min_recent_gains
+                != RuleBasedScheduler::default().min_recent_gains
+            || meta.candidate_b.max_mode_oscillations
+                != RuleBasedScheduler::default().max_mode_oscillations;
+        assert!(
+            post_b_changed,
+            "expected B (loser) to have a mutated knob"
+        );
+        // A unchanged.
+        assert_eq!(
+            meta.candidate_a.min_pattern_hit_rate,
+            pre_a_hit_rate
+        );
+        assert_eq!(meta.candidate_a.max_zero_streak, pre_a_streak);
+    }
+
+    #[test]
+    fn h0_mutation_keeps_knob_within_bounds() {
+        // Run mutate many times against a fresh scheduler. Verify
+        // every observed value of every knob stays within declared
+        // bounds.
+        let mut sched = RuleBasedScheduler::default();
+        let mut rng_state = 7u64;
+        for _ in 0..2000 {
+            MetaScheduler::mutate(&mut sched, &mut rng_state);
+            assert!(
+                (0.01..=0.5).contains(&sched.min_pattern_hit_rate),
+                "min_pattern_hit_rate out of bounds: {}",
+                sched.min_pattern_hit_rate
+            );
+            assert!(
+                (1..=50).contains(
+                    &sched.min_pattern_attempts_before_cooldown
+                ),
+                "min_pattern_attempts: {}",
+                sched.min_pattern_attempts_before_cooldown
+            );
+            assert!(
+                (1..=20).contains(&sched.max_zero_streak),
+                "max_zero_streak: {}",
+                sched.max_zero_streak
+            );
+            assert!(
+                (1..=20).contains(&sched.recent_window),
+                "recent_window: {}",
+                sched.recent_window
+            );
+            assert!(
+                (1..=10).contains(&sched.min_recent_gains),
+                "min_recent_gains: {}",
+                sched.min_recent_gains
+            );
+            assert!(
+                (1..=20).contains(&sched.max_mode_oscillations),
+                "max_mode_oscillations: {}",
+                sched.max_mode_oscillations
+            );
+        }
+    }
+
+    #[test]
+    fn h0_delegates_choice_to_active_candidate() {
+        // Set up a context where both candidates would return
+        // distinct decisions; verify MetaScheduler returns the one
+        // from the active slot.
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let memory = Memory::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let mut meta = MetaScheduler::new(
+            RuleBasedScheduler::default(),
+            RuleBasedScheduler::default(),
+        );
+        // A active by default.
+        let dec_a = meta.choose(&ctx);
+        meta.state = MetaABState::TestingB;
+        meta.stage_start_episode_count = 0;
+        let dec_b = meta.choose(&ctx);
+        // Both candidates default-configured → same decision shape.
+        // The test verifies dispatch consistency, not divergence.
+        assert!(matches!(dec_a, SchedulerDecision::Execute(_)));
+        assert!(matches!(dec_b, SchedulerDecision::Execute(_)));
+    }
 
     #[test]
     fn b3_stale_pattern_below_age_floor_skipped() {

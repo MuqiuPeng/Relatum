@@ -1,6 +1,6 @@
 # 0060: Meta-mechanism — runtime self-tuning via prediction error (Phase H)
 
-Status: Proposed
+Status: Accepted (Phase H0 implemented; H1 / H2 sketched)
 Date: 2026-04-26
 
 ## Context

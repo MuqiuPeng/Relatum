@@ -3202,3 +3202,46 @@ multi-objective, regression reset, checkpoint compat).
 Status: **Proposed**. No code yet.
 
 Tests: unchanged (427).
+
+### Phase H0 — meta-scheduler A/B implementation (impl)
+ADR 0060 H0 lands. New `MetaScheduler` struct implements the
+`Scheduler` trait, owning two `RuleBasedScheduler` candidates
+plus A/B state machine:
+
+```text
+state: TestingA → TestingB → (compare means → mutate loser) → TestingA → …
+```
+
+Per-stage stats are computed lazily by scanning
+`ctx.memory.episodes[stage_start..]` for
+`EvaluatePredictions` action_kind and averaging deltas — no
+side-channel state on Memory needed. Mutation picks one of six
+tunable knobs (`min_pattern_hit_rate`,
+`min_pattern_attempts_before_cooldown`, `max_zero_streak`,
+`recent_window`, `min_recent_gains`, `max_mode_oscillations`)
+and scales by ×0.8 or ×1.25, clamped to per-knob bounds.
+
+Window size 50 episodes, mutation step 0.8/1.25, deterministic
+PRNG seeded at construction. Single A/B pair (no tournament).
+State NOT persisted across checkpoint — by design; A/B progress
+restarts on each `run_bounded` invocation. (Caller can manually
+reconstruct with the prior winner's config to continue.)
+
+Tests (5 new H0):
+- Initial state is `TestingA` with empty A-mean snapshot.
+- Window completion (5 EP episodes) advances A → B and stores
+  A's mean correctly (within 1e-12 of arithmetic mean).
+- B-window completion with worse mean (0.1 < A's 0.5) mutates
+  B and leaves A untouched, returning to TestingA.
+- 2000-iteration mutation fuzz: every knob stays within
+  declared bounds.
+- Delegation test: `MetaScheduler::choose` returns
+  `Execute(_)` shape from the active candidate's logic.
+
+Tests: 427 → 432 (+5).
+
+ADR 0060 status: Proposed → Accepted (Phase H0 implemented).
+The runtime can now A/B-test scheduler configurations under
+the prediction-error drive — first move toward genuine
+self-extension. H1 (composite ActionKind discovery) and H2
+(self-modifying drive) sketched and deferred.
