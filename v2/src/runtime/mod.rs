@@ -2446,6 +2446,14 @@ pub struct AutonomousRuntime {
     /// govern wake/mode/sleep behaviour. Step 3 wires this into
     /// the gates.
     pub drive_mix: DriveMix,
+
+    /// Registered drives consulted by `combined_drive_signal`.
+    /// ADR 0063 / Phase H2.0 step 3a — observability layer that
+    /// uses `drive_mix.active_weights()` to blend per-drive
+    /// scalars. Still shadow: nothing yet gates on this.
+    /// `Box<dyn Drive>` keeps the registry pluggable across
+    /// step-3b's wake-gate refactor and any future H2.1 work.
+    pub drives: Vec<Box<dyn Drive>>,
 }
 
 impl AutonomousRuntime {
@@ -2469,7 +2477,36 @@ impl AutonomousRuntime {
             current_score,
             last_checkpoint: None,
             drive_mix: DriveMix::default(),
+            drives: vec![
+                Box::new(CompressionDrive),
+                Box::new(PredictionErrorDrive),
+                Box::new(ModeThrashPenalty),
+            ],
         }
+    }
+
+    /// Compute the blended drive signal — `Σ_id (active_weights[id]
+    /// * drive.evaluate(rset, memory, tick))`. ADR 0063 / Phase
+    /// H2.0 step 3a. Negative drives (penalties) are honoured by
+    /// allowing negative `evaluate()` returns; the convention
+    /// from H2.0 step 1 is non-negative for the 3 baseline drives,
+    /// so the blend is non-negative under that catalogue.
+    ///
+    /// Step 3a is observability-only: nothing gates on this value
+    /// yet. Step 3b will replace the zero-streak anti-stagnation
+    /// gate with `combined_drive_signal < threshold`.
+    pub fn combined_drive_signal(&self) -> f64 {
+        let weights = self.drive_mix.active_weights();
+        let mut total: f64 = 0.0;
+        for drive in &self.drives {
+            let w = weights.get(drive.id()).copied().unwrap_or(0.0);
+            if w == 0.0 {
+                continue;
+            }
+            let signal = drive.evaluate(&self.rset, &self.memory, self.tick);
+            total += w * signal;
+        }
+        total
     }
 
     /// Record a lifecycle transition and update `self.lifecycle`.
@@ -4112,6 +4149,11 @@ impl AutonomousRuntime {
             current_score,
             last_checkpoint: None,
             drive_mix,
+            drives: vec![
+                Box::new(CompressionDrive),
+                Box::new(PredictionErrorDrive),
+                Box::new(ModeThrashPenalty),
+            ],
         })
     }
 }
@@ -8211,6 +8253,112 @@ mod tests {
         let restored =
             AutonomousRuntime::from_checkpoint_text(&text).expect("parse");
         assert_eq!(restored.drive_mix.last_completed_a_mean, None);
+    }
+
+    // ─── ADR 0063 / Phase H2.0 step 3a — combined signal tests ──
+
+    #[test]
+    fn h2_0_step3a_combined_signal_is_zero_with_empty_runtime() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        // Empty memory → all 3 drives return 0; signal = 0.
+        assert_eq!(rt.combined_drive_signal(), 0.0);
+    }
+
+    #[test]
+    fn h2_0_step3a_combined_signal_blends_active_weights() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        // With baseline weights (0.5/0.4/0.1) and zero raw signals,
+        // the blend is 0. Plant non-zero returns by hand by adding
+        // mode transitions (raises mode_thrash) and recording an
+        // episode (raises compression).
+        let mut rt = rt;
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverTheory,
+            0.6,
+        ));
+        rt.memory.record_mode_transition(ModeTransition {
+            tick: 0,
+            from: RuntimeMode::Expand,
+            to: RuntimeMode::Consolidate,
+            reason: "test".to_string(),
+        });
+        // Expected:
+        //   compression evaluate = 0.6 / 1 (sum positive / count)
+        //   prediction_error evaluate = 0 (no axioms)
+        //   mode_thrash evaluate = 1 (1 transition in K=20 window)
+        // Active = TestingA (baseline): wC=0.5, wPE=0.4, wMT=0.1.
+        //   combined = 0.5*0.6 + 0.4*0 + 0.1*1 = 0.3 + 0.0 + 0.1 = 0.4
+        let signal = rt.combined_drive_signal();
+        assert!(
+            (signal - 0.4).abs() < 1e-9,
+            "expected 0.4, got {}",
+            signal
+        );
+    }
+
+    #[test]
+    fn h2_0_step3a_combined_signal_responds_to_weight_swap() {
+        // After a window swap, combined_drive_signal should read
+        // from candidate_b's weights instead of A's.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.drive_mix.candidate_b.insert(
+            "compression".to_string(),
+            1.0, // full weight on compression for B
+        );
+        rt.drive_mix.candidate_b.insert(
+            "prediction_error".to_string(),
+            0.0,
+        );
+        rt.drive_mix.candidate_b.insert(
+            "mode_thrash".to_string(),
+            0.0,
+        );
+        rt.drive_mix.state = DriveABState::TestingB;
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverTheory,
+            0.8,
+        ));
+        // active_weights now = candidate_b → wC=1.0; signal = 0.8.
+        let signal = rt.combined_drive_signal();
+        assert!(
+            (signal - 0.8).abs() < 1e-9,
+            "expected 0.8 with B candidate, got {}",
+            signal
+        );
+    }
+
+    #[test]
+    fn h2_0_step3a_drive_registry_has_three_baseline_drives() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        assert_eq!(rt.drives.len(), 3);
+        let ids: Vec<&'static str> =
+            rt.drives.iter().map(|d| d.id()).collect();
+        assert!(ids.contains(&"compression"));
+        assert!(ids.contains(&"prediction_error"));
+        assert!(ids.contains(&"mode_thrash"));
+    }
+
+    #[test]
+    fn h2_0_step3a_combined_signal_not_yet_load_bearing() {
+        // Step 3a invariant: introducing combined_drive_signal
+        // must not perturb runtime behaviour. Smoke test that two
+        // identical runs (one consulting combined_drive_signal,
+        // one not) produce identical episode counts. The "consult"
+        // call has no observable side effect.
+        let mut rt_a = AutonomousRuntime::new(diamond_poset());
+        let mut rt_b = AutonomousRuntime::new(diamond_poset());
+        rt_a.run_bounded(30);
+        rt_b.run_bounded(30);
+        // Reading combined_drive_signal post hoc on rt_a should
+        // not affect future ticks.
+        let _ = rt_a.combined_drive_signal();
+        rt_a.run_bounded(20);
+        rt_b.run_bounded(20);
+        assert_eq!(
+            rt_a.memory.episodes.len(),
+            rt_b.memory.episodes.len(),
+            "combined_drive_signal must not affect runtime behaviour"
+        );
     }
 
     #[test]

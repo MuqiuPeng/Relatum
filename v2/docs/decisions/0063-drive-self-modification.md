@@ -1,6 +1,6 @@
 # 0063: Drive self-modification (Phase H2)
 
-Status: Accepted (Phase H2.0 step 1 + step 2 implemented; wake-gate integration deferred to step 3)
+Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a implemented; wake-gate integration deferred to step 3b)
 Date: 2026-04-27
 
 ## Context

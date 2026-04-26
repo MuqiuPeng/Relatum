@@ -4198,6 +4198,73 @@ the load-bearing integration; it gates on whatever step 2
 empirics show about mutation responsiveness on real
 substrates.
 
+### Phase H2.0 step 3a — combined_drive_signal observability
+
+ADR 0063 step 3 was carrying the highest-risk label: the
+load-bearing wake-gate refactor. Splitting into step 3a
+(signal availability, no behavioural change) and step 3b
+(actual gate replacement) keeps the original step-2 shadow
+property intact while still making concrete progress.
+
+#### Step 3a changes
+
+`AutonomousRuntime` gains:
+
+- `pub drives: Vec<Box<dyn Drive>>` — registry of live drive
+  impls. Initialized in both `new` and `from_checkpoint_text`
+  with the 3 baseline impls (`CompressionDrive`,
+  `PredictionErrorDrive`, `ModeThrashPenalty`).
+- `pub fn combined_drive_signal(&self) -> f64` — computes
+  `Σ_id (active_weights[id] * drive.evaluate(rset, memory, tick))`.
+  Skips drives with weight 0 to avoid pointless evaluation.
+
+#### What step 3a does NOT do
+
+- Does NOT change wake/mode/sleep behaviour.
+- Does NOT call `combined_drive_signal` from any gate.
+- Does NOT serialize the drive registry (it's compile-time —
+  always reconstructed from the 3 baseline impls).
+
+The `h2_0_step3a_combined_signal_not_yet_load_bearing` test
+asserts the shadow property: two identical runs (one
+consulting `combined_drive_signal` post-hoc, one not)
+produce identical episode counts.
+
+#### Tests: 487 → 492 (+5)
+
+- `h2_0_step3a_combined_signal_is_zero_with_empty_runtime`
+- `h2_0_step3a_combined_signal_blends_active_weights`
+- `h2_0_step3a_combined_signal_responds_to_weight_swap`
+- `h2_0_step3a_drive_registry_has_three_baseline_drives`
+- `h2_0_step3a_combined_signal_not_yet_load_bearing`
+
+The `blends_active_weights` test is the load-bearing
+verification: with hand-planted episodes / mode transitions
+and baseline weights (0.5/0.4/0.1), the test computes the
+expected blend (0.5*0.6 + 0.4*0 + 0.1*1 = 0.4) and asserts
+the API returns it within 1e-9.
+
+#### Long-run extension
+
+`phase_h1_long_run.rs` now logs `combined_drive_signal` per
+snapshot ("sig" column). Captured to a fresh log
+(see commits below).
+
+#### What step 3a unlocks
+
+- The combined-signal value is now observable across
+  long-run windows. OQ #1 (hand-tuned vs equal-weighted
+  init) becomes answerable: re-init the DriveMix with
+  different starting weights, observe how the combined
+  signal trajectory differs.
+- The wake-gate refactor (step 3b) becomes a focused
+  surface: replace `zero_streak >= max_zero_streak` with
+  `combined_drive_signal < threshold`, calibrate the
+  threshold against the post-fix long-run baseline.
+
+ADR 0063 status: step 1 + step 2 + step 3a implemented;
+step 3b deferred pending OQ #1 empirics + user signal.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

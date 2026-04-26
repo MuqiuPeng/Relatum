@@ -47,6 +47,8 @@ struct Snapshot {
     drive_w_compression: f64,
     drive_w_prediction_error: f64,
     drive_w_mode_thrash: f64,
+    /// ADR 0063 / H2.0 step 3a — blended drive signal at this tick.
+    drive_combined_signal: f64,
 }
 
 fn snapshot(rt: &AutonomousRuntime) -> Snapshot {
@@ -115,6 +117,7 @@ fn snapshot(rt: &AutonomousRuntime) -> Snapshot {
             .get("mode_thrash")
             .copied()
             .unwrap_or(0.0),
+        drive_combined_signal: rt.combined_drive_signal(),
     }
 }
 
@@ -131,7 +134,7 @@ fn diff_strs<T: std::fmt::Debug>(items: &[T]) -> String {
 
 fn print_snapshot_row(s: &Snapshot) {
     println!(
-        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {:>3} {:>5.2} {:>5.2} {:>5.2} {}",
+        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {:>3} {:>5.2} {:>5.2} {:>5.2} {:>6.3} {}",
         s.tick,
         s.patterns,
         s.theories,
@@ -148,6 +151,7 @@ fn print_snapshot_row(s: &Snapshot) {
         s.drive_w_compression,
         s.drive_w_prediction_error,
         s.drive_w_mode_thrash,
+        s.drive_combined_signal,
         s.lifecycle,
     );
 }
@@ -315,7 +319,7 @@ fn main() {
     let mut rt = build_runtime();
     let initial = snapshot(&rt);
     println!(
-        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {:>3} {:>5} {:>5} {:>5} {}",
+        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {:>3} {:>5} {:>5} {:>5} {:>6} {}",
         "tick",
         "pat",
         "thy",
@@ -332,6 +336,7 @@ fn main() {
         "wC",
         "wPE",
         "wMT",
+        "sig",
         "lifecycle",
     );
     print_snapshot_row(&initial);
