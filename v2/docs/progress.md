@@ -3354,3 +3354,79 @@ ADR 0061 status: Proposed → Accepted (Phase H1.0 implemented).
 The signal is now live; H1.1 (promotion to meta-R + scheduler
 priority bias) and H1.2 (composite ActionKind dispatch) wait
 for empirical evidence from F0-battery sequence dumps.
+
+### Phase H1.0 — F0 sequence-stats diagnostic
+New `examples/phase_h1_sequence_dump.rs` runs all 7 F0 seeds
+(HORIZON=300), dumps per-seed `SequenceStats`, previews H1.1
+promotion gate at strict (count≥10 mean>0.1) and relaxed
+(count≥5 mean>0.05) thresholds.
+
+Captured to `logs/2026-04-26_phase_h1_sequence_dump.log`.
+Empirical findings:
+- Strict thresholds: **0 promotable pairs** across all 7 seeds.
+- Relaxed thresholds: **1 pair** on stream_diamond:
+  `(Declarativize, Declarativize)` count=5 mean=2.46 — twice
+  declarativizing in quick succession correlates with EP-delta
+  improvement.
+- Static-substrate seeds don't accumulate enough samples for
+  any threshold.
+
+Implication: H1.1 should use relaxed thresholds at minimum;
+firing primarily on streaming substrates is expected.
+
+### Phase H1.1 — promotion + scheduler bias (impl)
+ADR 0061 H1.1 lands. Three pieces:
+
+**1. Meta-R chain for action sequences.** New
+`ACTION_SEQ_MARKER` constant in `lib.rs`. RSet gains
+`action_sequence_pairs() / has_action_sequence_pair /
+name_action_sequence_pair` methods. Each named pair is a
+5-edge chain:
+```
+R(ACTION_SEQ_MARKER, seq_N)
+R(seq_N, seq_N_step_0)
+R(seq_N, seq_N_step_1)
+R(seq_N_step_0, "<ActionKind A name>")
+R(seq_N_step_1, "<ActionKind B name>")
+```
+`collect_meta_ids` tracks all seq + step ids under the
+marker for meta-R hygiene.
+
+**2. Auto-promotion sweep.** `execute_and_record` calls
+`maybe_promote_action_sequences` after each episode. Iterates
+`Memory::sequence_stats.pair_counts`; for any pair with
+`count >= 5` AND `mean_post_ep_delta > 0.05`, idempotently
+writes the meta-R chain. Thresholds tuned to the H1.0 dump's
+empirical reality.
+
+**3. Scheduler priority bias.** New `pick_top_biased(ctx,
+accept, bonus_kinds)` returns the highest-priority item
+where items whose action_kind ∈ bonus_kinds get +1.0 added.
+Used in Expand mode dispatch. `h1_1_bonus_kinds(ctx)` reads
+named pairs from rset, builds the suffix set whose prefix
+matches the last episode's action_kind.
+
+Empty bonus set → falls back to `pick_top` (no extra cost).
+
+Tests (6 new H1.1):
+- Idempotent name_action_sequence_pair.
+- action_sequence_pairs returns all named pairs.
+- Auto-promote fires at threshold (5 occurrences mean 0.5).
+- Auto-promote skips below threshold (3 < 5 floor).
+- bonus_kinds empty without prev; correct suffix set with
+  matching prev.
+- pick_top_biased correctly applies +1.0 bonus
+  (Theory@5.0 vs Pattern@4.5+bonus=5.5 → Pattern wins).
+
+Tests: 438 → 444 (+6).
+
+ADR 0061 status: H1.0 implemented → H1.0 + H1.1 implemented.
+
+**This is the first time the runtime encodes learned
+operational knowledge as first-class meta-R facts.** The
+promoted action-sequence pair sits in rset under
+ACTION_SEQ_MARKER, exactly the same form as a named pattern
+or theory. Scheduler reads it back at choose-time and biases
+decisions accordingly — closing a loop: runtime activity →
+episode log → sequence stats → auto-promotion to meta-R →
+scheduler bias → runtime activity.

@@ -161,6 +161,26 @@ pub const ESTABLISHED_MARKER: &str = "__established__";
 /// as a structural fact independent of runtime experience.
 pub const SHARED_AXIOM_MARKER: &str = "__shared_axiom__";
 
+/// Reserved registry marker for promoted action-pair sequences
+/// discovered by the runtime via H1.0 sequence-stats correlation.
+/// ADR 0061 / Phase H1.1. Auto-promoted from `Memory::sequence_stats`
+/// when a pair (A, B) crosses (count >= floor) AND
+/// (mean post-EP-delta > floor). Stored as a chain:
+///
+/// ```text
+/// R(ACTION_SEQ_MARKER, seq_N)
+/// R(seq_N, seq_N_step_0)
+/// R(seq_N, seq_N_step_1)
+/// R(seq_N_step_0, "<ActionKind name A>")
+/// R(seq_N_step_1, "<ActionKind name B>")
+/// ```
+///
+/// The scheduler reads these chains at choose-time to bias frontier
+/// item priority when the previous episode's action_kind matches a
+/// stored prefix. This is the moment v2's runtime starts encoding
+/// learned operational knowledge as first-class meta-R facts.
+pub const ACTION_SEQ_MARKER: &str = "__action_seq__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -2162,6 +2182,80 @@ impl RSet {
         Ok(removed)
     }
 
+    // ─── ADR 0061 H1.1 — action-sequence promotion ──────────
+
+    /// All named action-sequence pairs as `(seq_id, prefix_name,
+    /// suffix_name)` triples. ADR 0061 / Phase H1.1. ActionKind
+    /// names are the strings produced by the runtime's
+    /// `action_kind_to_str` codec.
+    pub fn action_sequence_pairs(&self) -> Vec<(String, String, String)> {
+        let mut out: Vec<(String, String, String)> = Vec::new();
+        let seq_edges = self.left_of(ACTION_SEQ_MARKER);
+        for seq_edge in seq_edges {
+            let seq_id = seq_edge.y.to_string();
+            // Step ids look like seq_N_step_0 / seq_N_step_1.
+            let step_0_id = format!("{}_step_0", seq_id);
+            let step_1_id = format!("{}_step_1", seq_id);
+            let prefix = self.left_of(&step_0_id).first().map(
+                |r| r.y.to_string(),
+            );
+            let suffix = self.left_of(&step_1_id).first().map(
+                |r| r.y.to_string(),
+            );
+            if let (Some(p), Some(s)) = (prefix, suffix) {
+                out.push((seq_id, p, s));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// True iff the (prefix, suffix) action-pair has already been
+    /// promoted to a named meta-R sequence. ADR 0061 / Phase H1.1.
+    pub fn has_action_sequence_pair(
+        &self,
+        prefix: &str,
+        suffix: &str,
+    ) -> bool {
+        self.action_sequence_pairs()
+            .iter()
+            .any(|(_, p, s)| p == prefix && s == suffix)
+    }
+
+    /// Mint a new action-sequence id and write its meta-R chain.
+    /// Idempotent: returns the existing seq id if `(prefix, suffix)`
+    /// is already named. ADR 0061 / Phase H1.1.
+    pub fn name_action_sequence_pair(
+        &mut self,
+        prefix: &str,
+        suffix: &str,
+    ) -> String {
+        // Idempotent shortcut.
+        for (seq_id, p, s) in self.action_sequence_pairs() {
+            if p == prefix && s == suffix {
+                return seq_id;
+            }
+        }
+        // Mint a fresh seq id.
+        let mut n = self.left_of(ACTION_SEQ_MARKER).len();
+        let seq_id = loop {
+            let candidate = format!("seq_{}", n);
+            let existing: HashSet<&str> = self.identifiers();
+            if !existing.contains(candidate.as_str()) {
+                break candidate;
+            }
+            n += 1;
+        };
+        let step_0 = format!("{}_step_0", seq_id);
+        let step_1 = format!("{}_step_1", seq_id);
+        self.add(R::new(ACTION_SEQ_MARKER, seq_id.clone()));
+        self.add(R::new(seq_id.clone(), step_0.clone()));
+        self.add(R::new(seq_id.clone(), step_1.clone()));
+        self.add(R::new(step_0, prefix.to_string()));
+        self.add(R::new(step_1, suffix.to_string()));
+        seq_id
+    }
+
     fn verify_axiom_holds(&self, id: &str) -> Result<(), TheoryError> {
         if id == AX_REFLEXIVITY {
             let r = self.check_reflexivity();
@@ -3690,6 +3784,15 @@ impl RSet {
         }
         s.insert(ESTABLISHED_MARKER.to_string());
         s.insert(SHARED_AXIOM_MARKER.to_string());
+        s.insert(ACTION_SEQ_MARKER.to_string());
+        // Per-sequence step ids and registry edges sit under
+        // ACTION_SEQ_MARKER's left-of set.
+        for seq in self.left_of(ACTION_SEQ_MARKER) {
+            s.insert(seq.y.to_string());
+            for step_edge in self.left_of(seq.y.as_str()) {
+                s.insert(step_edge.y.to_string());
+            }
+        }
         for role in self.roles() {
             s.insert(role.to_string());
         }

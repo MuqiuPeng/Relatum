@@ -254,6 +254,68 @@ impl RuleBasedScheduler {
         ctx.frontier.items.iter().find(|it| accept(it))
     }
 
+    /// Like `pick_top` but applies a per-`ActionKind` priority
+    /// bonus to items whose `execute_for_kind(kind)` is in
+    /// `bonus_kinds`. Used by Expand mode to bias selection
+    /// toward action sequences promoted from
+    /// `Memory::sequence_stats` (ADR 0061 / Phase H1.1).
+    ///
+    /// When `bonus_kinds` is empty the result equals `pick_top`
+    /// (no resort cost). Otherwise items are scanned with a
+    /// priority + bonus comparator; the highest effective
+    /// priority among accepted items wins. Stable tie-break via
+    /// item id.
+    fn pick_top_biased<'a, F: Fn(&FrontierItem) -> bool>(
+        ctx: &'a SchedulerContext<'_>,
+        accept: F,
+        bonus_kinds: &HashSet<ActionKind>,
+    ) -> Option<&'a FrontierItem> {
+        if bonus_kinds.is_empty() {
+            return Self::pick_top(ctx, accept);
+        }
+        const BONUS: f64 = 1.0;
+        let bonus_for = |kind: FrontierKind| -> f64 {
+            if bonus_kinds.contains(&Self::execute_for_kind(kind)) {
+                BONUS
+            } else {
+                0.0
+            }
+        };
+        ctx.frontier
+            .items
+            .iter()
+            .filter(|it| accept(it))
+            .max_by(|a, b| {
+                let pa = a.priority + bonus_for(a.kind);
+                let pb = b.priority + bonus_for(b.kind);
+                pa.partial_cmp(&pb)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| b.id.cmp(&a.id))
+            })
+    }
+
+    /// Compute the set of suffix `ActionKind`s that should receive
+    /// the H1.1 priority bonus given the previous episode's
+    /// action_kind. Reads named action sequences from rset's meta-R
+    /// chain. Empty set when no episodes exist or no matching
+    /// sequence was promoted. ADR 0061 / Phase H1.1.
+    fn h1_1_bonus_kinds(ctx: &SchedulerContext<'_>) -> HashSet<ActionKind> {
+        let mut out: HashSet<ActionKind> = HashSet::new();
+        let prev_kind = match ctx.memory.episodes.back() {
+            Some(ep) => ep.action_kind,
+            None => return out,
+        };
+        let prev_name = action_kind_to_str(prev_kind);
+        for (_, prefix, suffix) in ctx.rset.action_sequence_pairs() {
+            if prefix == prev_name {
+                if let Ok(k) = parse_action_kind(&suffix) {
+                    out.insert(k);
+                }
+            }
+        }
+        out
+    }
+
     fn execute_for_kind(kind: FrontierKind) -> ActionKind {
         match kind {
             FrontierKind::TheoryCandidate => ActionKind::DiscoverTheory,
@@ -526,14 +588,18 @@ impl Scheduler for RuleBasedScheduler {
                 // TheoryCandidate. ADR 0052 / B1+.
                 let pattern_cool = self.pattern_cooldown_active(ctx);
                 let meta_meta_cool = self.meta_meta_cooldown_active(ctx);
-                if let Some(item) = Self::pick_top(ctx, |it| {
-                    match it.kind {
+                // ADR 0061 / Phase H1.1 — promoted-pair priority bias.
+                let bonus_kinds = Self::h1_1_bonus_kinds(ctx);
+                if let Some(item) = Self::pick_top_biased(
+                    ctx,
+                    |it| match it.kind {
                         FrontierKind::TheoryCandidate => true,
                         FrontierKind::PatternCandidate => !pattern_cool,
                         FrontierKind::MetaMetaCandidate => !meta_meta_cool,
                         _ => false,
-                    }
-                }) {
+                    },
+                    &bonus_kinds,
+                ) {
                     return SchedulerDecision::Execute(ActionPlan {
                         action_kind: Self::execute_for_kind(item.kind),
                         target: item.target.clone(),
@@ -2148,6 +2214,51 @@ impl AutonomousRuntime {
             self.steps_since_last_gain += 1;
         }
         self.current_score = after;
+
+        // ADR 0061 / Phase H1.1 — auto-promote action-pair sequences
+        // that cross the H1.1 promotion gate (count >= 5 AND mean
+        // post-EP-delta > 0.05). Idempotent: rset.name_action_sequence_pair
+        // returns the existing seq id if already named.
+        self.maybe_promote_action_sequences();
+    }
+
+    /// Auto-promotion sweep over `Memory::sequence_stats`. Writes a
+    /// meta-R chain for each pair that crosses the H1.1 thresholds.
+    /// ADR 0061 / Phase H1.1.
+    fn maybe_promote_action_sequences(&mut self) {
+        const MIN_COUNT: u64 = 5;
+        const MIN_MEAN_DELTA: f64 = 0.05;
+        let mut to_promote: Vec<(String, String)> = Vec::new();
+        for (pair, count) in
+            self.memory.sequence_stats.pair_counts.iter()
+        {
+            if *count < MIN_COUNT {
+                continue;
+            }
+            let mean = match self
+                .memory
+                .sequence_stats
+                .pair_mean_post_ep_delta(*pair)
+            {
+                Some(m) => m,
+                None => continue,
+            };
+            if mean <= MIN_MEAN_DELTA {
+                continue;
+            }
+            let prefix_name = action_kind_to_str(pair.0).to_string();
+            let suffix_name = action_kind_to_str(pair.1).to_string();
+            if !self.rset.has_action_sequence_pair(
+                &prefix_name,
+                &suffix_name,
+            ) {
+                to_promote.push((prefix_name, suffix_name));
+            }
+        }
+        for (prefix, suffix) in to_promote {
+            let _ =
+                self.rset.name_action_sequence_pair(&prefix, &suffix);
+        }
     }
 
     /// Dispatch a single action. Returns `Some(delta)` if the action
@@ -5975,6 +6086,201 @@ mod tests {
             .copied()
             .unwrap_or(0.0);
         assert!((restored_sum - 0.5).abs() < 1e-9);
+    }
+
+    // ─── ADR 0061 Phase H1.1 — promotion + scheduler bias ───
+
+    #[test]
+    fn h1_1_name_action_sequence_pair_idempotent() {
+        let mut rs = RSet::new();
+        let id1 = rs.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        let id2 = rs.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        assert_eq!(id1, id2);
+        assert_eq!(rs.action_sequence_pairs().len(), 1);
+    }
+
+    #[test]
+    fn h1_1_action_sequence_pairs_returns_named_pairs() {
+        let mut rs = RSet::new();
+        rs.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        rs.name_action_sequence_pair(
+            "Declarativize",
+            "Declarativize",
+        );
+        let pairs = rs.action_sequence_pairs();
+        assert_eq!(pairs.len(), 2);
+        assert!(pairs.iter().any(|(_, p, s)| {
+            p == "DiscoverTheory" && s == "DiscoverPatterns"
+        }));
+        assert!(pairs.iter().any(|(_, p, s)| {
+            p == "Declarativize" && s == "Declarativize"
+        }));
+    }
+
+    #[test]
+    fn h1_1_auto_promote_fires_at_threshold() {
+        // Build memory with 5 occurrences of (DiscoverTheory,
+        // DiscoverPatterns) pair, each followed by a positive EP
+        // → mean delta = 0.5 > 0.05. Threshold (count>=5,
+        // mean>0.05) triggers promotion.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        for _ in 0..5 {
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverPatterns,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::EvaluatePredictions,
+                0.5,
+            ));
+        }
+        rt.maybe_promote_action_sequences();
+        assert!(rt.rset.has_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        ));
+    }
+
+    #[test]
+    fn h1_1_auto_promote_skips_below_threshold() {
+        // Only 3 occurrences — under the count >= 5 floor.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        for _ in 0..3 {
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverPatterns,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::EvaluatePredictions,
+                0.5,
+            ));
+        }
+        rt.maybe_promote_action_sequences();
+        assert!(rt.rset.action_sequence_pairs().is_empty());
+    }
+
+    #[test]
+    fn h1_1_bonus_kinds_uses_prev_episode() {
+        // No episodes → no bonus.
+        let rs = RSet::new();
+        let frontier = Frontier::default();
+        let memory = Memory::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        assert!(RuleBasedScheduler::h1_1_bonus_kinds(&ctx).is_empty());
+
+        // With a prev episode AND a named pair (prev → suffix),
+        // suffix should be in the bonus set.
+        let mut rs2 = RSet::new();
+        rs2.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        let mut memory2 = Memory::default();
+        memory2.episodes.push_back(make_episode(
+            ActionKind::DiscoverTheory,
+            0.5,
+        ));
+        let ctx2 = SchedulerContext {
+            rset: &rs2,
+            memory: &memory2,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let bonus = RuleBasedScheduler::h1_1_bonus_kinds(&ctx2);
+        assert_eq!(bonus.len(), 1);
+        assert!(bonus.contains(&ActionKind::DiscoverPatterns));
+    }
+
+    #[test]
+    fn h1_1_pick_top_biased_prefers_bonused_kind() {
+        // Frontier has TheoryCandidate (priority 5.0) and
+        // PatternCandidate (priority 3.0). Without bonus → Theory
+        // wins. With +1.0 bonus on DiscoverPatterns → Pattern still
+        // can't catch up (3.0 + 1.0 < 5.0). Bump bonus on Theory
+        // (5.0 + 1.0 = 6.0) → Theory wins. Bump priority of Pattern
+        // higher than Theory base + bonus → Pattern wins.
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.items.push(FrontierItem {
+            id: "synth_theory".into(),
+            kind: FrontierKind::TheoryCandidate,
+            target: FrontierTarget::WholeRSet,
+            priority: 5.0,
+            estimated_value: 5.0,
+            estimated_cost: 1.0,
+            novelty_score: 1.0,
+            first_seen_tick: 0,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        });
+        frontier.items.push(FrontierItem {
+            id: "synth_pattern".into(),
+            kind: FrontierKind::PatternCandidate,
+            target: FrontierTarget::PatternSize(2),
+            priority: 4.5,
+            estimated_value: 4.5,
+            estimated_cost: 1.0,
+            novelty_score: 1.0,
+            first_seen_tick: 0,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        });
+        let memory = Memory::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        // No bonus — Theory wins (5.0 > 4.5).
+        let mut empty: HashSet<ActionKind> = HashSet::new();
+        let item = RuleBasedScheduler::pick_top_biased(
+            &ctx,
+            |_| true,
+            &empty,
+        )
+        .unwrap();
+        assert!(matches!(item.kind, FrontierKind::TheoryCandidate));
+
+        // Bonus on DiscoverPatterns: 4.5 + 1.0 = 5.5 > 5.0 → Pattern
+        // wins.
+        empty.insert(ActionKind::DiscoverPatterns);
+        let item = RuleBasedScheduler::pick_top_biased(
+            &ctx,
+            |_| true,
+            &empty,
+        )
+        .unwrap();
+        assert!(matches!(item.kind, FrontierKind::PatternCandidate));
     }
 
     #[test]
