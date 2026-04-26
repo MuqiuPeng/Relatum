@@ -16,8 +16,8 @@
 
 use relatum_v2::{
     runtime::{
-        ActionKind, AutonomousRuntime, Event, RuleBasedScheduler,
-        SyntheticStreamEnvironment,
+        ActionKind, AutonomousRuntime, DriveABState, Event,
+        RuleBasedScheduler, SyntheticStreamEnvironment,
     },
     ESTABLISHED_MARKER, PATTERN_MARKER, SHARED_AXIOM_MARKER, R, RSet,
 };
@@ -41,6 +41,12 @@ struct Snapshot {
     named_pairs: HashSet<(String, String)>,
     named_triples: HashSet<(String, String, String)>,
     lifecycle: String,
+    /// ADR 0063 / H2.0 step 2 — DriveMix observability. Active
+    /// candidate's weights for the three baseline drives.
+    drive_state: String,
+    drive_w_compression: f64,
+    drive_w_prediction_error: f64,
+    drive_w_mode_thrash: f64,
 }
 
 fn snapshot(rt: &AutonomousRuntime) -> Snapshot {
@@ -87,6 +93,28 @@ fn snapshot(rt: &AutonomousRuntime) -> Snapshot {
         named_pairs,
         named_triples,
         lifecycle: format!("{:?}", rt.lifecycle),
+        drive_state: match rt.drive_mix.state {
+            DriveABState::TestingA => "A".to_string(),
+            DriveABState::TestingB => "B".to_string(),
+        },
+        drive_w_compression: rt
+            .drive_mix
+            .active_weights()
+            .get("compression")
+            .copied()
+            .unwrap_or(0.0),
+        drive_w_prediction_error: rt
+            .drive_mix
+            .active_weights()
+            .get("prediction_error")
+            .copied()
+            .unwrap_or(0.0),
+        drive_w_mode_thrash: rt
+            .drive_mix
+            .active_weights()
+            .get("mode_thrash")
+            .copied()
+            .unwrap_or(0.0),
     }
 }
 
@@ -103,7 +131,7 @@ fn diff_strs<T: std::fmt::Debug>(items: &[T]) -> String {
 
 fn print_snapshot_row(s: &Snapshot) {
     println!(
-        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {}",
+        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {:>3} {:>5.2} {:>5.2} {:>5.2} {}",
         s.tick,
         s.patterns,
         s.theories,
@@ -116,6 +144,10 @@ fn print_snapshot_row(s: &Snapshot) {
         s.composite_attempts,
         s.named_pairs.len(),
         s.named_triples.len(),
+        s.drive_state,
+        s.drive_w_compression,
+        s.drive_w_prediction_error,
+        s.drive_w_mode_thrash,
         s.lifecycle,
     );
 }
@@ -283,7 +315,7 @@ fn main() {
     let mut rt = build_runtime();
     let initial = snapshot(&rt);
     println!(
-        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {}",
+        "{:>5} {:>4} {:>4} {:>5} {:>5} {:>6} {:>6} {:>5} {:>6} {:>5} {:>6} {:>4} {:>3} {:>5} {:>5} {:>5} {}",
         "tick",
         "pat",
         "thy",
@@ -296,6 +328,10 @@ fn main() {
         "comp",
         "pairs",
         "tri",
+        "ab",
+        "wC",
+        "wPE",
+        "wMT",
         "lifecycle",
     );
     print_snapshot_row(&initial);
@@ -393,6 +429,31 @@ fn main() {
         for t in &final_s.named_triples {
             println!("  ({:?}, {:?}, {:?})", t.0, t.1, t.2);
         }
+    }
+    println!();
+    println!("DriveMix final state (ADR 0063 / H2.0 step 2):");
+    println!(
+        "  state: {} | window_size: {} | stage_start_episode_count: {} | rng_state: {}",
+        final_s.drive_state,
+        rt.drive_mix.window_size,
+        rt.drive_mix.stage_start_episode_count,
+        rt.drive_mix.rng_state,
+    );
+    println!("  candidate_a:");
+    let mut a_keys: Vec<&String> =
+        rt.drive_mix.candidate_a.keys().collect();
+    a_keys.sort();
+    for k in a_keys {
+        let v = rt.drive_mix.candidate_a.get(k).copied().unwrap_or(0.0);
+        println!("    {}: {:.3}", k, v);
+    }
+    println!("  candidate_b:");
+    let mut b_keys: Vec<&String> =
+        rt.drive_mix.candidate_b.keys().collect();
+    b_keys.sort();
+    for k in b_keys {
+        let v = rt.drive_mix.candidate_b.get(k).copied().unwrap_or(0.0);
+        println!("    {}: {:.3}", k, v);
     }
     println!();
     println!("--- end ---");
