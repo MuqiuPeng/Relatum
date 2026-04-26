@@ -1729,7 +1729,16 @@ impl AutonomousRuntime {
                 let candidates = self
                     .rset
                     .discover_motifs_with_meta_subset(&dconfig, &subset);
-                for candidate in candidates.iter().take(1) {
+                // Walk the top-`top_m` candidates by frequency and
+                // name the first novel one with at least one clean
+                // instance under the meta-subset view. ADR 0055
+                // sharpens canonical resolution, which means the
+                // single highest-frequency candidate is now more
+                // likely to encode a Y- or path-shape that crosses
+                // markers and fails `is_clean_subgraph_with_meta_subset`.
+                // The iteration is bounded by `top_m` so the action
+                // stays predictable on its budget.
+                for candidate in candidates.iter() {
                     if self
                         .rset
                         .find_pattern_matching(&candidate.canonical)

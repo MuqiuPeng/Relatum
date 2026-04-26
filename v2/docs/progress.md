@@ -2529,3 +2529,58 @@ alternatives rejected, 4 open questions logged. Status:
 **Proposed**. No code yet.
 
 Tests: unchanged (396).
+
+### Phase E0 — direction-distinguishing canonical (impl)
+ADR 0055's smallest viable slice. Replaced the post-WL projection
+in `Subgraph::canonicalize` with a hand-rolled FNV-1a hash over
+the converged signature `(label, sorted_outs, sorted_ins)`.
+`CanonicalForm` widens from `Vec<(u32, u32)>` to
+`Vec<(u64, u64)>`; the WL refinement loop is unchanged.
+
+The hand-rolled FNV-1a is intentional — `std::collections::hash_map::DefaultHasher`'s
+seed regime is not part of Rust's stability guarantee, and the
+canonical form is going to feed eventual cross-process diffs
+(e.g., the Phase-D demo log). Hand-rolled = stable across Rust
+versions and platforms.
+
+Migration:
+- 9 literal-pin sites in tests (e.g., `vec![(1,2), (2,0)]` for
+  the 2-chain canonical) replaced with
+  `Subgraph::from_edges([…]).canonicalize()` over a reference
+  shape. The test contract becomes "the discovered canonical
+  matches the canonical of a known reference subgraph" — same
+  semantic, immune to label widening.
+- D0+ runtime action `DiscoverMetaMetaPatterns` no longer takes
+  the single top candidate. With sharper canonicals, the
+  highest-frequency candidate is now more likely to encode a Y-
+  or path-shape that crosses markers and fails
+  `is_clean_subgraph_with_meta_subset`. The action now walks the
+  top-`top_m` candidates by frequency and names the first novel
+  one with at least one clean instance.
+
+Verification:
+- New regression test
+  `canonicalize_distinguishes_fan_in_from_fan_out` asserts the
+  two shapes that collapsed pre-fix now produce distinct
+  canonicals.
+- Demo log
+  `logs/2026-04-26_phase_d_demo.log` re-captured. Diff vs.
+  pre-E0:
+  - **2 new patterns named** (`p_5` + `p_6`) where pre-E0 named
+    only one — exactly ADR 0055's prediction. The runtime now
+    sees fan-in and fan-out as separate hypotheses and names
+    each.
+  - **Two non-zero delta episodes** (both naming events)
+    instead of one.
+  - `p_5`'s intension is now **fan-IN** (`role_X → role_0`).
+    Pre-E0 it was fan-out (`role_0 → role_X`). The two
+    directions are no longer canonically equivalent.
+- All 396 prior tests still pass after the type change and
+  literal migration; +1 new fan-in/fan-out distinguisher test.
+
+What this does NOT solve: strongly regular and other classical
+WL-1 limits remain. Phase E1 (full WL-2 / individualisation-
+refinement) is the deferred follow-on.
+
+Tests: 396 → 397 (+1). ADR 0055 status: Proposed → Accepted
+(Phase E0 implemented).

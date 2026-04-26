@@ -3853,6 +3853,12 @@ impl Subgraph {
             .map(|i| (out_neighbors[i].len(), in_neighbors[i].len()))
             .collect();
         let mut labels = rank_labels(&initial);
+        // The most recent signature for each node — used by ADR 0055 to
+        // project the converged WL-1 result into a direction-preserving
+        // canonical label.
+        let mut last_sigs: Vec<(u32, Vec<u32>, Vec<u32>)> = (0..n)
+            .map(|i| (labels[i], Vec::new(), Vec::new()))
+            .collect();
 
         for _ in 0..=n {
             let sigs: Vec<(u32, Vec<u32>, Vec<u32>)> = (0..n)
@@ -3866,6 +3872,7 @@ impl Subgraph {
                     (labels[i], outs, ins)
                 })
                 .collect();
+            last_sigs = sigs.clone();
             let next = rank_labels(&sigs);
             if next == labels {
                 break;
@@ -3873,10 +3880,21 @@ impl Subgraph {
             labels = next;
         }
 
-        let mut canonical: Vec<(u32, u32)> = self
+        // ADR 0055: project converged signatures to global hashes
+        // rather than local ranks. This preserves direction-sensitive
+        // content the WL-1 signature already carries — fan-in and
+        // fan-out have different signatures, so they get different
+        // hashes, so their canonical edge lists differ.
+        let hashes: Vec<u64> =
+            last_sigs.iter().map(signature_hash).collect();
+
+        let mut canonical: Vec<(u64, u64)> = self
             .edges
             .iter()
-            .map(|r| (labels[id_to_index[r.x.as_str()]], labels[id_to_index[r.y.as_str()]]))
+            .map(|r| (
+                hashes[id_to_index[r.x.as_str()]],
+                hashes[id_to_index[r.y.as_str()]],
+            ))
             .collect();
         canonical.sort();
         canonical
@@ -4533,6 +4551,40 @@ fn expand_connected(
 /// Two items with the same signature receive the same label; labels are
 /// assigned in sorted order of the distinct signatures (so the result is
 /// deterministic and independent of input order for equivalence purposes).
+/// Deterministic FNV-1a hash of a converged WL-1 node signature.
+/// Used by `Subgraph::canonicalize` to project signatures into the
+/// canonical label space without losing direction-sensitive content
+/// (ADR 0055). Hand-rolled FNV-1a so the result is stable across
+/// Rust versions and platforms — `std`'s default hasher seeds may
+/// vary in future, and we want canonical labels to be a function of
+/// the signature alone.
+fn signature_hash(sig: &(u32, Vec<u32>, Vec<u32>)) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut h: u64 = FNV_OFFSET;
+    let mut update = |byte: u8, h: &mut u64| {
+        *h ^= byte as u64;
+        *h = h.wrapping_mul(FNV_PRIME);
+    };
+    let mut hash_u32 = |v: u32, h: &mut u64| {
+        for b in v.to_le_bytes() {
+            update(b, h);
+        }
+    };
+    hash_u32(sig.0, &mut h);
+    update(0xfe, &mut h); // separator between fields
+    for v in &sig.1 {
+        hash_u32(*v, &mut h);
+        update(0xfd, &mut h); // separator between elements
+    }
+    update(0xfe, &mut h);
+    for v in &sig.2 {
+        hash_u32(*v, &mut h);
+        update(0xfd, &mut h);
+    }
+    h
+}
+
 fn rank_labels<T: Ord + Clone>(sigs: &[T]) -> Vec<u32> {
     let mut sorted_unique: Vec<T> = sigs.to_vec();
     sorted_unique.sort();
@@ -4543,8 +4595,14 @@ fn rank_labels<T: Ord + Clone>(sigs: &[T]) -> Vec<u32> {
 }
 
 /// Canonical form of a subgraph: sorted edge list over stable labels.
-/// See `Subgraph::canonicalize`. ADR 0009.
-pub type CanonicalForm = Vec<(u32, u32)>;
+/// See `Subgraph::canonicalize`. ADR 0009 (form), ADR 0055 (label width).
+///
+/// Each label is a `u64` derived from a global FNV-1a hash of the
+/// node's converged WL-1 signature. The widening from `u32` (rank
+/// indices, ADR 0009) to `u64` (signature hashes, ADR 0055) is what
+/// distinguishes fan-in from fan-out at small sizes; see
+/// `Subgraph::canonicalize` for the projection.
+pub type CanonicalForm = Vec<(u64, u64)>;
 
 /// Configuration for motif discovery. ADR 0016.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5910,6 +5968,37 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_distinguishes_fan_in_from_fan_out() {
+        // ADR 0055 regression test. Pre-fix, the rank_labels
+        // projection collapsed both shapes to the same canonical;
+        // the WL signature already distinguished them but the rank
+        // step threw the distinction away. Post-fix (signature_hash
+        // projection), the canonicals are distinct.
+        let fan_in = Subgraph::from_edges([
+            R::new("a", "t"),
+            R::new("b", "t"),
+            R::new("c", "t"),
+        ]);
+        let fan_out = Subgraph::from_edges([
+            R::new("s", "x"),
+            R::new("s", "y"),
+            R::new("s", "z"),
+        ]);
+        assert_ne!(
+            fan_in.canonicalize(),
+            fan_out.canonicalize(),
+            "fan-in and fan-out must canonicalize to different forms"
+        );
+        // Sanity: each shape is isomorphic to itself with relabeling.
+        let fan_in_alt = Subgraph::from_edges([
+            R::new("p", "q"),
+            R::new("r", "q"),
+            R::new("s", "q"),
+        ]);
+        assert!(fan_in.is_isomorphic_to(&fan_in_alt));
+    }
+
+    #[test]
     fn naming_empty_instance_list_errors() {
         let mut rs = RSet::new();
         assert_eq!(
@@ -6311,9 +6400,19 @@ mod tests {
     fn find_instances_of_returns_empty_for_novel_canonical() {
         let mut rs = build_mixed_graph();
         rs.run_naming_pass(&NamingPolicy::default());
-        // A completely novel canonical (e.g., a 5-edge form that no
-        // named pattern uses) should yield no matches.
-        let novel_target: CanonicalForm = vec![(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)];
+        // A completely novel canonical (a 4-node, 5-edge K4-ish
+        // form that no named pattern uses) should yield no matches.
+        // ADR 0055: rebuilt via canonicalize() rather than a literal
+        // pin since the canonical's u64 hash labels are no longer
+        // small integers.
+        let novel_target: CanonicalForm = Subgraph::from_edges([
+            R::new("n0", "n1"),
+            R::new("n1", "n2"),
+            R::new("n2", "n3"),
+            R::new("n3", "n0"),
+            R::new("n0", "n2"),
+        ])
+        .canonicalize();
         let matches = rs.find_instances_of(&novel_target);
         assert!(matches.is_empty());
     }
@@ -6492,8 +6591,14 @@ mod tests {
         };
         let candidates = rs.discover_motifs(&config);
         assert!(!candidates.is_empty());
-        // The 2-chain canonical is [(1, 2), (2, 0)].
-        let two_chain_canonical: CanonicalForm = vec![(1, 2), (2, 0)];
+        // The 2-chain canonical is the canonical of any directed
+        // 2-edge path. Compute it from a representative subgraph
+        // rather than pinning the u64 hash labels (ADR 0055).
+        let two_chain_canonical: CanonicalForm = Subgraph::from_edges([
+            R::new("ref_a", "ref_b"),
+            R::new("ref_b", "ref_c"),
+        ])
+        .canonicalize();
         assert!(
             candidates.iter().any(|c| c.canonical == two_chain_canonical),
             "expected to discover the 2-chain canonical among candidates: {:?}",
@@ -6700,25 +6805,37 @@ mod tests {
     #[test]
     fn mdl_gain_scales_with_reuse_and_size() {
         let rs = build_mixed_graph();
-        // 2-chain canonical [(1, 2), (2, 0)]. Clean instances on the
-        // mixed graph: {c1,c2,c3}, {c2,c3,c4}, {c3,c4,c5}, {t1,t2,t4}
-        // → N=4. Gain = (4 - 1) * 2 = 6.
-        let two_chain: CanonicalForm = vec![(1, 2), (2, 0)];
+        // 2-chain canonical. Clean instances on the mixed graph:
+        // {c1,c2,c3}, {c2,c3,c4}, {c3,c4,c5}, {t1,t2,t4} → N=4.
+        // Gain = (4 - 1) * 2 = 6. ADR 0055: canonical computed from
+        // a reference subgraph, not pinned to literal hash labels.
+        let two_chain: CanonicalForm = Subgraph::from_edges([
+            R::new("ref_a", "ref_b"),
+            R::new("ref_b", "ref_c"),
+        ])
+        .canonicalize();
         assert_eq!(rs.mdl_gain(&two_chain), 6);
 
         // 3-chain canonical. Clean instances: {c1..c4}, {c2..c5} → N=2.
         // Gain = (2 - 1) * 3 = 3.
-        let three_chain: CanonicalForm = vec![(1, 3), (2, 0), (3, 2)];
+        let three_chain: CanonicalForm = Subgraph::from_edges([
+            R::new("ref_a", "ref_b"),
+            R::new("ref_b", "ref_c"),
+            R::new("ref_c", "ref_d"),
+        ])
+        .canonicalize();
         assert_eq!(rs.mdl_gain(&three_chain), 3);
     }
 
     #[test]
     fn score_by_mdl_updates_candidate_scores() {
         let rs = build_mixed_graph();
+        let rep = Subgraph::from_edges([R::new("c1", "c2"), R::new("c2", "c3")]);
+        let canon = rep.canonicalize();
         let candidates = vec![
             MotifCandidate {
-                canonical: vec![(1, 2), (2, 0)],
-                representative: Subgraph::from_edges([R::new("c1", "c2"), R::new("c2", "c3")]),
+                canonical: canon,
+                representative: rep,
                 sample_frequency: 42,
                 score: 42.0,
             },
@@ -7050,7 +7167,13 @@ mod tests {
         };
         // Prime the registry with the first autonomous_pass.
         rs.autonomous_pass(&config);
-        let p_3_chain: CanonicalForm = vec![(1, 3), (2, 0), (3, 2)];
+        // 3-chain canonical (ADR 0055: built via canonicalize()).
+        let p_3_chain: CanonicalForm = Subgraph::from_edges([
+            R::new("ref_a", "ref_b"),
+            R::new("ref_b", "ref_c"),
+            R::new("ref_c", "ref_d"),
+        ])
+        .canonicalize();
         let p_3_chain_id = rs
             .find_pattern_matching(&p_3_chain)
             .map(|s| s.to_string())
@@ -7183,8 +7306,18 @@ mod tests {
     #[test]
     fn sample_instances_with_no_matches_returns_empty() {
         let rs = build_mixed_graph();
-        // A canonical the graph does not contain.
-        let impossible: CanonicalForm = vec![(5, 5), (5, 5), (5, 5), (5, 5)];
+        // A canonical the graph does not contain — a 4-edge form
+        // with self-loops on a single labelled node, which can't
+        // appear in the mixed graph (no parallel self-loops).
+        // ADR 0055: built via canonicalize() on a representative
+        // shape rather than literal hash labels.
+        let impossible: CanonicalForm = Subgraph::from_edges([
+            R::new("self", "self"),
+            R::new("self", "self2"),
+            R::new("self", "self3"),
+            R::new("self", "self4"),
+        ])
+        .canonicalize();
         let got = rs.sample_instances_of(
             &impossible,
             &SamplingMatchConfig { sample_count: 100, rng_seed: 1 },
@@ -7195,7 +7328,11 @@ mod tests {
     #[test]
     fn sample_instances_deterministic_under_fixed_seed() {
         let rs = build_mixed_graph();
-        let target: CanonicalForm = vec![(1, 2), (2, 0)];
+        let target: CanonicalForm = Subgraph::from_edges([
+            R::new("ref_a", "ref_b"),
+            R::new("ref_b", "ref_c"),
+        ])
+        .canonicalize();
         let config = SamplingMatchConfig { sample_count: 100, rng_seed: 42 };
         let a = rs.sample_instances_of(&target, &config);
         let b = rs.sample_instances_of(&target, &config);
@@ -7220,7 +7357,12 @@ mod tests {
     #[test]
     fn sample_instances_approximates_find_instances_with_enough_budget() {
         let rs = build_mixed_graph();
-        let target: CanonicalForm = vec![(1, 2), (2, 0)]; // 2-chain
+        // 2-chain target.
+        let target: CanonicalForm = Subgraph::from_edges([
+            R::new("ref_a", "ref_b"),
+            R::new("ref_b", "ref_c"),
+        ])
+        .canonicalize();
         let exhaustive = rs.find_instances_of(&target);
         // Generous budget — small graph, sampling should hit all.
         let sampled = rs.sample_instances_of(

@@ -1,6 +1,6 @@
 # 0055: Direction-distinguishing canonical form
 
-Status: Proposed
+Status: Accepted (Phase E0 implemented)
 Date: 2026-04-26
 
 ## Context

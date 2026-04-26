@@ -1,21 +1,21 @@
 === ADR 0054 Phase-D0+ loop-closure demo ===
 
 --- pre-run state ---
-named patterns: 5 ["p_a", "p_b", "p_d", "p_c", "p_e"]
-ESTABLISHED edges: 5 (subjects: ["p_e", "p_a", "p_d", "p_b", "p_c"])
+named patterns: 5 ["p_b", "p_a", "p_e", "p_c", "p_d"]
+ESTABLISHED edges: 5 (subjects: ["p_a", "p_b", "p_c", "p_d", "p_e"])
 
 --- post-run state (after 8 ticks) ---
-named patterns: 6 ["p_a", "p_b", "p_d", "p_5", "p_c", "p_e"]
-newly named: ["p_5"]
+named patterns: 7 ["p_b", "p_a", "p_e", "p_c", "p_5", "p_d", "p_6"]
+newly named: ["p_5", "p_6"]
 
 --- meta-meta episodes ---
 DiscoverMetaMetaPatterns episodes: 3
   [0] tick=2 delta=-1.2000
-  [1] tick=3 delta=+0.0000
+  [1] tick=3 delta=-1.2000
   [2] tick=4 delta=+0.0000
 
 --- new pattern intension: p_5 ---
 roles: 4 ["p_5_role_0", "p_5_role_1", "p_5_role_2", "p_5_role_3"]
-intension structural edges: 3 [("p_5_role_0", "p_5_role_1"), ("p_5_role_0", "p_5_role_2"), ("p_5_role_0", "p_5_role_3")]
+intension structural edges: 3 [("p_5_role_1", "p_5_role_0"), ("p_5_role_2", "p_5_role_0"), ("p_5_role_3", "p_5_role_0")]
 
 --- end ---
