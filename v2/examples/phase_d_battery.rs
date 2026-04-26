@@ -10,7 +10,8 @@
 
 use relatum_v2::{
     runtime::{
-        ActionKind, AutonomousRuntime, ObjectHistory, RuleBasedScheduler,
+        ActionKind, AutonomousRuntime, Event, ObjectHistory,
+        RuleBasedScheduler, SyntheticStreamEnvironment,
     },
     ESTABLISHED_MARKER, PATTERN_MARKER, SHARED_AXIOM_MARKER, R, RSet,
 };
@@ -215,6 +216,30 @@ fn seed_disconnected_islands() -> AutonomousRuntime {
     rt
 }
 
+fn seed_stream_diamond() -> AutonomousRuntime {
+    // Drip-feed a diamond poset over the first ~30 ticks. Tests the
+    // outward drive against an environment that keeps producing
+    // novel R: the runtime should NOT sleep early in the stream
+    // phase, even though G0's hooks alone are thrash-bounded — the
+    // stream itself produces wake events. ADR 0056 sketch +
+    // ADR 0059 prerequisite.
+    let schedule = vec![
+        (1, Event::AddEdge(R::new("a", "a"))),
+        (2, Event::AddEdge(R::new("b", "b"))),
+        (3, Event::AddEdge(R::new("c", "c"))),
+        (4, Event::AddEdge(R::new("d", "d"))),
+        (8, Event::AddEdge(R::new("a", "b"))),
+        (12, Event::AddEdge(R::new("a", "c"))),
+        (16, Event::AddEdge(R::new("a", "d"))),
+        (20, Event::AddEdge(R::new("b", "d"))),
+        (24, Event::AddEdge(R::new("c", "d"))),
+    ];
+    let mut rt = AutonomousRuntime::new(RSet::new());
+    rt.environment = Box::new(SyntheticStreamEnvironment::new(schedule));
+    rt.scheduler = Box::new(RuleBasedScheduler::default());
+    rt
+}
+
 fn main() {
     println!(
         "=== ADR 0056 Phase F0 — D-battery (HORIZON={}) ===",
@@ -229,6 +254,7 @@ fn main() {
         ("star_5", seed_star_5),
         ("equivalence_3_classes", seed_equivalence_3_classes),
         ("disconnected_islands", seed_disconnected_islands),
+        ("stream_diamond", seed_stream_diamond),
     ];
 
     let mut results: Vec<SeedResult> = Vec::new();

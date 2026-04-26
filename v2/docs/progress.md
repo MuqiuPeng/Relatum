@@ -2983,3 +2983,37 @@ ADR 0059 carries 5 alternatives rejected, 5 open questions
 logged. Status: **Proposed**. No code yet.
 
 Tests: unchanged (413).
+
+### F0 battery — `stream_diamond` seed added
+ADR 0056's deferred `stream_diamond` seed lands. Drip-feeds a
+diamond poset over the first 24 ticks via
+`SyntheticStreamEnvironment`. Captured to refreshed
+`logs/2026-04-26_phase_d_battery.log` (replaces the prior
+6-seed version).
+
+Battery summary (now 7 seeds):
+```
+                  seed         verdict   new patterns
+              fan_only       CONVERGED              2
+         diamond_poset       CONVERGED              0
+         bipartite_2_3       CONVERGED              2
+                star_5       CONVERGED              1
+ equivalence_3_classes       CONVERGED              0
+  disconnected_islands       CONVERGED              0
+        stream_diamond       CONVERGED              0
+```
+
+`stream_diamond` produces **2 theories** (vs 1 for the static
+`diamond_poset`) and **3 mm.tries** (vs 0 for static) —
+streaming did exercise more of the runtime's loop than the
+static seed. But once the stream ends at tick 24, the runtime
+sleeps. Verdict CONVERGED on 300-tick HORIZON.
+
+This is the expected pre-G1.5 outcome and the baseline for
+future G1.5 verification: with G1.5's prediction-improvement
+positive-delta source, `stream_diamond` should be the first
+seed to flip from CONVERGED to STILL GROWING (the 2 theories
+generate ongoing predictions; their hit rates against the
+stream events would accumulate into Reflect-tick deltas).
+
+Tests: unchanged (413).
