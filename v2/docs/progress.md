@@ -3582,3 +3582,64 @@ loop further: not just *grow* the action space (H1.2 does
 that), but also *prune* stale entries (H1.3) and *expand
 expressivity* (H1.4).
 
+### Phase H1.3 — sequence demotion (impl)
+ADR 0062 H1.3 lands. Three pieces:
+
+**1. Recent-window stats.** `SequenceStats` gains
+`pair_recent_post_ep_count` / `_delta_sum` /
+`last_recent_reset_tick`. Updated in lockstep with the
+cumulative counters in `Memory::record`. After the new
+episode records its credit, if `current_tick >=
+last_recent_reset_tick + 50`, recent counters clear (the
+just-recorded credit survives one tick) and
+`last_recent_reset_tick` advances.
+
+**2. Demotion via rset retract.** New
+`RSet::retract_action_sequence_pair(prefix, suffix)`
+removes the 5-edge meta-R chain. Returns count of edges
+removed (0 if not named). Idempotent.
+
+**3. Auto-demotion sweep.** New
+`maybe_demote_action_sequences` runs alongside
+`maybe_promote_action_sequences` after each episode.
+Iterates `rset.action_sequence_pairs()`; for each named
+pair whose recent count ≥ 3 AND recent mean < 0.02,
+retracts the chain.
+
+**Asymmetric thresholds**: promote 0.05 / demote 0.02.
+This 2× hysteresis prevents promote/demote oscillation —
+a pair whose mean drifts in the dead zone (0.02–0.05)
+keeps its meta-R status until evidence clearly degrades.
+
+`pair_recent_mean_post_ep_delta(pair)` is the new
+accessor; mirrors the cumulative version.
+
+Tests (7 new H1.3):
+- Recent-window auto-resets when current tick crosses
+  `last_recent_reset_tick + 50` boundary.
+- `pair_recent_mean_post_ep_delta` returns the right mean
+  for a single-occurrence-single-EP setup.
+- Demote retracts a pair with low recent mean (recent
+  count=3 mean=0.01).
+- Demote skips a pair with healthy recent mean (recent
+  count=5 mean=0.5).
+- Demote skips when recent count is below 3 floor.
+- `retract_action_sequence_pair` removes 5 edges; second
+  call removes 0 (idempotent).
+- Hysteresis: a pair just promoted at mean 0.10 with
+  recent mean drifting to 0.04 (dead zone) does NOT get
+  demoted.
+
+Tests: 452 → 459 (+7).
+
+ADR 0062 status: Proposed → Accepted (H1.3 implemented;
+H1.4 sketched).
+
+**Recent-window stats are NOT yet round-tripped through
+checkpoint** — deferred for now. The cumulative counters
+do persist; demotion candidacy resets on restore but
+promotions survive. Acceptable for the current
+streaming-substrate workload; if longer-cycle restart
+patterns surface, revisit. Trigram support (H1.4) remains
+the next major slice.
+

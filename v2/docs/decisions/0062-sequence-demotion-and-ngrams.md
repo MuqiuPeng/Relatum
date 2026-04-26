@@ -1,6 +1,6 @@
 # 0062: Sequence demotion + N-gram extension (Phase H1.3 / H1.4)
 
-Status: Proposed
+Status: Accepted (Phase H1.3 implemented; H1.4 sketched)
 Date: 2026-04-27
 
 ## Context

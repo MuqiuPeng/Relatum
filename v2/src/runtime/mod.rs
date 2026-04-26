@@ -1040,9 +1040,20 @@ pub struct SequenceStats {
     pub pair_counts: HashMap<(ActionKind, ActionKind), u64>,
     pub pair_post_ep_count: HashMap<(ActionKind, ActionKind), u64>,
     pub pair_post_ep_delta_sum: HashMap<(ActionKind, ActionKind), f64>,
+    /// Recent-window post-EP-delta counters. ADR 0062 / Phase H1.3.
+    /// Reset every `H1_3_RECENT_WINDOW_TICKS` so the demotion sweep
+    /// sees only fresh evidence; cumulative counters above stay
+    /// monotonic for long-run reporting. The reset is tick-based,
+    /// recorded against `last_recent_reset_tick`.
+    pub pair_recent_post_ep_count:
+        HashMap<(ActionKind, ActionKind), u64>,
+    pub pair_recent_post_ep_delta_sum:
+        HashMap<(ActionKind, ActionKind), f64>,
+    pub last_recent_reset_tick: u64,
 }
 
 const H1_LOOKAHEAD_K: usize = 5;
+const H1_3_RECENT_WINDOW_TICKS: u64 = 50;
 
 impl SequenceStats {
     /// Mean post-EP delta for a pair, or `None` when no positive-EP
@@ -1061,6 +1072,38 @@ impl SequenceStats {
             .copied()
             .unwrap_or(0.0);
         Some(sum / count as f64)
+    }
+
+    /// Recent-window mean post-EP delta. Returns `None` when the
+    /// recent window has accumulated zero post-EP credits for this
+    /// pair. ADR 0062 / Phase H1.3.
+    pub fn pair_recent_mean_post_ep_delta(
+        &self,
+        pair: (ActionKind, ActionKind),
+    ) -> Option<f64> {
+        let count = self
+            .pair_recent_post_ep_count
+            .get(&pair)
+            .copied()
+            .unwrap_or(0);
+        if count == 0 {
+            return None;
+        }
+        let sum = self
+            .pair_recent_post_ep_delta_sum
+            .get(&pair)
+            .copied()
+            .unwrap_or(0.0);
+        Some(sum / count as f64)
+    }
+
+    /// Reset the recent-window counters. Called from
+    /// `Memory::record` whenever the elapsed-tick budget has
+    /// crossed `H1_3_RECENT_WINDOW_TICKS`. ADR 0062 / Phase H1.3.
+    pub fn reset_recent_window(&mut self, current_tick: u64) {
+        self.pair_recent_post_ep_count.clear();
+        self.pair_recent_post_ep_delta_sum.clear();
+        self.last_recent_reset_tick = current_tick;
     }
 }
 
@@ -1172,14 +1215,12 @@ impl Memory {
         // Post-EP-delta credit: when the new episode IS an EP with
         // positive delta, look back at the last K pair completions
         // and credit each for this EP's delta. Per ADR 0061 § H1.0.
+        // Recent-window counters mirror cumulative ones for ADR
+        // 0062 / Phase H1.3.
         if cur_kind == ActionKind::EvaluatePredictions && cur_delta > 0.0 {
             let n = self.episodes.len();
-            // Pair-i is (kind[i-1], kind[i]). Window is i in
-            // [n-1-K, n-2] (inclusive), excluding the current EP at
-            // n-1. i must also be ≥ 1.
             let start = n.saturating_sub(H1_LOOKAHEAD_K + 1).max(1);
             let end = n.saturating_sub(1);
-            // Borrow checker: collect first then mutate.
             let mut pairs_seen: Vec<(ActionKind, ActionKind)> =
                 Vec::new();
             for i in start..end {
@@ -1198,7 +1239,36 @@ impl Memory {
                     .pair_post_ep_delta_sum
                     .entry(pair)
                     .or_insert(0.0) += cur_delta;
+                *self
+                    .sequence_stats
+                    .pair_recent_post_ep_count
+                    .entry(pair)
+                    .or_insert(0) += 1;
+                *self
+                    .sequence_stats
+                    .pair_recent_post_ep_delta_sum
+                    .entry(pair)
+                    .or_insert(0.0) += cur_delta;
             }
+        }
+
+        // ADR 0062 / Phase H1.3 — recent-window reset. When the
+        // current episode's tick has advanced at least
+        // `H1_3_RECENT_WINDOW_TICKS` past the last reset, clear
+        // the recent counters so the next demotion sweep sees only
+        // fresh evidence. Done after the credit step so the
+        // current EP's contribution survives one tick (until the
+        // next window boundary).
+        let current_tick = self
+            .episodes
+            .back()
+            .map(|e| e.tick)
+            .unwrap_or(0);
+        if current_tick
+            >= self.sequence_stats.last_recent_reset_tick
+                + H1_3_RECENT_WINDOW_TICKS
+        {
+            self.sequence_stats.reset_recent_window(current_tick);
         }
 
         while self.episodes.len() > self.max_episodes {
@@ -2327,6 +2397,59 @@ impl AutonomousRuntime {
         // post-EP-delta > 0.05). Idempotent: rset.name_action_sequence_pair
         // returns the existing seq id if already named.
         self.maybe_promote_action_sequences();
+        // ADR 0062 / Phase H1.3 — auto-demote pairs whose recent-
+        // window mean has degraded below the retention floor.
+        self.maybe_demote_action_sequences();
+    }
+
+    /// Auto-demotion sweep. Retracts named action-sequence pairs
+    /// whose recent-window stats have degraded below the
+    /// retention floor (recent count ≥ 3 AND recent mean < 0.02).
+    /// ADR 0062 / Phase H1.3.
+    ///
+    /// Asymmetric vs. promotion (0.05 vs 0.02) for hysteresis —
+    /// avoids the promote/demote oscillation that would happen if
+    /// the same threshold gated both directions.
+    fn maybe_demote_action_sequences(&mut self) {
+        const MIN_RECENT_COUNT_FOR_DEMOTE: u64 = 3;
+        const MIN_RECENT_MEAN_FOR_RETENTION: f64 = 0.02;
+        let pairs = self.rset.action_sequence_pairs();
+        let mut to_demote: Vec<(String, String)> = Vec::new();
+        for (_seq_id, prefix_name, suffix_name) in pairs {
+            let prefix_kind = match parse_action_kind(&prefix_name) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            let suffix_kind = match parse_action_kind(&suffix_name) {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            let pair = (prefix_kind, suffix_kind);
+            let recent_count = self
+                .memory
+                .sequence_stats
+                .pair_recent_post_ep_count
+                .get(&pair)
+                .copied()
+                .unwrap_or(0);
+            if recent_count < MIN_RECENT_COUNT_FOR_DEMOTE {
+                continue;
+            }
+            let recent_mean = match self
+                .memory
+                .sequence_stats
+                .pair_recent_mean_post_ep_delta(pair)
+            {
+                Some(m) => m,
+                None => continue,
+            };
+            if recent_mean < MIN_RECENT_MEAN_FOR_RETENTION {
+                to_demote.push((prefix_name, suffix_name));
+            }
+        }
+        for (prefix, suffix) in to_demote {
+            self.rset.retract_action_sequence_pair(&prefix, &suffix);
+        }
     }
 
     /// Auto-promotion sweep over `Memory::sequence_stats`. Writes a
@@ -6620,6 +6743,225 @@ mod tests {
         assert!(
             composite_present || saw_composite,
             "expected CompositeCandidate to surface or fire"
+        );
+    }
+
+    // ─── ADR 0062 Phase H1.3 — sequence demotion ──────────────
+
+    #[test]
+    fn h1_3_recent_window_resets_after_50_ticks() {
+        // Build a Memory whose last episode is at tick 60, with
+        // last_recent_reset_tick = 0 (default). Adding a positive-
+        // delta EP triggers the reset path because elapsed (60 ≥
+        // 50) crosses the window. Recent counters end up zero
+        // (the credit gets recorded *then* the reset fires).
+        let mut memory = Memory::default();
+        // Seed enough episodes to form a pair, with tick=60 on
+        // current episode.
+        memory.episodes.push_back(Episode {
+            id: 0,
+            tick: 60,
+            mode: RuntimeMode::Reflect,
+            action_kind: ActionKind::DiscoverTheory,
+            target: FrontierTarget::WholeRSet,
+            score_before: 0.0,
+            score_after: 0.0,
+            delta: 1.0,
+        });
+        memory.record(Episode {
+            id: 1,
+            tick: 60,
+            mode: RuntimeMode::Reflect,
+            action_kind: ActionKind::EvaluatePredictions,
+            target: FrontierTarget::WholeRSet,
+            score_before: 0.0,
+            score_after: 0.5,
+            delta: 0.5,
+        });
+        // Tick crossed → recent counters reset.
+        assert!(memory.sequence_stats.pair_recent_post_ep_count.is_empty());
+        assert_eq!(
+            memory.sequence_stats.last_recent_reset_tick,
+            60
+        );
+    }
+
+    #[test]
+    fn h1_3_pair_recent_mean_post_ep_delta_basic() {
+        let mut memory = Memory::default();
+        // Single pair occurrence followed by single EP — keeps the
+        // K-lookahead semantics simple: only one credit per pair
+        // per EP. Cumulative and recent should both be 0.4.
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.4,
+        ));
+        let pair = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+        );
+        let recent_mean = memory
+            .sequence_stats
+            .pair_recent_mean_post_ep_delta(pair)
+            .expect("recent mean recorded");
+        assert!((recent_mean - 0.4).abs() < 1e-12);
+        // Cumulative agrees.
+        let cum_mean = memory
+            .sequence_stats
+            .pair_mean_post_ep_delta(pair)
+            .expect("cumulative mean recorded");
+        assert!((cum_mean - 0.4).abs() < 1e-12);
+    }
+
+    #[test]
+    fn h1_3_demote_retracts_named_pair_with_low_recent_mean() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        // Hand-name a pair so demotion has something to retract.
+        rt.rset.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        assert!(rt.rset.has_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        ));
+        // Plant recent stats: 3 occurrences, mean 0.01 (below
+        // retention floor 0.02).
+        let pair = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+        );
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_count
+            .insert(pair, 3);
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_delta_sum
+            .insert(pair, 0.03);
+        rt.maybe_demote_action_sequences();
+        assert!(
+            !rt.rset.has_action_sequence_pair(
+                "DiscoverTheory",
+                "DiscoverPatterns",
+            ),
+            "low recent mean → demotion sweep should retract"
+        );
+    }
+
+    #[test]
+    fn h1_3_demote_skips_pair_with_healthy_recent_mean() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.rset.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        let pair = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+        );
+        // Recent stats: 5 occurrences, mean 0.5 — well above
+        // retention floor.
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_count
+            .insert(pair, 5);
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_delta_sum
+            .insert(pair, 2.5);
+        rt.maybe_demote_action_sequences();
+        assert!(rt.rset.has_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        ));
+    }
+
+    #[test]
+    fn h1_3_demote_skips_when_recent_count_below_floor() {
+        // 2 occurrences (below MIN_RECENT_COUNT_FOR_DEMOTE = 3) →
+        // skip even with low mean.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.rset.name_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        );
+        let pair = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+        );
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_count
+            .insert(pair, 2);
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_delta_sum
+            .insert(pair, 0.0);
+        rt.maybe_demote_action_sequences();
+        assert!(rt.rset.has_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        ));
+    }
+
+    #[test]
+    fn h1_3_retract_action_sequence_pair_removes_chain() {
+        let mut rs = RSet::new();
+        rs.name_action_sequence_pair("DT", "DP");
+        let removed = rs.retract_action_sequence_pair("DT", "DP");
+        assert_eq!(removed, 5); // 5 edges in the chain
+        assert!(!rs.has_action_sequence_pair("DT", "DP"));
+        // Idempotent — second retract removes 0.
+        let removed2 = rs.retract_action_sequence_pair("DT", "DP");
+        assert_eq!(removed2, 0);
+    }
+
+    #[test]
+    fn h1_3_promotion_demotion_hysteresis() {
+        // Asymmetric thresholds: promotion requires mean > 0.05,
+        // demotion fires below mean < 0.02. A pair with mean 0.04
+        // is in the dead zone — once promoted, won't immediately
+        // demote.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        // Plant cumulative stats for promotion.
+        let pair = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+        );
+        rt.memory.sequence_stats.pair_counts.insert(pair, 5);
+        rt.memory
+            .sequence_stats
+            .pair_post_ep_count
+            .insert(pair, 5);
+        rt.memory
+            .sequence_stats
+            .pair_post_ep_delta_sum
+            .insert(pair, 0.5); // mean 0.10
+        rt.maybe_promote_action_sequences();
+        assert!(rt.rset.has_action_sequence_pair(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+        ));
+        // Recent stats now show "dead zone" mean 0.04 — above
+        // demote floor (0.02), should NOT retract.
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_count
+            .insert(pair, 5);
+        rt.memory
+            .sequence_stats
+            .pair_recent_post_ep_delta_sum
+            .insert(pair, 0.20); // mean 0.04
+        rt.maybe_demote_action_sequences();
+        assert!(
+            rt.rset.has_action_sequence_pair(
+                "DiscoverTheory",
+                "DiscoverPatterns",
+            ),
+            "dead-zone mean (0.04) should not trigger demotion"
         );
     }
 

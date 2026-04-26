@@ -2222,6 +2222,50 @@ impl RSet {
             .any(|(_, p, s)| p == prefix && s == suffix)
     }
 
+    /// Retract a named action-sequence pair's full meta-R chain.
+    /// Returns the count of edges removed (0 if the pair wasn't
+    /// named). ADR 0062 / Phase H1.3.
+    ///
+    /// Removes:
+    /// - `R(ACTION_SEQ_MARKER, seq_N)` registry edge
+    /// - `R(seq_N, seq_N_step_0)` and `R(seq_N, seq_N_step_1)`
+    ///   ownership edges
+    /// - `R(seq_N_step_0, prefix_name)` and
+    ///   `R(seq_N_step_1, suffix_name)` step-value edges
+    pub fn retract_action_sequence_pair(
+        &mut self,
+        prefix: &str,
+        suffix: &str,
+    ) -> usize {
+        let seq_id = match self
+            .action_sequence_pairs()
+            .into_iter()
+            .find(|(_, p, s)| p == prefix && s == suffix)
+        {
+            Some((id, _, _)) => id,
+            None => return 0,
+        };
+        let mut removed = 0usize;
+        let step_0 = format!("{}_step_0", seq_id);
+        let step_1 = format!("{}_step_1", seq_id);
+        if self.remove(&R::new(step_0.clone(), prefix.to_string())) {
+            removed += 1;
+        }
+        if self.remove(&R::new(step_1.clone(), suffix.to_string())) {
+            removed += 1;
+        }
+        if self.remove(&R::new(seq_id.clone(), step_0)) {
+            removed += 1;
+        }
+        if self.remove(&R::new(seq_id.clone(), step_1)) {
+            removed += 1;
+        }
+        if self.remove(&R::new(ACTION_SEQ_MARKER, seq_id)) {
+            removed += 1;
+        }
+        removed
+    }
+
     /// Mint a new action-sequence id and write its meta-R chain.
     /// Idempotent: returns the existing seq id if `(prefix, suffix)`
     /// is already named. ADR 0061 / Phase H1.1.
