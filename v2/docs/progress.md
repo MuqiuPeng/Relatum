@@ -2931,3 +2931,55 @@ drive). With forward-apply landed, the runtime can now compute
 between ADR 0057's anomaly-coverage drive and a real
 prediction-error signal that decouples runtime activity from
 mode-transition counters.
+
+### ADR 0059 (Proposed) — prediction-error drive (Phase G1)
+The drive design that consumes ADR 0058's mechanism. Three
+sub-slices ordered by ambition:
+
+**G1.3 — PredictionState + error tracking.** New runtime
+field `PredictionState` holding `last_predicted` (the snapshot
+from end of last tick) plus per-axiom prediction +
+verified counters. Snapshot at end of tick;
+verify-against-actual at start of next tick. Hit rate per
+axiom = verified / total once total ≥ 5. Pure accounting,
+no scheduler decisions yet. Round-trips through B2-style
+checkpoint.
+
+**G1.4 — Wire into anomaly drive.** Replace ADR 0057's
+`uncovered_data_edges()` with
+`unexplained_data_edges() = data_edges - layer_b_covered -
+forward_apply_all()`. Same scheduler hooks, tighter signal.
+Edges that NO pattern's Layer B covers AND NO axiom's
+forward-apply predicts.
+
+**G1.5 — Positive delta from prediction improvement** (the
+load-bearing change). New `ActionKind::EvaluatePredictions`
+fires during Reflect mode. Re-runs forward-apply, compares
+per-axiom hit rate with previous Reflect's rate, records an
+Episode with delta = sum of hit-rate improvements. Positive
+delta possible WITHOUT rset mutation. This breaks the
+"sustained activity = mode transitions = thrash counter" loop
+that ADR 0057's Finding identified as the empirical null
+cause.
+
+Why G1.5 matters most: it's the architectural move that lets
+the runtime stay productively active past compression
+equilibrium. G1.3/G1.4 are mechanism + incremental
+tightening; G1.5 is the new degree of freedom.
+
+Expected F0 battery diff after G1.5:
+- `fan_only` / `disconnected_islands` (no axioms) → still
+  CONVERGED.
+- `diamond_poset` / `equivalence_3_classes` → STILL GROWING
+  (axioms predict, hit rates accumulate, Reflect ticks earn
+  positive delta).
+
+Stream-based seeds (ADR 0056's `stream_diamond` sketch) become
+prerequisite for G1.5 verification — without ongoing
+environmental events, predictions never get the chance to
+verify or fail.
+
+ADR 0059 carries 5 alternatives rejected, 5 open questions
+logged. Status: **Proposed**. No code yet.
+
+Tests: unchanged (413).
