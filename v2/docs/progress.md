@@ -3986,6 +3986,101 @@ defect (EP not in frontier). The diagnostic value of the
 substrates expose the *secondary* consequences of an
 architectural gap, not just the gap itself.
 
+### Phase H2.0 step 1 — Drive trait + 3 baseline impls (impl)
+
+ADR 0063 status: Proposed → Accepted (step 1).
+
+Phased implementation strategy: H2.0 in this ADR is
+substantial (trait + impls + DriveMix A/B + checkpoint +
+wake-gate refactor). The retrospective explicitly flagged
+H2 as the highest-risk phase. Splitting into steps to
+contain integration risk:
+
+- **Step 1 (this commit)** — `Drive` trait + 3 baseline
+  impls (`CompressionDrive`, `PredictionErrorDrive`,
+  `ModeThrashPenalty`). Each impl computes a scalar from
+  the same observables the existing scheduler consults.
+  Shadow-only: nothing currently reads these values.
+- **Step 2 (next slice)** — `DriveMix` struct with weight
+  storage + A/B mutation cycle + checkpoint round-trip +
+  episode-recording hook.
+- **Step 3 (deferred)** — wake/mode/sleep gate refactor
+  to read from DriveMix.combined_signal. The riskiest
+  step; gated on step 2 empirics.
+
+#### Step 1 changes
+
+`Drive` trait:
+
+```rust
+pub trait Drive {
+    fn id(&self) -> &'static str;
+    fn evaluate(
+        &self,
+        rset: &RSet,
+        memory: &Memory,
+        tick: u64,
+    ) -> f64;
+}
+```
+
+Three impls (read-only; no internal state):
+
+- `CompressionDrive` (id `"compression"`) — mean of
+  positive-delta episodes over the last K=10. Saturates as
+  rset compresses; mirror of the implicit signal that gates
+  the existing productive-vs-stagnant decision.
+- `PredictionErrorDrive` (id `"prediction_error"`) — sum of
+  `|hit_rate_now - hit_rate_prev|` across named axioms.
+  Scalar version of `predictions_have_pending_delta` (the
+  G1.5 boolean gate).
+- `ModeThrashPenalty` (id `"mode_thrash"`) — count of
+  mode transitions in the last K=20 (caller weighs
+  negatively in the blend).
+
+#### What step 1 does NOT do
+
+- Does NOT add `DriveMix` (deferred to step 2).
+- Does NOT change wake/mode/sleep behaviour (deferred to
+  step 3).
+- Does NOT touch the checkpoint (no new fields to round-
+  trip yet).
+- Does NOT extend `Memory::record` (no DriveMix counters
+  to update yet).
+
+In other words: shadow code that's invocable but not
+invoked. This makes step 1 risk-free against the existing
+479-test suite.
+
+#### Tests: 472 → 479 (+7)
+
+- `h2_0_compression_drive_returns_zero_with_empty_memory`
+- `h2_0_compression_drive_averages_recent_positive_deltas`
+- `h2_0_compression_drive_ignores_negative_deltas`
+- `h2_0_prediction_error_drive_returns_zero_with_no_axioms`
+- `h2_0_prediction_error_drive_returns_positive_with_pending_delta`
+- `h2_0_mode_thrash_penalty_counts_recent_transitions`
+- `h2_0_drive_ids_are_stable_and_distinct`
+
+The drive-id stability test is load-bearing: ids
+(`"compression"`, `"prediction_error"`, `"mode_thrash"`)
+will become checkpoint keys in step 2; renaming them later
+would silently break round-trip on existing checkpoints.
+The test pins them at step 1.
+
+#### Constitutional check
+
+H2.0 step 1 introduces:
+- A trait (`Drive`) and 3 unit-struct impls — no R
+  relations.
+- No new meta-R class — drives are compile-time Rust
+  constructs, not registered in rset.
+- No new identifiers or relations on rset.
+
+All five v2 commitments PASS by construction (same as the
+ADR 0063 H2.0 review predicted: drive-as-type is deferred
+to H2.1).
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

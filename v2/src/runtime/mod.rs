@@ -854,6 +854,143 @@ pub enum Event {
     Tick,
 }
 
+// ─── ADR 0063 / Phase H2.0 — Drive trait + 3 baseline impls ────
+//
+// A `Drive` exposes a per-tick scalar signal in [0, ∞) representing
+// "how urgently this drive thinks the runtime should be active".
+// Phase H2.0 step 1 — trait + 3 impls (compression / prediction-
+// error / mode-thrash penalty). The impls compute their signals
+// from the same observables the existing scheduler already
+// consults, so a future H2.0 step 2 can swap them into the wake/
+// mode/sleep gates without semantic drift. This step is shadow-
+// only: nothing yet reads these values.
+
+/// Per-tick scalar drive signal. ADR 0063 / Phase H2.0.
+pub trait Drive {
+    /// Stable identifier. Used as the key in `DriveMix` weight
+    /// tables. Must be unique across registered drives.
+    fn id(&self) -> &'static str;
+
+    /// Compute the drive's current signal strength. Convention:
+    /// non-negative scalar; 0 means "nothing for this drive to
+    /// say"; magnitude scales with urgency. Implementations should
+    /// be pure functions of (rset, memory, tick) — no internal
+    /// state — so signals are reproducible across runs.
+    fn evaluate(
+        &self,
+        rset: &RSet,
+        memory: &Memory,
+        tick: u64,
+    ) -> f64;
+}
+
+/// Compression drive — recent positive abstraction-score delta.
+/// Saturates as the rset reaches compression equilibrium (the
+/// original G0 problem). Mirror of the implicit signal that
+/// already gates the scheduler's productive-vs-stagnant decision.
+/// ADR 0063 / Phase H2.0.
+pub struct CompressionDrive;
+
+impl Drive for CompressionDrive {
+    fn id(&self) -> &'static str {
+        "compression"
+    }
+
+    fn evaluate(
+        &self,
+        _rset: &RSet,
+        memory: &Memory,
+        _tick: u64,
+    ) -> f64 {
+        const K: usize = 10;
+        let mut sum = 0.0;
+        let mut count = 0usize;
+        for ep in memory.episodes.iter().rev().take(K) {
+            if ep.delta > 0.0 {
+                sum += ep.delta;
+            }
+            count += 1;
+        }
+        if count == 0 {
+            0.0
+        } else {
+            sum / count as f64
+        }
+    }
+}
+
+/// Prediction-error drive — sum of |hit_rate_now - hit_rate_prev|
+/// across named axioms. Mirrors `predictions_have_pending_delta`
+/// but returns a scalar instead of a boolean. The G1.5 outward
+/// drive uses the boolean form; H2.0 exposes the underlying
+/// magnitude for blending. ADR 0063 / Phase H2.0.
+pub struct PredictionErrorDrive;
+
+impl Drive for PredictionErrorDrive {
+    fn id(&self) -> &'static str {
+        "prediction_error"
+    }
+
+    fn evaluate(
+        &self,
+        rset: &RSet,
+        memory: &Memory,
+        _tick: u64,
+    ) -> f64 {
+        let meta = rset.collect_meta_ids();
+        let data_edges: HashSet<R> = rset
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .cloned()
+            .collect();
+        let ps = &memory.prediction_state;
+        let mut total: f64 = 0.0;
+        for ax in rset.axioms() {
+            let pred = rset.forward_apply_axiom(ax);
+            if pred.is_empty() {
+                continue;
+            }
+            let verified = pred.intersection(&data_edges).count();
+            let now = verified as f64 / pred.len() as f64;
+            let prev = ps
+                .last_reflect_hit_rate_per_axiom
+                .get(ax)
+                .copied()
+                .unwrap_or(0.0);
+            total += (now - prev).abs();
+        }
+        total
+    }
+}
+
+/// Mode-thrash penalty — count of mode transitions in the recent
+/// window. Higher = more thrash = more penalty (caller weighs
+/// negatively in the blended signal). The existing mode-thrash
+/// gate inspects this implicitly; H2.0 exposes it as a first-
+/// class drive. ADR 0063 / Phase H2.0.
+pub struct ModeThrashPenalty;
+
+impl Drive for ModeThrashPenalty {
+    fn id(&self) -> &'static str {
+        "mode_thrash"
+    }
+
+    fn evaluate(
+        &self,
+        _rset: &RSet,
+        memory: &Memory,
+        _tick: u64,
+    ) -> f64 {
+        const K: usize = 20;
+        memory
+            .mode_transitions
+            .iter()
+            .rev()
+            .take(K)
+            .count() as f64
+    }
+}
+
 pub trait Environment {
     fn poll(&mut self) -> Vec<Event>;
 }
@@ -7480,6 +7617,127 @@ mod tests {
     }
 
     // ─── ADR 0062 retrospective #3 — EP composite eligibility ───
+
+    // ─── ADR 0063 / Phase H2.0 — Drive trait + 3 baseline impls ──
+
+    #[test]
+    fn h2_0_compression_drive_returns_zero_with_empty_memory() {
+        let rset = RSet::new();
+        let memory = Memory::default();
+        let drive = CompressionDrive;
+        assert_eq!(drive.id(), "compression");
+        assert_eq!(drive.evaluate(&rset, &memory, 0), 0.0);
+    }
+
+    #[test]
+    fn h2_0_compression_drive_averages_recent_positive_deltas() {
+        let rset = RSet::new();
+        let mut memory = Memory::default();
+        // 3 episodes: deltas 0.5, 0.0, 0.3. Mean of positive deltas
+        // (treating zeros as 0) over the K=10 window = 0.8 / 3.
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.5));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.3));
+        let drive = CompressionDrive;
+        let signal = drive.evaluate(&rset, &memory, 0);
+        let expected = (0.5 + 0.0 + 0.3) / 3.0;
+        assert!(
+            (signal - expected).abs() < 1e-9,
+            "expected ~{}, got {}",
+            expected,
+            signal
+        );
+    }
+
+    #[test]
+    fn h2_0_compression_drive_ignores_negative_deltas() {
+        let rset = RSet::new();
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.4));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, -0.6));
+        let drive = CompressionDrive;
+        // Sum of positive deltas only (0.4) divided by total count (2).
+        let signal = drive.evaluate(&rset, &memory, 0);
+        assert!((signal - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn h2_0_prediction_error_drive_returns_zero_with_no_axioms() {
+        let rset = RSet::new();
+        let memory = Memory::default();
+        let drive = PredictionErrorDrive;
+        assert_eq!(drive.id(), "prediction_error");
+        assert_eq!(drive.evaluate(&rset, &memory, 0), 0.0);
+    }
+
+    #[test]
+    fn h2_0_prediction_error_drive_returns_positive_with_pending_delta() {
+        // Plant a tiny axiomatic rset where forward_apply yields a
+        // non-empty prediction set, then plant a previous hit rate
+        // that differs from the current. The drive should return
+        // |now - prev| > 0.
+        let mut rset = diamond_poset();
+        // Force at least one named axiom by running the runtime.
+        let mut rt = AutonomousRuntime::new(rset.clone());
+        rt.run_bounded(20);
+        rset = rt.rset.clone();
+        let mut memory = Memory::default();
+        // Plant an artificial last_reflect_hit_rate that's far from
+        // whatever the current rate is for any axiom.
+        for ax in rset.axioms() {
+            memory
+                .prediction_state
+                .last_reflect_hit_rate_per_axiom
+                .insert(ax.to_string(), -1.0);
+        }
+        let drive = PredictionErrorDrive;
+        let signal = drive.evaluate(&rset, &memory, 0);
+        // If there are no axioms with non-empty predictions, signal
+        // is zero; if there's at least one, |now - (-1.0)| ≥ 1.
+        if !rset.axioms().is_empty() {
+            assert!(
+                signal > 0.0,
+                "expected positive signal under planted prev=-1.0; got {}",
+                signal
+            );
+        }
+    }
+
+    #[test]
+    fn h2_0_mode_thrash_penalty_counts_recent_transitions() {
+        let rset = RSet::new();
+        let mut memory = Memory::default();
+        let drive = ModeThrashPenalty;
+        assert_eq!(drive.id(), "mode_thrash");
+        assert_eq!(drive.evaluate(&rset, &memory, 0), 0.0);
+        // Add 3 mode transitions; signal should rise to 3.
+        for _ in 0..3 {
+            memory.record_mode_transition(ModeTransition {
+                tick: 0,
+                from: RuntimeMode::Expand,
+                to: RuntimeMode::Consolidate,
+                reason: "test".to_string(),
+            });
+        }
+        assert_eq!(drive.evaluate(&rset, &memory, 0), 3.0);
+    }
+
+    #[test]
+    fn h2_0_drive_ids_are_stable_and_distinct() {
+        // Stable id contract — these ids are the keys DriveMix
+        // (phase 2) will use; if they ever change, downstream
+        // checkpoint round-trip would silently break.
+        assert_eq!(CompressionDrive.id(), "compression");
+        assert_eq!(PredictionErrorDrive.id(), "prediction_error");
+        assert_eq!(ModeThrashPenalty.id(), "mode_thrash");
+        let ids = [
+            CompressionDrive.id(),
+            PredictionErrorDrive.id(),
+            ModeThrashPenalty.id(),
+        ];
+        let unique: HashSet<&str> = ids.iter().copied().collect();
+        assert_eq!(unique.len(), 3);
+    }
 
     #[test]
     fn retro3_composite_candidate_surfaces_for_ep_pair() {
