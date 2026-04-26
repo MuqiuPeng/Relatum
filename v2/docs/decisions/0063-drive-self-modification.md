@@ -508,3 +508,129 @@ contribute load-bearing signal. Step 3 is a focused, well-
 scoped change.
 
 Status: step 3 design captured; implementation deferred.
+
+---
+
+## Addendum 2 — Step 3b refinement after OQ #1 (2026-04-27 late²)
+
+OQ #1 experiment ran (`examples/phase_h2_0_oq1_experiment.rs`,
+`logs/2026-04-27_phase_h2_0_oq1_experiment.log`):
+hand-tuned (0.5/0.4/0.1) vs equal-weighted (0.333/0.333/0.333)
+DriveMix init over the same 2000-tick substrate.
+
+Three findings reshape the step 3b design:
+
+#### Finding 1 — shadow-only property holds across both inits
+
+Both runs produce byte-identical episode counts, EP
+attempts, named pairs/triples. Step 2 + step 3a are
+genuinely additive; nothing leaks back into runtime
+behaviour through the new observability.
+
+#### Finding 2 — combined-signal magnitudes are weight-sensitive
+
+Hand-tuned signal range: 1.0–1.3.
+Equal-weighted signal range: 3.3–4.2.
+Persistent ~2-3× gap.
+
+The dominating factor is `mode_thrash` (typical evaluate
+output ~10) interacting with its weight (0.1 vs 0.333).
+
+**This rules out step 3b's original "absolute threshold"
+design.** A threshold of `combined_drive_signal < 0.5`
+would force frequent sleep transitions under hand-tuned
+and almost never fire under equal-weighted.
+
+#### Refined step 3b design
+
+Replace "absolute threshold" with **normalized signal**:
+
+```rust
+fn normalized_drive_signal(rt: &AutonomousRuntime) -> f64 {
+    let weight_sum: f64 = rt.drive_mix.active_weights().values().sum();
+    if weight_sum < f64::EPSILON {
+        return 0.0;
+    }
+    rt.combined_drive_signal() / weight_sum
+}
+```
+
+`normalized_drive_signal` is invariant to absolute weight
+magnitudes — it's a weighted average of drive evaluations.
+Threshold calibration becomes a single-parameter exercise
+against the post-fix long-run baseline, not a per-mix
+recalibration.
+
+#### Finding 3 — mutation trajectories are currently identical
+
+Both runs mutated the same knobs in the same directions
+(hand: a.mode_thrash ×1.25, b.compression ×0.8;
+equal: identical pattern proportionally). Expected: at
+step 3a, EP behaviour is identical → DriveMix sees
+identical window means → mutation chooser draws the same
+keys/directions.
+
+This will diverge at step 3b: once normalized signal
+gates the wake/mode/sleep machinery, EP firing rate
+becomes mix-dependent → DriveMix's evidence becomes mix-
+dependent → mutation paths diverge.
+
+**Step 3b is the slice that makes self-tuning observable
+in mutation-trajectory space.** Until step 3b, mutation
+mechanics work but operate on degenerate evidence.
+
+#### Updated step 3b design (3 changes)
+
+1. **Add `normalized_drive_signal(&self) -> f64`**.
+   Weight-invariant; ranges in same magnitude as drive
+   evaluate outputs. Threshold calibration is one-shot.
+
+2. **Replace zero-streak gate with normalized-signal gate**.
+   Existing gate fires EP when `zero_streak >= max_zero_streak
+   && axioms exist && pending_delta`. Replacement:
+   `normalized_drive_signal < threshold && axioms exist
+   && pending_delta`. Threshold initial: 0.3 (calibrated
+   against post-fix long-run; current normalized values
+   sit around 1.0–4.0).
+
+3. **Phase-shift DriveMix windows vs MetaScheduler**.
+   Add a 25-episode offset to DriveMix's window-start so
+   the two A/B loops never close the same window
+   simultaneously. Mitigates OQ #5's two-loop interaction
+   risk.
+
+#### Verification plan for step 3b
+
+- `h2_0_step3b_normalized_signal_is_weight_invariant`:
+  hand-tuned and equal-weighted DriveMix produce
+  comparable normalized signals over identical inputs.
+- `h2_0_step3b_low_signal_triggers_sleep`: synthesize a
+  drive registry returning all-zeros; assert runtime
+  sleeps even with non-empty axioms.
+- `h2_0_step3b_high_signal_keeps_runtime_running`:
+  synthesize a drive registry returning high values;
+  assert runtime stays Running across full window.
+- F0 battery rerun: stream_diamond's STILL GROWING
+  verdict must hold post-step-3b. Other seeds' verdicts
+  match pre-step-3b.
+- Long-run rerun: mutation trajectories should diverge
+  between hand-tuned and equal-weighted runs (counter
+  to OQ #1's finding under step 3a).
+
+#### Risks (re-stated for step 3b adoption)
+
+- **F0 verdict stability**. The step 3b threshold must
+  not regress stream_diamond from STILL GROWING.
+  Recommended threshold (0.3) is below typical observed
+  normalized signal (1.0+) so quiescence triggers should
+  be rare; calibrate empirically before commit.
+- **Two-loop drift**. Phase-shifted windows reduce but
+  do not eliminate interaction. May need a unified
+  feedback controller in a future slice if drift
+  manifests.
+- **Constitutional commitment 3 (drive-as-type)**. Still
+  deferred at step 3b — drives remain compile-time. H2.1
+  is the slice that opens commitment 3.
+
+Status: step 3b design refined; implementation deferred
+pending user signal.
