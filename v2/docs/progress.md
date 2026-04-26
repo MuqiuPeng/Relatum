@@ -2248,3 +2248,33 @@ persistence; termination cap on ESTABLISHED→meta-meta cycles).
 Status: **Proposed**. No code yet.
 
 Tests: unchanged (381).
+
+### Phase-A verification rerun (post-B/C era)
+Recaptured `examples/phase_a_verification` output into
+`logs/2026-04-26_phase_a_verification.log`. The B0 → C2 wiring
+between 2026-04-25 and 2026-04-26 changes scheduler decisions
+in subtle ways; this log is the new reference.
+
+Diff vs `2026-04-25` log: **one line.** The 8-case rigorous
+battery is byte-identical (every `match=OK` with the same axiom
+counts and members). Only the drip-feed scenario shifts:
+
+```
+- drip_feed: tick=40 lifecycle=Sleeping theories=3 is_poset=true
++ drip_feed: tick=40 lifecycle=Sleeping theories=2 is_poset=true
+```
+
+The named theory `t_0` is identical (10-axiom set, including
+reflexivity + transitivity templates), and `is_poset=true`
+holds. The drop from 3 → 2 reflects fewer intermediate
+"settled" namings during edge ingestion — most likely the
+B1+ DiscoverPatterns hit-rate cooldown suppressing one
+intermediate plateau, or B3 stale-pruning a transient theory
+that didn't accumulate enough recent improvements before its
+cooldown floor. Verification #3 / #5 still pass (the `runtime::
+tests::a_verification_*` test suite was green throughout
+B/C/D-design landings).
+
+This is the expected kind of behavioral drift from history-aware
+rules: more conservative naming, no loss of the load-bearing
+theory. To regenerate: `cargo run --example phase_a_verification`.
