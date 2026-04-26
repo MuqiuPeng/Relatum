@@ -3104,3 +3104,101 @@ generate ongoing predictions; their hit rates against the
 stream events would accumulate into Reflect-tick deltas).
 
 Tests: unchanged (413).
+
+### G1.3 — checkpoint serialization (impl)
+PredictionState cumulative counters now round-trip through
+checkpoint via new `[prediction_state]` section. Transient
+`last_predicted_per_axiom` snapshot intentionally NOT persisted
+— regenerates on first post-restore Running tick. Closes the
+G1.3 deferred item.
+
+Tests: 426 → 427 (+1 round-trip).
+
+### stream_diamond → STILL GROWING (the load-bearing verification)
+Two changes together flip the F0 battery's stream-substrate
+seed from CONVERGED to STILL GROWING:
+
+1. **Fresh forward-apply gating.**
+   `predictions_have_pending_delta` and the EP action handler
+   now use a fresh `RSet::forward_apply_axiom(ax)` against
+   current rset state, NOT the cumulative counters. The
+   counters update only on verify-against-snapshot, which is
+   no-op while sleeping; environmental events arriving during
+   sleep wouldn't shift the gate. Fresh forward-apply makes
+   the gate respond to any rset change immediately at wake-
+   time — exactly what an outward drive needs.
+
+2. **Multi-phase stream_diamond.** Three disjoint diamond
+   posets drip across the 300-tick window (phases at ticks
+   1-24 / 100-123 / 200-223). Each phase wakes the sleeping
+   runtime, EP fires, theory/pattern discovery re-engages,
+   eventually re-quiesces; next phase repeats.
+
+F0 battery diff:
+```
+                  seed   pre verdict  post verdict
+        stream_diamond     CONVERGED   STILL GROWING (!)
+```
+
+`stream_diamond` final state:
+- patterns: 0 → **3** (discovery picks up the diamond shape
+  isomorphism across phases)
+- ESTABLISHED edges: 0 → **3** (C0 promotion)
+- mm.tries: 6, mm.hits: 5
+- 53 episodes total, lifecycle alternates Sleeping↔Running
+  across phases
+
+**The first STILL GROWING verdict in v2's history.** The
+architectural analysis predicted: with outward drive +
+streaming environment, the runtime would no longer terminate
+at compression equilibrium. Reproducible.
+
+Tests: unchanged (427).
+
+### ADR 0060 (Proposed) — Phase H meta-mechanism
+With prediction-error drive in place, the runtime now has a
+*standard for evaluating its own decisions*. EP delta lets it
+compare scheduler configurations, action sequences, even drive
+mixes — a capability the compression-only drive could never
+ground. Phase H opens the door to genuine self-extension.
+
+Three sub-slices, ordered by ambition:
+
+**H0 — Parameterized scheduler with prediction-error feedback**
+(smallest viable). Wraps `RuleBasedScheduler` in an A/B
+controller: two candidate configs alternate across
+"evaluation windows" (default 50 episodes); end of window,
+mean EP delta picks the winner; loser gets one knob mutated
+within bounds. Pure parameter-space self-tuning. No new
+ActionKinds, no new R relations.
+
+**H1 — ActionKind composition discovery** (sketched, deferred).
+Mine the episode log for action sequences correlated with EP
+delta improvements; promote those sequences to first-class
+composite ActionKinds minted at runtime. Genuinely
+self-extending: the runtime's *action space* grows. Requires
+sequence-mining, dispatch routing, and an identity story for
+new ActionKinds.
+
+**H2 — Self-modifying drive** (most speculative). Use EP
+trajectories to evaluate whether the current drive mix
+(compression + prediction-error) is the right optimization
+target; potentially introduce curiosity / novelty / long-
+horizon objectives.
+
+H0 design specifics:
+- New `MetaSchedulerConfig` wraps two
+  `RuleBasedSchedulerConfig` candidates plus window state.
+- `RuleBasedSchedulerConfig` factored out of the scheduler
+  struct itself.
+- Mutation: pick a knob, scale by ×0.8 / ×1.25, clamp to
+  declared bounds.
+- New `[meta_scheduler]` section in B2 checkpoint.
+- New F0 seed `h0_drift_test` for empirics.
+
+ADR carries 4 alternatives rejected, 6 open questions
+(window size, mutation magnitude, candidate count,
+multi-objective, regression reset, checkpoint compat).
+Status: **Proposed**. No code yet.
+
+Tests: unchanged (427).
