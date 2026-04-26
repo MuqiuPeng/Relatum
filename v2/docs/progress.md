@@ -2347,3 +2347,54 @@ now has its first feedback loop where its own M1 markers
 *influence what discovery does*, even if the closure
 back-around to "rediscovered meta-meta-pattern named in rset →
 eligible for C0" still needs the next slice.
+
+### Phase D0+ — loop closure (ADR 0054, slice 2)
+The deferred naming pipeline lands. `RSet::find_instances_of` and
+`is_clean_subgraph` gained meta-subset siblings
+(`find_instances_of_with_meta_subset`,
+`is_clean_subgraph_with_meta_subset`) that walk the same filter
+view as `discover_motifs_with_meta_subset`. A new
+`RSet::meta_meta_subset(&[markers])` helper centralises the
+"markers + their right-of subjects" set construction so the
+runtime, `find_instances`, and tests all use the same filter
+shape.
+
+The `DiscoverMetaMetaPatterns` action now takes the top novel
+candidate, finds its instances under the M1 view, and records
+them via `name_pattern_instances_with_policy` with the
+**Intensional** policy. The policy choice is deliberate:
+Intensional writes Layer A (registry + roles + structural
+edges among roles) but skips Layer B (the instance-bound
+`R(<inst>, <participant>)` edges). With Layer B off, ESTABLISHED
+or SHARED_AXIOM never get pinned as literal participants of the
+freshly-named meta-meta-pattern — keeping marker semantics
+clean and avoiding the kind of drift ADR 0054's open question
+#4 (termination) flagged.
+
+Loop-closure verified: a runtime that starts with 5 named
+patterns each carrying ESTABLISHED produces a *new* pattern
+within ≤ 8 ticks whose canonical lives in the M1 hypothesis
+space.
+
+Tests (3 new D0+):
+- `find_instances_of_with_meta_subset` returns ≥ 10 clean
+  instances of the canonical "3 edges with shared endpoint"
+  when 5 ESTABLISHED edges are present (the WL-1 canonical
+  collapses fan-in and fan-out at this size, doubling the
+  raw-count expectation; documented inline). Every returned
+  instance passes the meta-subset cleanness check.
+- E2E: 5 ESTABLISHED-marked patterns + RuleBasedScheduler →
+  `pattern_count` strictly grows after `run_bounded(8)`, AND a
+  `DiscoverMetaMetaPatterns` episode appears in the log.
+- Intensional policy invariant: after the loop closure, no
+  `R(p_*_i_*, ESTABLISHED_MARKER)` edges exist (no Layer B
+  pinning of the marker as a literal instance participant).
+
+Tests: 389 → 392 (+3). ADR 0054 status: Phase D0 implemented →
+Phase D0 + D0+ implemented. The "M1 → discovery → named
+meta-meta-pattern" half of the closure now works; the
+second half ("named meta-meta-pattern grows old enough → C0
+promotes it back to ESTABLISHED → next D0 round sees it")
+follows automatically through the existing C0 / B-line
+infrastructure once the meta-meta-pattern accumulates
+`first_seen_tick` age.

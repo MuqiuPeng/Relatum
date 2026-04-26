@@ -1,6 +1,6 @@
 # 0054: Meta-meta-pattern discovery (Phase D)
 
-Status: Accepted (Phase D0 implemented; naming pipeline deferred)
+Status: Accepted (Phase D0 + D0+ implemented)
 Date: 2026-04-26
 
 ## Context
@@ -64,16 +64,24 @@ this ADR's original sketch:
   20+ existing `DiscoveryConfig` literal-construction sites and
   keeps the option out of the default surface for callers that
   don't care.
-- **Naming pipeline deferred.** D0 dispatches a
-  `DiscoverMetaMetaPatterns` action that runs the meta-subset
-  discovery and discards the candidates after the fact. The
-  episode is recorded; the candidates are NOT named via
-  `name_pattern_instances`. Loop closure (the "M1 → discovery →
-  named meta-meta-pattern → C0 promotion" cycle described in the
-  Decision section) requires extending `find_instances_of` to
-  honor the meta-subset filter, which is a separate slice. D0
-  proves the wiring works; the next slice proves the wiring is
-  useful.
+- **Naming pipeline (D0+) followed in the next slice.**
+  `find_instances_of` and `is_clean_subgraph` were extended with
+  meta-subset variants (`find_instances_of_with_meta_subset`,
+  `is_clean_subgraph_with_meta_subset`) that honor the same
+  filter semantics. The `DiscoverMetaMetaPatterns` action now
+  takes the top novel candidate, finds clean instances under
+  the M1 view, and records them via
+  `name_pattern_instances_with_policy(..., Intensional)`. The
+  Intensional policy was deliberate: it writes Layer A (registry
+  + roles + structural edges) but skips Layer B
+  (instance-bound participant edges), which prevents the
+  ESTABLISHED / SHARED_AXIOM markers from being pinned as
+  literal participants of the new pattern. With Layer B off,
+  the marker still appears in the pattern's *role* identifiers
+  but no `R(<inst>, ESTABLISHED_MARKER)` edge gets minted.
+  Loop-closure verified end-to-end: a runtime starting with 5
+  ESTABLISHED-marked patterns names a meta-meta-pattern within
+  ≤ 8 ticks.
 
 #### `DiscoveryConfig::meta_subset_filter: Option<HashSet<String>>`
 

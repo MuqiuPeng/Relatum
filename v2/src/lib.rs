@@ -1026,6 +1026,26 @@ impl RSet {
         self.discover_motifs_from_edges(config, &data)
     }
 
+    /// Build the canonical meta-meta subset from a list of M1
+    /// markers: each marker plus the named subjects it currently
+    /// anchors (the `r.x` of every `R(x, marker)`). The same
+    /// construction the runtime uses for `DiscoverMetaMetaPatterns`,
+    /// exposed here so callers and tests don't have to reimplement
+    /// it. ADR 0054 / Phase D0.
+    pub fn meta_meta_subset(
+        &self,
+        markers: &[&str],
+    ) -> HashSet<String> {
+        let mut subset: HashSet<String> = HashSet::new();
+        for m in markers {
+            subset.insert((*m).to_string());
+            for r in self.right_of(m) {
+                subset.insert(r.x.clone());
+            }
+        }
+        subset
+    }
+
     /// Run `discover_motifs` against a filtered edge view: every data
     /// edge plus every meta edge with at least one endpoint in `subset`.
     /// ADR 0054 / Phase D0. Pure data edges (both endpoints
@@ -1165,6 +1185,41 @@ impl RSet {
         results
     }
 
+    /// Like `find_instances_of`, but the universe of edges is the
+    /// meta-subset view: data edges plus meta edges anchored to
+    /// `subset`. Used by Phase D0+ loop closure to find clean
+    /// instances of a meta-meta-pattern's canonical form.
+    /// ADR 0054 / Phase D0+.
+    pub fn find_instances_of_with_meta_subset(
+        &self,
+        target: &CanonicalForm,
+        subset: &HashSet<String>,
+    ) -> Vec<Subgraph> {
+        let k = target.len();
+        if k == 0 {
+            return Vec::new();
+        }
+        let data = self.edges_with_meta_subset_sorted(subset);
+        if k > data.len() {
+            return Vec::new();
+        }
+
+        let mut results: Vec<Subgraph> = Vec::new();
+        let mut seen: HashSet<Vec<R>> = HashSet::new();
+
+        for start in 0..data.len() {
+            let mut initial: HashSet<R> = HashSet::new();
+            initial.insert(data[start].clone());
+            expand_connected(&data, initial, k, &mut seen, &mut results, target);
+        }
+
+        results.retain(|sg| {
+            self.is_clean_subgraph_with_meta_subset(sg, subset)
+        });
+
+        results
+    }
+
     /// A subgraph is "clean" in this RSet iff its participants induce
     /// exactly `sg.len()` data edges (meta-R excluded). Non-clean
     /// subgraphs are embedded in larger structures, which violates the
@@ -1179,6 +1234,39 @@ impl RSet {
             .filter(|r| {
                 !meta.contains(&r.x)
                     && !meta.contains(&r.y)
+                    && parts.contains(r.x.as_str())
+                    && parts.contains(r.y.as_str())
+            })
+            .count();
+        induced == sg.len()
+    }
+
+    /// Cleanness check under the meta-subset edge view. The induced
+    /// edge set is computed against the same filter semantics as
+    /// `discover_motifs_with_meta_subset`: data edges always count;
+    /// meta edges count only when at least one endpoint is in
+    /// `subset`. Used by `find_instances_of_with_meta_subset` so a
+    /// meta-meta-pattern's instances are validated against the same
+    /// hypothesis space the discovery used. ADR 0054 / Phase D0+.
+    pub fn is_clean_subgraph_with_meta_subset(
+        &self,
+        sg: &Subgraph,
+        subset: &HashSet<String>,
+    ) -> bool {
+        let meta = self.collect_meta_ids();
+        let parts: HashSet<&str> = sg.identifiers();
+        let induced: usize = self
+            .instances
+            .iter()
+            .filter(|r| {
+                let x_meta = meta.contains(&r.x);
+                let y_meta = meta.contains(&r.y);
+                let visible = if !x_meta && !y_meta {
+                    true
+                } else {
+                    subset.contains(&r.x) || subset.contains(&r.y)
+                };
+                visible
                     && parts.contains(r.x.as_str())
                     && parts.contains(r.y.as_str())
             })

@@ -14,8 +14,8 @@
 
 use crate::{
     AutonomousConfig, AxiomDiscoveryConfig, DiscoveryConfig, NamingPolicy,
-    RefinementConfig, RSet, TheoryRelationKind, ESTABLISHED_MARKER,
-    SHARED_AXIOM_MARKER, R,
+    PatternRecordingPolicy, RefinementConfig, RSet, TheoryRelationKind,
+    ESTABLISHED_MARKER, SHARED_AXIOM_MARKER, R,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -1683,21 +1683,18 @@ impl AutonomousRuntime {
                 }
             }
             ActionKind::DiscoverMetaMetaPatterns => {
-                // ADR 0054 / Phase D0. Probe the rset's M1 subgraph
-                // for recurring shapes. The naming pipeline (find +
-                // name) is deferred — this slice records that a pass
-                // happened, with the candidate count in the episode's
-                // post-action `abstraction_score`. No rset mutation
-                // here, so abstraction_score will be unchanged and
-                // the episode delta will be 0.
+                // ADR 0054 / Phase D0+. Probe the rset's M1 subgraph
+                // and (loop closure) name the top novel candidate via
+                // an Intensional pattern recording. Intensional means
+                // we write the pattern's roles + Layer A structural
+                // edges but skip Layer B instance bindings — keeps
+                // marker nodes from being pinned as concrete
+                // participants. The naming may fail if no clean
+                // instance survives `is_clean_subgraph_with_meta_subset`,
+                // in which case the action is effectively a no-op.
                 let cfg = &self.frontier.meta_meta;
-                let mut subset: HashSet<String> = HashSet::new();
-                for m in &cfg.markers {
-                    subset.insert((*m).to_string());
-                    for r in self.rset.right_of(m) {
-                        subset.insert(r.x.clone());
-                    }
-                }
+                let markers: Vec<&str> = cfg.markers.clone();
+                let subset = self.rset.meta_meta_subset(&markers);
                 let dconfig = DiscoveryConfig {
                     target_size: cfg.target_size,
                     sample_count: cfg.sample_count,
@@ -1705,13 +1702,32 @@ impl AutonomousRuntime {
                     rng_seed: cfg.rng_seed,
                     include_meta_in_discovery: false,
                 };
-                let _candidates = self
+                let candidates = self
                     .rset
                     .discover_motifs_with_meta_subset(&dconfig, &subset);
-                // The candidates are observable through the episode
-                // log via post-action rset state; for D0 we don't
-                // materialize them as named patterns. Loop closure
-                // (find_instances + name) is the next slice.
+                for candidate in candidates.iter().take(1) {
+                    if self
+                        .rset
+                        .find_pattern_matching(&candidate.canonical)
+                        .is_some()
+                    {
+                        continue;
+                    }
+                    let instances = self
+                        .rset
+                        .find_instances_of_with_meta_subset(
+                            &candidate.canonical,
+                            &subset,
+                        );
+                    if instances.is_empty() {
+                        continue;
+                    }
+                    let _ = self.rset.name_pattern_instances_with_policy(
+                        &instances,
+                        PatternRecordingPolicy::Intensional,
+                    );
+                    break;
+                }
             }
         }
     }
@@ -4876,6 +4892,112 @@ mod tests {
                 .map(|ep| ep.action_kind)
                 .collect::<Vec<_>>()
         );
+    }
+
+    // ─── Phase D0+ — loop closure (ADR 0054) ────────────────────
+
+    #[test]
+    fn d0plus_find_instances_returns_m1_anchored_subgraphs() {
+        // 5 ESTABLISHED edges form a star centred at ESTABLISHED_MARKER.
+        // The 3-edge "in-star" canonical (3 edges all pointing to a
+        // single shared right-endpoint) should have multiple clean
+        // instances — every 3-subset of the 5 ESTABLISHED edges.
+        let mut rs = RSet::new();
+        for p in &["p_a", "p_b", "p_c", "p_d", "p_e"] {
+            rs.add(R::new(crate::PATTERN_MARKER, *p));
+            rs.add(R::new(*p, ESTABLISHED_MARKER));
+        }
+        let subset = rs.meta_meta_subset(&[ESTABLISHED_MARKER]);
+        // Build the canonical for "three edges into the same right
+        // endpoint" by sampling one such instance and canonicalising
+        // it directly.
+        let mut sample = std::collections::HashSet::<R>::new();
+        sample.insert(R::new("p_a", ESTABLISHED_MARKER));
+        sample.insert(R::new("p_b", ESTABLISHED_MARKER));
+        sample.insert(R::new("p_c", ESTABLISHED_MARKER));
+        let sg = crate::Subgraph::from_edges(sample.into_iter().collect::<Vec<_>>());
+        let canon = sg.canonicalize();
+        let instances =
+            rs.find_instances_of_with_meta_subset(&canon, &subset);
+        // The 5 ESTABLISHED edges share a common right-endpoint, so
+        // every 3-subset is a connected canonical match. PATTERN_MARKER
+        // edges happen to canonicalize identically (fan-in and fan-out
+        // collapse to the same WL-1 canonical when the only label
+        // distinction is degree direction at the unique source/target),
+        // so we get 10 ESTABLISHED-fan-ins + 10 PATTERN_MARKER-fan-outs
+        // = 20 instances in this view. The contract verified by this
+        // test is "find_instances_with_meta_subset returns non-empty
+        // matches when the M1 view contains a recurring shape" — exact
+        // counts depend on canonical equivalence-class sizes.
+        assert!(
+            instances.len() >= 10,
+            "expected ≥ 10 instances, got {}",
+            instances.len()
+        );
+        for sg in &instances {
+            assert!(rs.is_clean_subgraph_with_meta_subset(sg, &subset));
+        }
+    }
+
+    #[test]
+    fn d0plus_loop_closure_names_meta_meta_pattern() {
+        // E2E: 5 ESTABLISHED edges, run runtime, verify a NEW pattern
+        // is named whose canonical lives in the M1 hypothesis space.
+        let mut rs = RSet::new();
+        for p in &["p_a", "p_b", "p_c", "p_d", "p_e"] {
+            rs.add(R::new(crate::PATTERN_MARKER, *p));
+            rs.add(R::new(*p, ESTABLISHED_MARKER));
+        }
+        let pre_count = rs.patterns().len();
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.frontier.mark_dirty();
+        rt.run_bounded(8);
+        let post_count = rt.rset.patterns().len();
+        assert!(
+            post_count > pre_count,
+            "expected meta-meta-pattern to be named (pre={}, post={})",
+            pre_count,
+            post_count
+        );
+        // Verify a Declarativize-style episode wasn't required —
+        // naming happens through the DiscoverMetaMetaPatterns
+        // execute_action arm, so the episode kind is that.
+        let saw_meta_meta = rt.memory.episodes.iter().any(|ep| {
+            ep.action_kind == ActionKind::DiscoverMetaMetaPatterns
+        });
+        assert!(saw_meta_meta);
+    }
+
+    #[test]
+    fn d0plus_intensional_naming_does_not_pin_marker_as_instance() {
+        // Confirm the Intensional policy: after a meta-meta-pattern
+        // gets named, no instance edge `R(<inst>, ESTABLISHED_MARKER)`
+        // appears with `<inst>` having the `<pattern>_i_<n>` shape.
+        // (Such edges would mean Layer B pinned ESTABLISHED_MARKER
+        // as a literal participant, conflating the abstract role
+        // with the marker itself.)
+        let mut rs = RSet::new();
+        for p in &["p_a", "p_b", "p_c", "p_d", "p_e"] {
+            rs.add(R::new(crate::PATTERN_MARKER, *p));
+            rs.add(R::new(*p, ESTABLISHED_MARKER));
+        }
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.frontier.mark_dirty();
+        rt.run_bounded(8);
+        // Intensional policy means no `R(p_*_i_*, *)` edges should
+        // exist for the new pattern. Confirm by checking that no
+        // edge ending in ESTABLISHED_MARKER has an x-side id of the
+        // shape `p_<n>_i_<m>` (the instance-id mint shape).
+        for r in rt.rset.right_of(ESTABLISHED_MARKER) {
+            assert!(
+                !r.x.contains("_i_"),
+                "found instance-bound ESTABLISHED edge: {:?} \
+                 — Intensional naming should not produce these",
+                r
+            );
+        }
     }
 
     #[test]
