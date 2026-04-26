@@ -2839,3 +2839,50 @@ Tests: 402 → 408 (+6). ADR 0057 status: Proposed → Accepted
 (with caveat — implementation correct, system-level effect
 bounded by thrash gate; G1 needed for full outward-drive
 thesis to manifest).
+
+### ADR 0058 (Proposed) — axiom forward-application semantics
+Phase G1's prerequisite. Defines `RSet::forward_apply_axiom(id)`
+and `RSet::forward_apply_all()` — pure-read operators that
+take a named axiom and return the set of conclusion-edge
+instances the axiom predicts under every valid premise binding
+over data identifiers.
+
+Concretely:
+```
+forward_apply(axiom, rset) =
+  { R(σ(c.x), σ(c.y))
+    | σ : 0..num_vars → data_ids(rset)
+    , for every p in axiom.premise:
+        R(σ(p.x), σ(p.y)) ∈ rset }
+```
+
+Key semantic choices:
+- Substitution domain = data identifiers only (commitment 3:
+  meta-R is not subject to axiomatic prediction).
+- Output is the *raw* set; caller decides whether to subtract
+  existing rset edges (G1.0 stays raw; G1's drive picks).
+- One-shot, one-axiom-at-a-time. No recursive closure. No
+  fixpoint.
+
+Phase G1.0 = standard premise forward-apply (this ADR's
+primary slice). G1.1 = equality constraints (ADR 0044). G1.2 =
+disjunctive premises. All sketched, none implemented.
+
+Performance analysis: O(N^num_vars) where N = data id count;
+v2's typical num_vars ≤ 3, so ≤ 2.7e7 candidate substitutions
+on a 300-node rset. Acceptable per-tick. β-scale (1000+ ids)
+needs ADR 0043-style sampling, deferred to G1.X.
+
+Independent of the drive, forward-apply is useful as a
+debugging operator: "what does this axiom actually claim?"
+The runtime today only evaluates axioms post-hoc against
+existing rset state (`evaluate_axiom_template`); ADR 0058
+fills the obvious gap.
+
+ADR 0059 (prediction-error drive, TBD) will consume the output
+of forward-apply to define and wire prediction error into the
+scheduler. ADR 0058 is the mechanism; ADR 0059 will be the
+drive.
+
+Tests: unchanged (408). 4 alternatives rejected, 4 open
+questions logged. Status: **Proposed**. No code yet.
