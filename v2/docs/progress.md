@@ -3245,3 +3245,69 @@ The runtime can now A/B-test scheduler configurations under
 the prediction-error drive — first move toward genuine
 self-extension. H1 (composite ActionKind discovery) and H2
 (self-modifying drive) sketched and deferred.
+
+### stream_diamond — sustained STILL GROWING through full HORIZON
+Two changes that together produce sustained outward-drive
+activity across the full 300-tick HORIZON:
+
+1. **Six phases (was three)** at 50-tick intervals — phases at
+   ticks 1/50/100/150/200/250 with 4-node disjoint diamonds.
+   Every snapshot interval (50 ticks) catches at least one
+   phase's activity.
+
+2. **Episode-count-based verdict logic.** The F0 battery's
+   `consecutive_idle` metric was using `pattern_count`
+   stability, but patterns sometimes prune-cycle across phases
+   (C0 promotes them, B3 stale-prunes later) — that's not
+   idle, that's churn. Episode count monotonically grows while
+   the runtime works, so it's the right activity proxy.
+
+stream_diamond final state at tick 300:
+- episodes: 0 → **89** (monotonic across all 6 snapshots)
+- theories: 3 (stable after phase 1)
+- ESTABLISHED edges: 3
+- Verdict: **STILL GROWING** (sustained throughout 300 ticks)
+
+This is the cleaner empirical demonstration of the
+prediction-error drive's purpose: with a continuously-active
+streaming environment, the runtime stays productively engaged
+without drifting toward sleep. Both the mechanism (G1.5
+prediction-error drive) and the verification harness (F0
+battery + multi-phase stream seed) are now solid enough to
+serve as the regression baseline for Phase H1+.
+
+### ADR 0061 (Proposed) — action-sequence mining (Phase H1)
+Phase H0 lets the runtime tune scheduler **parameters**.
+Phase H1's harder ambition: mine the episode log for
+**recurring action sequences** that correlate with positive EP
+delta improvement, and promote those sequences to first-class
+composite ActionKinds — genuinely growing the action space at
+runtime, not just tuning thresholds.
+
+Three sub-slices:
+
+**H1.0** (smallest viable, mechanism-only): new `SequenceStats`
+on `Memory` tracks pair-counts and post-EP-delta correlations
+across consecutive episodes. Updated as a side-effect of
+`execute_and_record`. No scheduler change. Round-trips through
+checkpoint via new `[sequence_stats]` section.
+
+**H1.1**: promote high-correlation pairs to meta-R via
+`R(__action_seq__, seq_N)` chains; scheduler biases priority
+toward sequence-suffix actions when the prefix matches the
+prior episode.
+
+**H1.2**: full composite ActionKind dispatch. Either extend
+`ActionKind` with a `Composite(seq_id)` variant or introduce a
+parallel `ScheduledAction` enum. Promoted sequences gain
+genuine compound execution semantics, single-episode
+bookkeeping. **The deepest constitutional move Phase H raises:
+ActionKinds are no longer a compile-time constant.**
+
+ADR carries 4 alternatives rejected, 6 open questions
+(pair-vs-N-gram, lookahead window K, promotion sample
+threshold, demotion semantics, composite identity, episode
+bookkeeping granularity).
+
+Status: **Proposed**. No code yet. H1.0 is the next viable
+implementation slice; H1.1 / H1.2 wait for H1.0's empirics.
