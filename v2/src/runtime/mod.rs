@@ -305,22 +305,38 @@ impl RuleBasedScheduler {
 
     /// Returns true if dispatching `EvaluatePredictions` *now*
     /// would produce a non-zero delta — i.e., at least one axiom's
-    /// current hit rate differs from its stored
-    /// `last_reflect_hit_rate_per_axiom`. Without this gate, a
-    /// stable rset would re-dispatch EvaluatePredictions every
-    /// Reflect tick with delta = 0, which is wasted work and
-    /// breaks the "Reflect → Sleep when nothing useful is
-    /// happening" property. ADR 0059 / Phase G1.5.
+    /// **fresh** forward-apply hit rate (recomputed from current
+    /// rset state) differs from its stored
+    /// `last_reflect_hit_rate_per_axiom`.
+    ///
+    /// Uses fresh forward-apply rather than the cumulative
+    /// counters because the counters update only when verify runs
+    /// against a prior snapshot, and verify is no-op while
+    /// sleeping. With fresh forward-apply, the gate responds to
+    /// any rset change (including events that arrive during sleep
+    /// and are applied at wake time), which is the architectural
+    /// point of the outward drive — react to environmental change.
+    /// Cumulative counters are still maintained for future
+    /// long-run reliability uses (e.g., axiom-trust promotion).
+    /// ADR 0059 / Phase G1.5.
     fn predictions_have_pending_delta(
         ctx: &SchedulerContext<'_>,
     ) -> bool {
-        const MIN_TOTAL_FOR_HIT_RATE: u64 = 5;
+        let meta = ctx.rset.collect_meta_ids();
+        let data_edges: HashSet<R> = ctx
+            .rset
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .cloned()
+            .collect();
         let ps = &ctx.memory.prediction_state;
         for ax in ctx.rset.axioms() {
-            let now = match ps.hit_rate(ax, MIN_TOTAL_FOR_HIT_RATE) {
-                Some(r) => r,
-                None => continue,
-            };
+            let pred = ctx.rset.forward_apply_axiom(ax);
+            if pred.is_empty() {
+                continue;
+            }
+            let verified = pred.intersection(&data_edges).count();
+            let now = verified as f64 / pred.len() as f64;
             let prev = ps
                 .last_reflect_hit_rate_per_axiom
                 .get(ax)
@@ -2069,14 +2085,23 @@ impl AutonomousRuntime {
                 }
             }
             ActionKind::EvaluatePredictions => {
-                // ADR 0059 / Phase G1.5. Re-run forward-apply on
-                // current rset; compare per-axiom hit rates against
-                // the rate observed at the previous Reflect-time
-                // dispatch; report sum-of-deltas as the episode
-                // delta. Pure observation — does not mutate rset.
-                const MIN_TOTAL_FOR_HIT_RATE: u64 = 5;
+                // ADR 0059 / Phase G1.5. Use fresh forward-apply
+                // against current rset (not the stored
+                // total/verified counters which only update on
+                // verify-against-snapshot). The instant rate
+                // responds to environmental change — events
+                // arriving during sleep are reflected immediately
+                // at wake-time. Per-axiom hit-rate delta vs. the
+                // previous EP snapshot becomes the episode delta;
+                // pure observation, no rset mutation.
+                let meta = self.rset.collect_meta_ids();
+                let data_edges: HashSet<R> = self
+                    .rset
+                    .iter()
+                    .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+                    .cloned()
+                    .collect();
                 let mut delta_sum: f64 = 0.0;
-                // Snapshot current axiom set so we can iterate once.
                 let axioms: Vec<String> = self
                     .rset
                     .axioms()
@@ -2084,14 +2109,14 @@ impl AutonomousRuntime {
                     .map(str::to_owned)
                     .collect();
                 for ax in axioms {
-                    let now = match self
-                        .memory
-                        .prediction_state
-                        .hit_rate(&ax, MIN_TOTAL_FOR_HIT_RATE)
-                    {
-                        Some(r) => r,
-                        None => continue, // not enough samples yet
-                    };
+                    let pred = self.rset.forward_apply_axiom(&ax);
+                    if pred.is_empty() {
+                        continue;
+                    }
+                    let verified =
+                        pred.intersection(&data_edges).count();
+                    let now =
+                        verified as f64 / pred.len() as f64;
                     let prev = self
                         .memory
                         .prediction_state
@@ -5139,12 +5164,31 @@ mod tests {
 
     #[test]
     fn g1_5_reflect_picks_evaluate_predictions_when_axioms_have_data() {
-        // ADR 0059 / G1.5 placement: EP fires only when
-        // zero_streak hits the stagnation floor (3 by default)
-        // AND axioms have pending hit-rate delta. This test
-        // sets up both conditions then asserts EP is dispatched.
+        // ADR 0059 / G1.5 placement: EP fires when
+        //   (1) zero_streak hits the stagnation floor (3 by default), AND
+        //   (2) `predictions_have_pending_delta` is true (fresh
+        //      forward-apply hit rate differs from stored
+        //      last_reflect_hit_rate_per_axiom).
+        // This test sets up a closure substrate (real template
+        // axioms via discover/name pipeline) so forward_apply
+        // produces a non-empty prediction set; stored
+        // last_reflect_hit_rate stays at 0 (default) → fresh rate
+        // (100% on closure) differs → pending delta is true.
         let mut rs = RSet::new();
-        rs.add(R::new(crate::AXIOM_MARKER, "ax_x"));
+        let nodes = ["a", "b", "c", "d", "e"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        let cfg = crate::AxiomDiscoveryConfig::default();
+        let theory = rs.discover_theory(&cfg);
+        let ax_ids: Vec<&str> = theory
+            .member_axiom_ids
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        rs.name_theory(&ax_ids).expect("name theory");
         let frontier = Frontier {
             items: Vec::new(),
             last_full_refresh_tick: 0,
@@ -5154,16 +5198,8 @@ mod tests {
             meta_meta: MetaMetaConfig::default(),
         };
         let mut memory = Memory::default();
-        memory
-            .prediction_state
-            .total_predictions_per_axiom
-            .insert("ax_x".into(), 10);
-        memory
-            .prediction_state
-            .verified_predictions_per_axiom
-            .insert("ax_x".into(), 7);
         // Push three zero-delta episodes to engage the stagnation
-        // gate.
+        // gate (zero_streak).
         for _ in 0..3 {
             memory.episodes.push_back(Episode {
                 id: 0,

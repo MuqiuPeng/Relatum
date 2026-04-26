@@ -217,23 +217,49 @@ fn seed_disconnected_islands() -> AutonomousRuntime {
 }
 
 fn seed_stream_diamond() -> AutonomousRuntime {
-    // Drip-feed a diamond poset over the first ~30 ticks. Tests the
-    // outward drive against an environment that keeps producing
-    // novel R: the runtime should NOT sleep early in the stream
-    // phase, even though G0's hooks alone are thrash-bounded — the
-    // stream itself produces wake events. ADR 0056 sketch +
-    // ADR 0059 prerequisite.
-    let schedule = vec![
-        (1, Event::AddEdge(R::new("a", "a"))),
-        (2, Event::AddEdge(R::new("b", "b"))),
-        (3, Event::AddEdge(R::new("c", "c"))),
-        (4, Event::AddEdge(R::new("d", "d"))),
-        (8, Event::AddEdge(R::new("a", "b"))),
-        (12, Event::AddEdge(R::new("a", "c"))),
-        (16, Event::AddEdge(R::new("a", "d"))),
-        (20, Event::AddEdge(R::new("b", "d"))),
-        (24, Event::AddEdge(R::new("c", "d"))),
+    // Three disjoint diamond posets injected at intervals. After
+    // each phase's events stop, the runtime stagnates and the G1.5
+    // prediction-evaluation drive fires until hit rates stabilize.
+    // The next phase introduces fresh nodes whose predictions can't
+    // verify — predictions_have_pending_delta becomes true again,
+    // EP re-engages, theory/pattern discovery may re-trigger.
+    // Tests the prediction-error drive against ongoing structural
+    // change. ADR 0059 stream-substrate verification (G1.5).
+    let mut schedule = Vec::new();
+    let phases: [&[&str]; 3] = [
+        &["a", "b", "c", "d"],
+        &["e", "f", "g", "h"],
+        &["i", "j", "k", "l"],
     ];
+    let phase_offsets: [u64; 3] = [1, 100, 200];
+    for (phase_idx, nodes) in phases.iter().enumerate() {
+        let off = phase_offsets[phase_idx];
+        // self-loops + diamond closure-ish edges.
+        schedule.push((off, Event::AddEdge(R::new(nodes[0], nodes[0]))));
+        schedule.push((off + 1, Event::AddEdge(R::new(nodes[1], nodes[1]))));
+        schedule.push((off + 2, Event::AddEdge(R::new(nodes[2], nodes[2]))));
+        schedule.push((off + 3, Event::AddEdge(R::new(nodes[3], nodes[3]))));
+        schedule.push((
+            off + 7,
+            Event::AddEdge(R::new(nodes[0], nodes[1])),
+        ));
+        schedule.push((
+            off + 11,
+            Event::AddEdge(R::new(nodes[0], nodes[2])),
+        ));
+        schedule.push((
+            off + 15,
+            Event::AddEdge(R::new(nodes[0], nodes[3])),
+        ));
+        schedule.push((
+            off + 19,
+            Event::AddEdge(R::new(nodes[1], nodes[3])),
+        ));
+        schedule.push((
+            off + 23,
+            Event::AddEdge(R::new(nodes[2], nodes[3])),
+        ));
+    }
     let mut rt = AutonomousRuntime::new(RSet::new());
     rt.environment = Box::new(SyntheticStreamEnvironment::new(schedule));
     rt.scheduler = Box::new(RuleBasedScheduler::default());

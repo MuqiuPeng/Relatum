@@ -69,13 +69,13 @@ verdict: CONVERGED (new patterns named: 0)
 === seed: stream_diamond ===
   tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
      0         0         0           0         0         0       0         0 Running
-    50         0         3           0         6         0       0        46 Running
-   100         0         3           0         6         5       0        64 Sleeping
-   150         0         3           0         6         5       0        64 Sleeping
-   200         0         3           0         6         5       0        64 Sleeping
-   250         0         3           0         6         5       0        64 Sleeping
-   300         0         3           0         6         5       0        64 Sleeping
-verdict: CONVERGED (new patterns named: 0)
+    50         0         3           0         6         0       0        22 Sleeping
+   100         0         3           0         6         0       0        23 Running
+   150         3         3           0         6         3       0        34 Sleeping
+   200         3         3           0         6         3       0        35 Running
+   250         0         3           3         6         5       0        53 Sleeping
+   300         0         3           3         6         5       0        53 Sleeping
+verdict: STILL GROWING (new patterns named: 0)
 
 === battery summary ===
                   seed         verdict   new patterns
@@ -85,6 +85,6 @@ verdict: CONVERGED (new patterns named: 0)
                 star_5       CONVERGED              1
  equivalence_3_classes       CONVERGED              0
   disconnected_islands       CONVERGED              0
-        stream_diamond       CONVERGED              0
+        stream_diamond   STILL GROWING              0
 
 --- end ---
