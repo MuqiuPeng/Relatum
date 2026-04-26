@@ -1,6 +1,6 @@
 # 0063: Drive self-modification (Phase H2)
 
-Status: Accepted (Phase H2.0 step 1 — Drive trait + 3 baseline impls — implemented; DriveMix A/B + wake-gate integration deferred to step 2)
+Status: Accepted (Phase H2.0 step 1 + step 2 implemented; wake-gate integration deferred to step 3)
 Date: 2026-04-27
 
 ## Context

@@ -4081,6 +4081,123 @@ All five v2 commitments PASS by construction (same as the
 ADR 0063 H2.0 review predicted: drive-as-type is deferred
 to H2.1).
 
+### Phase H2.0 step 2 — DriveMix A/B + checkpoint (impl)
+
+ADR 0063 step 2 lands. The DriveMix layer mirrors
+MetaScheduler's A/B design but operates on weight maps
+instead of scheduler config knobs.
+
+#### Changes
+
+`DriveMix` struct (HashMap<String, f64> for both
+candidates):
+
+```rust
+pub struct DriveMix {
+    pub candidate_a: HashMap<String, f64>,
+    pub candidate_b: HashMap<String, f64>,
+    pub state: DriveABState,        // TestingA / TestingB
+    pub window_size: u64,           // 50 episodes default
+    pub stage_start_episode_count: u64,
+    pub last_completed_a_mean: Option<f64>,
+    pub rng_state: u64,
+}
+```
+
+`DriveMix::baseline()` returns the hand-tuned mix per ADR
+0063 OQ #1 (compression 0.5 / prediction_error 0.4 /
+mode_thrash 0.1).
+
+`DriveMix::maybe_advance(memory)` is a per-tick hook:
+- Tracks elapsed episodes since `stage_start_episode_count`.
+- At `window_size` boundary: compute mean EP delta over the
+  window; A→B transitions on TestingA, B→A swap + mutate
+  loser on TestingB.
+- Mutation picks a randomly chosen weight key (deterministic
+  sort then PRNG-indexed), perturbs by ×0.8 or ×1.25, clamps
+  to [0, 1].
+
+`AutonomousRuntime` gains a `drive_mix: DriveMix` field
+initialized in `new` to `DriveMix::default()`. The per-tick
+loop in `run_bounded` calls `drive_mix.maybe_advance` after
+the dispatch step (step 7 in the new sequence).
+
+**Step 2 is still shadow-only**: nothing reads
+`active_weights()` to gate runtime behaviour. That's step 3.
+
+#### Checkpoint round-trip
+
+New `[drive_mix]` section in `checkpoint_text` / parsed
+into `from_checkpoint_text`. Format mirrors `[meta]` —
+key/value lines:
+
+```
+[drive_mix]
+state	TestingB
+window_size	50
+stage_start_episode_count	17
+last_completed_a_mean	0.42
+rng_state	13830505010516275203
+candidate_a:compression	0.5
+candidate_a:mode_thrash	0.1
+candidate_a:prediction_error	0.4
+candidate_b:compression	0.625
+candidate_b:mode_thrash	0.1
+candidate_b:prediction_error	0.4
+```
+
+Missing-section handling: older checkpoints without
+`[drive_mix]` restore with `DriveMix::default()`. No
+forced migration. The `last_completed_a_mean` field uses
+`NONE` as its sentinel for `Option::None`.
+
+`drive_mix_lines: Vec<String>` added to `ParsedCheckpoint`;
+parser dispatches `candidate_a:` / `candidate_b:` prefixes
+to the respective weight maps; remaining keys
+(`state` / `window_size` / etc.) parse into the scalar
+fields.
+
+#### Tests: 479 → 487 (+8)
+
+- `h2_0_drive_mix_baseline_has_three_drives`
+- `h2_0_drive_mix_active_starts_at_a`
+- `h2_0_drive_mix_advances_to_b_after_first_window`
+- `h2_0_drive_mix_mutates_loser_after_full_cycle`
+- `h2_0_drive_mix_weight_clamps_to_unit_interval`
+- `h2_0_drive_mix_round_trips_through_checkpoint`
+- `h2_0_drive_mix_round_trips_with_none_last_a_mean`
+- `h2_0_drive_mix_advances_during_run_bounded`
+
+The `mutates_loser_after_full_cycle` test is the load-
+bearing one: it verifies the A/B feedback loop actually
+selects on EP delta. Window 1 (TestingA) feeds delta=1.0
+EP episodes; window 2 (TestingB) feeds delta=0.1 EP
+episodes; assertion: A unchanged, B mutated.
+
+#### What step 2 does NOT do
+
+- Does NOT change wake/mode/sleep behaviour. Step 3.
+- Does NOT compute a combined drive signal yet. Drive
+  trait + DriveMix coexist; nothing has wired
+  `Σ weights[id] * drive.evaluate()` into the runtime.
+- Does NOT phase-shift DriveMix windows vs MetaScheduler
+  windows. ADR 0063 OQ #5 flags potential interaction; step
+  3 will need to address it before swapping into the gate.
+
+#### Observable effect
+
+Per-tick `drive_mix.maybe_advance` runs but has zero
+behavioural footprint on the existing scheduler. Runtime
+output should be byte-identical to pre-step-2 across the
+F0 battery. Tests pass: 487 / 487.
+
+#### ADR 0063 status
+
+Step 1 + step 2 implemented. Step 3 (wake-gate refactor) is
+the load-bearing integration; it gates on whatever step 2
+empirics show about mutation responsiveness on real
+substrates.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

@@ -991,6 +991,175 @@ impl Drive for ModeThrashPenalty {
     }
 }
 
+// ─── ADR 0063 / Phase H2.0 step 2 — DriveMix (A/B over weights) ──
+//
+// Weight blending across the registered drives, with an A/B
+// mutation cycle keyed off mean EP delta per window. Mirrors the
+// `MetaScheduler` design (windows, candidates, mutate-loser) but
+// operates on weight maps instead of scheduler config knobs.
+//
+// Step 2 wires DriveMix into the runtime as a *shadow* layer:
+// `maybe_advance` runs each tick and updates state, but no caller
+// yet reads `active_weights()` to drive the wake/mode/sleep gate.
+// That integration is step 3.
+
+/// Which candidate is currently active in the DriveMix A/B cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriveABState {
+    TestingA,
+    TestingB,
+}
+
+/// A/B-tuned weight blend across the registered drives. Each
+/// candidate is a `drive_id → weight` map; the active candidate's
+/// weights are blended into the per-tick combined signal (step 3,
+/// not yet wired). Mutates the loser at each window boundary by
+/// perturbing one randomly chosen weight by ×0.8 or ×1.25, clamped
+/// to [0, 1]. ADR 0063 / Phase H2.0 step 2.
+#[derive(Debug, Clone)]
+pub struct DriveMix {
+    pub candidate_a: HashMap<String, f64>,
+    pub candidate_b: HashMap<String, f64>,
+    pub state: DriveABState,
+    pub window_size: u64,
+    pub stage_start_episode_count: u64,
+    pub last_completed_a_mean: Option<f64>,
+    pub rng_state: u64,
+}
+
+impl Default for DriveMix {
+    fn default() -> Self {
+        Self::baseline()
+    }
+}
+
+impl DriveMix {
+    /// Baseline weights — hand-tuned mix that approximates the
+    /// existing scheduler's effective blend. Matches the ADR 0063
+    /// open-question #1 recommendation.
+    pub fn baseline() -> Self {
+        let mut weights: HashMap<String, f64> = HashMap::new();
+        weights.insert("compression".to_string(), 0.5);
+        weights.insert("prediction_error".to_string(), 0.4);
+        weights.insert("mode_thrash".to_string(), 0.1);
+        Self::with_weights(weights)
+    }
+
+    pub fn with_weights(weights: HashMap<String, f64>) -> Self {
+        Self {
+            candidate_a: weights.clone(),
+            candidate_b: weights,
+            state: DriveABState::TestingA,
+            window_size: 50,
+            stage_start_episode_count: 0,
+            last_completed_a_mean: None,
+            rng_state: 0xc0ffee_dead_beef_u64,
+        }
+    }
+
+    /// Active candidate's weights. Step 3 will read this for
+    /// blending; step 2 exposes it for observability.
+    pub fn active_weights(&self) -> &HashMap<String, f64> {
+        match self.state {
+            DriveABState::TestingA => &self.candidate_a,
+            DriveABState::TestingB => &self.candidate_b,
+        }
+    }
+
+    fn ep_mean_in_range(
+        memory: &Memory,
+        start: usize,
+        end: usize,
+    ) -> f64 {
+        if end <= start {
+            return 0.0;
+        }
+        let mut sum: f64 = 0.0;
+        let mut count: u64 = 0;
+        for ep in memory.episodes.iter().skip(start).take(end - start) {
+            if ep.action_kind == ActionKind::EvaluatePredictions {
+                sum += ep.delta;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            0.0
+        } else {
+            sum / count as f64
+        }
+    }
+
+    fn mutate(
+        weights: &mut HashMap<String, f64>,
+        rng_state: &mut u64,
+    ) {
+        if weights.is_empty() {
+            return;
+        }
+        let step = |s: &mut u64| -> u64 {
+            *s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *s >> 32
+        };
+        // Deterministic key order — sort so mutation across
+        // serialized restores is reproducible.
+        let mut keys: Vec<String> =
+            weights.keys().cloned().collect();
+        keys.sort();
+        let idx = (step(rng_state) as usize) % keys.len();
+        let dir_up = step(rng_state) & 1 == 1;
+        let factor: f64 = if dir_up { 1.25 } else { 0.8 };
+        let key = &keys[idx];
+        if let Some(w) = weights.get_mut(key) {
+            *w = (*w * factor).clamp(0.0, 1.0);
+        }
+    }
+
+    /// Advance the A/B state machine if the current window's
+    /// episode budget is exhausted. Called from the runtime each
+    /// tick. ADR 0063 / Phase H2.0 step 2.
+    pub fn maybe_advance(&mut self, memory: &Memory) {
+        let now = memory.episodes.len() as u64;
+        let elapsed = now.saturating_sub(self.stage_start_episode_count);
+        if elapsed < self.window_size {
+            return;
+        }
+        let stage_start = self.stage_start_episode_count as usize;
+        let mean = Self::ep_mean_in_range(
+            memory,
+            stage_start,
+            now as usize,
+        );
+        match self.state {
+            DriveABState::TestingA => {
+                self.last_completed_a_mean = Some(mean);
+                self.state = DriveABState::TestingB;
+            }
+            DriveABState::TestingB => {
+                let a_mean = self
+                    .last_completed_a_mean
+                    .take()
+                    .unwrap_or(0.0);
+                let b_mean = mean;
+                if a_mean >= b_mean {
+                    Self::mutate(
+                        &mut self.candidate_b,
+                        &mut self.rng_state,
+                    );
+                } else {
+                    Self::mutate(
+                        &mut self.candidate_a,
+                        &mut self.rng_state,
+                    );
+                }
+                self.state = DriveABState::TestingA;
+            }
+        }
+        self.stage_start_episode_count = now;
+    }
+}
+
 pub trait Environment {
     fn poll(&mut self) -> Vec<Event>;
 }
@@ -2271,6 +2440,12 @@ pub struct AutonomousRuntime {
     /// `Sleeping` or `Stopped`. ADR 0052 / A3. Caller persists to disk
     /// at its discretion; the runtime itself does no I/O.
     pub last_checkpoint: Option<String>,
+
+    /// Drive blend with A/B mutation. ADR 0063 / Phase H2.0 step 2.
+    /// Shadow-only at step 2: advances per tick but does not yet
+    /// govern wake/mode/sleep behaviour. Step 3 wires this into
+    /// the gates.
+    pub drive_mix: DriveMix,
 }
 
 impl AutonomousRuntime {
@@ -2293,6 +2468,7 @@ impl AutonomousRuntime {
             budget: BudgetState::new(1),
             current_score,
             last_checkpoint: None,
+            drive_mix: DriveMix::default(),
         }
     }
 
@@ -2464,6 +2640,12 @@ impl AutonomousRuntime {
             if self.lifecycle == LifecycleState::Running {
                 self.snapshot_predictions();
             }
+
+            // 7. ADR 0063 / Phase H2.0 step 2 — advance the
+            //    DriveMix A/B cycle. Shadow only: state advances
+            //    based on episode count, but no caller yet
+            //    consults `active_weights()` to gate behaviour.
+            self.drive_mix.maybe_advance(&self.memory);
         }
     }
 
@@ -3496,6 +3678,58 @@ impl AutonomousRuntime {
                 post_sum,
             ));
         }
+        out.push('\n');
+
+        // ADR 0063 / Phase H2.0 step 2 — DriveMix A/B state.
+        // Format: K/V lines (mirroring [meta]). Weight entries use
+        // `<candidate>:<drive_id>\t<weight>` keys. State, window,
+        // counters, and rng come as their own keys.
+        out.push_str("[drive_mix]\n");
+        let dm = &self.drive_mix;
+        out.push_str(&format!(
+            "state\t{}\n",
+            match dm.state {
+                DriveABState::TestingA => "TestingA",
+                DriveABState::TestingB => "TestingB",
+            }
+        ));
+        out.push_str(&format!("window_size\t{}\n", dm.window_size));
+        out.push_str(&format!(
+            "stage_start_episode_count\t{}\n",
+            dm.stage_start_episode_count
+        ));
+        out.push_str(&format!(
+            "last_completed_a_mean\t{}\n",
+            match dm.last_completed_a_mean {
+                Some(v) => format!("{:?}", v),
+                None => "NONE".to_string(),
+            }
+        ));
+        out.push_str(&format!("rng_state\t{}\n", dm.rng_state));
+        let mut a_keys: Vec<&String> = dm.candidate_a.keys().collect();
+        a_keys.sort();
+        for k in a_keys {
+            if k.contains('\t') || k.contains('\n') {
+                return Err(format!(
+                    "drive_mix.candidate_a key '{}' contains tab or newline",
+                    k
+                ));
+            }
+            let v = dm.candidate_a.get(k).copied().unwrap_or(0.0);
+            out.push_str(&format!("candidate_a:{}\t{:?}\n", k, v));
+        }
+        let mut b_keys: Vec<&String> = dm.candidate_b.keys().collect();
+        b_keys.sort();
+        for k in b_keys {
+            if k.contains('\t') || k.contains('\n') {
+                return Err(format!(
+                    "drive_mix.candidate_b key '{}' contains tab or newline",
+                    k
+                ));
+            }
+            let v = dm.candidate_b.get(k).copied().unwrap_or(0.0);
+            out.push_str(&format!("candidate_b:{}\t{:?}\n", k, v));
+        }
 
         Ok(out)
     }
@@ -3769,6 +4003,100 @@ impl AutonomousRuntime {
             sequence_stats,
         };
 
+        // ADR 0063 / H2.0 step 2 — DriveMix round-trip.
+        // Parses the K/V lines emitted by checkpoint_text. Missing
+        // section → DriveMix::default() (graceful for older
+        // checkpoints).
+        let drive_mix = if parsed.drive_mix_lines.is_empty() {
+            DriveMix::default()
+        } else {
+            let mut state = DriveABState::TestingA;
+            let mut window_size: u64 = 50;
+            let mut stage_start: u64 = 0;
+            let mut last_a: Option<f64> = None;
+            let mut rng_state: u64 = 0xc0ffee_dead_beef_u64;
+            let mut cand_a: HashMap<String, f64> = HashMap::new();
+            let mut cand_b: HashMap<String, f64> = HashMap::new();
+            for raw in &parsed.drive_mix_lines {
+                let (k, v) = raw.split_once('\t').ok_or_else(|| {
+                    format!("drive_mix line not key<TAB>value: '{}'", raw)
+                })?;
+                if let Some(drive_id) = k.strip_prefix("candidate_a:") {
+                    let parsed_v = v.parse::<f64>().map_err(|e| {
+                        format!(
+                            "drive_mix candidate_a:{} value parse '{}' failed: {}",
+                            drive_id, v, e
+                        )
+                    })?;
+                    cand_a.insert(drive_id.to_string(), parsed_v);
+                } else if let Some(drive_id) = k.strip_prefix("candidate_b:") {
+                    let parsed_v = v.parse::<f64>().map_err(|e| {
+                        format!(
+                            "drive_mix candidate_b:{} value parse '{}' failed: {}",
+                            drive_id, v, e
+                        )
+                    })?;
+                    cand_b.insert(drive_id.to_string(), parsed_v);
+                } else {
+                    match k {
+                        "state" => {
+                            state = match v {
+                                "TestingA" => DriveABState::TestingA,
+                                "TestingB" => DriveABState::TestingB,
+                                other => {
+                                    return Err(format!(
+                                        "drive_mix.state unknown: '{}'",
+                                        other
+                                    ))
+                                }
+                            };
+                        }
+                        "window_size" => {
+                            window_size =
+                                parse_u64(v, "drive_mix.window_size")?;
+                        }
+                        "stage_start_episode_count" => {
+                            stage_start = parse_u64(
+                                v,
+                                "drive_mix.stage_start_episode_count",
+                            )?;
+                        }
+                        "last_completed_a_mean" => {
+                            last_a = if v == "NONE" {
+                                None
+                            } else {
+                                Some(v.parse::<f64>().map_err(|e| {
+                                    format!(
+                                        "drive_mix.last_completed_a_mean parse '{}' failed: {}",
+                                        v, e
+                                    )
+                                })?)
+                            };
+                        }
+                        "rng_state" => {
+                            rng_state =
+                                parse_u64(v, "drive_mix.rng_state")?;
+                        }
+                        other => {
+                            return Err(format!(
+                                "drive_mix unknown key '{}'",
+                                other
+                            ))
+                        }
+                    }
+                }
+            }
+            DriveMix {
+                candidate_a: cand_a,
+                candidate_b: cand_b,
+                state,
+                window_size,
+                stage_start_episode_count: stage_start,
+                last_completed_a_mean: last_a,
+                rng_state,
+            }
+        };
+
         Ok(Self {
             rset,
             lifecycle,
@@ -3783,6 +4111,7 @@ impl AutonomousRuntime {
             budget: BudgetState::new(actions_per_tick_cap),
             current_score,
             last_checkpoint: None,
+            drive_mix,
         })
     }
 }
@@ -4064,6 +4393,8 @@ struct ParsedCheckpoint {
     prediction_state_lines: Vec<String>,
     // ADR 0061 / H1.0 — sequence-stats accounting.
     sequence_stats_lines: Vec<String>,
+    // ADR 0063 / H2.0 step 2 — DriveMix A/B state.
+    drive_mix_lines: Vec<String>,
 }
 
 fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
@@ -4086,7 +4417,8 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
                 | "policy_stats_mode_transition_counts"
                 | "policy_stats_lifecycle_counts"
                 | "prediction_state"
-                | "sequence_stats" => {
+                | "sequence_stats"
+                | "drive_mix" => {
                     section = Some(match name {
                         "meta" => "meta",
                         "rset" => "rset",
@@ -4102,7 +4434,8 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
                         }
                         "policy_stats_lifecycle_counts" => "policy_stats_lifecycle_counts",
                         "prediction_state" => "prediction_state",
-                        _ => "sequence_stats",
+                        "sequence_stats" => "sequence_stats",
+                        _ => "drive_mix",
                     });
                 }
                 other => {
@@ -4157,6 +4490,9 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
             }
             Some("sequence_stats") => {
                 out.sequence_stats_lines.push(line.to_string())
+            }
+            Some("drive_mix") => {
+                out.drive_mix_lines.push(line.to_string())
             }
             None => {
                 return Err(format!(
@@ -7720,6 +8056,185 @@ mod tests {
             });
         }
         assert_eq!(drive.evaluate(&rset, &memory, 0), 3.0);
+    }
+
+    // ─── ADR 0063 / Phase H2.0 step 2 — DriveMix tests ────────────
+
+    #[test]
+    fn h2_0_drive_mix_baseline_has_three_drives() {
+        let dm = DriveMix::baseline();
+        assert_eq!(dm.candidate_a.len(), 3);
+        assert_eq!(dm.candidate_b.len(), 3);
+        assert!(dm.candidate_a.contains_key("compression"));
+        assert!(dm.candidate_a.contains_key("prediction_error"));
+        assert!(dm.candidate_a.contains_key("mode_thrash"));
+        // candidate_a == candidate_b at init.
+        assert_eq!(dm.candidate_a, dm.candidate_b);
+    }
+
+    #[test]
+    fn h2_0_drive_mix_active_starts_at_a() {
+        let dm = DriveMix::baseline();
+        assert_eq!(dm.state, DriveABState::TestingA);
+        // active_weights points at candidate_a.
+        let aw = dm.active_weights();
+        assert_eq!(aw.get("compression").copied(), Some(0.5));
+    }
+
+    #[test]
+    fn h2_0_drive_mix_advances_to_b_after_first_window() {
+        let mut dm = DriveMix::baseline();
+        dm.window_size = 3; // small window for test
+        let mut memory = Memory::default();
+        // Plant 3 EP episodes with positive deltas; no swap should
+        // happen until the third episode crosses the boundary.
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        dm.maybe_advance(&memory);
+        assert_eq!(dm.state, DriveABState::TestingA);
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        dm.maybe_advance(&memory);
+        assert_eq!(dm.state, DriveABState::TestingA);
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        dm.maybe_advance(&memory);
+        assert_eq!(dm.state, DriveABState::TestingB);
+        assert_eq!(
+            dm.last_completed_a_mean.map(|v| (v * 100.0).round() / 100.0),
+            Some(0.5)
+        );
+    }
+
+    #[test]
+    fn h2_0_drive_mix_mutates_loser_after_full_cycle() {
+        // After a full A/B cycle, exactly one candidate's weights
+        // should differ from baseline.
+        let mut dm = DriveMix::baseline();
+        dm.window_size = 2;
+        let pre_a = dm.candidate_a.clone();
+        let pre_b = dm.candidate_b.clone();
+        let mut memory = Memory::default();
+        // Window 1 (TestingA): two EP episodes with delta 1.0.
+        for _ in 0..2 {
+            memory.record(make_episode(
+                ActionKind::EvaluatePredictions,
+                1.0,
+            ));
+            dm.maybe_advance(&memory);
+        }
+        assert_eq!(dm.state, DriveABState::TestingB);
+        // Window 2 (TestingB): two EP episodes with delta 0.1
+        // (lower than A's 1.0 → A wins, B mutates).
+        for _ in 0..2 {
+            memory.record(make_episode(
+                ActionKind::EvaluatePredictions,
+                0.1,
+            ));
+            dm.maybe_advance(&memory);
+        }
+        assert_eq!(dm.state, DriveABState::TestingA);
+        // Loser (B) mutated; winner (A) unchanged.
+        assert_eq!(dm.candidate_a, pre_a, "A is the winner; should not mutate");
+        assert_ne!(dm.candidate_b, pre_b, "B is the loser; should mutate");
+    }
+
+    #[test]
+    fn h2_0_drive_mix_weight_clamps_to_unit_interval() {
+        let mut dm = DriveMix::baseline();
+        let mut rng_state = 12345u64;
+        for _ in 0..200 {
+            DriveMix::mutate(&mut dm.candidate_a, &mut rng_state);
+            DriveMix::mutate(&mut dm.candidate_b, &mut rng_state);
+        }
+        for (k, v) in dm.candidate_a.iter().chain(dm.candidate_b.iter()) {
+            assert!(
+                (0.0..=1.0).contains(v),
+                "{}: {} out of [0, 1]",
+                k,
+                v
+            );
+        }
+    }
+
+    #[test]
+    fn h2_0_drive_mix_round_trips_through_checkpoint() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        // Mutate the drive_mix to a non-default state to exercise
+        // round-trip across all fields.
+        rt.drive_mix.state = DriveABState::TestingB;
+        rt.drive_mix.window_size = 25;
+        rt.drive_mix.stage_start_episode_count = 17;
+        rt.drive_mix.last_completed_a_mean = Some(0.42);
+        rt.drive_mix.rng_state = 0xdead_beef_cafe_b00b;
+        rt.drive_mix.candidate_a.insert("custom".to_string(), 0.7);
+        rt.drive_mix.candidate_b.insert("custom".to_string(), 0.3);
+        let text = rt.checkpoint_text().expect("serialize");
+        let restored =
+            AutonomousRuntime::from_checkpoint_text(&text).expect("parse");
+        assert_eq!(restored.drive_mix.state, DriveABState::TestingB);
+        assert_eq!(restored.drive_mix.window_size, 25);
+        assert_eq!(restored.drive_mix.stage_start_episode_count, 17);
+        assert_eq!(
+            restored.drive_mix.last_completed_a_mean,
+            Some(0.42)
+        );
+        assert_eq!(restored.drive_mix.rng_state, 0xdead_beef_cafe_b00b);
+        assert_eq!(
+            restored.drive_mix.candidate_a.get("custom").copied(),
+            Some(0.7)
+        );
+        assert_eq!(
+            restored.drive_mix.candidate_b.get("custom").copied(),
+            Some(0.3)
+        );
+    }
+
+    #[test]
+    fn h2_0_drive_mix_round_trips_with_none_last_a_mean() {
+        // None last_completed_a_mean should serialize as "NONE"
+        // and restore as None.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.drive_mix.last_completed_a_mean = None;
+        let text = rt.checkpoint_text().expect("serialize");
+        assert!(
+            text.contains("last_completed_a_mean\tNONE"),
+            "expected NONE sentinel, got:\n{}",
+            text
+        );
+        let restored =
+            AutonomousRuntime::from_checkpoint_text(&text).expect("parse");
+        assert_eq!(restored.drive_mix.last_completed_a_mean, None);
+    }
+
+    #[test]
+    fn h2_0_drive_mix_advances_during_run_bounded() {
+        // Smoke test — DriveMix should observe at least some
+        // episodes accumulated during a real run, even shadow-only.
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        rt.drive_mix.window_size = 5;
+        rt.run_bounded(40);
+        // After 40 ticks, we expect at least one window to have
+        // elapsed → state advanced past TestingA at some point or
+        // stage_start_episode_count advanced.
+        let ep_count = rt.memory.episodes.len() as u64;
+        if ep_count >= rt.drive_mix.window_size {
+            assert!(
+                rt.drive_mix.stage_start_episode_count > 0
+                    || rt.drive_mix.state == DriveABState::TestingB,
+                "DriveMix should have advanced after {} episodes; \
+                 state={:?}, stage_start={}",
+                ep_count,
+                rt.drive_mix.state,
+                rt.drive_mix.stage_start_episode_count
+            );
+        }
     }
 
     #[test]
