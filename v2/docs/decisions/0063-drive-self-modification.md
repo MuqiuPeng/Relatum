@@ -1,6 +1,6 @@
 # 0063: Drive self-modification (Phase H2)
 
-Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a implemented; wake-gate integration deferred to step 3b)
+Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a implemented; step 3b infrastructure shipped but gate integration reverted — see Addendum 3; OQ #4 escalated to blocker)
 Date: 2026-04-27
 
 ## Context
@@ -634,3 +634,147 @@ mechanics work but operate on degenerate evidence.
 
 Status: step 3b design refined; implementation deferred
 pending user signal.
+
+---
+
+## Addendum 3 — Step 3b implementation attempted, reverted (2026-04-27 late³)
+
+User signaled readiness with constrained scope: only the EP
+anti-stagnation gate, not a full wake/mode/sleep refactor.
+Implemented per Addendum 2 design (AND-semantics with
+normalized_drive_signal threshold 0.3). Empirical
+regression discovered in long-run; gate change reverted;
+infrastructure retained for a refined future slice.
+
+#### What was implemented
+
+1. `SchedulerContext` gained
+   `pub normalized_drive_signal: f64` field.
+2. `SchedulerContext::new(...)` constructor (sets the new
+   field to 0.0, preserving original semantics for
+   pre-3b call sites).
+3. `AutonomousRuntime::normalized_drive_signal()` method —
+   `combined_drive_signal() / Σ active_weights`.
+4. `run_bounded` pre-computes the signal each tick and
+   passes it through the context.
+5. EP anti-stagnation gate condition changed to:
+   `zero_streak >= max_zero_streak AND normalized_signal < 0.3`.
+6. Const `STEP3B_NORMALIZED_SIGNAL_THRESHOLD = 0.3`.
+7. Seven new unit tests (`h2_0_step3b_*`).
+8. Batch-updated 30 existing test sites to set
+   `normalized_drive_signal: 0.0` on synthesized contexts.
+
+#### Tests passed; F0 passed; long-run regressed
+
+- 499 unit tests pass (from 492 + 7 step 3b additions).
+- F0 battery: stream_diamond STILL GROWING (verdict held).
+- **Long-run regressed catastrophically**:
+
+| metric | pre-step-3b-gate | step-3b-gate-active |
+|---|---|---|
+| episodes | 268 | 1000+ (capped) |
+| EP attempts | 129 | **0** |
+| composite attempts | 1 | 0 |
+| pairs named | 4 | **0** |
+| triples named | 8 | **0** |
+
+The H1.x sequence-mining mechanism froze entirely. No EP
+runs → no post-EP-delta credits → no pair/triple
+correlations accumulate → nothing crosses promotion
+threshold.
+
+#### Root cause: mode_thrash drive's positive contribution
+
+Hand-tuned baseline weights (0.5/0.4/0.1) produce
+normalized signal range 1.7–2.3 on the long-run substrate
+post-3b. Before step 3b, signal range was 1.0–1.3.
+
+Driver: mode_thrash drive's `evaluate()` returns
+count-of-recent-mode-transitions (5–15+ on real
+substrates). Treated as a **positive** contribution to
+"runtime activity", weighted at 0.1 in baseline. With
+normalized signal staying high, the AND gate's drive-side
+condition (`signal < 0.3`) never holds, so the gate never
+fires.
+
+Worse, this creates a feedback loop: gate doesn't fire →
+runtime keeps mode-transitioning to find work → mode_thrash
+count climbs → signal climbs → gate even less likely to
+fire → ...
+
+#### The OQ #4 gap
+
+ADR 0063's open question #4 was prescient:
+
+> Negative drives. Some signals (mode-thrash) act as
+> penalties — should they be modeled as negative-weight
+> drives or as separate "penalty" mechanisms?
+
+The H2.0 step 1 design committed to "non-negative
+evaluate() returns; encode penalties as drives whose
+evaluate returns negative scalars". But `ModeThrashPenalty`
+was implemented returning non-negative count (matching the
+trait convention). So in practice mode_thrash contributes
+positively to the blend, contradicting its conceptual
+"penalty" role.
+
+For step 3b's gate to work with the current drive
+catalogue, ModeThrashPenalty must be redesigned to:
+(a) return negative values (e.g., `-count`), OR
+(b) get a negative weight in the mix, OR
+(c) be excluded from the normalized signal denominator
+    while still subtracted from the numerator.
+
+Each option has implications. (a) is a Drive-trait
+convention change. (b) requires DriveMix to allow negative
+weights (currently clamped to [0, 1]). (c) is the
+mathematical-pragmatic version of (a).
+
+#### What was retained vs reverted
+
+Reverted (gate condition restored to pre-3b semantics):
+- `if zero_streak >= max_zero_streak { ... fire EP / Sleep }`
+  (no AND-on-signal).
+
+Retained (infrastructure preserved for refined refactor):
+- `SchedulerContext.normalized_drive_signal` field.
+- `SchedulerContext::new()` constructor.
+- `AutonomousRuntime::normalized_drive_signal()` method.
+- Pre-tick computation in `run_bounded`.
+- 7 step 3b unit tests (including the
+  `signal_does_not_currently_gate_decisions` test which
+  pins the current state explicitly).
+- Const `STEP3B_NORMALIZED_SIGNAL_THRESHOLD` (referenced
+  via `let _ =` to suppress unused warning).
+
+#### Refined step 3b design (deferred)
+
+Step 3b cannot be wired cleanly until OQ #4 is resolved.
+Recommend the following sequence for future iteration:
+
+1. **OQ #4 resolution** — pick option (a/b/c) for penalty
+   drive handling. (c) is least disruptive; (a) is most
+   honest semantically.
+2. **Re-attempt step 3b** with corrected mode_thrash
+   contribution. The AND-semantics with threshold 0.3
+   should then have signal range that drops below 0.3
+   when no productive work is happening (just the noise
+   from positive drives at zero).
+3. **Long-run verification** before commit — must confirm
+   episode count and named-sequence count match pre-3b
+   baseline.
+4. **F0 battery** must confirm stream_diamond verdict.
+
+#### Verdict
+
+Step 3b's first attempt produced **negative empirical
+information** that's directly useful: the OQ #4 question
+was abstract before; it's now concrete with measured
+regression magnitudes. The infrastructure layer is solid
+(SchedulerContext field, normalized signal, tests). The
+gate refactor is gated on resolving OQ #4 first.
+
+ADR 0063 status update: step 1 + step 2 + step 3a
+implemented; step 3b infrastructure shipped, gate
+integration reverted; OQ #4 escalated from "open question"
+to "blocker for step 3b adoption".

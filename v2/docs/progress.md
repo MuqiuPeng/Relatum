@@ -4386,6 +4386,121 @@ step 3b *empirics*, but the design must be weight-
 magnitude-invariant. Equal-weighted is reserved as an
 A/B comparison baseline once step 3b lands.
 
+### Phase H2.0 step 3b — attempted, reverted, OQ #4 escalated
+
+User signaled readiness for step 3b with constrained
+scope (only EP anti-stagnation gate, not full wake/mode/
+sleep refactor). Implemented per ADR 0063 Addendum 2:
+
+- `SchedulerContext.normalized_drive_signal: f64` field.
+- `AutonomousRuntime::normalized_drive_signal()` method
+  (combined / Σ active_weights — weight-invariant).
+- `run_bounded` pre-computes signal each tick.
+- EP gate condition: `zero_streak >= max_zero_streak AND
+  normalized_drive_signal < 0.3`.
+- 30 existing test sites batch-updated to add the new
+  field as 0.0 (preserves their original semantics).
+- 7 new step 3b unit tests.
+
+#### Empirical regression discovered
+
+Unit tests pass (492 → 499). F0 battery: stream_diamond
+STILL GROWING with episodes 261. **But the long-run
+regressed catastrophically**:
+
+| metric | pre-step-3b | step-3b-active | post-revert |
+|---|---|---|---|
+| episodes | 268 | 1000+ | 268 |
+| EP attempts | 129 | **0** | 129 |
+| composite | 1 | 0 | 1 |
+| pairs named | 4 | **0** | 4 |
+| triples named | 8 | **0** | 8 |
+
+H1.x sequence mining froze entirely under step-3b-active.
+
+#### Root cause: mode_thrash drive's positive contribution
+
+Long-run normalized signal under hand-tuned weights:
+pre-3b 1.0–1.3 → post-3b 1.7–2.3. Always above the 0.3
+threshold → AND gate never fires → EP never runs → no
+post-EP-delta credits → no pair/triple correlations → no
+sequence promotions.
+
+`ModeThrashPenalty.evaluate()` returns recent
+mode-transition count (5–15+). Treated as a positive
+"activity" signal, weighted at 0.1 in baseline. The
+H2.0 step 1 ADR claimed penalties would return negative
+scalars, but the implementation returns the raw count.
+Mode_thrash high (which conceptually means "runtime is
+thrashing") contributes POSITIVELY to "runtime is
+active", inverting the semantic.
+
+Worse, this is a feedback loop: gate blocked → runtime
+keeps mode-transitioning to find work → mode_thrash
+climbs → signal climbs → gate even less likely to fire →
+ad infinitum.
+
+#### Decision: revert gate change, retain infrastructure
+
+The gate condition was restored to pre-3b semantics. The
+step 3b infrastructure was retained (signal field,
+method, tests, computation in run_bounded) so the
+refined refactor can wire back in cleanly once OQ #4 is
+resolved.
+
+A new test
+(`h2_0_step3b_signal_does_not_currently_gate_decisions`)
+explicitly pins the current state: same memory + same
+context + different signal values → identical scheduler
+decisions. Documents the reverted gate behavior.
+
+#### OQ #4 escalated from "open question" to "blocker"
+
+Step 3b adoption requires resolving OQ #4 (negative
+drives / penalty handling). Three options for
+ModeThrashPenalty:
+
+(a) Return negative values (`-count`). Drive trait
+    semantic change.
+(b) Allow negative DriveMix weights (currently clamped
+    to [0, 1]).
+(c) Exclude penalty drives from the normalized
+    signal denominator while still subtracting from
+    numerator. Mathematical workaround.
+
+Each has tradeoffs. (c) is least disruptive; (a) is most
+honest. Decision deferred to a future iteration.
+
+#### What this slice produced
+
+Ship:
+- Step 3b infrastructure (4 production-code additions, 7
+  tests, 30 test-site batch updates).
+- ADR 0063 Addendum 3 documenting the failure +
+  root-cause + refined design.
+- F0 + long-run logs at logs/2026-04-27_phase_d_battery_step3b*.log
+  and logs/2026-04-27_phase_h2_0_oq1_step3b*.log.
+- New test pinning the current "shadow signal, gate
+  unchanged" state.
+
+Don't ship: the gate condition change. Reverted.
+
+#### Why this counts as progress
+
+Step 3b's first attempt produced **negative empirical
+information** that's directly useful. OQ #4 was abstract
+before; it's now concrete with measured regression
+magnitudes (1000+ episodes, 0 EP runs, 0 named
+sequences). The "right" step 3b design is now sharply
+defined: must address penalty drive handling first.
+
+Tests: 492 → 499 (+7). Long-run + F0 verified consistent
+with pre-step-3b baseline post-revert.
+
+ADR 0063 status: step 1 + step 2 + step 3a implemented;
+step 3b infrastructure shipped; gate integration
+reverted; OQ #4 blocker for next attempt.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

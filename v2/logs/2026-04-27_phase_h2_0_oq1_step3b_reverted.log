@@ -1,7 +1,7 @@
 warning: variable does not need to be mutable
-    --> src\runtime\mod.rs:2294:13
+    --> src\runtime\mod.rs:2355:13
      |
-2294 |         let mut try_add = |seq_id: &str,
+2355 |         let mut try_add = |seq_id: &str,
      |             ----^^^^^^^
      |             |
      |             help: remove this `mut`
@@ -33,12 +33,12 @@ warning: variable does not need to be mutable
      |         help: remove this `mut`
 
 warning: associated function `any_axiom_has_hit_rate` is never used
-   --> src\runtime\mod.rs:371:8
+   --> src\runtime\mod.rs:409:8
     |
-263 | impl RuleBasedScheduler {
+301 | impl RuleBasedScheduler {
     | ----------------------- associated function in this implementation
 ...
-371 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+409 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
     |        ^^^^^^^^^^^^^^^^^^^^^^
     |
     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
@@ -58,6 +58,7 @@ warning: using `.clone()` on a double reference, which returns `&String` instead
      |                                                                        ^^^^^^^^
 
 warning: `relatum-v2` (lib) generated 7 warnings (run `cargo fix --lib -p relatum-v2` to apply 4 suggestions)
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
 warning: field `label` is never read
    --> examples\phase_h2_0_oq1_experiment.rs:225:5
     |
@@ -69,7 +70,7 @@ warning: field `label` is never read
     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `relatum-v2` (example "phase_h2_0_oq1_experiment") generated 1 warning
-    Finished `release` profile [optimized] target(s) in 0.01s
+    Finished `release` profile [optimized] target(s) in 0.91s
      Running `target\release\examples\phase_h2_0_oq1_experiment.exe`
 === ADR 0063 OQ #1 — hand-tuned vs equal-weighted DriveMix init (HORIZON=2000) ===
 
@@ -98,55 +99,3 @@ warning: `relatum-v2` (example "phase_h2_0_oq1_experiment") generated 1 warning
  1200    142     79     1      4    6   A  0.33  0.33  0.33   3.336
  1400    176     89     1      4    8   B  0.27  0.33  0.33   3.333
  1600    208    101     1      4    8   A  0.33  0.33  0.42   4.172
- 1800    238    115     1      4    8   A  0.33  0.33  0.42   4.172
- 2000    268    129     1      4    8   B  0.27  0.33  0.33   3.338
-
-=== final candidate weights ===
-hand_tuned:
-  candidate_a:
-    compression: 0.5000
-    mode_thrash: 0.1250
-    prediction_error: 0.4000
-  candidate_b:
-    compression: 0.4000
-    mode_thrash: 0.1000
-    prediction_error: 0.4000
-equal_weighted:
-  candidate_a:
-    compression: 0.3330
-    mode_thrash: 0.4163
-    prediction_error: 0.3330
-  candidate_b:
-    compression: 0.2664
-    mode_thrash: 0.3330
-    prediction_error: 0.3330
-
-=== shadow-only verification ===
-episodes match: true (hand=268, equal=268)
-ep_attempts match: true (hand=129, equal=129)
-composite match: true (hand=1, equal=1)
-pairs match: true (hand=4, equal=4)
-triples match: true (hand=8, equal=8)
-
-VERDICT: shadow-only property HOLDS — DriveMix weights
-          do not yet affect runtime behaviour.
-
-=== combined_drive_signal trajectory comparison ===
- tick       hand      equal      delta
-    0     0.0000     0.0000     0.0000
-  200     1.1463     3.1611     2.0147
-  400     1.3000     3.5298     2.2298
-  600     1.0000     3.3300     2.3300
-  800     1.0000     3.3300     2.3300
- 1000     1.0000     3.3300     2.3300
- 1200     1.0090     3.3360     2.3270
- 1400     1.0049     3.3333     2.3284
- 1600     1.2650     4.1725     2.9075
- 1800     1.2650     4.1725     2.9075
- 2000     1.0120     3.3380     2.3260
-
---- end ---
-075
- 2000     1.0120     3.3380     2.3260
-
---- end ---

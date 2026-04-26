@@ -143,6 +143,34 @@ pub struct SchedulerContext<'a> {
     pub frontier: &'a Frontier,
     pub mode: RuntimeMode,
     pub tick: u64,
+    /// ADR 0063 / Phase H2.0 step 3b — normalized drive signal
+    /// (combined / Σ active_weights), weight-invariant. Pre-3b
+    /// callers / tests can leave this 0.0; the EP anti-stagnation
+    /// gate consults it as one half of an AND with `zero_streak`.
+    pub normalized_drive_signal: f64,
+}
+
+impl<'a> SchedulerContext<'a> {
+    /// Construct without an explicit `normalized_drive_signal`.
+    /// Defaults to 0.0 — i.e., "drive signal says stagnate". Used
+    /// by tests + pre-3b code paths that don't yet compute the
+    /// signal. ADR 0063 / Phase H2.0 step 3b.
+    pub fn new(
+        rset: &'a RSet,
+        memory: &'a Memory,
+        frontier: &'a Frontier,
+        mode: RuntimeMode,
+        tick: u64,
+    ) -> Self {
+        Self {
+            rset,
+            memory,
+            frontier,
+            mode,
+            tick,
+            normalized_drive_signal: 0.0,
+        }
+    }
 }
 
 pub trait Scheduler {
@@ -259,6 +287,16 @@ impl Default for RuleBasedScheduler {
         }
     }
 }
+
+/// Threshold below which the EP anti-stagnation gate considers
+/// drive signal "stagnant". ADR 0063 / Phase H2.0 step 3b. The
+/// normalized signal is weight-invariant so this threshold is
+/// fixed; calibrated against the post-fix long-run baseline
+/// where typical normalized values sit at 1.0+ (well above the
+/// 0.3 floor). 0.0 sits below the threshold by construction, so
+/// pre-3b SchedulerContext callers (who pass 0.0) preserve the
+/// original gate semantics.
+const STEP3B_NORMALIZED_SIGNAL_THRESHOLD: f64 = 0.3;
 
 impl RuleBasedScheduler {
     fn pick_top<'a, F: Fn(&FrontierItem) -> bool>(
@@ -580,6 +618,25 @@ impl Scheduler for RuleBasedScheduler {
         // fires when the runtime would otherwise sleep AND there
         // is delta to capture. Stable hit rates skip EP and Sleep
         // proceeds.
+        //
+        // ADR 0063 / Phase H2.0 step 3b — initial AND-gate
+        // attempt was reverted (see retrospective-2026-04-27-late²
+        // and progress.md). The mode_thrash drive contributes
+        // *positively* to normalized signal but conceptually it's
+        // a penalty: high mode-thrash means churn, not productive
+        // activity. With baseline weights the long-run signal
+        // sits at 1.7-2.3, well above the 0.3 threshold, so the
+        // AND gate never fires → EP never runs → H1.x sequence
+        // mining freezes (regression: 268 → 1000+ episodes, 129
+        // → 0 EP attempts, 4/8 named pairs/triples → 0/0).
+        //
+        // The fix surface is OQ #4 — distinguish penalty drives
+        // from positive drives. That's a step 3b/c slice. For now
+        // the gate keeps its pre-3b semantics. The
+        // `normalized_drive_signal` machinery from step 3b stays
+        // in place (SchedulerContext field, normalized_drive_signal
+        // method, unit tests) so the refined refactor can wire it
+        // back in cleanly once the penalty handling is designed.
         if Self::zero_streak(ctx) >= self.max_zero_streak {
             if !ctx.rset.axioms().is_empty()
                 && Self::predictions_have_pending_delta(ctx)
@@ -591,6 +648,10 @@ impl Scheduler for RuleBasedScheduler {
             }
             return SchedulerDecision::Sleep;
         }
+        // `STEP3B_NORMALIZED_SIGNAL_THRESHOLD` is intentionally
+        // referenced via `_` to suppress the unused-const warning
+        // until the refined gate is wired.
+        let _ = STEP3B_NORMALIZED_SIGNAL_THRESHOLD;
 
         match ctx.mode {
             RuntimeMode::Expand => {
@@ -2509,6 +2570,24 @@ impl AutonomousRuntime {
         total
     }
 
+    /// Weight-invariant blended drive signal — combined signal
+    /// divided by `Σ active_weights`. ADR 0063 / Phase H2.0 step 3b.
+    /// Used by the EP anti-stagnation gate as the "drives say no
+    /// productive work available" criterion. Weight-invariant by
+    /// construction so the gate threshold doesn't need per-mix
+    /// recalibration (OQ #1 finding).
+    pub fn normalized_drive_signal(&self) -> f64 {
+        let weight_sum: f64 = self
+            .drive_mix
+            .active_weights()
+            .values()
+            .sum();
+        if weight_sum < f64::EPSILON {
+            return 0.0;
+        }
+        self.combined_drive_signal() / weight_sum
+    }
+
     /// Record a lifecycle transition and update `self.lifecycle`.
     /// Snapshot a checkpoint when entering `Sleeping` or `Stopped`.
     /// No-op if `to == self.lifecycle`. ADR 0052 / A3.
@@ -2619,7 +2698,13 @@ impl AutonomousRuntime {
                 );
             }
 
-            // 4. Scheduler decision.
+            // 4. Scheduler decision. ADR 0063 / Phase H2.0 step 3b
+            //    pre-computes normalized_drive_signal so the EP
+            //    anti-stagnation gate can AND-combine it with the
+            //    zero-streak gate. Computed before constructing the
+            //    context to avoid borrow conflicts (drive_mix +
+            //    drives are owned, not borrowed via the context).
+            let normalized_drive_signal = self.normalized_drive_signal();
             let decision = {
                 let ctx = SchedulerContext {
                     rset: &self.rset,
@@ -2627,6 +2712,7 @@ impl AutonomousRuntime {
                     frontier: &self.frontier,
                     mode: self.mode,
                     tick: self.tick,
+                    normalized_drive_signal,
                 };
                 self.scheduler.choose(&ctx)
             };
@@ -5028,6 +5114,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let decision = scheduler.choose(&ctx);
         match decision {
@@ -5806,6 +5893,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.would_thrash(&ctx, RuntimeMode::Expand, RuntimeMode::Consolidate));
@@ -5835,6 +5923,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler {
             max_mode_oscillations: 4,
@@ -5871,6 +5960,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler {
             max_mode_oscillations: 4,
@@ -5903,6 +5993,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.pattern_cooldown_active(&ctx));
@@ -5932,6 +6023,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(sched.pattern_cooldown_active(&ctx));
@@ -5957,6 +6049,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.pattern_cooldown_active(&ctx));
@@ -6004,6 +6097,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 1,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6080,6 +6174,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 1,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6111,6 +6206,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.meta_meta_cooldown_active(&ctx));
@@ -6133,6 +6229,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(sched.meta_meta_cooldown_active(&ctx));
@@ -6159,6 +6256,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.meta_meta_cooldown_active(&ctx));
@@ -6183,6 +6281,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         assert!(sched.pattern_cooldown_active(&ctx));
@@ -6200,6 +6299,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         assert!(!sched.pattern_cooldown_active(&ctx2));
         assert!(sched.meta_meta_cooldown_active(&ctx2));
@@ -6243,6 +6343,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 1,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6406,6 +6507,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let sched = RuleBasedScheduler::default();
         // 4 uncovered edges ≥ 3 → pressure on. 1/20 = 5% NOT < 5%
@@ -6435,6 +6537,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6453,6 +6556,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         match sched.choose(&ctx2) {
             SchedulerDecision::Sleep => {}
@@ -6489,6 +6593,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6654,6 +6759,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         assert!(!RuleBasedScheduler::any_axiom_has_hit_rate(&ctx));
     }
@@ -6678,6 +6784,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         assert!(RuleBasedScheduler::any_axiom_has_hit_rate(&ctx));
     }
@@ -6738,6 +6845,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6771,6 +6879,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -6834,6 +6943,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         meta.maybe_advance(&ctx);
         assert_eq!(meta.state, MetaABState::TestingB);
@@ -6875,6 +6985,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let pre_b_hit_rate = meta.candidate_b.min_pattern_hit_rate;
         let pre_a_hit_rate = meta.candidate_a.min_pattern_hit_rate;
@@ -6966,6 +7077,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut meta = MetaScheduler::new(
             RuleBasedScheduler::default(),
@@ -7250,6 +7362,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         assert!(RuleBasedScheduler::h1_1_bonus_kinds(&ctx).is_empty());
 
@@ -7271,6 +7384,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let bonus = RuleBasedScheduler::h1_1_bonus_kinds(&ctx2);
         assert_eq!(bonus.len(), 1);
@@ -7322,6 +7436,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Expand,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         // No bonus — Theory wins (5.0 > 4.5).
         let mut empty: HashSet<ActionKind> = HashSet::new();
@@ -8253,6 +8368,195 @@ mod tests {
         let restored =
             AutonomousRuntime::from_checkpoint_text(&text).expect("parse");
         assert_eq!(restored.drive_mix.last_completed_a_mean, None);
+    }
+
+    // ─── ADR 0063 / Phase H2.0 step 3b — EP gate AND on signal ──
+
+    #[test]
+    fn h2_0_step3b_normalized_signal_is_zero_with_empty_runtime() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        assert_eq!(rt.normalized_drive_signal(), 0.0);
+    }
+
+    #[test]
+    fn h2_0_step3b_normalized_signal_handles_zero_weight_sum() {
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.drive_mix.candidate_a.insert("compression".to_string(), 0.0);
+        rt.drive_mix
+            .candidate_a
+            .insert("prediction_error".to_string(), 0.0);
+        rt.drive_mix.candidate_a.insert("mode_thrash".to_string(), 0.0);
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverTheory,
+            0.5,
+        ));
+        assert_eq!(rt.normalized_drive_signal(), 0.0);
+    }
+
+    #[test]
+    fn h2_0_step3b_normalized_signal_invariant_under_weight_scaling() {
+        // Two runtimes, identical observations, weights scaled 3×.
+        // Normalized signals should match — that's what
+        // weight-invariance means.
+        let mut rt_a = AutonomousRuntime::new(RSet::new());
+        let mut rt_b = AutonomousRuntime::new(RSet::new());
+        rt_a.drive_mix.candidate_a.clear();
+        rt_a.drive_mix.candidate_a.insert("compression".to_string(), 0.5);
+        rt_a.drive_mix
+            .candidate_a
+            .insert("prediction_error".to_string(), 0.4);
+        rt_a.drive_mix.candidate_a.insert("mode_thrash".to_string(), 0.1);
+        rt_b.drive_mix.candidate_a.clear();
+        rt_b.drive_mix.candidate_a.insert("compression".to_string(), 1.5);
+        rt_b.drive_mix
+            .candidate_a
+            .insert("prediction_error".to_string(), 1.2);
+        rt_b.drive_mix.candidate_a.insert("mode_thrash".to_string(), 0.3);
+        for rt in [&mut rt_a, &mut rt_b] {
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                0.4,
+            ));
+            rt.memory.record_mode_transition(ModeTransition {
+                tick: 0,
+                from: RuntimeMode::Expand,
+                to: RuntimeMode::Consolidate,
+                reason: "test".to_string(),
+            });
+        }
+        let sig_a = rt_a.normalized_drive_signal();
+        let sig_b = rt_b.normalized_drive_signal();
+        assert!(
+            (sig_a - sig_b).abs() < 1e-9,
+            "normalized signal not weight-invariant: a={}, b={}",
+            sig_a,
+            sig_b
+        );
+    }
+
+    #[test]
+    fn h2_0_step3b_low_signal_with_high_zero_streak_triggers_sleep() {
+        // Stagnation gate fires only when BOTH zero_streak high
+        // AND drive signal low. With both true and no axioms
+        // (no pending EP delta), gate decides Sleep.
+        let rs = RSet::new();
+        let mut memory = Memory::default();
+        for _ in 0..5 {
+            memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                0.0,
+            ));
+        }
+        let frontier = Frontier::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 5,
+            normalized_drive_signal: 0.0,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        let decision = sched.choose(&ctx);
+        assert!(
+            matches!(decision, SchedulerDecision::Sleep),
+            "low signal + high zero_streak + no axioms → Sleep; got {:?}",
+            decision
+        );
+    }
+
+    #[test]
+    fn h2_0_step3b_signal_does_not_currently_gate_decisions() {
+        // Step 3b's initial AND gate was reverted (long-run
+        // regressed: mode_thrash positive contribution kept
+        // signal high → gate never fired → EP froze → H1.x
+        // sequence-mining starved). Until OQ #4 (penalty drives)
+        // is addressed, normalized_drive_signal is computed and
+        // available in SchedulerContext, but the EP gate ignores
+        // it. This test pins the current state: same memory +
+        // empty axioms, two different signal values, identical
+        // decision.
+        let rs = RSet::new();
+        let mut memory = Memory::default();
+        for _ in 0..5 {
+            memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                0.0,
+            ));
+        }
+        let frontier = Frontier::default();
+        let ctx_low = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 5,
+            normalized_drive_signal: 0.0,
+        };
+        let ctx_high = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 5,
+            normalized_drive_signal: 1.5,
+        };
+        let mut sched_a = RuleBasedScheduler::default();
+        let mut sched_b = RuleBasedScheduler::default();
+        let dec_low = sched_a.choose(&ctx_low);
+        let dec_high = sched_b.choose(&ctx_high);
+        // Both produce Sleep (zero_streak high + no axioms →
+        // gate path takes Sleep branch). The signal value is
+        // currently ignored.
+        assert!(
+            matches!(dec_low, SchedulerDecision::Sleep),
+            "expected Sleep at low signal, got {:?}",
+            dec_low
+        );
+        assert!(
+            matches!(dec_high, SchedulerDecision::Sleep),
+            "expected Sleep at high signal too (signal currently ignored), got {:?}",
+            dec_high
+        );
+    }
+
+    #[test]
+    fn h2_0_step3b_low_zero_streak_blocks_gate_regardless_of_signal() {
+        // AND semantics: zero_streak below threshold → gate doesn't
+        // fire even if signal is low.
+        let rs = RSet::new();
+        let memory = Memory::default(); // 0 episodes → zero_streak=0
+        let frontier = Frontier::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+            normalized_drive_signal: 0.0,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        let decision = sched.choose(&ctx);
+        if let SchedulerDecision::Execute(plan) = &decision {
+            assert_ne!(
+                plan.action_kind, ActionKind::EvaluatePredictions,
+                "low zero_streak must not fire the EP gate"
+            );
+        }
+    }
+
+    #[test]
+    fn h2_0_step3b_run_bounded_passes_normalized_signal() {
+        // End-to-end smoke: a real run computes and passes
+        // normalized_drive_signal to the scheduler.
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        rt.run_bounded(20);
+        let sig = rt.normalized_drive_signal();
+        assert!(
+            sig.is_finite(),
+            "normalized signal must be a finite number, got {}",
+            sig
+        );
     }
 
     // ─── ADR 0063 / Phase H2.0 step 3a — combined signal tests ──
@@ -9578,6 +9882,7 @@ mod tests {
             frontier: &frontier,
             mode: RuntimeMode::Reflect,
             tick: 0,
+            normalized_drive_signal: 0.0,
         };
         let mut sched = RuleBasedScheduler {
             max_mode_oscillations: 4,
