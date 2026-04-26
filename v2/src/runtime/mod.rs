@@ -2335,6 +2335,52 @@ impl AutonomousRuntime {
             "stop\t{}\n",
             self.memory.policy_stats.stop_count
         ));
+        out.push('\n');
+
+        // ADR 0059 / G1.3 — prediction-state cumulative counters.
+        // Per-axiom rows: <axiom_id>\t<total>\t<verified>\t<last_reflect_hit_rate>.
+        // The transient `last_predicted_per_axiom` snapshot is NOT
+        // serialized — it regenerates on the first post-restore tick.
+        out.push_str("[prediction_state]\n");
+        let ps = &self.memory.prediction_state;
+        let mut axiom_keys: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for k in ps.total_predictions_per_axiom.keys() {
+            axiom_keys.insert(k.as_str());
+        }
+        for k in ps.verified_predictions_per_axiom.keys() {
+            axiom_keys.insert(k.as_str());
+        }
+        for k in ps.last_reflect_hit_rate_per_axiom.keys() {
+            axiom_keys.insert(k.as_str());
+        }
+        for ax in axiom_keys {
+            if ax.contains('\t') || ax.contains('\n') {
+                return Err(format!(
+                    "prediction_state axiom id '{}' contains tab or newline",
+                    ax
+                ));
+            }
+            let total = ps
+                .total_predictions_per_axiom
+                .get(ax)
+                .copied()
+                .unwrap_or(0);
+            let verified = ps
+                .verified_predictions_per_axiom
+                .get(ax)
+                .copied()
+                .unwrap_or(0);
+            let last_rate = ps
+                .last_reflect_hit_rate_per_axiom
+                .get(ax)
+                .copied()
+                .unwrap_or(0.0);
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                ax, total, verified, last_rate
+            ));
+        }
 
         Ok(out)
     }
@@ -2517,6 +2563,47 @@ impl AutonomousRuntime {
             }
         }
 
+        // ADR 0059 / G1.3 — restore prediction-state cumulative
+        // counters. last_predicted_per_axiom intentionally stays
+        // empty; it regenerates on the first post-restore Running
+        // tick.
+        let mut prediction_state = PredictionState::default();
+        for (idx, raw) in parsed.prediction_state_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.split('\t').collect();
+            if fields.len() != 4 {
+                return Err(format!(
+                    "prediction_state line {} has {} fields, expected 4",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            let ax = fields[0].to_string();
+            let total = parse_u64(fields[1], "prediction_state.total")?;
+            let verified =
+                parse_u64(fields[2], "prediction_state.verified")?;
+            let last_rate = fields[3]
+                .parse::<f64>()
+                .map_err(|e| format!(
+                    "prediction_state.last_rate parse '{}' failed: {}",
+                    fields[3], e
+                ))?;
+            if total > 0 {
+                prediction_state
+                    .total_predictions_per_axiom
+                    .insert(ax.clone(), total);
+            }
+            if verified > 0 {
+                prediction_state
+                    .verified_predictions_per_axiom
+                    .insert(ax.clone(), verified);
+            }
+            if last_rate.abs() > f64::EPSILON {
+                prediction_state
+                    .last_reflect_hit_rate_per_axiom
+                    .insert(ax, last_rate);
+            }
+        }
+
         let memory = Memory {
             episodes,
             mode_transitions,
@@ -2526,10 +2613,7 @@ impl AutonomousRuntime {
             max_lifecycle_transitions,
             object_history,
             policy_stats,
-            // ADR 0059 / G1.3: cumulative counters are not yet
-            // serialized in this checkpoint version (deferred).
-            // last_predicted regenerates on first post-restore tick.
-            prediction_state: PredictionState::default(),
+            prediction_state,
         };
 
         Ok(Self {
@@ -2816,6 +2900,8 @@ struct ParsedCheckpoint {
     action_count_lines: Vec<String>,
     mode_transition_count_lines: Vec<String>,
     lifecycle_count_lines: Vec<String>,
+    // ADR 0059 / G1.3 — prediction-state cumulative counters.
+    prediction_state_lines: Vec<String>,
 }
 
 fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
@@ -2836,7 +2922,8 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
                 | "object_history_theories"
                 | "policy_stats_action_counts"
                 | "policy_stats_mode_transition_counts"
-                | "policy_stats_lifecycle_counts" => {
+                | "policy_stats_lifecycle_counts"
+                | "prediction_state" => {
                     section = Some(match name {
                         "meta" => "meta",
                         "rset" => "rset",
@@ -2850,7 +2937,8 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
                         "policy_stats_mode_transition_counts" => {
                             "policy_stats_mode_transition_counts"
                         }
-                        _ => "policy_stats_lifecycle_counts",
+                        "policy_stats_lifecycle_counts" => "policy_stats_lifecycle_counts",
+                        _ => "prediction_state",
                     });
                 }
                 other => {
@@ -2899,6 +2987,9 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
             }
             Some("policy_stats_lifecycle_counts") => {
                 out.lifecycle_count_lines.push(line.to_string())
+            }
+            Some("prediction_state") => {
+                out.prediction_state_lines.push(line.to_string())
             }
             None => {
                 return Err(format!(
@@ -4952,6 +5043,57 @@ mod tests {
         let ps = &rt.memory.prediction_state;
         // No axioms named → no counters built up.
         assert!(ps.total_predictions_per_axiom.is_empty());
+    }
+
+    #[test]
+    fn g1_3_prediction_state_round_trips_through_checkpoint() {
+        // Plant a non-empty PredictionState, checkpoint, restore,
+        // verify counters survive. last_predicted_per_axiom is
+        // intentionally lost (regenerates on next tick).
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        rt.memory
+            .prediction_state
+            .total_predictions_per_axiom
+            .insert("ax_x".into(), 42);
+        rt.memory
+            .prediction_state
+            .verified_predictions_per_axiom
+            .insert("ax_x".into(), 30);
+        rt.memory
+            .prediction_state
+            .last_reflect_hit_rate_per_axiom
+            .insert("ax_x".into(), 0.7142857142857143);
+        rt.memory
+            .prediction_state
+            .total_predictions_per_axiom
+            .insert("ax_y".into(), 10);
+        // ax_y's verified count is 0 (less than total_for_assessment),
+        // exercises the conditional-write logic.
+        let cp = rt.checkpoint_text().expect("checkpoint");
+        let rt2 =
+            AutonomousRuntime::from_checkpoint_text(&cp).expect("restore");
+        let ps = &rt2.memory.prediction_state;
+        assert_eq!(
+            ps.total_predictions_per_axiom.get("ax_x").copied(),
+            Some(42)
+        );
+        assert_eq!(
+            ps.verified_predictions_per_axiom.get("ax_x").copied(),
+            Some(30)
+        );
+        let restored_rate =
+            ps.last_reflect_hit_rate_per_axiom.get("ax_x").copied();
+        assert!(restored_rate.is_some());
+        assert!(
+            (restored_rate.unwrap() - 0.7142857142857143).abs() < 1e-12
+        );
+        assert_eq!(
+            ps.total_predictions_per_axiom.get("ax_y").copied(),
+            Some(10)
+        );
+        // last_predicted intentionally not preserved.
+        assert!(ps.last_predicted_per_axiom.is_empty());
+        assert!(ps.last_predicted_at_tick.is_none());
     }
 
     // ─── ADR 0059 Phase G1.5 — EvaluatePredictions ─────────────
