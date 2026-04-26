@@ -1,0 +1,85 @@
+=== ADR 0061 H1.0 sequence-stats dump (HORIZON=300) ===
+
+=== seed: fan_only ===
+tick=300 lifecycle=Sleeping episodes=4 theories=1 patterns=7
+                  from                     to  count    post_ep   mean_post_ep
+        DiscoverTheory DiscoverMetaMetaPatterns      1          0         0.0000
+DiscoverMetaMetaPatterns DiscoverMetaMetaPatterns      2          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 0
+
+=== seed: diamond_poset ===
+tick=300 lifecycle=Sleeping episodes=7 theories=1 patterns=0
+                  from                     to  count    post_ep   mean_post_ep
+        DiscoverTheory       DiscoverPatterns      1          1         1.0000
+      DiscoverPatterns       DiscoverPatterns      3          2         1.0000
+   EvaluatePredictions       DiscoverPatterns      1          0         0.0000
+      DiscoverPatterns    EvaluatePredictions      1          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 0
+
+=== seed: bipartite_2_3 ===
+tick=300 lifecycle=Sleeping episodes=5 theories=1 patterns=2
+                  from                     to  count    post_ep   mean_post_ep
+        DiscoverTheory       DiscoverPatterns      1          0         0.0000
+      DiscoverPatterns       DiscoverPatterns      3          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 0
+
+=== seed: star_5 ===
+tick=300 lifecycle=Sleeping episodes=5 theories=1 patterns=1
+                  from                     to  count    post_ep   mean_post_ep
+        DiscoverTheory       DiscoverPatterns      1          0         0.0000
+      DiscoverPatterns       DiscoverPatterns      3          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 0
+
+=== seed: equivalence_3_classes ===
+tick=300 lifecycle=Sleeping episodes=7 theories=1 patterns=0
+                  from                     to  count    post_ep   mean_post_ep
+      DiscoverPatterns       DiscoverPatterns      3          2         5.0000
+        DiscoverTheory       DiscoverPatterns      1          1         5.0000
+      DiscoverPatterns    EvaluatePredictions      1          0         0.0000
+   EvaluatePredictions       DiscoverPatterns      1          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 0
+
+=== seed: disconnected_islands ===
+tick=300 lifecycle=Sleeping episodes=7 theories=1 patterns=0
+                  from                     to  count    post_ep   mean_post_ep
+        DiscoverTheory       DiscoverPatterns      1          1         1.0000
+      DiscoverPatterns       DiscoverPatterns      3          2         1.0000
+   EvaluatePredictions       DiscoverPatterns      1          0         0.0000
+      DiscoverPatterns    EvaluatePredictions      1          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 0
+
+=== seed: stream_diamond ===
+tick=300 lifecycle=Sleeping episodes=89 theories=3 patterns=0
+                  from                     to  count    post_ep   mean_post_ep
+        DiscoverTheory          Declarativize      1          1         6.0000
+        DiscoverTheory         DiscoverTheory      1          1         6.0000
+         Declarativize          Declarativize      5          5         2.4557
+         Declarativize    EvaluatePredictions      2          1         0.1363
+   EvaluatePredictions  UpdateTheoryRelations      1          1         0.0972
+ UpdateTheoryRelations         DiscoverTheory      1          1         0.0972
+ UpdateTheoryRelations       DiscoverPatterns      1          1         0.0972
+        DiscoverTheory  UpdateTheoryRelations      1          1         0.0972
+      DiscoverPatterns       DiscoverPatterns      3          1         0.0972
+   EvaluatePredictions    EvaluatePredictions     34         25         0.0206
+   EvaluatePredictions          Declarativize      3          2         0.0131
+         Declarativize   PruneLowValueObjects      2          2         0.0131
+  PruneLowValueObjects   PruneLowValueObjects     14          4         0.0068
+  PruneLowValueObjects    EvaluatePredictions      6          3         0.0021
+   EvaluatePredictions       DiscoverPatterns      1          0         0.0000
+DiscoverMetaMetaPatterns   PruneLowValueObjects      1          0         0.0000
+DiscoverMetaMetaPatterns    EvaluatePredictions      1          0         0.0000
+      DiscoverPatterns    EvaluatePredictions      2          0         0.0000
+   EvaluatePredictions   PruneLowValueObjects      3          0         0.0000
+   EvaluatePredictions DiscoverMetaMetaPatterns      2          0         0.0000
+DiscoverMetaMetaPatterns DiscoverMetaMetaPatterns      3          0         0.0000
+promotable (strict: count>=10 AND mean>0.10): 0
+promotable (relaxed: count>=5 AND mean>0.05): 1
+  (Declarativize, Declarativize) count=5 mean=2.4557
+
+--- end ---
