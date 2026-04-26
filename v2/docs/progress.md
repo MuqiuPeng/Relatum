@@ -2217,3 +2217,34 @@ Tests: 374 → 381 (+7). ADR 0053 status updated to "Accepted
 is done; M1 now covers patterns (experience-with), theories
 (experience-with), and shared axioms (structural). Three meta-R
 classes coexist with the original kind-of class.
+
+### ADR 0054 (Proposed) — meta-meta-pattern discovery (Phase D)
+Phase C produced three M1 marker classes; nothing currently reads
+them. ADR 0054 is the design for the read side — making M1 a
+subject of downstream discovery, which is the explicit promise
+ADR 0052 / ADR 0053 made but neither one delivered.
+
+Phase D0 (smallest viable slice): a new
+`DiscoveryConfig::meta_subset_filter: Option<HashSet<String>>`
+that lets `discover_motifs` see data + a *targeted* subset of
+meta (specifically the ESTABLISHED / SHARED_AXIOM subgraph),
+rather than the binary all-or-nothing of
+`include_meta_in_discovery`. Surfaced through a new
+`ActionKind::DiscoverMetaMetaPatterns` and a
+`FrontierKind::MetaMetaCandidate` that the scheduler picks in
+Expand mode once ≥ 5 M1 edges exist. Loop-closure: any
+meta-meta-pattern named this way enters `ObjectHistory.patterns`
+and is itself eligible for C0 promotion later.
+
+D1 / D2 sketched (priority bias from M1 evidence; closed-loop
+falsifiability via counterfactual ablation); both deferred.
+
+ADR carries 6 verification tests (filter scope x3, action gate
+x2, loop-closure smoke), 4 alternatives explicitly rejected
+(skip D; ephemeral sub-rset; separate MetaRSet; ESTABLISHED-only
+filter), and 4 open questions (strict vs lax marker matching;
+cooldown counter sharing with DiscoverPatterns; checkpoint
+persistence; termination cap on ESTABLISHED→meta-meta cycles).
+Status: **Proposed**. No code yet.
+
+Tests: unchanged (381).
