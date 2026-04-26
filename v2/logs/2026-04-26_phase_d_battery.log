@@ -1,0 +1,78 @@
+=== ADR 0056 Phase F0 — D-battery (HORIZON=300) ===
+
+=== seed: fan_only ===
+  tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         5         0           5         0         0       0         0 Running
+    50         7         1           5         0         3       0         4 Sleeping
+   100         7         1           5         0         3       0         4 Sleeping
+   150         7         1           5         0         3       0         4 Sleeping
+   200         7         1           5         0         3       0         4 Sleeping
+   250         7         1           5         0         3       0         4 Sleeping
+   300         7         1           5         0         3       0         4 Sleeping
+verdict: CONVERGED (new patterns named: 2)
+
+=== seed: diamond_poset ===
+  tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         0         0           0         0         0       0         0 Running
+    50         0         1           0         0         0       0         4 Sleeping
+   100         0         1           0         0         0       0         4 Sleeping
+   150         0         1           0         0         0       0         4 Sleeping
+   200         0         1           0         0         0       0         4 Sleeping
+   250         0         1           0         0         0       0         4 Sleeping
+   300         0         1           0         0         0       0         4 Sleeping
+verdict: CONVERGED (new patterns named: 0)
+
+=== seed: bipartite_2_3 ===
+  tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         0         0           0         0         0       0         0 Running
+    50         2         1           0         0         0       0         5 Sleeping
+   100         2         1           0         0         0       0         5 Sleeping
+   150         2         1           0         0         0       0         5 Sleeping
+   200         2         1           0         0         0       0         5 Sleeping
+   250         2         1           0         0         0       0         5 Sleeping
+   300         2         1           0         0         0       0         5 Sleeping
+verdict: CONVERGED (new patterns named: 2)
+
+=== seed: star_5 ===
+  tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         0         0           0         0         0       0         0 Running
+    50         1         1           0         0         0       0         5 Sleeping
+   100         1         1           0         0         0       0         5 Sleeping
+   150         1         1           0         0         0       0         5 Sleeping
+   200         1         1           0         0         0       0         5 Sleeping
+   250         1         1           0         0         0       0         5 Sleeping
+   300         1         1           0         0         0       0         5 Sleeping
+verdict: CONVERGED (new patterns named: 1)
+
+=== seed: equivalence_3_classes ===
+  tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         0         0           0         0         0       0         0 Running
+    50         0         1           0         0         0       0         4 Sleeping
+   100         0         1           0         0         0       0         4 Sleeping
+   150         0         1           0         0         0       0         4 Sleeping
+   200         0         1           0         0         0       0         4 Sleeping
+   250         0         1           0         0         0       0         4 Sleeping
+   300         0         1           0         0         0       0         4 Sleeping
+verdict: CONVERGED (new patterns named: 0)
+
+=== seed: disconnected_islands ===
+  tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         0         0           0         0         0       0         0 Running
+    50         0         1           0         0         0       0         4 Sleeping
+   100         0         1           0         0         0       0         4 Sleeping
+   150         0         1           0         0         0       0         4 Sleeping
+   200         0         1           0         0         0       0         4 Sleeping
+   250         0         1           0         0         0       0         4 Sleeping
+   300         0         1           0         0         0       0         4 Sleeping
+verdict: CONVERGED (new patterns named: 0)
+
+=== battery summary ===
+                  seed         verdict   new patterns
+              fan_only       CONVERGED              2
+         diamond_poset       CONVERGED              0
+         bipartite_2_3       CONVERGED              2
+                star_5       CONVERGED              1
+ equivalence_3_classes       CONVERGED              0
+  disconnected_islands       CONVERGED              0
+
+--- end ---

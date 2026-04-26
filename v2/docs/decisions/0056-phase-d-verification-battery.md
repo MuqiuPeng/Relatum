@@ -1,6 +1,6 @@
 # 0056: Phase D verification battery
 
-Status: Proposed
+Status: Accepted (Phase F0 implemented)
 Date: 2026-04-26
 
 ## Context

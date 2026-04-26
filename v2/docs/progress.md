@@ -2709,3 +2709,47 @@ ADR carries 4 verification items, 4 alternatives rejected, 4
 open questions. Status: **Proposed**. No code yet.
 
 Tests: unchanged (402).
+
+### Phase F0 — D-battery captured
+ADR 0056 implemented as `examples/phase_d_battery.rs`. 6 seeds
+× HORIZON=300 ticks each; per-seed snapshot every 50 ticks +
+verdict; battery summary at end. Captured to
+`logs/2026-04-26_phase_d_battery.log`.
+
+Battery summary on the captured run:
+```
+                  seed         verdict   new patterns
+              fan_only       CONVERGED              2
+         diamond_poset       CONVERGED              0
+         bipartite_2_3       CONVERGED              2
+                star_5       CONVERGED              1
+ equivalence_3_classes       CONVERGED              0
+  disconnected_islands       CONVERGED              0
+```
+
+**All 6 seeds CONVERGE within 50 ticks**, every one transitioning
+to `Sleeping` and staying there for the remaining 250 ticks.
+No seed exhibits sustained growth, oscillation, or anomaly.
+
+This is **strong empirical confirmation of the
+compression-saturation diagnosis** — independent of topology
+(synthetic-fan, poset, bipartite, star, equivalence-class,
+disconnected-islands), the runtime reaches a fixed point
+quickly. The "right" amount of self-extension is bounded by the
+intrinsic-drive ceiling; richer topology buys more discoveries
+along the way to that ceiling, but doesn't push past it.
+
+Two specific findings:
+- **Pattern discovery requires recurrent subgraphs.**
+  `diamond_poset`, `equivalence_3_classes`,
+  `disconnected_islands` produce 0 named patterns despite
+  finding theories. The axioms cover the structure but no
+  subgraph repeats often enough to clear `min_instances`.
+- **Loop closure works on non-fan topologies**.
+  `bipartite_2_3` and `star_5` both produce ≥ 1 new pattern,
+  confirming the meta-meta path isn't tied to the specific
+  fan-shape used in the original demo.
+
+ADR 0056 status: Proposed → Accepted (Phase F0 implemented).
+Tests: unchanged (402). The battery is a diagnostic example,
+not a unit test.
