@@ -3430,3 +3430,79 @@ or theory. Scheduler reads it back at choose-time and biases
 decisions accordingly — closing a loop: runtime activity →
 episode log → sequence stats → auto-promotion to meta-R →
 scheduler bias → runtime activity.
+
+### Phase H1.2 — composite ActionKind dispatch (impl)
+The deepest constitutional move ADR 0061 anticipated:
+**ActionKind is no longer a compile-time constant**. Promoted
+sequences gain genuine compound execution semantics via a new
+runtime dispatch path.
+
+Three pieces:
+
+**1. New variants.** `ActionKind::ExecuteComposite` (no
+payload, preserves Copy), `FrontierTarget::ActionSequence(
+String)` (carries the seq_N id), `FrontierKind::CompositeCandidate`
+(scheduler dispatch tag). Codec entries (action_kind_to_str /
+parse_action_kind / target_to_pair / pair_to_target /
+check_no_tab_or_newline) updated for round-trip integrity.
+
+**2. Frontier::refresh_composite_candidates.** Runs after
+all other refresh steps (it depends on what they produced).
+For each named (prefix, suffix) pair in
+`rset.action_sequence_pairs()`, if the current frontier has
+items producing BOTH the prefix and suffix ActionKinds,
+inject a CompositeCandidate item carrying
+`FrontierTarget::ActionSequence(seq_id)`. Idempotent. Mid-tier
+priority 1.5 (above stale-prune, below typical negative-cv
+prune). The H1.1 priority bias still stacks on top via
+`pick_top_biased`.
+
+**3. execute_action ExecuteComposite arm.** Looks up the
+seq_id's (prefix, suffix) ActionKinds in rset, finds matching
+frontier items for each step (using their existing targets,
+not synthetic defaults), runs them in order via recursive
+`execute_action` calls (which don't record sub-episodes —
+the composite wraps both as one), and returns the abstraction-
+score delta from before-composite to after-composite as the
+episode's delta.
+
+The recursive structure means sub-actions can themselves
+mutate rset (DiscoverTheory names a theory; DiscoverPatterns
+names a pattern; etc.) and the composite captures the
+combined effect.
+
+Tests (8 new H1.2):
+- `ActionKind::ExecuteComposite` codec round-trip.
+- `FrontierTarget::ActionSequence` codec round-trip.
+- `execute_for_kind` maps `CompositeCandidate` →
+  `ExecuteComposite`.
+- `refresh_composite_candidates` skips when no named seq
+  exists.
+- `refresh_composite_candidates` injects a candidate when
+  named seq + matching kinds both present.
+- `refresh_composite_candidates` skips when seq named but
+  kinds absent from frontier.
+- `refresh_composite_candidates` idempotent (no double inject).
+- E2E: name a (DT, DP) pair on diamond_poset, run runtime,
+  verify the composite either surfaces in the frontier or
+  fires as an ExecuteComposite episode.
+
+Tests: 444 → 452 (+8).
+
+ADR 0061 status: H1.0 + H1.1 → H1.0 + H1.1 + H1.2 implemented.
+
+**v2 has crossed the architectural Rubicon.** The action space
+is now a function of runtime experience, not a compile-time
+enumeration. A streaming substrate that produces certain
+correlations will mint dispatch units the runtime author
+didn't anticipate. The composite's individual steps come from
+existing primitives (no new ActionKinds invented from whole
+cloth), but the *combinations* are runtime-discovered. This
+is the genuine self-extension move v2's goal-statement
+implied.
+
+Open questions remaining (deferred to ADR 0062 or beyond):
+- Demotion: when does a promoted sequence get retracted?
+- Trigram (length-3) sequences and beyond.
+- Composite of composites (recursive composition).
+- Cross-checkpoint persistence of the H1.x state machine.

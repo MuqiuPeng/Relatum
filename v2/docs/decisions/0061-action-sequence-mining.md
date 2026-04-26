@@ -1,6 +1,6 @@
 # 0061: Action-sequence mining (Phase H1)
 
-Status: Accepted (Phases H1.0 + H1.1 implemented; H1.2 sketched)
+Status: Accepted (Phases H1.0 + H1.1 + H1.2 implemented)
 Date: 2026-04-26
 
 ## Context
