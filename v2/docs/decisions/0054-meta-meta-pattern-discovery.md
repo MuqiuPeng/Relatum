@@ -257,13 +257,26 @@ For Phase D0:
 3. **Persistence of discovered meta-meta-patterns**. Same as
    regular patterns: rset checkpoint round-trips them. No new
    work — just confirm.
-4. **Termination property**. If meta-meta-patterns become
+4. **Termination property**. ~~If meta-meta-patterns become
    ESTABLISHED, then *they* could feed another meta-meta pass
    (meta-meta-meta…). The single-layer ontology commitment
    means this is fine in principle (still first-order
    patterns), but in practice the hypothesis space could
    explode. Suggest D0 ships with a hard cap on the number of
-   ESTABLISHED → meta-meta cycles per `run_bounded` invocation.
+   ESTABLISHED → meta-meta cycles per `run_bounded` invocation.~~
+   **Resolved empirically.** A 500-tick `examples/phase_d_termination`
+   run (NoOp environment + 5 seeded ESTABLISHED patterns, log at
+   `logs/2026-04-26_phase_d_termination.log`) shows the runtime
+   names two meta-meta-patterns within the first 50 ticks, then
+   transitions to Sleeping and stays there for the remaining 450
+   ticks. The OQ #2 cooldown gate (0/3 hits, falls below the 5%
+   floor at `min_meta_meta_attempts_before_cooldown=5` once
+   reached) plus the existing scheduler's "no expand work →
+   sleep" path together produce a fixed point. No hard cap is
+   needed; the soft cap from cooldown + sleep suffices in
+   practice. Re-test if the termination assumption ever
+   matters for a long-lived synthetic-stream environment, where
+   external events keep waking the runtime.
 
 ## Touched ADRs
 

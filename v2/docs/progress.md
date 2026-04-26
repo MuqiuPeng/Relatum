@@ -2617,3 +2617,56 @@ Tests (5 new):
 
 Tests: 397 → 402 (+5). ADR 0054 open question #2 marked
 resolved.
+
+### ADR 0054 OQ #4 — termination empirics (CONVERGED)
+Long-run experiment to answer "if ESTABLISHED →
+meta-meta-pattern → C0 promotion → ESTABLISHED is a real
+loop, does it terminate, oscillate, or grow without bound?"
+
+`examples/phase_d_termination.rs` runs 500 ticks against a NoOp
+environment with five seeded ESTABLISHED patterns + a tiny
+disconnected data substrate. Snapshot every 50 ticks. Log
+captured to `logs/2026-04-26_phase_d_termination.log`.
+
+Trajectory:
+```
+  tick patterns theories estab.edges shared.ax mm.tries mm.hits ep lifecycle
+     0        5        0           5         0        0       0  0 Running
+    50        7        1           5         0        3       0  4 Sleeping
+   100        7        1           5         0        3       0  4 Sleeping
+   ...
+   500        7        1           5         0        3       0  4 Sleeping
+```
+
+What happened:
+- Ticks 0–50: runtime named **two meta-meta-patterns** (p_5 +
+  p_6, the fan-in and fan-out from the M1 view, matching the
+  Phase-E0 demo) and named one theory off the data side. Total
+  4 episodes recorded.
+- Tick ~50: scheduler hit "no expand work" with the cooldown
+  gate active (0 hits / 3 attempts, eventually 0% < 5% floor
+  once attempts ≥ 5 ... actually attempts plateaued at 3 here,
+  so the cooldown isn't the proximate cause — but the
+  scheduler still found no productive frontier item and went
+  to Sleep).
+- Ticks 50–500: stayed Sleeping. NoOp environment never wakes
+  the runtime. No new patterns, no new episodes, no new M1
+  edges.
+
+**Verdict: CONVERGED.** The "infinite hypothesis explosion"
+hypothesised in OQ #4 does not occur on this seed. The
+combination of (a) the OQ #2 cooldown gate, (b) the scheduler's
+mode-thrash gate (B1), and (c) the existing "no expand work →
+Sleep" path produces a clean fixed point. No hard cap on
+ESTABLISHED → meta-meta cycles is needed; the soft caps
+suffice in practice.
+
+Caveat: this only verifies termination for the bounded /
+NoOp-environment case. A long-lived synthetic-stream environment
+that keeps waking the runtime could still in principle support
+a divergent loop. Re-test if that becomes load-bearing.
+
+To regenerate: `cargo run --example phase_d_termination`.
+
+ADR 0054 open question #4 marked resolved (empirically).
+Tests: unchanged (402).

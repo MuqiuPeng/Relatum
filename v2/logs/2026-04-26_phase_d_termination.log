@@ -1,0 +1,19 @@
+=== ADR 0054 OQ #4 — termination empirics (500 ticks) ===
+
+  tick  patterns  theories estab.edges  shared.ax  mm.tries mm.hits  episodes lifecycle
+     0         5         0          5          0         0       0         0 Running
+    50         7         1          5          0         3       0         4 Sleeping
+   100         7         1          5          0         3       0         4 Sleeping
+   150         7         1          5          0         3       0         4 Sleeping
+   200         7         1          5          0         3       0         4 Sleeping
+   250         7         1          5          0         3       0         4 Sleeping
+   300         7         1          5          0         3       0         4 Sleeping
+   350         7         1          5          0         3       0         4 Sleeping
+   400         7         1          5          0         3       0         4 Sleeping
+   450         7         1          5          0         3       0         4 Sleeping
+   500         7         1          5          0         3       0         4 Sleeping
+
+verdict: CONVERGED — runtime is sleeping with no new patterns named in the last 2 windows
+final pattern count = 7, final episode count = 4, meta-meta attempts = 3, hits = 0
+
+--- end ---
