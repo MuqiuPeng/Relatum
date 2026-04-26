@@ -1,6 +1,6 @@
 # 0058: Axiom forward-application semantics
 
-Status: Proposed
+Status: Accepted (Phase G1.0 implemented)
 Date: 2026-04-26
 
 ## Context

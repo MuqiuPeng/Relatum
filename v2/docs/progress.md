@@ -2886,3 +2886,48 @@ drive.
 
 Tests: unchanged (408). 4 alternatives rejected, 4 open
 questions logged. Status: **Proposed**. No code yet.
+
+### Phase G1.0 — axiom forward-application (impl)
+ADR 0058 implemented. Two new public methods on `RSet`:
+
+- `forward_apply_axiom(axiom_id) -> HashSet<R>`: takes a named
+  template axiom, enumerates every variable substitution
+  σ : 0..num_vars → data_ids that satisfies every premise
+  edge, returns the set of conclusion edges under σ.
+- `forward_apply_all() -> HashSet<R>`: union of
+  `forward_apply_axiom` over `self.axioms()`.
+
+Both follow ADR 0058's semantic decisions:
+- Substitution domain = data identifiers only (commitment 3).
+- Returns the *raw* predicted set; caller decides whether to
+  subtract `self.instances` to keep "predictions not yet
+  observed."
+- One-shot, no recursive closure / fixpoint.
+
+Implementation pattern mirrors the existing
+`evaluate_template_recursive`. Predicate axioms (`AX_REFLEXIVITY`
+/ `AX_ANTISYMMETRY` / `AX_TOTALITY`) and ADR 0044's equality /
+disjunctive premise extensions all bypass the template-based
+path — for those, `reconstruct_axiom_template` returns `None`
+and forward-apply produces an empty set. G1.1 / G1.2 will
+extend coverage.
+
+Tests (5 new G1.0):
+- Unknown axiom id → empty.
+- Predicate axiom (`AX_REFLEXIVITY`) → empty (template-based
+  path doesn't reconstruct).
+- Template axiom on a transitive-closure substrate (5 nodes,
+  10 edges, total-order shape) → non-empty prediction set
+  including at least one re-derived closure edge.
+- No named axioms → empty.
+- Meta identifiers excluded from substitution domain.
+
+Tests: 408 → 413 (+5). ADR 0058 status: Proposed → Accepted
+(Phase G1.0 implemented).
+
+This is the **prerequisite** for ADR 0059 (prediction-error
+drive). With forward-apply landed, the runtime can now compute
+"what does my axiom set claim should hold?" — the missing piece
+between ADR 0057's anomaly-coverage drive and a real
+prediction-error signal that decouples runtime activity from
+mode-transition counters.

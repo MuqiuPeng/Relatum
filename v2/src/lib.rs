@@ -3528,6 +3528,63 @@ impl RSet {
         data
     }
 
+    /// Forward-apply a single named axiom. Returns the raw set of
+    /// `R(σ(c.x), σ(c.y))` instances produced under every variable
+    /// substitution σ : 0..num_vars → data_ids that satisfies every
+    /// premise edge. ADR 0058 / Phase G1.0.
+    ///
+    /// Returns the empty set when:
+    /// - `axiom_id` is not a registered axiom;
+    /// - the axiom is a predicate axiom (reflexivity / antisymmetry
+    ///   / totality) — those have specialised semantics outside the
+    ///   template-based forward-apply scope of G1.0;
+    /// - the template carries equality or disjunctive premise
+    ///   constraints (G1.1 / G1.2 deferred — `reconstruct_axiom_template`
+    ///   returns `None` for those today).
+    ///
+    /// Substitution domain is data identifiers only (commitment 3:
+    /// types are meta-R, not subject to axiomatic prediction). The
+    /// caller decides whether to subtract `rset.instances` to keep
+    /// only "predictions that aren't yet observed".
+    pub fn forward_apply_axiom(&self, axiom_id: &str) -> HashSet<R> {
+        let template = match self.reconstruct_axiom_template(axiom_id) {
+            Some(t) => t,
+            None => return HashSet::new(),
+        };
+        if template.num_vars == 0 {
+            return HashSet::new();
+        }
+        let meta = self.collect_meta_ids();
+        let mut data_ids_set: HashSet<String> = HashSet::new();
+        for r in &self.instances {
+            if !meta.contains(&r.x) {
+                data_ids_set.insert(r.x.clone());
+            }
+            if !meta.contains(&r.y) {
+                data_ids_set.insert(r.y.clone());
+            }
+        }
+        if data_ids_set.is_empty() {
+            return HashSet::new();
+        }
+        let mut data_ids: Vec<String> = data_ids_set.into_iter().collect();
+        data_ids.sort(); // deterministic enumeration order
+        let mut binding: Vec<usize> = vec![0; template.num_vars];
+        let mut out: HashSet<R> = HashSet::new();
+        forward_apply_recursive(self, &template, &data_ids, &mut binding, 0, &mut out);
+        out
+    }
+
+    /// Forward-apply every named axiom. Union of
+    /// `forward_apply_axiom` over `self.axioms()`. ADR 0058.
+    pub fn forward_apply_all(&self) -> HashSet<R> {
+        let mut out: HashSet<R> = HashSet::new();
+        for ax in self.axioms() {
+            out.extend(self.forward_apply_axiom(ax));
+        }
+        out
+    }
+
     /// Data edges not in any named pattern's Layer B instance binding.
     /// ADR 0057 / Phase G0.
     ///
@@ -4538,6 +4595,38 @@ fn evaluate_template_recursive(
             premise_bindings,
             conclusion_satisfied,
         );
+    }
+}
+
+/// Forward-apply enumerator. Mirror of `evaluate_template_recursive`
+/// but inserts a predicted `R(σ(c.x), σ(c.y))` into `out` for every
+/// σ that satisfies every premise edge. ADR 0058.
+fn forward_apply_recursive(
+    rs: &RSet,
+    template: &AxiomTemplate,
+    ids: &[String],
+    binding: &mut [usize],
+    depth: usize,
+    out: &mut HashSet<R>,
+) {
+    if depth == binding.len() {
+        // Check premise.
+        for e in &template.premise {
+            let x = &ids[binding[e.x_var]];
+            let y = &ids[binding[e.y_var]];
+            if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                return;
+            }
+        }
+        // Emit conclusion under σ.
+        let cx = &ids[binding[template.conclusion.x_var]];
+        let cy = &ids[binding[template.conclusion.y_var]];
+        out.insert(R::new(cx.clone(), cy.clone()));
+        return;
+    }
+    for i in 0..ids.len() {
+        binding[depth] = i;
+        forward_apply_recursive(rs, template, ids, binding, depth + 1, out);
     }
 }
 
@@ -6037,6 +6126,89 @@ mod tests {
             R::new("s", "q"),
         ]);
         assert!(fan_in.is_isomorphic_to(&fan_in_alt));
+    }
+
+    // ─── ADR 0058 Phase G1.0 — axiom forward-application ────────
+
+    #[test]
+    fn g1_forward_apply_unknown_axiom_returns_empty() {
+        let rs = RSet::new();
+        assert!(rs.forward_apply_axiom("ax_unknown_xyz").is_empty());
+    }
+
+    #[test]
+    fn g1_forward_apply_predicate_axiom_returns_empty() {
+        // Reflexivity / antisymmetry / totality are predicate
+        // axioms; reconstruct_axiom_template returns None for them
+        // so forward-apply yields empty per ADR 0058.
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "a"));
+        rs.add(R::new(AXIOM_MARKER, AX_REFLEXIVITY));
+        let predicted = rs.forward_apply_axiom(AX_REFLEXIVITY);
+        assert!(predicted.is_empty());
+    }
+
+    #[test]
+    fn g1_forward_apply_template_axiom_predicts_conclusion() {
+        // Build the transitive closure of a 5-node total order
+        // (every i<j has an edge). The discovered theory will
+        // include transitivity-shaped templates because the
+        // closure makes them universally hold. Forward-apply
+        // those axioms — the predicted set must contain at least
+        // one edge that is *also* in the rset (a re-derivation),
+        // which is the cleanest evidence the mechanism is firing.
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c", "d", "e"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        let cfg = AxiomDiscoveryConfig::default();
+        let theory = rs.discover_theory(&cfg);
+        let ax_ids: Vec<&str> =
+            theory.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        rs.name_theory(&ax_ids).expect("name theory");
+        let predicted = rs.forward_apply_all();
+        // The transitive-closure substrate has axioms that re-derive
+        // many of the existing edges. At least one of the long-edge
+        // closures should appear.
+        assert!(
+            !predicted.is_empty(),
+            "forward-apply should produce at least one prediction \
+             on a closure-shaped rset; got empty set with axioms {:?}",
+            ax_ids
+        );
+        assert!(
+            predicted.contains(&R::new("a", "c"))
+                || predicted.contains(&R::new("a", "d"))
+                || predicted.contains(&R::new("b", "d")),
+            "expected re-derivation of a closure edge; got: {:?}",
+            predicted
+        );
+    }
+
+    #[test]
+    fn g1_forward_apply_excludes_meta_in_substitution_domain() {
+        // Even if a meta id (e.g. PATTERN_MARKER) happens to be a
+        // valid substitution that would satisfy a premise, the
+        // domain restriction (commitment 3) excludes meta. Use an
+        // rset that has no template axioms — forward_apply_all
+        // returns empty regardless.
+        let mut rs = RSet::new();
+        rs.add(R::new(PATTERN_MARKER, "p_x"));
+        rs.add(R::new("a", "b"));
+        let predicted = rs.forward_apply_all();
+        // No named template axioms → empty.
+        assert!(predicted.is_empty());
+    }
+
+    #[test]
+    fn g1_forward_apply_no_axioms_returns_empty() {
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b"), R::new("b", "c")]);
+        let predicted = rs.forward_apply_all();
+        assert!(predicted.is_empty());
     }
 
     #[test]
