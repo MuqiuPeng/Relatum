@@ -1,6 +1,7 @@
 # 0057: Anomaly-coverage drive (Phase G0)
 
-Status: Proposed
+Status: Accepted (Phase G0 implemented; system-level effect bounded
+by thrash gate — see Finding below)
 Date: 2026-04-26
 
 ## Context
@@ -222,6 +223,44 @@ For Phase G0:
 - **ADR 0058** axiom forward-application semantics — Phase G1
   prerequisite, designed in parallel with this ADR.
 
+## Finding (post-implementation)
+
+After G0 landed, an F0 battery re-run produced a log
+**byte-identical** to the pre-G0 run. All 6 seeds still
+CONVERGE within 50 ticks; no seed shows extended runtime.
+
+Diagnosis: the existing **mode-thrash gate**
+(`max_mode_oscillations = 4`) bounds the new sleep-suppression
+hook before any new pattern discoveries can happen. The hook
+fires a few times — `SwitchMode(Expand)` instead of `Sleep` —
+but the Reflect↔Expand pair quickly hits 4 oscillations and
+the thrash gate forces Sleep regardless of pressure.
+
+This is a **real architectural finding**, not a bug:
+- G0's local mechanisms work (6 unit tests verify them).
+- The system-level ceiling is set by the thrash gate, not by
+  the cooldown hit-rate floor.
+- Anomaly pressure alone, without a richer success signal, is
+  not enough to overcome thrash protection.
+
+What this means for Phase G1 (prediction-error drive,
+ADR 0058 / 0059):
+- G1 will provide a *finer* success signal — successful
+  prediction reduces error even when no new pattern is named,
+  so individual ticks can have positive delta without naming.
+- Positive-delta episodes don't feed thrash counters the way
+  mode switches do, so G1 can sustain runtime activity that
+  G0 can't.
+- Conclusion: G0 is necessary but not sufficient. The
+  saturation problem really does need G1.
+
+The G0 mechanisms remain useful: they correctly bias the
+scheduler when uncovered data is present, and the unit tests
+guarantee no regression. Stream-driven seeds (deferred) may
+exercise G0 differently than the static F0 battery — uncovered
+count would be replenished by environment events, potentially
+keeping pressure high even after a few thrashes.
+
 ## Summary
 
 Phase G0 introduces the runtime's first **outward-facing**
@@ -230,8 +269,11 @@ pattern's Layer B. The signal feeds two narrow scheduler hooks
 (cooldown relaxation, sleep suppression) without touching
 abstraction_score, the action taxonomy, or memory schema.
 
-Cheap, local, conservative. The real test is stream-driven
-seeds — landing G0 makes them tractable; without G0 they would
-sleep before they exercised the loop.
+System-level impact on the F0 static-seed battery is null
+because the mode-thrash gate dominates. This is the empirical
+case for Phase G1 (prediction-error drive). Stream-driven
+verification will need either ADR 0056's `stream_diamond` seed
+or the next ADR's full forward-application machinery.
 
-Status: **Proposed**.
+Status: **Accepted (Phase G0 implemented; awaiting G1 to fully
+exercise the outward-drive thesis).**

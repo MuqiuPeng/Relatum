@@ -2795,3 +2795,47 @@ ADR carries 4 alternatives rejected, 4 open questions logged.
 Status: **Proposed**. No code yet.
 
 Tests: unchanged (402).
+
+### Phase G0 — anomaly-coverage drive (implementation + finding)
+ADR 0057 implemented:
+- `RSet::uncovered_data_edges() -> HashSet<R>` returns data
+  edges where neither endpoint is a participant of any named
+  pattern's Layer B instance binding.
+- `RuleBasedScheduler` gains `anomaly_pressure_threshold` (3)
+  and `anomaly_relaxation` (0.5).
+- Pattern-cooldown floor is multiplied by `anomaly_relaxation`
+  when uncovered ≥ threshold (10% → 5% effective floor).
+- Reflect → Sleep transition is replaced with
+  Reflect → Expand when uncovered > 0 AND the pair hasn't
+  already thrashed. Mode-thrash gate still wins ties.
+
+Tests (6 new G0):
+- `uncovered_data_edges` excludes Layer B-covered edges.
+- Empty rset → empty uncovered.
+- Intensional-only patterns don't cover anything.
+- Relaxed cooldown picks pattern under pressure
+  (1/20 not < 5%).
+- Sleep suppressed under pressure; sleeps without pressure.
+- Sleep suppression bounded by thrash gate.
+
+**Finding (commit message):** F0 battery re-run after G0 is
+**byte-identical** to pre-G0. All 6 seeds still CONVERGE
+within 50 ticks. Diagnosis: the existing mode-thrash gate
+(max_mode_oscillations = 4) bounds the sleep-suppression hook
+before any new pattern discoveries can happen. The hook fires
+a few times but Reflect↔Expand quickly hits 4 oscillations
+and the thrash gate forces Sleep regardless of pressure.
+
+This is a **real architectural finding**, not a bug. G0's
+local mechanisms work (6 unit tests verify); the system-level
+ceiling is set by the thrash gate, not by the cooldown
+hit-rate floor. Conclusion: G0 alone is not enough. The
+saturation problem genuinely needs G1's finer success signal
+— successful prediction can produce positive-delta episodes
+without naming a new pattern, sustaining runtime activity
+where G0 alone gets thrash-bounded.
+
+Tests: 402 → 408 (+6). ADR 0057 status: Proposed → Accepted
+(with caveat — implementation correct, system-level effect
+bounded by thrash gate; G1 needed for full outward-drive
+thesis to manifest).

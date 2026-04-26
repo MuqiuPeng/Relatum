@@ -200,6 +200,19 @@ pub struct RuleBasedScheduler {
     /// the pattern gate's floor.
     pub min_meta_meta_hit_rate: f64,
     pub min_meta_meta_attempts_before_cooldown: u64,
+    /// Anomaly-coverage drive thresholds. ADR 0057 / Phase G0.
+    ///
+    /// When `rset.uncovered_data_edges().len() >=
+    /// anomaly_pressure_threshold`, two scheduler hooks fire:
+    /// (1) the B1+ pattern-cooldown hit-rate floor is multiplied by
+    /// `anomaly_relaxation` (default 0.5 → effective floor drops
+    /// from 10% to 5%), giving more room for exploratory pattern
+    /// passes; (2) the Reflect → Sleep transition is replaced with
+    /// Reflect → Expand so the runtime keeps trying while there is
+    /// unexplained data. The mode-thrash gate still bounds the
+    /// suppression so the runtime can't loop forever.
+    pub anomaly_pressure_threshold: usize,
+    pub anomaly_relaxation: f64,
 }
 
 impl Default for RuleBasedScheduler {
@@ -213,6 +226,8 @@ impl Default for RuleBasedScheduler {
             min_pattern_attempts_before_cooldown: 5,
             min_meta_meta_hit_rate: 0.05,
             min_meta_meta_attempts_before_cooldown: 5,
+            anomaly_pressure_threshold: 3,
+            anomaly_relaxation: 0.5,
         }
     }
 }
@@ -324,15 +339,34 @@ impl RuleBasedScheduler {
 
     /// Pattern-discovery cooldown gate. Returns true iff
     /// `DiscoverPatterns` has been attempted enough times to assess
-    /// AND its positive-delta hit rate is below threshold.
-    /// ADR 0052 / B1+.
+    /// AND its positive-delta hit rate is below threshold. The
+    /// effective hit-rate floor relaxes under anomaly pressure
+    /// (ADR 0057 / Phase G0): when there are at least
+    /// `anomaly_pressure_threshold` uncovered data edges, the floor
+    /// drops to `min_pattern_hit_rate * anomaly_relaxation`. ADR 0052
+    /// / B1+.
     fn pattern_cooldown_active(&self, ctx: &SchedulerContext<'_>) -> bool {
+        let effective_floor = self.effective_pattern_hit_rate_floor(ctx);
         Self::action_kind_cooldown_active(
             &ctx.memory.policy_stats,
             ActionKind::DiscoverPatterns,
             self.min_pattern_attempts_before_cooldown,
-            self.min_pattern_hit_rate,
+            effective_floor,
         )
+    }
+
+    /// Effective hit-rate floor for `DiscoverPatterns` after the
+    /// G0 anomaly-pressure relaxation. ADR 0057.
+    fn effective_pattern_hit_rate_floor(
+        &self,
+        ctx: &SchedulerContext<'_>,
+    ) -> f64 {
+        let uncovered = ctx.rset.uncovered_data_edges().len();
+        if uncovered >= self.anomaly_pressure_threshold {
+            self.min_pattern_hit_rate * self.anomaly_relaxation
+        } else {
+            self.min_pattern_hit_rate
+        }
     }
 
     /// Meta-meta-discovery cooldown gate. Symmetric to
@@ -442,7 +476,23 @@ impl Scheduler for RuleBasedScheduler {
                 } else if Self::has_consolidate_work(ctx) {
                     self.switch_or_sleep(ctx, RuntimeMode::Consolidate)
                 } else {
-                    SchedulerDecision::Sleep
+                    // ADR 0057 / Phase G0: sleep suppression under
+                    // anomaly pressure. If there is uncovered data
+                    // and the Reflect→Expand pair hasn't already
+                    // thrashed, prefer re-entering Expand over going
+                    // to sleep — the runtime should keep trying
+                    // while explanations remain owed.
+                    if !ctx.rset.uncovered_data_edges().is_empty()
+                        && !self.would_thrash(
+                            ctx,
+                            ctx.mode,
+                            RuntimeMode::Expand,
+                        )
+                    {
+                        SchedulerDecision::SwitchMode(RuntimeMode::Expand)
+                    } else {
+                        SchedulerDecision::Sleep
+                    }
                 }
             }
         }
@@ -3967,7 +4017,11 @@ mod tests {
 
     #[test]
     fn b1plus_pattern_cooldown_activates_on_low_hit_rate() {
-        let rs = diamond_poset();
+        // Use an empty rset so the G0 anomaly-pressure relaxation
+        // (ADR 0057) doesn't apply — the test is about the base
+        // 10% threshold, not the relaxed 5% threshold under
+        // pressure. 1/20 = 5% < 10% → cooled.
+        let rs = RSet::new();
         let mut frontier = Frontier::default();
         frontier.refresh(&rs, 0);
         let mut memory = Memory::default();
@@ -4309,6 +4363,172 @@ mod tests {
             }
             other => panic!(
                 "expected Execute(DiscoverTheory); got {:?}",
+                other
+            ),
+        }
+    }
+
+    // ─── ADR 0057 Phase G0 — anomaly-coverage drive ────────────
+
+    #[test]
+    fn g0_uncovered_data_edges_excludes_layer_b_covered() {
+        // Construct an rset with two data edges: (a,b), (c,d). Then
+        // simulate Layer B for a named pattern p_x with one instance
+        // i_0 whose participants are {a, b} (covering edge (a,b)).
+        // Edge (c,d) remains uncovered.
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        rs.add(R::new("c", "d"));
+        rs.add(R::new(crate::PATTERN_MARKER, "p_x"));
+        // Layer B: pattern → instance, instance → participant.
+        rs.add(R::new("p_x", "p_x_i_0"));
+        rs.add(R::new("p_x_i_0", "a"));
+        rs.add(R::new("p_x_i_0", "b"));
+        let uncovered = rs.uncovered_data_edges();
+        // (a,b) covered. (c,d) NOT covered.
+        assert!(!uncovered.contains(&R::new("a", "b")));
+        assert!(uncovered.contains(&R::new("c", "d")));
+        assert_eq!(uncovered.len(), 1);
+    }
+
+    #[test]
+    fn g0_uncovered_empty_when_no_patterns_no_data() {
+        let rs = RSet::new();
+        assert!(rs.uncovered_data_edges().is_empty());
+    }
+
+    #[test]
+    fn g0_uncovered_intensional_pattern_does_not_cover() {
+        // Pattern with no Layer B (Intensional) covers nothing —
+        // its participants set is empty. So data edges remain
+        // uncovered even though the pattern shape was abstracted.
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        rs.add(R::new(crate::PATTERN_MARKER, "p_x"));
+        // No `R(p_x, p_x_i_*)` instances. Intensional naming
+        // produced only the registry edge (and roles, omitted
+        // here for brevity).
+        let uncovered = rs.uncovered_data_edges();
+        assert_eq!(uncovered.len(), 1);
+        assert!(uncovered.contains(&R::new("a", "b")));
+    }
+
+    #[test]
+    fn g0_relaxed_cooldown_picks_pattern_under_anomaly_pressure() {
+        // With pressure: 20 attempts / 1 hit = 5%. Base floor 10%
+        // (cooled), relaxed 5% (NOT cooled). Build an rset with
+        // ≥ 3 uncovered data edges to trigger pressure.
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        rs.add(R::new("b", "c"));
+        rs.add(R::new("c", "d"));
+        rs.add(R::new("d", "e"));
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 20);
+        memory
+            .policy_stats
+            .action_positive_delta_counts
+            .insert(ActionKind::DiscoverPatterns, 1);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        // 4 uncovered edges ≥ 3 → pressure on. 1/20 = 5% NOT < 5%
+        // (relaxed floor). So NOT cooled.
+        assert!(!sched.pattern_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn g0_sleep_suppressed_under_pressure() {
+        // Reflect mode + no expand work + no consolidate work +
+        // uncovered > 0 → SwitchMode(Expand), not Sleep. Build an
+        // rset with uncovered data and an empty frontier.
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        let frontier = Frontier {
+            items: Vec::new(),
+            last_full_refresh_tick: 0,
+            dirty: false,
+            staleness: StalenessConfig::default(),
+            promotion: PromotionConfig::default(),
+            meta_meta: MetaMetaConfig::default(),
+        };
+        let memory = Memory::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Reflect,
+            tick: 0,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        match sched.choose(&ctx) {
+            SchedulerDecision::SwitchMode(RuntimeMode::Expand) => {}
+            other => panic!(
+                "expected SwitchMode(Expand) under pressure; got {:?}",
+                other
+            ),
+        }
+
+        // With empty rset → no uncovered → falls through to Sleep.
+        let rs2 = RSet::new();
+        let ctx2 = SchedulerContext {
+            rset: &rs2,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Reflect,
+            tick: 0,
+        };
+        match sched.choose(&ctx2) {
+            SchedulerDecision::Sleep => {}
+            other => panic!(
+                "expected Sleep without pressure; got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn g0_sleep_suppression_bounded_by_thrash_gate() {
+        // Pressure + already-thrashed Reflect↔Expand pair → Sleep
+        // wins. The G0 hook does NOT override the B1 mode-thrash
+        // gate.
+        let mut rs = RSet::new();
+        rs.add(R::new("a", "b"));
+        let frontier = Frontier {
+            items: Vec::new(),
+            last_full_refresh_tick: 0,
+            dirty: false,
+            staleness: StalenessConfig::default(),
+            promotion: PromotionConfig::default(),
+            meta_meta: MetaMetaConfig::default(),
+        };
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .mode_transition_counts
+            .insert((RuntimeMode::Reflect, RuntimeMode::Expand), 4);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Reflect,
+            tick: 0,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        match sched.choose(&ctx) {
+            SchedulerDecision::Sleep => {}
+            other => panic!(
+                "expected Sleep under thrash; got {:?}",
                 other
             ),
         }

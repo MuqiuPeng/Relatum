@@ -3528,6 +3528,47 @@ impl RSet {
         data
     }
 
+    /// Data edges not in any named pattern's Layer B instance binding.
+    /// ADR 0057 / Phase G0.
+    ///
+    /// "Covered" by a pattern means: the edge's two endpoints both
+    /// appear as participants of some `R(pattern, instance_N)` chain
+    /// (i.e., both endpoints are right-hand sides of `R(instance_N,
+    /// participant)` edges for the same `instance_N`). Data edges
+    /// failing this for every named pattern are *uncovered* — the
+    /// runtime has not yet built any abstraction that explains them
+    /// in pattern terms. The signal feeds the Phase G0 anomaly
+    /// scheduler hooks. Patterns named with the Intensional policy
+    /// have no Layer B and therefore cover nothing by this measure;
+    /// that's the intended behaviour (Intensional patterns abstract
+    /// shape, not data).
+    pub fn uncovered_data_edges(&self) -> HashSet<R> {
+        let meta = self.collect_meta_ids();
+        let mut covered_groups: Vec<HashSet<String>> = Vec::new();
+        for p in self.patterns() {
+            for inst_id in self.instances_of(p) {
+                let participants: HashSet<String> = self
+                    .left_of(inst_id)
+                    .iter()
+                    .map(|r| r.y.clone())
+                    .collect();
+                if participants.len() >= 2 {
+                    covered_groups.push(participants);
+                }
+            }
+        }
+        self.instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .filter(|r| {
+                !covered_groups
+                    .iter()
+                    .any(|g| g.contains(&r.x) && g.contains(&r.y))
+            })
+            .cloned()
+            .collect()
+    }
+
     /// All edges (data + meta-R) in a deterministic order.
     /// ADR 0025: used by `discover_motifs` when the hierarchical
     /// probe flag is set.
