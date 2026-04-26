@@ -186,6 +186,20 @@ pub struct RuleBasedScheduler {
     /// pattern-discovery passes that consistently produce nothing.
     pub min_pattern_hit_rate: f64,
     pub min_pattern_attempts_before_cooldown: u64,
+    /// Cooldown threshold for `MetaMetaCandidate` selection.
+    /// ADR 0054 / open question #2.
+    ///
+    /// Symmetric to the pattern-cooldown gate, but tracks
+    /// `DiscoverMetaMetaPatterns` independently so an unproductive
+    /// meta-meta pass does not burn the regular pattern-discovery
+    /// budget. Default `min_meta_meta_hit_rate = 0.05` (5%, more
+    /// permissive than pattern's 10%) — meta-meta is exploratory
+    /// and the runtime should give it more attempts before giving
+    /// up; raising the floor too aggressively defeats Phase D's
+    /// purpose. `min_meta_meta_attempts_before_cooldown = 5` matches
+    /// the pattern gate's floor.
+    pub min_meta_meta_hit_rate: f64,
+    pub min_meta_meta_attempts_before_cooldown: u64,
 }
 
 impl Default for RuleBasedScheduler {
@@ -197,6 +211,8 @@ impl Default for RuleBasedScheduler {
             max_mode_oscillations: 4,
             min_pattern_hit_rate: 0.1,
             min_pattern_attempts_before_cooldown: 5,
+            min_meta_meta_hit_rate: 0.05,
+            min_meta_meta_attempts_before_cooldown: 5,
         }
     }
 }
@@ -228,10 +244,11 @@ impl RuleBasedScheduler {
 
     fn has_expand_work(&self, ctx: &SchedulerContext<'_>) -> bool {
         let pattern_cool = self.pattern_cooldown_active(ctx);
+        let meta_meta_cool = self.meta_meta_cooldown_active(ctx);
         ctx.frontier.items.iter().any(|it| match it.kind {
             FrontierKind::TheoryCandidate => true,
             FrontierKind::PatternCandidate => !pattern_cool,
-            FrontierKind::MetaMetaCandidate => true,
+            FrontierKind::MetaMetaCandidate => !meta_meta_cool,
             _ => false,
         })
     }
@@ -310,22 +327,49 @@ impl RuleBasedScheduler {
     /// AND its positive-delta hit rate is below threshold.
     /// ADR 0052 / B1+.
     fn pattern_cooldown_active(&self, ctx: &SchedulerContext<'_>) -> bool {
-        let stats = &ctx.memory.policy_stats;
-        let attempts = stats
-            .action_counts
-            .get(&ActionKind::DiscoverPatterns)
-            .copied()
-            .unwrap_or(0);
-        if attempts < self.min_pattern_attempts_before_cooldown {
+        Self::action_kind_cooldown_active(
+            &ctx.memory.policy_stats,
+            ActionKind::DiscoverPatterns,
+            self.min_pattern_attempts_before_cooldown,
+            self.min_pattern_hit_rate,
+        )
+    }
+
+    /// Meta-meta-discovery cooldown gate. Symmetric to
+    /// `pattern_cooldown_active` but reads the
+    /// `ActionKind::DiscoverMetaMetaPatterns` slot of `policy_stats`
+    /// — an unproductive D0 pass cools its own ActionKind without
+    /// touching DiscoverPatterns' counter. ADR 0054 / OQ #2.
+    fn meta_meta_cooldown_active(&self, ctx: &SchedulerContext<'_>) -> bool {
+        Self::action_kind_cooldown_active(
+            &ctx.memory.policy_stats,
+            ActionKind::DiscoverMetaMetaPatterns,
+            self.min_meta_meta_attempts_before_cooldown,
+            self.min_meta_meta_hit_rate,
+        )
+    }
+
+    /// Shared cooldown evaluator: an action is cooled iff
+    /// `attempts >= min_attempts` and `hits / attempts < min_hit_rate`.
+    /// Single source of truth for both pattern (B1+) and meta-meta
+    /// (ADR 0054 OQ #2) cooldown gates.
+    fn action_kind_cooldown_active(
+        stats: &PolicyStats,
+        kind: ActionKind,
+        min_attempts: u64,
+        min_hit_rate: f64,
+    ) -> bool {
+        let attempts =
+            stats.action_counts.get(&kind).copied().unwrap_or(0);
+        if attempts < min_attempts {
             return false;
         }
         let hits = stats
             .action_positive_delta_counts
-            .get(&ActionKind::DiscoverPatterns)
+            .get(&kind)
             .copied()
             .unwrap_or(0);
-        let rate = hits as f64 / attempts as f64;
-        rate < self.min_pattern_hit_rate
+        (hits as f64 / attempts as f64) < min_hit_rate
     }
 }
 
@@ -349,11 +393,12 @@ impl Scheduler for RuleBasedScheduler {
                 // unproductive, skip those items and prefer
                 // TheoryCandidate. ADR 0052 / B1+.
                 let pattern_cool = self.pattern_cooldown_active(ctx);
+                let meta_meta_cool = self.meta_meta_cooldown_active(ctx);
                 if let Some(item) = Self::pick_top(ctx, |it| {
                     match it.kind {
                         FrontierKind::TheoryCandidate => true,
                         FrontierKind::PatternCandidate => !pattern_cool,
-                        FrontierKind::MetaMetaCandidate => true,
+                        FrontierKind::MetaMetaCandidate => !meta_meta_cool,
                         _ => false,
                     }
                 }) {
@@ -4094,6 +4139,176 @@ mod tests {
             SchedulerDecision::SwitchMode(RuntimeMode::Consolidate) => {}
             other => panic!(
                 "expected SwitchMode(Consolidate); got {:?}",
+                other
+            ),
+        }
+    }
+
+    // ─── ADR 0054 OQ #2 — meta-meta cooldown gate ──────────────
+
+    #[test]
+    fn meta_meta_cooldown_inactive_with_few_attempts() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        // 3 attempts, 0 hits — bad rate but below the 5-attempt
+        // floor. Must stay inactive.
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverMetaMetaPatterns, 3);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(!sched.meta_meta_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn meta_meta_cooldown_activates_on_low_hit_rate() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        // 20 attempts, 0 hits (0% < 5% floor) → cooled.
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverMetaMetaPatterns, 20);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(sched.meta_meta_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn meta_meta_cooldown_inactive_on_healthy_hit_rate() {
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        // 10 attempts, 2 hits (20% > 5% floor) → not cooled.
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverMetaMetaPatterns, 10);
+        memory
+            .policy_stats
+            .action_positive_delta_counts
+            .insert(ActionKind::DiscoverMetaMetaPatterns, 2);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(!sched.meta_meta_cooldown_active(&ctx));
+    }
+
+    #[test]
+    fn meta_meta_cooldown_independent_of_pattern_cooldown() {
+        // PatternDiscovery cooled (20 attempts / 0 hits = 0%); meta-
+        // meta has 0 attempts → not cooled. The two counters do not
+        // bleed into each other.
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverPatterns, 20);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        let sched = RuleBasedScheduler::default();
+        assert!(sched.pattern_cooldown_active(&ctx));
+        assert!(!sched.meta_meta_cooldown_active(&ctx));
+
+        // Now flip: meta-meta cooled, pattern not.
+        let mut memory2 = Memory::default();
+        memory2
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverMetaMetaPatterns, 20);
+        let ctx2 = SchedulerContext {
+            rset: &rs,
+            memory: &memory2,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+        };
+        assert!(!sched.pattern_cooldown_active(&ctx2));
+        assert!(sched.meta_meta_cooldown_active(&ctx2));
+    }
+
+    #[test]
+    fn cooled_meta_meta_skipped_in_expand_pick() {
+        // Frontier has both a TheoryCandidate and a MetaMetaCandidate;
+        // meta-meta is cooled. The scheduler should pick the theory
+        // and ignore the meta-meta item.
+        let rs = diamond_poset();
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        // Inject a high-priority synthetic MetaMetaCandidate that
+        // would otherwise dominate.
+        frontier.items.insert(
+            0,
+            FrontierItem {
+                id: "synth_mm".to_string(),
+                kind: FrontierKind::MetaMetaCandidate,
+                target: FrontierTarget::WholeRSet,
+                priority: 999.0,
+                estimated_value: 999.0,
+                estimated_cost: 1.0,
+                novelty_score: 1.0,
+                first_seen_tick: 0,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            },
+        );
+        let mut memory = Memory::default();
+        memory
+            .policy_stats
+            .action_counts
+            .insert(ActionKind::DiscoverMetaMetaPatterns, 20);
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 1,
+        };
+        let mut sched = RuleBasedScheduler::default();
+        match sched.choose(&ctx) {
+            SchedulerDecision::Execute(plan) => {
+                assert_eq!(
+                    plan.action_kind,
+                    ActionKind::DiscoverTheory,
+                    "cooled meta-meta should yield TheoryCandidate, got {:?}",
+                    plan
+                );
+            }
+            other => panic!(
+                "expected Execute(DiscoverTheory); got {:?}",
                 other
             ),
         }

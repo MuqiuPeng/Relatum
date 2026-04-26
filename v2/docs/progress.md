@@ -2584,3 +2584,36 @@ refinement) is the deferred follow-on.
 
 Tests: 396 → 397 (+1). ADR 0055 status: Proposed → Accepted
 (Phase E0 implemented).
+
+### ADR 0054 OQ #2 — independent meta-meta cooldown
+The B1+ pattern-cooldown story now has a sibling for meta-meta.
+`RuleBasedScheduler` gains `min_meta_meta_hit_rate` (default
+0.05 — half of pattern's 0.1, since meta-meta is exploratory
+and should fail more before being cooled) and
+`min_meta_meta_attempts_before_cooldown` (default 5, same as
+pattern). New helper `meta_meta_cooldown_active` mirrors
+`pattern_cooldown_active`; both delegate to a shared
+`action_kind_cooldown_active(stats, kind, min_attempts,
+min_hit_rate)` so the gating logic lives once.
+
+Wiring:
+- Expand mode pick filter skips `MetaMetaCandidate` when cooled,
+  alongside the existing `PatternCandidate` skip.
+- `has_expand_work` likewise.
+- `policy_stats.action_counts[DiscoverMetaMetaPatterns]` and
+  `action_positive_delta_counts[DiscoverMetaMetaPatterns]` were
+  already accumulating (B0 wired stats keyed by ActionKind);
+  this commit just consults them.
+
+Tests (5 new):
+- Inactive when attempts < threshold.
+- Active when ≥ 5 attempts AND hit rate < 5%.
+- Inactive on healthy hit rate (≥ 5%).
+- Independence: pattern-cooldown active does NOT activate
+  meta-meta cooldown, and vice versa. Different counters.
+- End-to-end scheduler pick: a cooled `MetaMetaCandidate` at
+  synthetic priority 999 gets skipped; the scheduler picks
+  `TheoryCandidate` instead.
+
+Tests: 397 → 402 (+5). ADR 0054 open question #2 marked
+resolved.

@@ -241,10 +241,19 @@ For Phase D0:
    canonicalization)? Suggest "same marker" — markers carry
    semantics, treating them as interchangeable defeats the
    purpose.
-2. **Cooldown counter sharing**. If `DiscoverPatterns` and
+2. **Cooldown counter sharing**. ~~If `DiscoverPatterns` and
    `DiscoverMetaMetaPatterns` share the B1+ counter, an
    unproductive D0 pass burns the regular discovery's budget.
-   Almost certainly want separate counters — TBD wiring.
+   Almost certainly want separate counters — TBD wiring.~~
+   **Resolved.** `RuleBasedScheduler` gained
+   `min_meta_meta_hit_rate` / `min_meta_meta_attempts_before_cooldown`
+   (defaults 5% / 5 attempts — meta-meta is exploratory, more
+   permissive than pattern's 10%/5). The shared helper
+   `action_kind_cooldown_active(stats, kind, min_attempts,
+   min_hit_rate)` keeps both gates' logic in one place.
+   `policy_stats.action_*_counts` were already keyed by
+   ActionKind, so the per-kind counters were already
+   accumulating; this just consults them independently.
 3. **Persistence of discovered meta-meta-patterns**. Same as
    regular patterns: rset checkpoint round-trips them. No new
    work — just confirm.
