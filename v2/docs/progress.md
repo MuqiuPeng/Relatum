@@ -3937,6 +3937,57 @@ This is the kind of finding the long-run was meant to
 surface. ADR 0062 status augmented with retrospective
 finding #3 implemented.
 
+### Phase H1.x — long-run finding #3 diagnosis (no fix needed)
+
+The 2026-04-27 long-run also flagged "regime B/C inert" —
+the runtime appearing to sleep through ticks 200–1500
+despite scheduled AddEdge events firing throughout. After
+the finding-#2 fix, this dissolves: it was a downstream
+artifact, not a wake-gate problem.
+
+`should_wake` ([mod.rs:921](../src/runtime/mod.rs))
+returns true for any `AddEdge` / `RemoveEdge` event — wake
+gate itself is intact. The pre-fix observation was caused
+by finding #2: the runtime would wake on regime-B/C edges,
+but with no productive composite dispatch available and
+sequence-mining stuck on (EP, EP) only, mode-thrash
+penalty kicked in and the runtime returned to sleep
+quickly enough that snapshot intervals (200 ticks) caught
+it sleeping.
+
+Empirical evidence — episodes-per-200-tick interval, post
+finding-#2 fix:
+
+| interval | regime | post-fix Δepisodes |
+|---|---|---|
+| 200–400 | A end | +14 |
+| 400–600 | A→B | +33 |
+| 600–800 | B mid | +12 |
+| 800–1000 | B end | +12 |
+| 1000–1200 | C start | +32 |
+| 1200–1400 | C→D | +34 |
+| 1400–1600 | D | +32 |
+| 1600–1800 | D end | +30 |
+| 1800–2000 | post-inj | +30 |
+
+(Pre-fix, intervals 200–1400 totaled +1 episode.)
+
+Conclusion: regime B/C now engage normally. No wake-gate
+or prediction-error-drive change required. Long-run
+finding #3 is **closed without code change** — the fix for
+finding #2 covers it.
+
+The composition of two findings into one fix is itself
+an instructive trace. Long-run #2 surfaced as "composite
+dispatch never fires"; long-run #3 surfaced as "regimes B/C
+appear inert." Both pointed at the same architectural
+defect (EP not in frontier). The diagnostic value of the
+2000-tick window vs the 300-tick F0 battery: longer
+substrates expose the *secondary* consequences of an
+architectural gap, not just the gap itself.
+
+
+
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
 
 The 2026-04-27 retrospective listed "H2 ADR drafting" as
