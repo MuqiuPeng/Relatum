@@ -1,6 +1,6 @@
 # 0053: Selective declarativization (M1)
 
-Status: Accepted (Phase C0 implemented)
+Status: Accepted (Phases C0 + C1 implemented)
 Date: 2026-04-26
 
 ## Context
@@ -106,11 +106,17 @@ Why a new marker rather than reusing PATTERN_MARKER:
   becomes a queryable concept. A pattern over those is a
   meta-meta-pattern.
 
-### Phase C1 (sketch, deferred)
+### Phase C1 — theory promotion (implemented)
 
-`ESTABLISHED_MARKER` for theories. Same gate, different counter.
-Theory promotion is more conservative — theories are larger
-investments. Suggest `K = 200`, `M = 3`.
+Same `ESTABLISHED_MARKER`, same M ≥ 1 cheap path as C0, applied to
+named theories with a more conservative age threshold:
+`min_theory_age_for_promotion` defaults to **200 ticks**. Tighter
+M ≥ 3 (the original ADR sketch) is deferred — same reasoning as C0,
+needs an explicit contribution counter on `ObjectHistory`.
+
+Demotion piggybacks on `RSet::retract_theory`, which gains a final
+step removing `R(theory_id, ESTABLISHED_MARKER)` symmetric to
+`retract_pattern`'s step (7).
 
 ### Phase C2 (sketch, deferred)
 

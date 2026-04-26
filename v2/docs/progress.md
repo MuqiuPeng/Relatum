@@ -2124,3 +2124,39 @@ Tests (9 new C0):
 Tests: 358 → 367 (+9). ADR 0053 status: Proposed → Accepted
 (Phase C0 implemented). Phase C1 (theories) and C2 (shared
 axioms) remain sketched; Phase B0/B1/B1+/B2/B3/C0 complete.
+
+### Phase C1 — theory promotion (M1, slice 2)
+Lifts C0's pattern gate into a parallel branch for named
+theories. Same `ESTABLISHED_MARKER`, same M ≥ 1 cheap path; only
+the age knob differs — `PromotionConfig.min_theory_age_for_promotion`
+defaults to **200 ticks** (per ADR sketch — theories are larger
+investments).
+
+Implementation:
+- `Frontier::refresh_established_promotions` extracted shared
+  helpers (`passes_promotion_gate`, `make_promotion_item`) and
+  now iterates both `history.patterns` and `history.theories`,
+  applying each store's age threshold against the matching
+  `rset.patterns()` / `rset.theories()` membership.
+- `ActionKind::Declarativize` handler now also accepts
+  `FrontierTarget::Theory(id)` — same `rset.add(R::new(id,
+  ESTABLISHED_MARKER))` call.
+- `RSet::retract_theory` gains a final cleanup step removing
+  `R(theory_id, ESTABLISHED_MARKER)` symmetric to
+  `retract_pattern`'s step (7).
+
+Tests (7 new C1):
+- Theory at age 150 (≥ pattern threshold but < theory threshold)
+  → no item — confirms the theory-specific knob fires, not the
+  pattern one.
+- Aged theory but `last_improved_tick = None` → no item.
+- Qualified theory → item with Theory target.
+- Already promoted → no item.
+- Theory dropped from rset → no item.
+- `retract_theory` removes ESTABLISHED edge.
+- Pattern + theory both qualify simultaneously → both items
+  appear in one frontier pass.
+
+Tests: 367 → 374 (+7). ADR 0053 status updated to "Accepted
+(Phases C0 + C1 implemented)". Phase C2 (`SHARED_AXIOM_MARKER`)
+remains sketched.

@@ -683,24 +683,30 @@ impl Default for StalenessConfig {
     }
 }
 
-/// Threshold config for ESTABLISHED promotion. ADR 0053 / Phase C0.
+/// Threshold config for ESTABLISHED promotion. ADR 0053 / Phase C0/C1.
 ///
-/// A named pattern earns the `R(id, ESTABLISHED_MARKER)` edge once it
-/// has been alive in the runtime's `ObjectHistory` for at least
-/// `min_pattern_age_for_promotion` ticks AND has contributed to at
-/// least one positive-delta episode (`last_improved_tick.is_some()`).
-/// The "M ≥ 1" form of the use criterion in ADR 0053; tighter counts
-/// are deferred until `ObjectHistory` carries an explicit contribution
-/// counter.
+/// A named object (pattern or theory) earns the
+/// `R(id, ESTABLISHED_MARKER)` edge once it has been alive in the
+/// runtime's `ObjectHistory` for at least the relevant age threshold
+/// AND has contributed to at least one positive-delta episode
+/// (`last_improved_tick.is_some()`). This is the "M ≥ 1" form of the
+/// use criterion in ADR 0053; tighter `M ≥ N` counts are deferred
+/// until `ObjectHistory` carries an explicit contribution counter.
+///
+/// Theory threshold is more conservative than pattern (200 vs. 100
+/// ticks) per ADR 0053 / Phase C1 — theories are larger investments
+/// and the runtime should be slower to declare them stable.
 #[derive(Debug, Clone, Copy)]
 pub struct PromotionConfig {
     pub min_pattern_age_for_promotion: u64,
+    pub min_theory_age_for_promotion: u64,
 }
 
 impl Default for PromotionConfig {
     fn default() -> Self {
         Self {
             min_pattern_age_for_promotion: 100,
+            min_theory_age_for_promotion: 200,
         }
     }
 }
@@ -931,11 +937,12 @@ impl Frontier {
         }
     }
 
-    /// Append `EstablishedPromotion` items for named patterns that
-    /// meet the C0 gate: alive for ≥ `min_pattern_age_for_promotion`
-    /// ticks AND `last_improved_tick.is_some()` (M ≥ 1) AND not yet
-    /// promoted. Skips ids that already have a pending promotion item.
-    /// Re-sorts on exit. ADR 0053 / Phase C0.
+    /// Append `EstablishedPromotion` items for named patterns and
+    /// theories that meet the C0/C1 gate: alive for ≥ the relevant
+    /// age threshold AND `last_improved_tick.is_some()` (M ≥ 1) AND
+    /// not yet promoted. Skips ids that already have a pending
+    /// promotion item. Re-sorts on exit.
+    /// ADR 0053 / Phase C0 (patterns) + C1 (theories).
     pub fn refresh_established_promotions(
         &mut self,
         rset: &RSet,
@@ -944,51 +951,67 @@ impl Frontier {
     ) {
         let cfg = self.promotion;
         let mut added = false;
-        let named: HashSet<&str> = rset.patterns().into_iter().collect();
+
+        // Patterns (C0).
+        let named_patterns: HashSet<&str> =
+            rset.patterns().into_iter().collect();
         for (id, h) in &history.patterns {
-            if !named.contains(id.as_str()) {
-                continue; // dropped from rset already
-            }
-            let age = tick.saturating_sub(h.first_seen_tick);
-            if age < cfg.min_pattern_age_for_promotion {
+            if !named_patterns.contains(id.as_str()) {
                 continue;
             }
-            if h.last_improved_tick.is_none() {
+            if !Self::passes_promotion_gate(
+                h,
+                tick,
+                cfg.min_pattern_age_for_promotion,
+            ) {
                 continue;
             }
-            // Already promoted?
             if rset.contains(&R::new(id.clone(), ESTABLISHED_MARKER)) {
                 continue;
             }
             let target = FrontierTarget::Pattern(id.clone());
-            let already = self.items.iter().any(|it| {
+            if self.items.iter().any(|it| {
                 matches!(it.kind, FrontierKind::EstablishedPromotion)
                     && it.target == target
-            });
-            if already {
+            }) {
                 continue;
             }
-            self.items.push(FrontierItem {
-                id: format!("promote_{}_{}", id, tick),
-                kind: FrontierKind::EstablishedPromotion,
-                target,
-                // Mid-tier consolidate priority: above stale-prune
-                // (0.5) so a freshly-mature pattern is acknowledged
-                // before stale ones are trimmed, but below normal
-                // negative-cv prune so a known-bad object still
-                // wins.
-                priority: 1.5,
-                estimated_value: 1.0,
-                estimated_cost: 1.0,
-                novelty_score: 0.5,
-                first_seen_tick: tick,
-                last_visited_tick: None,
-                revisit_count: 0,
-                cooldown_until_tick: None,
-                status: FrontierStatus::Fresh,
-            });
+            self.items.push(Self::make_promotion_item(
+                id, target, tick,
+            ));
             added = true;
         }
+
+        // Theories (C1).
+        let named_theories: HashSet<&str> =
+            rset.theories().into_iter().collect();
+        for (id, h) in &history.theories {
+            if !named_theories.contains(id.as_str()) {
+                continue;
+            }
+            if !Self::passes_promotion_gate(
+                h,
+                tick,
+                cfg.min_theory_age_for_promotion,
+            ) {
+                continue;
+            }
+            if rset.contains(&R::new(id.clone(), ESTABLISHED_MARKER)) {
+                continue;
+            }
+            let target = FrontierTarget::Theory(id.clone());
+            if self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::EstablishedPromotion)
+                    && it.target == target
+            }) {
+                continue;
+            }
+            self.items.push(Self::make_promotion_item(
+                id, target, tick,
+            ));
+            added = true;
+        }
+
         if added {
             self.items.sort_by(|a, b| {
                 b.priority
@@ -996,6 +1019,40 @@ impl Frontier {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.id.cmp(&b.id))
             });
+        }
+    }
+
+    fn passes_promotion_gate(
+        h: &ObjectHistory,
+        tick: u64,
+        min_age: u64,
+    ) -> bool {
+        let age = tick.saturating_sub(h.first_seen_tick);
+        age >= min_age && h.last_improved_tick.is_some()
+    }
+
+    fn make_promotion_item(
+        id: &str,
+        target: FrontierTarget,
+        tick: u64,
+    ) -> FrontierItem {
+        FrontierItem {
+            id: format!("promote_{}_{}", id, tick),
+            kind: FrontierKind::EstablishedPromotion,
+            target,
+            // Mid-tier consolidate priority: above stale-prune
+            // (0.5) so a freshly-mature object is acknowledged
+            // before stale ones are trimmed, but below normal
+            // negative-cv prune so a known-bad object still wins.
+            priority: 1.5,
+            estimated_value: 1.0,
+            estimated_cost: 1.0,
+            novelty_score: 0.5,
+            first_seen_tick: tick,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
         }
     }
 }
@@ -1450,16 +1507,20 @@ impl AutonomousRuntime {
                 }
             }
             ActionKind::Declarativize => {
-                // ADR 0053 / Phase C0. Promote a named pattern by
-                // emitting `R(id, ESTABLISHED_MARKER)`. The frontier
-                // pass already gated this, so we trust the target
-                // here; rset.add is idempotent (returns false for
-                // duplicates), and ESTABLISHED has no internal state
-                // beyond the edge itself.
-                if let FrontierTarget::Pattern(id) = &plan.target {
-                    let _ = self
-                        .rset
-                        .add(R::new(id.clone(), ESTABLISHED_MARKER));
+                // ADR 0053 / Phase C0 (patterns) + C1 (theories).
+                // Promote a named object by emitting
+                // `R(id, ESTABLISHED_MARKER)`. The frontier pass
+                // already gated this, so we trust the target here;
+                // rset.add is idempotent (returns false for
+                // duplicates), and ESTABLISHED has no internal
+                // state beyond the edge itself.
+                let id = match &plan.target {
+                    FrontierTarget::Pattern(id) => Some(id.clone()),
+                    FrontierTarget::Theory(id) => Some(id.clone()),
+                    _ => None,
+                };
+                if let Some(id) = id {
+                    let _ = self.rset.add(R::new(id, ESTABLISHED_MARKER));
                 }
             }
         }
@@ -4166,6 +4227,150 @@ mod tests {
         assert!(
             !rs.contains(&R::new("p_x", ESTABLISHED_MARKER)),
             "ESTABLISHED edge must cascade with retract_pattern"
+        );
+    }
+
+    // ─── Phase C1 — theory promotion (ADR 0053) ─────────────────
+
+    fn rs_with_named_theory(id: &str) -> RSet {
+        let mut rs = RSet::new();
+        rs.add(R::new(crate::THEORY_MARKER, id));
+        rs
+    }
+
+    fn history_with_theory(
+        id: &str,
+        first_seen: u64,
+        last_improved: Option<u64>,
+    ) -> ObjectHistoryStore {
+        let mut h = ObjectHistoryStore::default();
+        h.theories.insert(
+            id.to_string(),
+            ObjectHistory {
+                first_seen_tick: first_seen,
+                last_seen_tick: first_seen,
+                last_improved_tick: last_improved,
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        h
+    }
+
+    #[test]
+    fn c1_promotion_inactive_below_theory_age() {
+        // Age 150 ≥ pattern threshold (100) but below theory
+        // threshold (200). Confirms the gate uses the theory-
+        // specific knob, not the pattern one.
+        let rs = rs_with_named_theory("t_young");
+        let history = history_with_theory("t_young", 0, Some(50));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c1_promotion_inactive_when_never_improved() {
+        let rs = rs_with_named_theory("t_dead");
+        let history = history_with_theory("t_dead", 0, None);
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 300);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c1_promotion_active_when_qualified() {
+        let rs = rs_with_named_theory("t_good");
+        let history = history_with_theory("t_good", 0, Some(180));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 250);
+        assert_eq!(frontier.items.len(), 1);
+        let it = &frontier.items[0];
+        assert!(matches!(it.kind, FrontierKind::EstablishedPromotion));
+        assert_eq!(
+            it.target,
+            FrontierTarget::Theory("t_good".to_string())
+        );
+        assert!(it.id.starts_with("promote_t_good_"));
+    }
+
+    #[test]
+    fn c1_promotion_skips_already_promoted_theory() {
+        let mut rs = rs_with_named_theory("t_done");
+        rs.add(R::new("t_done", ESTABLISHED_MARKER));
+        let history = history_with_theory("t_done", 0, Some(180));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 250);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c1_promotion_skips_dropped_theory() {
+        let rs = RSet::new();
+        let history = history_with_theory("t_gone", 0, Some(180));
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 250);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c1_retract_theory_cascades_established() {
+        let mut rs = rs_with_named_theory("t_x");
+        rs.add(R::new("t_x", ESTABLISHED_MARKER));
+        assert!(rs.contains(&R::new("t_x", ESTABLISHED_MARKER)));
+        rs.retract_theory("t_x").expect("retract");
+        assert!(
+            !rs.contains(&R::new("t_x", ESTABLISHED_MARKER)),
+            "ESTABLISHED edge must cascade with retract_theory"
+        );
+    }
+
+    #[test]
+    fn c1_pattern_and_theory_both_promote() {
+        // Both stores populate; both pass their respective gates;
+        // both items appear in the frontier.
+        let mut rs = RSet::new();
+        rs.add(R::new(crate::PATTERN_MARKER, "p_x"));
+        rs.add(R::new(crate::THEORY_MARKER, "t_x"));
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_x".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 100,
+                last_improved_tick: Some(80),
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        history.theories.insert(
+            "t_x".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 250,
+                last_improved_tick: Some(180),
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 250);
+        assert_eq!(frontier.items.len(), 2);
+        let mut targets: Vec<&FrontierTarget> =
+            frontier.items.iter().map(|it| &it.target).collect();
+        targets.sort_by_key(|t| format!("{:?}", t));
+        assert_eq!(
+            targets,
+            vec![
+                &FrontierTarget::Pattern("p_x".to_string()),
+                &FrontierTarget::Theory("t_x".to_string()),
+            ]
         );
     }
 

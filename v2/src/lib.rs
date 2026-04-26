@@ -2160,6 +2160,11 @@ impl RSet {
         if self.remove(&R::new(THEORY_MARKER, theory_id.to_string())) {
             removed += 1;
         }
+        // ADR 0053 / Phase C1. Cascade the experience-with edge if
+        // this theory had been promoted.
+        if self.remove(&R::new(theory_id.to_string(), ESTABLISHED_MARKER)) {
+            removed += 1;
+        }
         Ok(removed)
     }
 
