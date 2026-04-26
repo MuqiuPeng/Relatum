@@ -2398,3 +2398,59 @@ promotes it back to ESTABLISHED → next D0 round sees it")
 follows automatically through the existing C0 / B-line
 infrastructure once the meta-meta-pattern accumulates
 `first_seen_tick` age.
+
+### Phase C0+ — `times_contributed_positive` counter
+ADR 0053's open question #1 ("Counter source for M references")
+was the last thing keeping C0/C1 on the cheap M ≥ 1 path. C0+
+upgrades the gate to a real M ≥ N check by adding a dedicated
+counter to `ObjectHistory` and threading it through the
+checkpoint format and the promotion gate.
+
+Implementation:
+- New field `ObjectHistory.times_contributed_positive: u32`,
+  defaulting to 0.
+- Increments inside `execute_and_record` whenever a positive-
+  delta episode lands and the object is present in
+  `patterns_after` / `theories_after`. Distinct from
+  `times_selected_as_focus`, which only increments when the
+  object is the explicit `plan.target` (mostly Prune-side).
+- B2 checkpoint format **gains a 9th column** on every
+  `[object_history_*]` line: `<contributed>` after
+  `<stability>`. Parser updated to require 9 fields. Format
+  string version stayed `v1` because there are no out-of-tree
+  consumers; the change is backward-incompatible only for
+  hand-rolled checkpoint TSV.
+- `PromotionConfig` gains `min_pattern_use_for_promotion: u32`
+  (default 3) and `min_theory_use_for_promotion: u32` (default
+  3). The `passes_promotion_gate` helper now checks
+  `times_contributed_positive >= min_use` instead of the M ≥ 1
+  proxy `last_improved_tick.is_some()`.
+
+The default M = 3 reproduces ADR 0053's original sketch
+("Suggest K = 200, M = 3"), now that the counter exists to
+enforce it.
+
+Test fixture migration: `history_with_pattern` and
+`history_with_theory` helpers were updated to set
+`times_contributed_positive = 3` whenever `last_improved` is
+`Some(...)` and 0 otherwise. This preserves the prior test
+semantic (M ≥ 1 ↔ last_improved.is_some()) while making each
+test exercise the real M ≥ 3 path. Three inline literal
+constructions in C0/C1 promote-success tests were similarly
+bumped from 0 to 3.
+
+Tests (4 new C0+):
+- Age clears, last_improved set, but counter = 2 → no item
+  (M ≥ 3 not met).
+- Counter exactly = 3 → item appears.
+- Non-zero counter round-trips through `checkpoint_text` /
+  `from_checkpoint_text`.
+- E2E: 20-tick run on the diamond poset produces at least one
+  named pattern or theory with `times_contributed_positive > 0`,
+  confirming the increment site fires under realistic dispatch.
+
+Tests: 392 → 396 (+4). ADR 0053 open question #1 marked
+resolved. C0/C1 are now on a real M ≥ N gate; the M ≥ 1 cheap
+path documented in earlier C0/C1 commits is no longer the load-
+bearing logic — it remains as a fast-path early-exit when
+`last_improved_tick.is_none()` (which implies counter = 0).

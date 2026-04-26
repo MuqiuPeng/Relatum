@@ -531,6 +531,15 @@ pub struct ObjectHistory {
     pub times_pruned: u32,
     pub last_counterfactual_value: Option<f64>,
     pub stability_estimate: Option<f64>,
+    /// Cumulative count of positive-delta episodes in which this
+    /// object was present in `patterns_after` / `theories_after`.
+    /// ADR 0053 / Phase C0+. Distinct from
+    /// `times_selected_as_focus`, which counts how often the object
+    /// was the explicit `plan.target` (mostly Prune-side). The
+    /// contribution counter is the input to a real `M ≥ N`
+    /// promotion gate, replacing C0/C1's binary
+    /// `last_improved_tick.is_some()` check.
+    pub times_contributed_positive: u32,
 }
 
 impl ObjectHistory {
@@ -543,6 +552,7 @@ impl ObjectHistory {
             times_pruned: 0,
             last_counterfactual_value: None,
             stability_estimate: None,
+            times_contributed_positive: 0,
         }
     }
 }
@@ -735,18 +745,23 @@ impl Default for MetaMetaConfig {
 /// A named object (pattern or theory) earns the
 /// `R(id, ESTABLISHED_MARKER)` edge once it has been alive in the
 /// runtime's `ObjectHistory` for at least the relevant age threshold
-/// AND has contributed to at least one positive-delta episode
-/// (`last_improved_tick.is_some()`). This is the "M ≥ 1" form of the
-/// use criterion in ADR 0053; tighter `M ≥ N` counts are deferred
-/// until `ObjectHistory` carries an explicit contribution counter.
+/// AND has contributed to at least the relevant `min_*_use_for_promotion`
+/// number of positive-delta episodes. The contribution count is
+/// the `times_contributed_positive` counter on `ObjectHistory`,
+/// added in Phase C0+ alongside this knob.
 ///
-/// Theory threshold is more conservative than pattern (200 vs. 100
-/// ticks) per ADR 0053 / Phase C1 — theories are larger investments
-/// and the runtime should be slower to declare them stable.
+/// Theory thresholds are more conservative than pattern (200/3
+/// vs. 100/3) per ADR 0053 / Phase C1 — theories are larger
+/// investments and the runtime should be slower to declare them
+/// stable. The default `min_*_use_for_promotion = 3` reproduces
+/// ADR 0053's original sketch ("M = 3"), now that the counter
+/// exists to enforce it.
 #[derive(Debug, Clone, Copy)]
 pub struct PromotionConfig {
     pub min_pattern_age_for_promotion: u64,
     pub min_theory_age_for_promotion: u64,
+    pub min_pattern_use_for_promotion: u32,
+    pub min_theory_use_for_promotion: u32,
 }
 
 impl Default for PromotionConfig {
@@ -754,6 +769,8 @@ impl Default for PromotionConfig {
         Self {
             min_pattern_age_for_promotion: 100,
             min_theory_age_for_promotion: 200,
+            min_pattern_use_for_promotion: 3,
+            min_theory_use_for_promotion: 3,
         }
     }
 }
@@ -1013,6 +1030,7 @@ impl Frontier {
                 h,
                 tick,
                 cfg.min_pattern_age_for_promotion,
+                cfg.min_pattern_use_for_promotion,
             ) {
                 continue;
             }
@@ -1043,6 +1061,7 @@ impl Frontier {
                 h,
                 tick,
                 cfg.min_theory_age_for_promotion,
+                cfg.min_theory_use_for_promotion,
             ) {
                 continue;
             }
@@ -1076,9 +1095,10 @@ impl Frontier {
         h: &ObjectHistory,
         tick: u64,
         min_age: u64,
+        min_use: u32,
     ) -> bool {
         let age = tick.saturating_sub(h.first_seen_tick);
-        age >= min_age && h.last_improved_tick.is_some()
+        age >= min_age && h.times_contributed_positive >= min_use
     }
 
     fn make_promotion_item(
@@ -1506,6 +1526,8 @@ impl AutonomousRuntime {
                 h.last_seen_tick = tick;
                 if delta > 0.0 {
                     h.last_improved_tick = Some(tick);
+                    h.times_contributed_positive =
+                        h.times_contributed_positive.saturating_add(1);
                 }
             }
         }
@@ -1514,6 +1536,8 @@ impl AutonomousRuntime {
                 h.last_seen_tick = tick;
                 if delta > 0.0 {
                     h.last_improved_tick = Some(tick);
+                    h.times_contributed_positive =
+                        h.times_contributed_positive.saturating_add(1);
                 }
             }
         }
@@ -2340,7 +2364,7 @@ fn write_history_section(
         }
         let h = &map[k];
         out.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             k,
             h.first_seen_tick,
             h.last_seen_tick,
@@ -2349,6 +2373,7 @@ fn write_history_section(
             h.times_pruned,
             format_opt_f64(h.last_counterfactual_value),
             format_opt_f64(h.stability_estimate),
+            h.times_contributed_positive,
         ));
     }
     Ok(())
@@ -2361,9 +2386,9 @@ fn parse_history_lines(
     let mut out: HashMap<String, ObjectHistory> = HashMap::new();
     for (idx, raw) in lines.iter().enumerate() {
         let fields: Vec<&str> = raw.split('\t').collect();
-        if fields.len() != 8 {
+        if fields.len() != 9 {
             return Err(format!(
-                "{} line {} has {} fields, expected 8",
+                "{} line {} has {} fields, expected 9",
                 label,
                 idx + 1,
                 fields.len()
@@ -2389,6 +2414,10 @@ fn parse_history_lines(
             stability_estimate: parse_opt_f64(
                 fields[7],
                 &format!("{}.stability", label),
+            )?,
+            times_contributed_positive: parse_u32(
+                fields[8],
+                &format!("{}.contributed", label),
             )?,
         };
         out.insert(id, h);
@@ -4078,6 +4107,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 0,
             },
         );
         let mut frontier = Frontier::default();
@@ -4100,6 +4130,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 0,
             },
         );
         let mut frontier = Frontier::default();
@@ -4129,6 +4160,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: Some(2.0),
                 stability_estimate: Some(0.8),
+                times_contributed_positive: 0,
             },
         );
         let mut frontier = Frontier::default();
@@ -4151,6 +4183,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: Some(-1.0),
                 stability_estimate: None,
+                times_contributed_positive: 0,
             },
         );
         let mut frontier = Frontier::default();
@@ -4187,6 +4220,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 0,
             },
         );
         let mut frontier = Frontier::default();
@@ -4211,6 +4245,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 0,
             },
         );
         let mut frontier = Frontier::default();
@@ -4256,6 +4291,11 @@ mod tests {
         first_seen: u64,
         last_improved: Option<u64>,
     ) -> ObjectHistoryStore {
+        // When `last_improved` is Some, set `times_contributed_positive`
+        // high enough to clear the C0+ M-counter gate (default 3).
+        // When None, the object never contributed positively, so 0.
+        let times_contributed_positive: u32 =
+            if last_improved.is_some() { 3 } else { 0 };
         let mut h = ObjectHistoryStore::default();
         h.patterns.insert(
             id.to_string(),
@@ -4267,6 +4307,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive,
             },
         );
         h
@@ -4344,6 +4385,115 @@ mod tests {
     }
 
     #[test]
+    fn c0plus_promotion_skipped_when_use_below_threshold() {
+        // Age clears (150 ≥ 100) and last_improved_tick is set, but
+        // times_contributed_positive (= 2) < default min (= 3) →
+        // gate should reject.
+        let rs = rs_with_named_pattern("p_close");
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_close".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 150,
+                last_improved_tick: Some(140),
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+                times_contributed_positive: 2,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert!(
+            frontier.items.is_empty(),
+            "M ≥ 3 not yet met; promotion must wait"
+        );
+    }
+
+    #[test]
+    fn c0plus_promotion_active_exactly_at_use_threshold() {
+        let rs = rs_with_named_pattern("p_ready");
+        let mut history = ObjectHistoryStore::default();
+        history.patterns.insert(
+            "p_ready".to_string(),
+            ObjectHistory {
+                first_seen_tick: 0,
+                last_seen_tick: 150,
+                last_improved_tick: Some(140),
+                times_selected_as_focus: 0,
+                times_pruned: 0,
+                last_counterfactual_value: None,
+                stability_estimate: None,
+                times_contributed_positive: 3,
+            },
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh_established_promotions(&rs, &history, 150);
+        assert_eq!(frontier.items.len(), 1);
+    }
+
+    #[test]
+    fn c0plus_counter_serialises_and_round_trips() {
+        // Non-zero counter must survive checkpoint → restore.
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        rt.memory.object_history.patterns.insert(
+            "p_z".to_string(),
+            ObjectHistory {
+                first_seen_tick: 5,
+                last_seen_tick: 12,
+                last_improved_tick: Some(10),
+                times_selected_as_focus: 1,
+                times_pruned: 0,
+                last_counterfactual_value: Some(0.4),
+                stability_estimate: None,
+                times_contributed_positive: 7,
+            },
+        );
+        let cp = rt.checkpoint_text().unwrap();
+        let rt2 = AutonomousRuntime::from_checkpoint_text(&cp).unwrap();
+        let h = rt2
+            .memory
+            .object_history
+            .patterns
+            .get("p_z")
+            .expect("p_z survives checkpoint");
+        assert_eq!(h.times_contributed_positive, 7);
+        assert_eq!(h.times_selected_as_focus, 1);
+        assert_eq!(h.last_improved_tick, Some(10));
+    }
+
+    #[test]
+    fn c0plus_counter_increments_on_positive_delta_episode() {
+        // End-to-end: the runtime's per-tick history maintenance
+        // increments times_contributed_positive whenever the
+        // post-action delta is positive AND the named object is in
+        // patterns_after / theories_after.
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.run_bounded(20);
+        let any_pattern_with_positive_count = rt
+            .memory
+            .object_history
+            .patterns
+            .values()
+            .any(|h| h.times_contributed_positive > 0);
+        let any_theory_with_positive_count = rt
+            .memory
+            .object_history
+            .theories
+            .values()
+            .any(|h| h.times_contributed_positive > 0);
+        assert!(
+            any_pattern_with_positive_count
+                || any_theory_with_positive_count,
+            "expected at least one named object with \
+             times_contributed_positive > 0 after a 20-tick run"
+        );
+    }
+
+    #[test]
     fn c0_execute_declarativize_adds_established_edge() {
         // Plant a named pattern with old age (eligible for promotion)
         // but recent `last_improved_tick` so B3 stale-prune doesn't
@@ -4364,6 +4514,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 3,
             },
         );
         rt.tick = 150;
@@ -4401,6 +4552,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 3,
             },
         );
         rt.tick = 150;
@@ -4458,6 +4610,8 @@ mod tests {
         first_seen: u64,
         last_improved: Option<u64>,
     ) -> ObjectHistoryStore {
+        let times_contributed_positive: u32 =
+            if last_improved.is_some() { 3 } else { 0 };
         let mut h = ObjectHistoryStore::default();
         h.theories.insert(
             id.to_string(),
@@ -4469,6 +4623,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive,
             },
         );
         h
@@ -4560,6 +4715,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 3,
             },
         );
         history.theories.insert(
@@ -4572,6 +4728,7 @@ mod tests {
                 times_pruned: 0,
                 last_counterfactual_value: None,
                 stability_estimate: None,
+                times_contributed_positive: 3,
             },
         );
         let mut frontier = Frontier::default();

@@ -224,11 +224,20 @@ For Phase C0:
 
 ## Open questions (for the implementation, not blocking acceptance)
 
-1. **Counter source for "M references."** Options: cumulative
+1. **Counter source for "M references."** ~~Options: cumulative
    `Episode` scans (expensive but exact),
    `times_selected_as_focus + (delta-positive contribution count)`
    (cheap, already in B0). Default to the cheap path; revisit if
-   it underestimates.
+   it underestimates.~~ **Resolved (Phase C0+)**: a dedicated
+   `times_contributed_positive: u32` field was added to
+   `ObjectHistory`, incremented whenever a positive-delta
+   episode finishes with the object present in
+   `patterns_after` / `theories_after`. Round-trips through the
+   B2 checkpoint format (one new column appended, format version
+   stayed at v1 since the addition is backward-incompatible only
+   for callers that hand-craft checkpoint TSV — none in tree).
+   PromotionConfig now defaults to `min_*_use_for_promotion = 3`,
+   matching this ADR's original `M = 3` sketch.
 2. **Where ESTABLISHED_MARKER is collected.** Should it be
    exposed via `collect_meta_ids` like other markers? Yes — keeps
    meta-R hygiene consistent.
