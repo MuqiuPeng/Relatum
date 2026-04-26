@@ -2184,18 +2184,22 @@ impl RSet {
 
     // ─── ADR 0061 H1.1 — action-sequence promotion ──────────
 
-    /// All named action-sequence pairs as `(seq_id, prefix_name,
-    /// suffix_name)` triples. ADR 0061 / Phase H1.1. ActionKind
-    /// names are the strings produced by the runtime's
-    /// `action_kind_to_str` codec.
+    /// All named action-sequence pairs (length-2 only) as
+    /// `(seq_id, prefix_name, suffix_name)`. Triples (length-3,
+    /// ADR 0062 / Phase H1.4) are excluded — those use
+    /// `action_sequence_triples()`. ADR 0061 / Phase H1.1.
     pub fn action_sequence_pairs(&self) -> Vec<(String, String, String)> {
         let mut out: Vec<(String, String, String)> = Vec::new();
         let seq_edges = self.left_of(ACTION_SEQ_MARKER);
         for seq_edge in seq_edges {
             let seq_id = seq_edge.y.to_string();
-            // Step ids look like seq_N_step_0 / seq_N_step_1.
             let step_0_id = format!("{}_step_0", seq_id);
             let step_1_id = format!("{}_step_1", seq_id);
+            let step_2_id = format!("{}_step_2", seq_id);
+            // Skip triples — return only sequences without step_2.
+            if !self.left_of(&step_2_id).is_empty() {
+                continue;
+            }
             let prefix = self.left_of(&step_0_id).first().map(
                 |r| r.y.to_string(),
             );
@@ -2208,6 +2212,123 @@ impl RSet {
         }
         out.sort();
         out
+    }
+
+    /// All named action-sequence triples (length-3 only) as
+    /// `(seq_id, step_0, step_1, step_2)`. ADR 0062 / Phase H1.4.
+    pub fn action_sequence_triples(
+        &self,
+    ) -> Vec<(String, String, String, String)> {
+        let mut out: Vec<(String, String, String, String)> = Vec::new();
+        let seq_edges = self.left_of(ACTION_SEQ_MARKER);
+        for seq_edge in seq_edges {
+            let seq_id = seq_edge.y.to_string();
+            let step_0_id = format!("{}_step_0", seq_id);
+            let step_1_id = format!("{}_step_1", seq_id);
+            let step_2_id = format!("{}_step_2", seq_id);
+            let s0 = self.left_of(&step_0_id).first().map(|r| r.y.to_string());
+            let s1 = self.left_of(&step_1_id).first().map(|r| r.y.to_string());
+            let s2 = self.left_of(&step_2_id).first().map(|r| r.y.to_string());
+            if let (Some(a), Some(b), Some(c)) = (s0, s1, s2) {
+                out.push((seq_id, a, b, c));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// True iff a triple `(a, b, c)` action-sequence has been
+    /// promoted to a named meta-R chain. ADR 0062 / Phase H1.4.
+    pub fn has_action_sequence_triple(
+        &self,
+        a: &str,
+        b: &str,
+        c: &str,
+    ) -> bool {
+        self.action_sequence_triples()
+            .iter()
+            .any(|(_, x, y, z)| x == a && y == b && z == c)
+    }
+
+    /// Mint a new triple action-sequence id and write its 7-edge
+    /// meta-R chain. Idempotent: returns the existing seq id if
+    /// `(a, b, c)` is already named. ADR 0062 / Phase H1.4.
+    pub fn name_action_sequence_triple(
+        &mut self,
+        a: &str,
+        b: &str,
+        c: &str,
+    ) -> String {
+        for (seq_id, x, y, z) in self.action_sequence_triples() {
+            if x == a && y == b && z == c {
+                return seq_id;
+            }
+        }
+        let mut n = self.left_of(ACTION_SEQ_MARKER).len();
+        let seq_id = loop {
+            let candidate = format!("seq_{}", n);
+            let existing: HashSet<&str> = self.identifiers();
+            if !existing.contains(candidate.as_str()) {
+                break candidate;
+            }
+            n += 1;
+        };
+        let step_0 = format!("{}_step_0", seq_id);
+        let step_1 = format!("{}_step_1", seq_id);
+        let step_2 = format!("{}_step_2", seq_id);
+        self.add(R::new(ACTION_SEQ_MARKER, seq_id.clone()));
+        self.add(R::new(seq_id.clone(), step_0.clone()));
+        self.add(R::new(seq_id.clone(), step_1.clone()));
+        self.add(R::new(seq_id.clone(), step_2.clone()));
+        self.add(R::new(step_0, a.to_string()));
+        self.add(R::new(step_1, b.to_string()));
+        self.add(R::new(step_2, c.to_string()));
+        seq_id
+    }
+
+    /// Retract a named triple action-sequence's 7-edge chain.
+    /// Returns count of edges removed (0 if not named).
+    /// ADR 0062 / Phase H1.4.
+    pub fn retract_action_sequence_triple(
+        &mut self,
+        a: &str,
+        b: &str,
+        c: &str,
+    ) -> usize {
+        let seq_id = match self
+            .action_sequence_triples()
+            .into_iter()
+            .find(|(_, x, y, z)| x == a && y == b && z == c)
+        {
+            Some((id, _, _, _)) => id,
+            None => return 0,
+        };
+        let mut removed = 0usize;
+        let step_0 = format!("{}_step_0", seq_id);
+        let step_1 = format!("{}_step_1", seq_id);
+        let step_2 = format!("{}_step_2", seq_id);
+        if self.remove(&R::new(step_0.clone(), a.to_string())) {
+            removed += 1;
+        }
+        if self.remove(&R::new(step_1.clone(), b.to_string())) {
+            removed += 1;
+        }
+        if self.remove(&R::new(step_2.clone(), c.to_string())) {
+            removed += 1;
+        }
+        if self.remove(&R::new(seq_id.clone(), step_0)) {
+            removed += 1;
+        }
+        if self.remove(&R::new(seq_id.clone(), step_1)) {
+            removed += 1;
+        }
+        if self.remove(&R::new(seq_id.clone(), step_2)) {
+            removed += 1;
+        }
+        if self.remove(&R::new(ACTION_SEQ_MARKER, seq_id)) {
+            removed += 1;
+        }
+        removed
     }
 
     /// True iff the (prefix, suffix) action-pair has already been

@@ -1050,6 +1050,16 @@ pub struct SequenceStats {
     pub pair_recent_post_ep_delta_sum:
         HashMap<(ActionKind, ActionKind), f64>,
     pub last_recent_reset_tick: u64,
+    /// Triple (length-3) sequence counters. ADR 0062 / Phase H1.4.
+    /// Triple `(A, B, C)` increments when three consecutive
+    /// episodes have those action_kinds. Post-EP credit follows
+    /// the same K-lookahead semantics as pairs.
+    pub triple_counts:
+        HashMap<(ActionKind, ActionKind, ActionKind), u64>,
+    pub triple_post_ep_count:
+        HashMap<(ActionKind, ActionKind, ActionKind), u64>,
+    pub triple_post_ep_delta_sum:
+        HashMap<(ActionKind, ActionKind, ActionKind), f64>,
 }
 
 const H1_LOOKAHEAD_K: usize = 5;
@@ -1104,6 +1114,29 @@ impl SequenceStats {
         self.pair_recent_post_ep_count.clear();
         self.pair_recent_post_ep_delta_sum.clear();
         self.last_recent_reset_tick = current_tick;
+    }
+
+    /// Mean post-EP delta for a triple, or `None` when no
+    /// positive-EP episode has followed an occurrence within
+    /// the lookahead. ADR 0062 / Phase H1.4.
+    pub fn triple_mean_post_ep_delta(
+        &self,
+        triple: (ActionKind, ActionKind, ActionKind),
+    ) -> Option<f64> {
+        let count = self
+            .triple_post_ep_count
+            .get(&triple)
+            .copied()
+            .unwrap_or(0);
+        if count == 0 {
+            return None;
+        }
+        let sum = self
+            .triple_post_ep_delta_sum
+            .get(&triple)
+            .copied()
+            .unwrap_or(0.0);
+        Some(sum / count as f64)
     }
 }
 
@@ -1212,6 +1245,20 @@ impl Memory {
                 .or_insert(0) += 1;
         }
 
+        // Triple count: increment for (prev_prev, prev, cur). The
+        // current episode is already pushed at episodes.back();
+        // need len ≥ 3 to read both predecessors. ADR 0062 / H1.4.
+        let n = self.episodes.len();
+        if n >= 3 {
+            let prev_prev = self.episodes[n - 3].action_kind;
+            let prev_now = self.episodes[n - 2].action_kind;
+            *self
+                .sequence_stats
+                .triple_counts
+                .entry((prev_prev, prev_now, cur_kind))
+                .or_insert(0) += 1;
+        }
+
         // Post-EP-delta credit: when the new episode IS an EP with
         // positive delta, look back at the last K pair completions
         // and credit each for this EP's delta. Per ADR 0061 § H1.0.
@@ -1223,10 +1270,17 @@ impl Memory {
             let end = n.saturating_sub(1);
             let mut pairs_seen: Vec<(ActionKind, ActionKind)> =
                 Vec::new();
+            let mut triples_seen: Vec<(ActionKind, ActionKind, ActionKind)> =
+                Vec::new();
             for i in start..end {
                 let a = self.episodes[i - 1].action_kind;
                 let b = self.episodes[i].action_kind;
                 pairs_seen.push((a, b));
+                // Triple completion at i requires i >= 2.
+                if i >= 2 {
+                    let t0 = self.episodes[i - 2].action_kind;
+                    triples_seen.push((t0, a, b));
+                }
             }
             for pair in pairs_seen {
                 *self
@@ -1248,6 +1302,19 @@ impl Memory {
                     .sequence_stats
                     .pair_recent_post_ep_delta_sum
                     .entry(pair)
+                    .or_insert(0.0) += cur_delta;
+            }
+            // Triple credits — ADR 0062 / Phase H1.4.
+            for triple in triples_seen {
+                *self
+                    .sequence_stats
+                    .triple_post_ep_count
+                    .entry(triple)
+                    .or_insert(0) += 1;
+                *self
+                    .sequence_stats
+                    .triple_post_ep_delta_sum
+                    .entry(triple)
                     .or_insert(0.0) += cur_delta;
             }
         }
@@ -1856,45 +1923,38 @@ impl Frontier {
         tick: u64,
     ) {
         let pairs = rset.action_sequence_pairs();
-        if pairs.is_empty() {
+        let triples = rset.action_sequence_triples();
+        if pairs.is_empty() && triples.is_empty() {
             return;
         }
-        // Build the kind-to-frontier-item-existence index.
         let kinds_present: HashSet<ActionKind> = self
             .items
             .iter()
             .map(|it| RuleBasedScheduler::execute_for_kind(it.kind))
             .collect();
         let mut added = false;
-        for (seq_id, prefix_name, suffix_name) in pairs {
-            let prefix_kind = match parse_action_kind(&prefix_name) {
-                Ok(k) => k,
-                Err(_) => continue,
-            };
-            let suffix_kind = match parse_action_kind(&suffix_name) {
-                Ok(k) => k,
-                Err(_) => continue,
-            };
-            if !kinds_present.contains(&prefix_kind)
-                || !kinds_present.contains(&suffix_kind)
-            {
-                continue;
+        let mut try_add = |seq_id: &str,
+                           kinds: Vec<ActionKind>,
+                           items: &mut Vec<FrontierItem>,
+                           added: &mut bool| {
+            if kinds.iter().any(|k| !kinds_present.contains(k)) {
+                return;
             }
             let target =
-                FrontierTarget::ActionSequence(seq_id.clone());
-            if self.items.iter().any(|it| {
+                FrontierTarget::ActionSequence(seq_id.to_string());
+            if items.iter().any(|it| {
                 matches!(it.kind, FrontierKind::CompositeCandidate)
                     && it.target == target
             }) {
-                continue;
+                return;
             }
-            self.items.push(FrontierItem {
+            items.push(FrontierItem {
                 id: format!("composite_{}_{}", seq_id, tick),
                 kind: FrontierKind::CompositeCandidate,
                 target,
                 priority: 1.5,
                 estimated_value: 1.0,
-                estimated_cost: 2.0,
+                estimated_cost: kinds.len() as f64,
                 novelty_score: 0.5,
                 first_seen_tick: tick,
                 last_visited_tick: None,
@@ -1902,7 +1962,30 @@ impl Frontier {
                 cooldown_until_tick: None,
                 status: FrontierStatus::Fresh,
             });
-            added = true;
+            *added = true;
+        };
+        for (seq_id, prefix_name, suffix_name) in pairs {
+            let kinds_opt: Option<Vec<ActionKind>> = (|| {
+                Some(vec![
+                    parse_action_kind(&prefix_name).ok()?,
+                    parse_action_kind(&suffix_name).ok()?,
+                ])
+            })();
+            if let Some(ks) = kinds_opt {
+                try_add(&seq_id, ks, &mut self.items, &mut added);
+            }
+        }
+        for (seq_id, a_name, b_name, c_name) in triples {
+            let kinds_opt: Option<Vec<ActionKind>> = (|| {
+                Some(vec![
+                    parse_action_kind(&a_name).ok()?,
+                    parse_action_kind(&b_name).ok()?,
+                    parse_action_kind(&c_name).ok()?,
+                ])
+            })();
+            if let Some(ks) = kinds_opt {
+                try_add(&seq_id, ks, &mut self.items, &mut added);
+            }
         }
         if added {
             self.items.sort_by(|a, b| {
@@ -2489,6 +2572,44 @@ impl AutonomousRuntime {
             let _ =
                 self.rset.name_action_sequence_pair(&prefix, &suffix);
         }
+        // ADR 0062 / Phase H1.4 — auto-promote triples too. Tighter
+        // thresholds: count >= 3 (vs pair's 5) AND mean > 0.10 (vs
+        // pair's 0.05). Triples accumulate slower but each
+        // occurrence carries more signal.
+        const MIN_TRIPLE_COUNT: u64 = 3;
+        const MIN_TRIPLE_MEAN_DELTA: f64 = 0.10;
+        let mut to_promote_t: Vec<(String, String, String)> = Vec::new();
+        for (triple, count) in
+            self.memory.sequence_stats.triple_counts.iter()
+        {
+            if *count < MIN_TRIPLE_COUNT {
+                continue;
+            }
+            let mean = match self
+                .memory
+                .sequence_stats
+                .triple_mean_post_ep_delta(*triple)
+            {
+                Some(m) => m,
+                None => continue,
+            };
+            if mean <= MIN_TRIPLE_MEAN_DELTA {
+                continue;
+            }
+            let a_name = action_kind_to_str(triple.0).to_string();
+            let b_name = action_kind_to_str(triple.1).to_string();
+            let c_name = action_kind_to_str(triple.2).to_string();
+            if !self.rset.has_action_sequence_triple(
+                &a_name, &b_name, &c_name,
+            ) {
+                to_promote_t.push((a_name, b_name, c_name));
+            }
+        }
+        for (a, b, c) in to_promote_t {
+            let _ = self
+                .rset
+                .name_action_sequence_triple(&a, &b, &c);
+        }
     }
 
     /// Dispatch a single action. Returns `Some(delta)` if the action
@@ -2733,66 +2854,81 @@ impl AutonomousRuntime {
                 return Some(delta_sum);
             }
             ActionKind::ExecuteComposite => {
-                // ADR 0061 / Phase H1.2 — run a promoted action-pair
-                // sequence as a single dispatched unit. Look up the
-                // seq_id's (prefix, suffix) ActionKinds in rset, find
-                // matching frontier items for each step, and execute
-                // them in order. Returns the sum of abstraction-score
-                // deltas (computed against pre-composite snapshot)
-                // as the episode's delta. ActionKind is no longer a
-                // compile-time-only constant: the dispatched
-                // sequence was minted at runtime by H1.1's auto-
-                // promotion sweep.
+                // ADR 0061 / Phase H1.2 + ADR 0062 / Phase H1.4 —
+                // run a promoted action sequence (length 2 or 3)
+                // as a single dispatched unit. Look up the seq_id's
+                // ordered ActionKinds in rset, find matching
+                // frontier items for each step, execute in order.
+                // Returns the abstraction-score delta over the
+                // entire composite as the episode's delta.
                 let seq_id = match &plan.target {
                     FrontierTarget::ActionSequence(id) => id.clone(),
                     _ => return Some(0.0),
                 };
-                let pairs = self.rset.action_sequence_pairs();
-                let pair = pairs.iter().find(|(id, _, _)| id == &seq_id);
-                let (prefix_kind, suffix_kind) = match pair {
-                    Some((_, p, s)) => match (
-                        parse_action_kind(p),
-                        parse_action_kind(s),
-                    ) {
-                        (Ok(pk), Ok(sk)) => (pk, sk),
-                        _ => return Some(0.0),
-                    },
-                    None => return Some(0.0),
+                // Collect the step kinds (length 2 or 3).
+                let kinds: Vec<ActionKind> = {
+                    let mut out: Vec<ActionKind> = Vec::new();
+                    let pairs = self.rset.action_sequence_pairs();
+                    if let Some((_, p, s)) = pairs
+                        .iter()
+                        .find(|(id, _, _)| id == &seq_id)
+                    {
+                        if let (Ok(pk), Ok(sk)) = (
+                            parse_action_kind(p),
+                            parse_action_kind(s),
+                        ) {
+                            out.push(pk);
+                            out.push(sk);
+                        }
+                    } else {
+                        let triples = self.rset.action_sequence_triples();
+                        if let Some((_, a, b, c)) = triples
+                            .iter()
+                            .find(|(id, _, _, _)| id == &seq_id)
+                        {
+                            if let (Ok(ak), Ok(bk), Ok(ck)) = (
+                                parse_action_kind(a),
+                                parse_action_kind(b),
+                                parse_action_kind(c),
+                            ) {
+                                out.push(ak);
+                                out.push(bk);
+                                out.push(ck);
+                            }
+                        }
+                    }
+                    out
                 };
-                // Snapshot frontier items by kind so we can pick
-                // sub-targets after the prefix mutates rset.
-                let prefix_target = self
-                    .frontier
-                    .items
-                    .iter()
-                    .find(|it| {
-                        Self::execute_for_kind_static(it.kind)
-                            == prefix_kind
-                    })
-                    .map(|it| it.target.clone());
-                let suffix_target = self
-                    .frontier
-                    .items
-                    .iter()
-                    .find(|it| {
-                        Self::execute_for_kind_static(it.kind)
-                            == suffix_kind
-                    })
-                    .map(|it| it.target.clone());
-                let before = self.rset.abstraction_score();
-                if let Some(pt) = prefix_target {
-                    let sub = ActionPlan {
-                        action_kind: prefix_kind,
-                        target: pt,
-                    };
-                    let _ = self.execute_action(&sub);
+                if kinds.is_empty() {
+                    return Some(0.0);
                 }
-                if let Some(st) = suffix_target {
-                    let sub = ActionPlan {
-                        action_kind: suffix_kind,
-                        target: st,
-                    };
-                    let _ = self.execute_action(&sub);
+                // Snapshot all targets by step kind upfront — frontier
+                // could change shape between sub-actions if rset
+                // mutates.
+                let targets: Vec<Option<FrontierTarget>> = kinds
+                    .iter()
+                    .map(|k| {
+                        self.frontier
+                            .items
+                            .iter()
+                            .find(|it| {
+                                Self::execute_for_kind_static(it.kind)
+                                    == *k
+                            })
+                            .map(|it| it.target.clone())
+                    })
+                    .collect();
+                let before = self.rset.abstraction_score();
+                for (kind, target_opt) in
+                    kinds.into_iter().zip(targets.into_iter())
+                {
+                    if let Some(target) = target_opt {
+                        let sub = ActionPlan {
+                            action_kind: kind,
+                            target,
+                        };
+                        let _ = self.execute_action(&sub);
+                    }
                 }
                 let after = self.rset.abstraction_score();
                 return Some(after - before);
@@ -6963,6 +7099,189 @@ mod tests {
             ),
             "dead-zone mean (0.04) should not trigger demotion"
         );
+    }
+
+    // ─── ADR 0062 Phase H1.4 — trigram extension ──────────────
+
+    #[test]
+    fn h1_4_triple_count_increments() {
+        let mut memory = Memory::default();
+        // Five episodes [A, B, C, D, E] should produce triples
+        // (A,B,C), (B,C,D), (C,D,E).
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.0,
+        ));
+        memory.record(make_episode(ActionKind::Declarativize, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.0));
+        let tc = &memory.sequence_stats.triple_counts;
+        assert_eq!(
+            tc.get(&(
+                ActionKind::DiscoverTheory,
+                ActionKind::DiscoverPatterns,
+                ActionKind::EvaluatePredictions,
+            ))
+            .copied()
+            .unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            tc.get(&(
+                ActionKind::DiscoverPatterns,
+                ActionKind::EvaluatePredictions,
+                ActionKind::Declarativize,
+            ))
+            .copied()
+            .unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            tc.get(&(
+                ActionKind::EvaluatePredictions,
+                ActionKind::Declarativize,
+                ActionKind::DiscoverTheory,
+            ))
+            .copied()
+            .unwrap_or(0),
+            1
+        );
+    }
+
+    #[test]
+    fn h1_4_triple_post_ep_credit() {
+        // Episodes: [DT, DP, Decl, EP(+0.5)]. The triple (DT, DP,
+        // Decl) immediately precedes the EP within the K-window
+        // and gets credited with delta 0.5.
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(ActionKind::Declarativize, 0.0));
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        let triple = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+            ActionKind::Declarativize,
+        );
+        let mean = memory
+            .sequence_stats
+            .triple_mean_post_ep_delta(triple)
+            .expect("triple credited");
+        assert!((mean - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn h1_4_name_action_sequence_triple_idempotent() {
+        let mut rs = RSet::new();
+        let id1 = rs.name_action_sequence_triple("A", "B", "C");
+        let id2 = rs.name_action_sequence_triple("A", "B", "C");
+        assert_eq!(id1, id2);
+        assert_eq!(rs.action_sequence_triples().len(), 1);
+        // Different triple gets a different id.
+        let id3 = rs.name_action_sequence_triple("A", "B", "D");
+        assert_ne!(id1, id3);
+        assert_eq!(rs.action_sequence_triples().len(), 2);
+    }
+
+    #[test]
+    fn h1_4_pairs_and_triples_are_distinct() {
+        // A triple (A, B, C) should NOT show up in
+        // action_sequence_pairs() (which excludes anything with
+        // step_2). And conversely a pair shouldn't appear in
+        // action_sequence_triples().
+        let mut rs = RSet::new();
+        rs.name_action_sequence_pair("A", "B");
+        rs.name_action_sequence_triple("X", "Y", "Z");
+        let pairs = rs.action_sequence_pairs();
+        let triples = rs.action_sequence_triples();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].1, "A");
+        assert_eq!(pairs[0].2, "B");
+        assert_eq!(triples.len(), 1);
+        assert_eq!(triples[0].1, "X");
+        assert_eq!(triples[0].2, "Y");
+        assert_eq!(triples[0].3, "Z");
+    }
+
+    #[test]
+    fn h1_4_retract_action_sequence_triple_removes_chain() {
+        let mut rs = RSet::new();
+        rs.name_action_sequence_triple("A", "B", "C");
+        let removed = rs.retract_action_sequence_triple("A", "B", "C");
+        assert_eq!(removed, 7);
+        assert!(!rs.has_action_sequence_triple("A", "B", "C"));
+        let removed2 = rs.retract_action_sequence_triple("A", "B", "C");
+        assert_eq!(removed2, 0);
+    }
+
+    #[test]
+    fn h1_4_auto_promote_triple_at_threshold() {
+        // 3 occurrences of (DT, DP, Decl) each followed by EP
+        // delta 0.5 → triple mean 0.5 > 0.10 floor; count = 3
+        // meets the triple threshold.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        for _ in 0..3 {
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverPatterns,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::Declarativize,
+                0.0,
+            ));
+            rt.memory.record(make_episode(
+                ActionKind::EvaluatePredictions,
+                0.5,
+            ));
+        }
+        rt.maybe_promote_action_sequences();
+        assert!(
+            rt.rset.has_action_sequence_triple(
+                "DiscoverTheory",
+                "DiscoverPatterns",
+                "Declarativize",
+            ),
+            "triple should auto-promote at count=3 mean=0.5"
+        );
+    }
+
+    #[test]
+    fn h1_4_refresh_composite_creates_for_promoted_triple() {
+        // Build an rset with a named triple AND frontier items
+        // covering all three kinds. CompositeCandidate should
+        // surface for the triple.
+        let mut rs = diamond_poset();
+        // diamond_poset gives Theory + Pattern items via refresh.
+        // Need a third kind in the frontier — easiest: a
+        // PruneLowValueObjects-eligible item via rank_by_counterfactual.
+        // diamond gets Pattern items at sizes 2 and 3.
+        // Let's promote (DiscoverTheory, DiscoverPatterns,
+        // DiscoverPatterns) where all three kinds resolve to items
+        // already in the frontier.
+        rs.name_action_sequence_triple(
+            "DiscoverTheory",
+            "DiscoverPatterns",
+            "DiscoverPatterns",
+        );
+        let mut frontier = Frontier::default();
+        frontier.refresh(&rs, 0);
+        frontier.refresh_composite_candidates(&rs, 0);
+        let composite_count = frontier
+            .items
+            .iter()
+            .filter(|it| {
+                matches!(it.kind, FrontierKind::CompositeCandidate)
+            })
+            .count();
+        assert_eq!(composite_count, 1);
     }
 
     #[test]

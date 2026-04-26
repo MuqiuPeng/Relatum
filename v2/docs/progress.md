@@ -3643,3 +3643,81 @@ streaming-substrate workload; if longer-cycle restart
 patterns surface, revisit. Trigram support (H1.4) remains
 the next major slice.
 
+### Phase H1.4 — trigram support (impl)
+ADR 0062 H1.4 lands. Three pieces:
+
+**1. Triple stats.** `SequenceStats` gains
+`triple_counts` / `triple_post_ep_count` /
+`triple_post_ep_delta_sum` keyed on
+`(ActionKind, ActionKind, ActionKind)`. `Memory::record`
+increments triple_counts when a third predecessor exists
+(after push, `len >= 3`); EP credits triples in the
+K-lookahead window same way it credits pairs. New
+`triple_mean_post_ep_delta` accessor.
+
+**2. Triple meta-R chain.** `RSet` gains
+`action_sequence_triples()`,
+`has_action_sequence_triple(a, b, c)`,
+`name_action_sequence_triple(a, b, c)` (idempotent),
+`retract_action_sequence_triple(a, b, c)`. The chain is
+7 edges:
+```
+R(ACTION_SEQ_MARKER, seq_N)
+R(seq_N, seq_N_step_0)
+R(seq_N, seq_N_step_1)
+R(seq_N, seq_N_step_2)
+R(seq_N_step_0, "<a>")
+R(seq_N_step_1, "<b>")
+R(seq_N_step_2, "<c>")
+```
+
+`action_sequence_pairs()` filters out anything with a
+`step_2` so pair and triple APIs are disjoint. Existing
+H1.1/H1.2/H1.3 callers that walked pairs continue to do
+so; triples are accessed via the parallel API per ADR
+suggestion.
+
+**3. N-step composite dispatch.**
+`Frontier::refresh_composite_candidates` now also walks
+`action_sequence_triples()` and surfaces a CompositeCandidate
+for any triple whose three step kinds are all currently
+represented in the frontier.
+`execute_action::ExecuteComposite` collects the step
+ActionKinds (length 2 OR 3 depending on which API
+matches), snapshots targets up front, and runs each step
+in order via recursive `execute_action`. The episode's
+delta is the abstraction-score change across the whole
+composite (same semantic as H1.2 for pairs).
+
+`maybe_promote_action_sequences` now extends with a triple
+sweep at TIGHTER thresholds: `count >= 3` AND
+`mean > 0.10` (vs pair's 5 / 0.05). Triples accumulate
+slower; each occurrence carries stronger signal.
+
+Tests (7 new H1.4):
+- `triple_counts` increments correctly across 5 episodes
+  producing 3 triples.
+- Post-EP credit reaches the triple immediately preceding
+  a positive-delta EP.
+- `name_action_sequence_triple` idempotent; distinct
+  triples get distinct seq_ids.
+- `action_sequence_pairs` and `action_sequence_triples`
+  return disjoint sets (pair filters out anything with
+  step_2; triple requires all three).
+- `retract_action_sequence_triple` removes 7 edges;
+  idempotent.
+- Auto-promote triple fires at count=3 mean=0.5.
+- `refresh_composite_candidates` surfaces a triple
+  CompositeCandidate when a triple is named AND all three
+  step kinds are represented in the frontier.
+
+Tests: 459 → 466 (+7).
+
+ADR 0062 status: H1.3 → H1.3 + H1.4 implemented.
+
+The H1 suite is now feature-complete: H1.0 mines pairs +
+triples, H1.1 promotes both to meta-R, H1.2 dispatches
+both as N-step composites, H1.3 demotes (pairs only — triple
+demotion follows the same pattern but isn't load-bearing
+yet at v2 scale; defer).
+
