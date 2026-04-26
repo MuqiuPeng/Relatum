@@ -2454,3 +2454,49 @@ resolved. C0/C1 are now on a real M ≥ N gate; the M ≥ 1 cheap
 path documented in earlier C0/C1 commits is no longer the load-
 bearing logic — it remains as a fast-path early-exit when
 `last_improved_tick.is_none()` (which implies counter = 0).
+
+### Phase D0+ — end-to-end demo + log capture
+A standalone demo `examples/phase_d_demo.rs` that prints the loop
+closure end-to-end on a hand-crafted seed (5 ESTABLISHED-marked
+patterns + a tiny disconnected data substrate). Output captured
+to `logs/2026-04-26_phase_d_demo.log`.
+
+What the demo shows on the captured run:
+
+```
+named patterns: 5 → 6 (newly named: p_5)
+DiscoverMetaMetaPatterns episodes: 3
+  [0] tick=2 delta=-1.2000   ← naming pass; rset grew, score dropped
+  [1] tick=3 delta=+0.0000   ← canonical now matches an existing pattern
+  [2] tick=4 delta=+0.0000   ← same
+new pattern p_5 intension:
+  roles: [p_5_role_0..3]
+  structural edges: 3 fan-out edges from role_0 to {role_1, role_2, role_3}
+```
+
+Reading the intension: the named meta-meta-pattern is the
+"3 edges fan out from a single source" shape. The first sampled
+instance was the PATTERN_MARKER fan-out (PATTERN_MARKER →
+{p_a, p_b, p_c}), not the ESTABLISHED fan-in (which is its
+WL-1 isomorphism partner — same canonical, opposite direction).
+The runtime picked PATTERN_MARKER first because its lex-sorted
+position (`__established__` < `__pattern__`) puts it second in
+the participant order, but the first-instance index landed on
+the fan-out branch.
+
+This is consistent with the WL-1 fan-in/fan-out collapse the
+D0+ tests already documented inline. The loop closure works;
+the resulting meta-meta-pattern is structurally meaningful (a
+"3-fan" shape that recurs across both PATTERN and ESTABLISHED
+markers); it's just less *semantically* M1-anchored than the
+ADR's idealised "what do all established patterns share?"
+example. A WL-2 backend (deferred) would distinguish the two
+directions and let the runtime name them as separate
+meta-meta-patterns.
+
+To regenerate: `cargo run --example phase_d_demo`. No new
+unit tests — the existing `d0plus_loop_closure_names_meta_meta_pattern`
+suite already covers the load-bearing assertions; the demo's
+job is human readability and capture.
+
+Tests: unchanged (396).
