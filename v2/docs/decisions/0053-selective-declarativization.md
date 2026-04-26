@@ -1,6 +1,6 @@
 # 0053: Selective declarativization (M1)
 
-Status: Accepted (Phases C0 + C1 implemented)
+Status: Accepted (Phases C0 + C1 + C2 implemented)
 Date: 2026-04-26
 
 ## Context
@@ -118,12 +118,25 @@ Demotion piggybacks on `RSet::retract_theory`, which gains a final
 step removing `R(theory_id, ESTABLISHED_MARKER)` symmetric to
 `retract_pattern`'s step (7).
 
-### Phase C2 (sketch, deferred)
+### Phase C2 — shared-axiom promotion (implemented)
 
-`SHARED_AXIOM_MARKER`: an axiom that appears in ≥ 2 theories.
-Encodes ADR 0052's M1 example "theory X persistently uses axiom
-Y." Requires `axiom → theories` index already implicit in
-`theory_axioms`.
+`SHARED_AXIOM_MARKER` ("__shared_axiom__") is emitted as
+`R(<axiom_id>, SHARED_AXIOM_MARKER)` whenever
+`theories_containing(axiom_id).len() >= 2`. Unlike C0/C1, the
+gate is purely structural — no `ObjectHistory` lookup, no age,
+no contribution counter. The promotion item rides the same
+`Declarativize` action as C0/C1, but the dispatcher selects the
+marker by target type:
+
+- `FrontierTarget::Pattern(id)` → ESTABLISHED
+- `FrontierTarget::Theory(id)`  → ESTABLISHED
+- `FrontierTarget::Axiom(id)`   → SHARED_AXIOM
+
+Demotion is automatic via `RSet::retract_theory`'s cascade —
+when a theory is removed, every member axiom whose surviving
+theory count drops below 2 has its `SHARED_AXIOM` edge stripped.
+Multi-share scenarios stay correct: an axiom in three theories
+keeps the marker after one is retracted (still ≥ 2).
 
 ### Demotion
 

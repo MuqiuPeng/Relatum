@@ -14,7 +14,8 @@
 
 use crate::{
     AutonomousConfig, AxiomDiscoveryConfig, DiscoveryConfig, NamingPolicy,
-    RefinementConfig, RSet, TheoryRelationKind, ESTABLISHED_MARKER, R,
+    RefinementConfig, RSet, TheoryRelationKind, ESTABLISHED_MARKER,
+    SHARED_AXIOM_MARKER, R,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -85,6 +86,9 @@ pub enum FrontierTarget {
     PatternSize(usize),
     Pattern(String),
     Theory(String),
+    /// ADR 0053 / Phase C2. Used by `Declarativize` when the target
+    /// is a named axiom (e.g., for `SHARED_AXIOM_MARKER` promotion).
+    Axiom(String),
 }
 
 #[derive(Debug, Clone)]
@@ -1055,6 +1059,47 @@ impl Frontier {
             status: FrontierStatus::Fresh,
         }
     }
+
+    /// Append `EstablishedPromotion` items for axioms that are
+    /// referenced by ≥ 2 named theories AND don't yet carry the
+    /// `SHARED_AXIOM_MARKER` edge. Demotion is handled by
+    /// `RSet::retract_theory`'s cascade — no history is consulted
+    /// because C2's gate is purely structural. Re-sorts on exit.
+    /// ADR 0053 / Phase C2.
+    pub fn refresh_shared_axiom_promotions(
+        &mut self,
+        rset: &RSet,
+        tick: u64,
+    ) {
+        let mut added = false;
+        for axiom_id in rset.axioms() {
+            if rset.theories_containing(axiom_id).len() < 2 {
+                continue;
+            }
+            if rset.contains(&R::new(axiom_id, SHARED_AXIOM_MARKER)) {
+                continue;
+            }
+            let target = FrontierTarget::Axiom(axiom_id.to_string());
+            if self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::EstablishedPromotion)
+                    && it.target == target
+            }) {
+                continue;
+            }
+            self.items.push(Self::make_promotion_item(
+                axiom_id, target, tick,
+            ));
+            added = true;
+        }
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
 }
 
 fn theory_pair_has_relation(rset: &RSet, a: &str, b: &str) -> bool {
@@ -1210,6 +1255,10 @@ impl AutonomousRuntime {
                 self.frontier.refresh_established_promotions(
                     &self.rset,
                     &self.memory.object_history,
+                    self.tick,
+                );
+                self.frontier.refresh_shared_axiom_promotions(
+                    &self.rset,
                     self.tick,
                 );
             }
@@ -1507,20 +1556,29 @@ impl AutonomousRuntime {
                 }
             }
             ActionKind::Declarativize => {
-                // ADR 0053 / Phase C0 (patterns) + C1 (theories).
-                // Promote a named object by emitting
-                // `R(id, ESTABLISHED_MARKER)`. The frontier pass
-                // already gated this, so we trust the target here;
-                // rset.add is idempotent (returns false for
-                // duplicates), and ESTABLISHED has no internal
-                // state beyond the edge itself.
-                let id = match &plan.target {
-                    FrontierTarget::Pattern(id) => Some(id.clone()),
-                    FrontierTarget::Theory(id) => Some(id.clone()),
+                // ADR 0053 / Phases C0–C2. The frontier pass already
+                // gated this; the marker is selected by target type:
+                // patterns and theories carry ESTABLISHED ("experience-
+                // with"); axioms carry SHARED_AXIOM ("structurally
+                // referenced by ≥ 2 theories"). `rset.add` is
+                // idempotent — duplicate edges return false silently.
+                let edge = match &plan.target {
+                    FrontierTarget::Pattern(id) => Some(R::new(
+                        id.clone(),
+                        ESTABLISHED_MARKER,
+                    )),
+                    FrontierTarget::Theory(id) => Some(R::new(
+                        id.clone(),
+                        ESTABLISHED_MARKER,
+                    )),
+                    FrontierTarget::Axiom(id) => Some(R::new(
+                        id.clone(),
+                        SHARED_AXIOM_MARKER,
+                    )),
                     _ => None,
                 };
-                if let Some(id) = id {
-                    let _ = self.rset.add(R::new(id, ESTABLISHED_MARKER));
+                if let Some(e) = edge {
+                    let _ = self.rset.add(e);
                 }
             }
         }
@@ -2026,6 +2084,7 @@ fn target_to_pair(t: &FrontierTarget) -> (&'static str, String) {
         FrontierTarget::PatternSize(s) => ("PatternSize", s.to_string()),
         FrontierTarget::Pattern(id) => ("Pattern", id.clone()),
         FrontierTarget::Theory(id) => ("Theory", id.clone()),
+        FrontierTarget::Axiom(id) => ("Axiom", id.clone()),
     }
 }
 
@@ -2037,6 +2096,7 @@ fn pair_to_target(kind: &str, value: &str) -> Result<FrontierTarget, String> {
         )),
         "Pattern" => Ok(FrontierTarget::Pattern(value.to_string())),
         "Theory" => Ok(FrontierTarget::Theory(value.to_string())),
+        "Axiom" => Ok(FrontierTarget::Axiom(value.to_string())),
         other => Err(format!("unknown FrontierTarget kind '{}'", other)),
     }
 }
@@ -2187,7 +2247,9 @@ fn parse_history_lines(
 fn check_no_tab_or_newline(t: &FrontierTarget, ctx: &str) -> Result<(), String> {
     let id = match t {
         FrontierTarget::WholeRSet | FrontierTarget::PatternSize(_) => return Ok(()),
-        FrontierTarget::Pattern(s) | FrontierTarget::Theory(s) => s,
+        FrontierTarget::Pattern(s)
+        | FrontierTarget::Theory(s)
+        | FrontierTarget::Axiom(s) => s,
     };
     if id.contains('\t') || id.contains('\n') {
         return Err(format!(
@@ -4371,6 +4433,122 @@ mod tests {
                 &FrontierTarget::Pattern("p_x".to_string()),
                 &FrontierTarget::Theory("t_x".to_string()),
             ]
+        );
+    }
+
+    // ─── Phase C2 — shared-axiom promotion (ADR 0053) ──────────
+
+    /// Build an rset with `axiom_id` registered and made a member of
+    /// each `theory_id` in `theories`. No instances / structure on
+    /// the axiom — just the registry + membership shape needed for
+    /// `theories_containing` to count it.
+    fn rs_with_axiom_in_theories(
+        axiom_id: &str,
+        theories: &[&str],
+    ) -> RSet {
+        let mut rs = RSet::new();
+        rs.add(R::new(crate::AXIOM_MARKER, axiom_id));
+        for t in theories {
+            rs.add(R::new(crate::THEORY_MARKER, *t));
+            rs.add(R::new(*t, axiom_id));
+        }
+        rs
+    }
+
+    #[test]
+    fn c2_no_promotion_when_axiom_in_one_theory() {
+        let rs = rs_with_axiom_in_theories("ax_lonely", &["t_a"]);
+        let mut frontier = Frontier::default();
+        frontier.refresh_shared_axiom_promotions(&rs, 0);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c2_promotion_active_when_axiom_in_two_theories() {
+        let rs = rs_with_axiom_in_theories("ax_shared", &["t_a", "t_b"]);
+        let mut frontier = Frontier::default();
+        frontier.refresh_shared_axiom_promotions(&rs, 0);
+        assert_eq!(frontier.items.len(), 1);
+        let it = &frontier.items[0];
+        assert!(matches!(it.kind, FrontierKind::EstablishedPromotion));
+        assert_eq!(
+            it.target,
+            FrontierTarget::Axiom("ax_shared".to_string())
+        );
+    }
+
+    #[test]
+    fn c2_promotion_skips_already_marked() {
+        let mut rs =
+            rs_with_axiom_in_theories("ax_done", &["t_a", "t_b"]);
+        rs.add(R::new("ax_done", SHARED_AXIOM_MARKER));
+        let mut frontier = Frontier::default();
+        frontier.refresh_shared_axiom_promotions(&rs, 0);
+        assert!(frontier.items.is_empty());
+    }
+
+    #[test]
+    fn c2_promotion_idempotent() {
+        let rs = rs_with_axiom_in_theories("ax_shared", &["t_a", "t_b"]);
+        let mut frontier = Frontier::default();
+        frontier.refresh_shared_axiom_promotions(&rs, 0);
+        let len1 = frontier.items.len();
+        frontier.refresh_shared_axiom_promotions(&rs, 0);
+        assert_eq!(frontier.items.len(), len1);
+    }
+
+    #[test]
+    fn c2_declarativize_axiom_writes_shared_marker() {
+        // Direct dispatch test — ensure the action handler emits the
+        // SHARED_AXIOM_MARKER edge, not the ESTABLISHED one.
+        let rs = rs_with_axiom_in_theories("ax_x", &["t_a", "t_b"]);
+        let mut rt = AutonomousRuntime::new(rs);
+        rt.scheduler = Box::new(RuleBasedScheduler::default());
+        rt.tick = 1;
+        rt.frontier.mark_dirty();
+        // Two ticks: SwitchMode(Expand→Consolidate), then
+        // Execute(Declarativize). After the third tick the negative-
+        // cv prune fires on the bare-registry theories, so we stop
+        // early.
+        rt.run_bounded(2);
+        assert!(
+            rt.rset.contains(&R::new("ax_x", SHARED_AXIOM_MARKER)),
+            "expected R(ax_x, SHARED_AXIOM_MARKER) after Declarativize"
+        );
+        assert!(
+            !rt.rset.contains(&R::new("ax_x", ESTABLISHED_MARKER)),
+            "axiom must not get the ESTABLISHED marker (different layer)"
+        );
+    }
+
+    #[test]
+    fn c2_demotion_via_retract_theory_drops_to_one() {
+        // 2 theories share the axiom; mark; retract one theory →
+        // axiom is now in 1 theory → SHARED_AXIOM cascades.
+        let mut rs = rs_with_axiom_in_theories("ax_x", &["t_a", "t_b"]);
+        rs.add(R::new("ax_x", SHARED_AXIOM_MARKER));
+        assert!(rs.contains(&R::new("ax_x", SHARED_AXIOM_MARKER)));
+        rs.retract_theory("t_a").expect("retract");
+        assert_eq!(rs.theories_containing("ax_x").len(), 1);
+        assert!(
+            !rs.contains(&R::new("ax_x", SHARED_AXIOM_MARKER)),
+            "SHARED_AXIOM should cascade when count drops below 2"
+        );
+    }
+
+    #[test]
+    fn c2_three_theories_one_retract_keeps_shared() {
+        // 3 theories share; retract one → still 2 → marker stays.
+        let mut rs = rs_with_axiom_in_theories(
+            "ax_x",
+            &["t_a", "t_b", "t_c"],
+        );
+        rs.add(R::new("ax_x", SHARED_AXIOM_MARKER));
+        rs.retract_theory("t_a").expect("retract");
+        assert_eq!(rs.theories_containing("ax_x").len(), 2);
+        assert!(
+            rs.contains(&R::new("ax_x", SHARED_AXIOM_MARKER)),
+            "SHARED_AXIOM should survive while ≥ 2 theories remain"
         );
     }
 

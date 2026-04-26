@@ -2160,3 +2160,60 @@ Tests (7 new C1):
 Tests: 367 → 374 (+7). ADR 0053 status updated to "Accepted
 (Phases C0 + C1 implemented)". Phase C2 (`SHARED_AXIOM_MARKER`)
 remains sketched.
+
+### Phase C2 — shared-axiom promotion (M1, slice 3)
+The third meta-R class lands: a structural fact rather than an
+experience-with one. `SHARED_AXIOM_MARKER` ("__shared_axiom__")
+is emitted as `R(<axiom_id>, SHARED_AXIOM_MARKER)` whenever
+`theories_containing(axiom_id).len() >= 2`. No `ObjectHistory`
+lookup; the gate is fully derivable from rset state.
+
+Implementation:
+- `SHARED_AXIOM_MARKER` constant in `src/lib.rs`, exposed via
+  `collect_meta_ids` for marker hygiene.
+- `RSet::retract_theory` gains a final cascade step: for each
+  member axiom, if `theories_containing(member).len() < 2`,
+  remove the `R(member, SHARED_AXIOM_MARKER)` edge. Multi-share
+  axioms (≥ 3 theories) keep the marker through any single
+  retraction.
+- `FrontierTarget::Axiom(String)` variant added; codec
+  (`target_to_pair` / `pair_to_target` / `check_no_tab_or_newline`)
+  updated. Round-trip preserved.
+- `Frontier::refresh_shared_axiom_promotions(&rset, tick)` is the
+  new dirty-pass step. Unlike C0/C1's history-driven gate, this
+  iterates `rset.axioms()`, counts owning theories, and proposes
+  an `EstablishedPromotion` item with `FrontierTarget::Axiom(id)`
+  for each shared-but-unmarked axiom.
+- The `ActionKind::Declarativize` handler now branches on target
+  type to pick the marker: Pattern/Theory → ESTABLISHED, Axiom
+  → SHARED_AXIOM. One action, two markers, target-driven
+  semantics — keeps `ActionKind` lean.
+
+Notes:
+- C0/C1/C2 share the `EstablishedPromotion` FrontierKind for
+  scheduler-pick simplicity. The kind name is now slightly
+  generous (also covers shared-axiom), but introducing a second
+  kind would force every dispatch site to fork without changing
+  observable behavior.
+- C2's drift detection is single-direction: promotion fires
+  whenever the gate triggers, demotion only fires through
+  `retract_theory`. That's enough because the only way an axiom
+  loses theory-membership is theory retraction (axioms can't be
+  silently unbound).
+
+Tests (7 new C2):
+- Axiom in only 1 theory → no item.
+- Axiom in 2 theories → item with Axiom target.
+- Already-marked axiom → no item.
+- Idempotent across two consecutive refreshes.
+- E2E `Declarativize` dispatch with Axiom target writes
+  SHARED_AXIOM and NOT ESTABLISHED.
+- Demotion: 2-theory share → mark → retract one → marker
+  cascades.
+- 3-theory share → retract one → 2 remain → marker stays.
+
+Tests: 374 → 381 (+7). ADR 0053 status updated to "Accepted
+(Phases C0 + C1 + C2 implemented)". The full ADR 0053 program
+is done; M1 now covers patterns (experience-with), theories
+(experience-with), and shared axioms (structural). Three meta-R
+classes coexist with the original kind-of class.

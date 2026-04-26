@@ -152,6 +152,15 @@ pub const PARALLEL_MARKER: &str = "__parallel__";
 /// a second meta-R class about the runtime's *use* of the object.
 pub const ESTABLISHED_MARKER: &str = "__established__";
 
+/// Reserved registry marker for axioms whose extension overlaps two
+/// or more named theories. ADR 0053 / Phase C2. The runtime emits the
+/// edge `R(<axiom_id>, SHARED_AXIOM_MARKER)` whenever
+/// `theories_containing(axiom_id).len() >= 2`, and retracts it the
+/// moment the count drops below 2 (handled inside `retract_theory`).
+/// Encodes ADR 0052's M1 example "theory X persistently uses axiom Y"
+/// as a structural fact independent of runtime experience.
+pub const SHARED_AXIOM_MARKER: &str = "__shared_axiom__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -2165,6 +2174,16 @@ impl RSet {
         if self.remove(&R::new(theory_id.to_string(), ESTABLISHED_MARKER)) {
             removed += 1;
         }
+        // ADR 0053 / Phase C2. For each axiom this theory used to
+        // include, demote the SHARED_AXIOM marker when the surviving
+        // theory count drops below 2.
+        for m in &member_ids {
+            if self.theories_containing(m).len() < 2
+                && self.remove(&R::new(m.clone(), SHARED_AXIOM_MARKER))
+            {
+                removed += 1;
+            }
+        }
         Ok(removed)
     }
 
@@ -3406,6 +3425,7 @@ impl RSet {
             s.insert(par.to_string());
         }
         s.insert(ESTABLISHED_MARKER.to_string());
+        s.insert(SHARED_AXIOM_MARKER.to_string());
         for role in self.roles() {
             s.insert(role.to_string());
         }
