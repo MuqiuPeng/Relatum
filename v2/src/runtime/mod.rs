@@ -937,6 +937,48 @@ pub struct PolicyStats {
     pub stop_count: u64,
 }
 
+/// Pair-frequency + post-EP-delta correlation accounting over the
+/// episode log. ADR 0061 / Phase H1.0.
+///
+/// `pair_counts[(A, B)]` is the cumulative number of consecutive
+/// episode pairs `(prev=A, curr=B)` observed in `Memory::record`.
+/// `pair_post_ep_count[(A, B)]` and `pair_post_ep_delta_sum[(A, B)]`
+/// accumulate per-occurrence credit when a positive-delta
+/// `EvaluatePredictions` episode follows the pair within
+/// `H1_LOOKAHEAD_K` (= 5) steps. The mean post-EP delta for a pair
+/// is `sum / count`, useful for H1.1 promotion gating.
+///
+/// Pure observation: tracking happens as a side-effect of episode
+/// recording; the scheduler does not consult these stats yet.
+#[derive(Debug, Clone, Default)]
+pub struct SequenceStats {
+    pub pair_counts: HashMap<(ActionKind, ActionKind), u64>,
+    pub pair_post_ep_count: HashMap<(ActionKind, ActionKind), u64>,
+    pub pair_post_ep_delta_sum: HashMap<(ActionKind, ActionKind), f64>,
+}
+
+const H1_LOOKAHEAD_K: usize = 5;
+
+impl SequenceStats {
+    /// Mean post-EP delta for a pair, or `None` when no positive-EP
+    /// episode has followed an occurrence within the lookahead.
+    pub fn pair_mean_post_ep_delta(
+        &self,
+        pair: (ActionKind, ActionKind),
+    ) -> Option<f64> {
+        let count = self.pair_post_ep_count.get(&pair).copied().unwrap_or(0);
+        if count == 0 {
+            return None;
+        }
+        let sum = self
+            .pair_post_ep_delta_sum
+            .get(&pair)
+            .copied()
+            .unwrap_or(0.0);
+        Some(sum / count as f64)
+    }
+}
+
 /// Per-axiom prediction-error accounting. ADR 0059 / Phase G1.3.
 ///
 /// At end of each tick: `last_predicted_per_axiom[a] =
@@ -1001,6 +1043,8 @@ pub struct Memory {
     pub policy_stats: PolicyStats,
     /// Phase G1.3.
     pub prediction_state: PredictionState,
+    /// Phase H1.0.
+    pub sequence_stats: SequenceStats,
 }
 
 impl Default for Memory {
@@ -1015,13 +1059,63 @@ impl Default for Memory {
             object_history: ObjectHistoryStore::default(),
             policy_stats: PolicyStats::default(),
             prediction_state: PredictionState::default(),
+            sequence_stats: SequenceStats::default(),
         }
     }
 }
 
 impl Memory {
     pub fn record(&mut self, ep: Episode) {
+        // ADR 0061 / Phase H1.0: pair-frequency + post-EP-delta
+        // accounting. Update BEFORE appending so the indices align
+        // with the "previous" episode being the current tail.
+        let prev_kind = self.episodes.back().map(|e| e.action_kind);
+        let cur_kind = ep.action_kind;
+        let cur_delta = ep.delta;
+
         self.episodes.push_back(ep);
+
+        // Pair count: increment for (prev, cur) when prev exists.
+        if let Some(p) = prev_kind {
+            *self
+                .sequence_stats
+                .pair_counts
+                .entry((p, cur_kind))
+                .or_insert(0) += 1;
+        }
+
+        // Post-EP-delta credit: when the new episode IS an EP with
+        // positive delta, look back at the last K pair completions
+        // and credit each for this EP's delta. Per ADR 0061 § H1.0.
+        if cur_kind == ActionKind::EvaluatePredictions && cur_delta > 0.0 {
+            let n = self.episodes.len();
+            // Pair-i is (kind[i-1], kind[i]). Window is i in
+            // [n-1-K, n-2] (inclusive), excluding the current EP at
+            // n-1. i must also be ≥ 1.
+            let start = n.saturating_sub(H1_LOOKAHEAD_K + 1).max(1);
+            let end = n.saturating_sub(1);
+            // Borrow checker: collect first then mutate.
+            let mut pairs_seen: Vec<(ActionKind, ActionKind)> =
+                Vec::new();
+            for i in start..end {
+                let a = self.episodes[i - 1].action_kind;
+                let b = self.episodes[i].action_kind;
+                pairs_seen.push((a, b));
+            }
+            for pair in pairs_seen {
+                *self
+                    .sequence_stats
+                    .pair_post_ep_count
+                    .entry(pair)
+                    .or_insert(0) += 1;
+                *self
+                    .sequence_stats
+                    .pair_post_ep_delta_sum
+                    .entry(pair)
+                    .or_insert(0.0) += cur_delta;
+            }
+        }
+
         while self.episodes.len() > self.max_episodes {
             self.episodes.pop_front();
         }
@@ -2571,6 +2665,49 @@ impl AutonomousRuntime {
                 ax, total, verified, last_rate
             ));
         }
+        out.push('\n');
+
+        // ADR 0061 / H1.0 — sequence-stats accounting.
+        // Per-pair rows: <a_kind>\t<b_kind>\t<count>\t<post_ep_count>\t<post_ep_delta_sum>.
+        out.push_str("[sequence_stats]\n");
+        let ss = &self.memory.sequence_stats;
+        let mut pair_keys: HashSet<(ActionKind, ActionKind)> =
+            HashSet::new();
+        for k in ss.pair_counts.keys() {
+            pair_keys.insert(*k);
+        }
+        for k in ss.pair_post_ep_count.keys() {
+            pair_keys.insert(*k);
+        }
+        for k in ss.pair_post_ep_delta_sum.keys() {
+            pair_keys.insert(*k);
+        }
+        let mut pair_list: Vec<(ActionKind, ActionKind)> =
+            pair_keys.into_iter().collect();
+        pair_list.sort_by_key(|(a, b)| {
+            (action_kind_to_str(*a), action_kind_to_str(*b))
+        });
+        for (a, b) in pair_list {
+            let count = ss.pair_counts.get(&(a, b)).copied().unwrap_or(0);
+            let post_count = ss
+                .pair_post_ep_count
+                .get(&(a, b))
+                .copied()
+                .unwrap_or(0);
+            let post_sum = ss
+                .pair_post_ep_delta_sum
+                .get(&(a, b))
+                .copied()
+                .unwrap_or(0.0);
+            out.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                action_kind_to_str(a),
+                action_kind_to_str(b),
+                count,
+                post_count,
+                post_sum,
+            ));
+        }
 
         Ok(out)
     }
@@ -2794,6 +2931,43 @@ impl AutonomousRuntime {
             }
         }
 
+        // ADR 0061 / H1.0 — restore sequence-stats from checkpoint.
+        let mut sequence_stats = SequenceStats::default();
+        for (idx, raw) in parsed.sequence_stats_lines.iter().enumerate() {
+            let fields: Vec<&str> = raw.split('\t').collect();
+            if fields.len() != 5 {
+                return Err(format!(
+                    "sequence_stats line {} has {} fields, expected 5",
+                    idx + 1,
+                    fields.len()
+                ));
+            }
+            let a = parse_action_kind(fields[0])?;
+            let b = parse_action_kind(fields[1])?;
+            let count = parse_u64(fields[2], "sequence_stats.count")?;
+            let post_count =
+                parse_u64(fields[3], "sequence_stats.post_count")?;
+            let post_sum = fields[4]
+                .parse::<f64>()
+                .map_err(|e| format!(
+                    "sequence_stats.post_sum parse '{}' failed: {}",
+                    fields[4], e
+                ))?;
+            if count > 0 {
+                sequence_stats.pair_counts.insert((a, b), count);
+            }
+            if post_count > 0 {
+                sequence_stats
+                    .pair_post_ep_count
+                    .insert((a, b), post_count);
+            }
+            if post_sum.abs() > f64::EPSILON {
+                sequence_stats
+                    .pair_post_ep_delta_sum
+                    .insert((a, b), post_sum);
+            }
+        }
+
         let memory = Memory {
             episodes,
             mode_transitions,
@@ -2804,6 +2978,7 @@ impl AutonomousRuntime {
             object_history,
             policy_stats,
             prediction_state,
+            sequence_stats,
         };
 
         Ok(Self {
@@ -3092,6 +3267,8 @@ struct ParsedCheckpoint {
     lifecycle_count_lines: Vec<String>,
     // ADR 0059 / G1.3 — prediction-state cumulative counters.
     prediction_state_lines: Vec<String>,
+    // ADR 0061 / H1.0 — sequence-stats accounting.
+    sequence_stats_lines: Vec<String>,
 }
 
 fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
@@ -3113,7 +3290,8 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
                 | "policy_stats_action_counts"
                 | "policy_stats_mode_transition_counts"
                 | "policy_stats_lifecycle_counts"
-                | "prediction_state" => {
+                | "prediction_state"
+                | "sequence_stats" => {
                     section = Some(match name {
                         "meta" => "meta",
                         "rset" => "rset",
@@ -3128,7 +3306,8 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
                             "policy_stats_mode_transition_counts"
                         }
                         "policy_stats_lifecycle_counts" => "policy_stats_lifecycle_counts",
-                        _ => "prediction_state",
+                        "prediction_state" => "prediction_state",
+                        _ => "sequence_stats",
                     });
                 }
                 other => {
@@ -3180,6 +3359,9 @@ fn parse_checkpoint(text: &str) -> Result<ParsedCheckpoint, String> {
             }
             Some("prediction_state") => {
                 out.prediction_state_lines.push(line.to_string())
+            }
+            Some("sequence_stats") => {
+                out.sequence_stats_lines.push(line.to_string())
             }
             None => {
                 return Err(format!(
@@ -5625,6 +5807,174 @@ mod tests {
         // The test verifies dispatch consistency, not divergence.
         assert!(matches!(dec_a, SchedulerDecision::Execute(_)));
         assert!(matches!(dec_b, SchedulerDecision::Execute(_)));
+    }
+
+    // ─── ADR 0061 Phase H1.0 — sequence-stats accounting ──────
+
+    fn make_episode(kind: ActionKind, delta: f64) -> Episode {
+        Episode {
+            id: 0,
+            tick: 0,
+            mode: RuntimeMode::Reflect,
+            action_kind: kind,
+            target: FrontierTarget::WholeRSet,
+            score_before: 0.0,
+            score_after: 0.0,
+            delta,
+        }
+    }
+
+    #[test]
+    fn h1_0_pair_count_increments_on_consecutive_episodes() {
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 1.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.5));
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        let pc = &memory.sequence_stats.pair_counts;
+        assert_eq!(
+            pc.get(&(
+                ActionKind::DiscoverTheory,
+                ActionKind::DiscoverPatterns
+            ))
+            .copied()
+            .unwrap_or(0),
+            2
+        );
+        assert_eq!(
+            pc.get(&(
+                ActionKind::DiscoverPatterns,
+                ActionKind::DiscoverTheory
+            ))
+            .copied()
+            .unwrap_or(0),
+            1
+        );
+    }
+
+    #[test]
+    fn h1_0_first_episode_creates_no_pair() {
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 1.0));
+        assert!(memory.sequence_stats.pair_counts.is_empty());
+    }
+
+    #[test]
+    fn h1_0_post_ep_credit_for_recent_pair() {
+        // Episodes: [DiscoverTheory, DiscoverPatterns, EP(0.5)]
+        // Pair (DT, DP) should get post-EP credit 0.5.
+        // Pair (DP, EP) ALSO gets credit (it's within K of itself
+        // by completion).
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 1.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        let ss = &memory.sequence_stats;
+        let mean = ss
+            .pair_mean_post_ep_delta((
+                ActionKind::DiscoverTheory,
+                ActionKind::DiscoverPatterns,
+            ))
+            .expect("pair recorded");
+        assert!((mean - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn h1_0_negative_ep_delta_does_not_credit() {
+        // EP with delta = -0.3 is not "positive" → no post-EP
+        // credit recorded.
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 1.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            -0.3,
+        ));
+        assert!(memory
+            .sequence_stats
+            .pair_post_ep_count
+            .is_empty());
+    }
+
+    #[test]
+    fn h1_0_per_occurrence_credit_accumulates() {
+        // Two occurrences of (DT, DP) followed by EP: each gets
+        // credit, total count = 2, mean = 0.5.
+        let mut memory = Memory::default();
+        memory.record(make_episode(ActionKind::DiscoverTheory, 1.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverTheory, 0.0));
+        memory.record(make_episode(ActionKind::DiscoverPatterns, 0.0));
+        memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        let ss = &memory.sequence_stats;
+        let pair = (
+            ActionKind::DiscoverTheory,
+            ActionKind::DiscoverPatterns,
+        );
+        let count = ss.pair_post_ep_count.get(&pair).copied().unwrap_or(0);
+        assert_eq!(count, 2);
+        let mean = ss
+            .pair_mean_post_ep_delta(pair)
+            .expect("pair credited");
+        assert!((mean - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn h1_0_sequence_stats_round_trips_through_checkpoint() {
+        // Build a runtime with non-empty SequenceStats; checkpoint;
+        // restore; assert counters survive.
+        let mut rt = AutonomousRuntime::new(diamond_poset());
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverTheory,
+            1.0,
+        ));
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverPatterns,
+            0.0,
+        ));
+        rt.memory.record(make_episode(
+            ActionKind::EvaluatePredictions,
+            0.5,
+        ));
+        let cp = rt.checkpoint_text().expect("checkpoint");
+        let rt2 =
+            AutonomousRuntime::from_checkpoint_text(&cp).expect("restore");
+        let ss = &rt2.memory.sequence_stats;
+        assert_eq!(
+            ss.pair_counts
+                .get(&(
+                    ActionKind::DiscoverTheory,
+                    ActionKind::DiscoverPatterns
+                ))
+                .copied()
+                .unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            ss.pair_post_ep_count
+                .get(&(
+                    ActionKind::DiscoverTheory,
+                    ActionKind::DiscoverPatterns
+                ))
+                .copied()
+                .unwrap_or(0),
+            1
+        );
+        let restored_sum = ss
+            .pair_post_ep_delta_sum
+            .get(&(
+                ActionKind::DiscoverTheory,
+                ActionKind::DiscoverPatterns,
+            ))
+            .copied()
+            .unwrap_or(0.0);
+        assert!((restored_sum - 0.5).abs() < 1e-9);
     }
 
     #[test]

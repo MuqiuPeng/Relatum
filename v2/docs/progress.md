@@ -3311,3 +3311,46 @@ bookkeeping granularity).
 
 Status: **Proposed**. No code yet. H1.0 is the next viable
 implementation slice; H1.1 / H1.2 wait for H1.0's empirics.
+
+### Phase H1.0 — sequence-stats accounting (impl)
+ADR 0061 H1.0 lands. New `SequenceStats` field on `Memory`:
+
+```rust
+pub struct SequenceStats {
+    pub pair_counts: HashMap<(ActionKind, ActionKind), u64>,
+    pub pair_post_ep_count: HashMap<(ActionKind, ActionKind), u64>,
+    pub pair_post_ep_delta_sum: HashMap<(ActionKind, ActionKind), f64>,
+}
+```
+
+Updated as a side-effect of `Memory::record`:
+- Pair count: `(prev.action_kind, current.action_kind)` increment
+  whenever a new episode arrives and a previous one exists.
+- Post-EP-delta credit: when the new episode is `EvaluatePredictions`
+  with `delta > 0`, look back at the last
+  `H1_LOOKAHEAD_K` (= 5) episode pairs preceding the EP and
+  credit each pair-occurrence with the EP's delta. Per-pair
+  mean delta = `sum / count`; usable for H1.1's promotion gate.
+
+Pure observation: scheduler decisions unchanged. Round-trips
+through the B2-style checkpoint via new `[sequence_stats]`
+section, mirror of the `[prediction_state]` shape (rows
+`<a_kind>\t<b_kind>\t<count>\t<post_ep_count>\t<post_ep_delta_sum>`).
+
+Tests (6 new H1.0):
+- Pair counts increment correctly across 4 sequential episodes
+  with mixed kinds.
+- First episode creates no pair (no `prev`).
+- Post-EP credit for the most recent pair within K-window.
+- Negative EP delta does not credit any pair.
+- Multiple pair-of-same-kind occurrences accumulate count
+  correctly (per-occurrence credit, not per-pair-type).
+- Non-empty SequenceStats round-trips through checkpoint —
+  pair_counts / post_ep_count / post_ep_delta_sum all preserved.
+
+Tests: 432 → 438 (+6).
+
+ADR 0061 status: Proposed → Accepted (Phase H1.0 implemented).
+The signal is now live; H1.1 (promotion to meta-R + scheduler
+priority bias) and H1.2 (composite ActionKind dispatch) wait
+for empirical evidence from F0-battery sequence dumps.
