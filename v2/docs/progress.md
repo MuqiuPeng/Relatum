@@ -2670,3 +2670,42 @@ To regenerate: `cargo run --example phase_d_termination`.
 
 ADR 0054 open question #4 marked resolved (empirically).
 Tests: unchanged (402).
+
+### ADR 0056 (Proposed) — Phase D verification battery
+Two artefacts (`phase_d_demo`, `phase_d_termination`) both
+exercise the same single seed: 5 fan-shaped synthetic patterns
+around ESTABLISHED. Phase D's mechanism works, but
+*systematic confidence across diverse shapes* doesn't exist —
+which is what Phase A's 8-case rigorous battery (ADR 0027)
+gives Phase A.
+
+Phase F0 (smallest viable slice): a new
+`examples/phase_d_battery.rs` that runs 6 seeds against
+`RuleBasedScheduler::default()` for HORIZON=300 ticks each,
+printing a per-seed trajectory + verdict (CONVERGED / STILL
+GROWING / ANOMALOUS) plus a battery summary. Captured to
+`logs/<date>_phase_d_battery.log` analogous to the Phase-A
+verification log.
+
+Initial seed set:
+- `fan_only` — today's demo case (baseline).
+- `diamond_poset` — A-battery's diamond, runs theory
+  discovery first, then enables promotion.
+- `bipartite` — `K_{2,3}`, different fan structure.
+- `star` — single-centre data fan-out + ESTABLISHED on
+  resulting patterns. Tests data-side / M1-side fan-out
+  interference.
+- `equivalence_classes` — A-battery's equivalence-3-classes,
+  exercises full theory→C0→D pipeline.
+- `disconnected_islands` — three disjoint 3-cycles, no
+  cross-cluster signal.
+
+Phase F1 sketches richer D-path scheduling state beyond
+cooldown (cadence control via `last_meta_meta_tick`, separate
+budget bucket, state-aware bias). Deferred until F0 surfaces
+evidence that the OQ #2 cooldown counter alone is insufficient.
+
+ADR carries 4 verification items, 4 alternatives rejected, 4
+open questions. Status: **Proposed**. No code yet.
+
+Tests: unchanged (402).
