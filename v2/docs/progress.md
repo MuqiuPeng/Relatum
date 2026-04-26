@@ -2500,3 +2500,32 @@ suite already covers the load-bearing assertions; the demo's
 job is human readability and capture.
 
 Tests: unchanged (396).
+
+### ADR 0055 (Proposed) — direction-distinguishing canonical
+The Phase D0+ demo log surfaced the WL-1 fan-in/fan-out
+collapse concretely: the named meta-meta-pattern reflected a
+fan-out shape even though the seeded M1 facts were fan-in. ADR
+0055 isolates the bug — not in WL refinement, but in the
+projection-to-canonical step (`rank_labels` collapses unique
+signatures to local indices, discarding direction-sensitive
+content the WL signatures already carried).
+
+Phase E0 (smallest viable slice): replace `rank_labels` with a
+**global hash of the converged WL signature** in the final
+canonical projection. `CanonicalForm`'s inner type widens from
+`(u32, u32)` to `(u64, u64)`. Five-line lib.rs change plus
+type-width updates at every canonical-comparing callsite (the
+compiler will enumerate them). Strongly regular and other
+classical WL-1 counterexamples remain undistinguished — out of
+scope for E0.
+
+Phase E1 sketches a deferred WL-2 / individualisation-refinement
+upgrade for any future failure beyond the fan-in/fan-out case.
+
+ADR carries 4 verification items (existing tests pass after the
+type change; new regression test asserting fan-in ≠ fan-out
+canonicals; demo log re-capture; literal-canonical audit), 4
+alternatives rejected, 4 open questions logged. Status:
+**Proposed**. No code yet.
+
+Tests: unchanged (396).
