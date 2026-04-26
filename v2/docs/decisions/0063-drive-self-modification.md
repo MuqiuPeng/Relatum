@@ -437,3 +437,74 @@ implementation work in this ADR — only the design space
 mapped.
 
 Status: **Proposed**. No code yet.
+
+---
+
+## Addendum — Step 2 empirics + step 3 prep (2026-04-27 late)
+
+After step 2 landed, the long-run example was extended to
+log DriveMix state per snapshot. Captured to
+`logs/2026-04-27_phase_h2_0_long_run.log`.
+
+#### Observed step-2 behaviour
+
+Over 2000 ticks (5 windows × 50 EP-episode budget):
+
+- A/B state cycled 5 times (TestingA → TestingB → A → B → A → B).
+- Loser mutations recorded:
+  - `candidate_a.mode_thrash`: 0.10 → 0.125 (×1.25).
+  - `candidate_b.compression`: 0.50 → 0.40 (×0.8).
+- All weights stayed in [0, 1].
+- Episode count, theory count, named-sequence sets
+  all byte-identical to the pre-step-2 post-fix run.
+  Shadow-only property verified live.
+
+The mutation feedback loop is responsive on real
+substrates. The pre-condition for step 3 (wake-gate
+refactor) is empirically established.
+
+#### Step 3 design — what wires DriveMix into the gate
+
+Three minimum changes:
+
+1. **Combined signal**. Add `RuleBasedScheduler::combined_drive_signal(ctx, drives, drive_mix)` that returns
+   `Σ_id (active_weights[id] * drive.evaluate(rset, memory, tick))`.
+   Drives evaluated against the active candidate's
+   weights, not both candidates.
+2. **Replace zero-streak gate**. Today the wake/mode/sleep
+   gate uses `zero_streak >= max_zero_streak` as the
+   anti-stagnation trigger. Replace with
+   `combined_drive_signal < threshold`. Threshold
+   calibrated against the post-fix long-run baseline so
+   the F0 battery's STILL GROWING / CONVERGED verdicts
+   remain stable.
+3. **Phase-shift DriveMix windows vs MetaScheduler
+   windows**. ADR OQ #5: both A/B loops feed on EP delta.
+   Phase shift ensures only one mutates per N-tick block.
+   Simplest: MetaScheduler windows align to multiples of
+   50 episodes (current); DriveMix windows align to
+   multiples of 50 with a +25 episode offset. Each loop
+   sees a different mean.
+
+#### Step 3 risks
+
+- F0 battery's STILL GROWING verdict on stream_diamond is
+  load-bearing for ADR 0059 / G1.5. If step 3's threshold
+  is too high, the runtime may quiesce earlier than today;
+  too low and it may never sleep at all.
+- Two-loop interaction: if MetaScheduler mutates a
+  scheduler threshold that affects EP firing rate, that
+  changes the EP delta DriveMix observes, and vice versa.
+  Phase shift is necessary but may not be sufficient.
+- Constitutional commitment 3 stays compatible at step 3
+  (drives still compile-time); H2.1 is the slice that
+  raises commitment 3 questions.
+
+#### When to do step 3
+
+When user signals readiness. Step 2's empirical
+verification is sufficient evidence that DriveMix can
+contribute load-bearing signal. Step 3 is a focused, well-
+scoped change.
+
+Status: step 3 design captured; implementation deferred.
