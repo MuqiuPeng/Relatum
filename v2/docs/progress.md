@@ -2278,3 +2278,72 @@ B/C/D-design landings).
 This is the expected kind of behavioral drift from history-aware
 rules: more conservative naming, no loss of the load-bearing
 theory. To regenerate: `cargo run --example phase_a_verification`.
+
+### Phase D0 — meta-meta discovery wiring (ADR 0054, slice 1)
+First wiring of M1 markers as input to discovery, not just output
+of the runtime. ADR 0054's smallest slice: prove the mechanism
+works end-to-end before committing to the loop-closure naming
+pipeline.
+
+Implementation:
+- `RSet::discover_motifs_with_meta_subset(config, subset)` — new
+  public entrypoint. Internally selects edges via a new private
+  `edges_with_meta_subset_sorted(subset)` helper (data edges are
+  always included; meta edges are included iff at least one
+  endpoint is in `subset`). Existing `discover_motifs` was
+  refactored to share a `discover_motifs_from_edges` inner
+  helper.
+- `ActionKind::DiscoverMetaMetaPatterns` and
+  `FrontierKind::MetaMetaCandidate` variants added (codec
+  updated for both).
+- `MetaMetaConfig` struct lives next to `StalenessConfig` and
+  `PromotionConfig` on `Frontier`. Default thresholds:
+  `min_m1_edges_for_meta_meta = 5`, `markers = [ESTABLISHED,
+  SHARED_AXIOM]`, `target_size = 3`, `sample_count = 200`,
+  `top_m = 10`, `rng_seed = 2026`.
+- `Frontier::refresh_meta_meta_candidates(&rset, tick)` is the
+  new dirty-pass step. Single item if the gate triggers; no
+  per-marker enumeration.
+- Scheduler dispatch: `MetaMetaCandidate` joins
+  `TheoryCandidate` / `PatternCandidate` in Expand mode at
+  priority 1.0 (loses ties to high-value theory work, which
+  matches "exploratory" semantics).
+- `execute_action` for `DiscoverMetaMetaPatterns` builds the
+  subset (markers + their right-of subjects), calls
+  `discover_motifs_with_meta_subset`, and discards the result.
+  Episode is recorded with delta = 0 (no rset mutation).
+
+Divergences from ADR 0054 sketch (recorded in the ADR):
+- The filter is NOT a field of `DiscoveryConfig`; it's a separate
+  rset method. Avoids touching 20+ existing literal-struct
+  construction sites.
+- Loop closure (find_instances over the filtered view, then
+  name_pattern_instances) is deferred to a follow-on slice.
+  `find_instances_of` and `is_clean_subgraph` both hard-code
+  `data_edges_sorted` / data-only restrictions, so the loop
+  closure requires extending those too. D0 proves the dispatch
+  wiring; the next slice will prove the loop closes.
+
+Tests (8 new D0):
+- Filter includes data + ESTABLISHED edges + the registry edges
+  for those subjects, and excludes unrelated meta (verified by
+  adding an unrelated `AXIOM_MARKER` edge that stays excluded).
+- No M1 in rset → filter returns data-only.
+- Pure M1 (no data substrate) → discovery still runs without
+  panic.
+- 4 ESTABLISHED edges (< threshold) → no `MetaMetaCandidate`
+  item.
+- 5 ESTABLISHED edges (= threshold) → item appears with
+  `MetaMetaCandidate` kind and `WholeRSet` target.
+- Mixed M1 (3 ESTABLISHED + 2 SHARED_AXIOM = 5) → item appears.
+- Two consecutive `refresh_meta_meta_candidates` → 1 item
+  (idempotent).
+- E2E runtime: 5 ESTABLISHED edges + a tiny data substrate →
+  `DiscoverMetaMetaPatterns` episode appears within 3 ticks.
+
+Tests: 381 → 389 (+8). ADR 0054 status: Proposed → Accepted
+(Phase D0 implemented; naming pipeline deferred). The runtime
+now has its first feedback loop where its own M1 markers
+*influence what discovery does*, even if the closure
+back-around to "rediscovered meta-meta-pattern named in rset →
+eligible for C0" still needs the next slice.

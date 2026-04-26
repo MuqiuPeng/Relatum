@@ -1,6 +1,6 @@
 # 0054: Meta-meta-pattern discovery (Phase D)
 
-Status: Proposed
+Status: Accepted (Phase D0 implemented; naming pipeline deferred)
 Date: 2026-04-26
 
 ## Context
@@ -50,9 +50,30 @@ These are not new ontology levels. They are first-order patterns
 in v2's single-layer ontology — the only thing special is that
 their anchor nodes happen to live in M1.
 
-### Phase D0 — the smallest slice
+### Phase D0 — the smallest slice (implemented)
 
-One new discovery configuration knob and one runtime action.
+The implementation took a slightly more conservative slice than
+this ADR's original sketch:
+
+- **Filter on rset, not on `DiscoveryConfig`.** The
+  `meta_subset_filter` field was *not* added to `DiscoveryConfig`.
+  Instead, `RSet::discover_motifs_with_meta_subset(config, subset)`
+  is a separate entrypoint that internally does the filtered edge
+  selection and delegates to a private
+  `discover_motifs_from_edges` helper. This avoids touching the
+  20+ existing `DiscoveryConfig` literal-construction sites and
+  keeps the option out of the default surface for callers that
+  don't care.
+- **Naming pipeline deferred.** D0 dispatches a
+  `DiscoverMetaMetaPatterns` action that runs the meta-subset
+  discovery and discards the candidates after the fact. The
+  episode is recorded; the candidates are NOT named via
+  `name_pattern_instances`. Loop closure (the "M1 → discovery →
+  named meta-meta-pattern → C0 promotion" cycle described in the
+  Decision section) requires extending `find_instances_of` to
+  honor the meta-subset filter, which is a separate slice. D0
+  proves the wiring works; the next slice proves the wiring is
+  useful.
 
 #### `DiscoveryConfig::meta_subset_filter: Option<HashSet<String>>`
 

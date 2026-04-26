@@ -1018,15 +1018,39 @@ impl RSet {
     ///
     /// Deterministic given `config.rng_seed`. Stochastic otherwise.
     pub fn discover_motifs(&self, config: &DiscoveryConfig) -> Vec<MotifCandidate> {
-        if config.target_size == 0 || config.sample_count == 0 {
-            return Vec::new();
-        }
         let data = if config.include_meta_in_discovery {
             self.all_edges_sorted()
         } else {
             self.data_edges_sorted()
         };
-        if data.is_empty() {
+        self.discover_motifs_from_edges(config, &data)
+    }
+
+    /// Run `discover_motifs` against a filtered edge view: every data
+    /// edge plus every meta edge with at least one endpoint in `subset`.
+    /// ADR 0054 / Phase D0. Pure data edges (both endpoints
+    /// non-meta) are always included; meta edges are included iff one
+    /// of their endpoints sits in `subset`. Other meta edges are
+    /// dropped so the meta-meta hypothesis space stays scoped to the
+    /// markers and named objects the caller cares about.
+    pub fn discover_motifs_with_meta_subset(
+        &self,
+        config: &DiscoveryConfig,
+        subset: &HashSet<String>,
+    ) -> Vec<MotifCandidate> {
+        let data = self.edges_with_meta_subset_sorted(subset);
+        self.discover_motifs_from_edges(config, &data)
+    }
+
+    fn discover_motifs_from_edges(
+        &self,
+        config: &DiscoveryConfig,
+        data: &[R],
+    ) -> Vec<MotifCandidate> {
+        if config.target_size == 0
+            || config.sample_count == 0
+            || data.is_empty()
+        {
             return Vec::new();
         }
 
@@ -1039,7 +1063,7 @@ impl RSet {
         let mut samples: Vec<Subgraph> = Vec::with_capacity(config.sample_count);
         for _ in 0..config.sample_count {
             if let Some(sg) =
-                sample_connected_subgraph(&data, config.target_size, &mut rng_state)
+                sample_connected_subgraph(data, config.target_size, &mut rng_state)
             {
                 samples.push(sg);
             }
@@ -1075,6 +1099,33 @@ impl RSet {
         });
         ranked.truncate(config.top_m);
         ranked
+    }
+
+    /// Edges visible to the meta-subset filter.
+    /// See `discover_motifs_with_meta_subset`. ADR 0054.
+    pub(crate) fn edges_with_meta_subset_sorted(
+        &self,
+        subset: &HashSet<String>,
+    ) -> Vec<R> {
+        let meta = self.collect_meta_ids();
+        let mut out: Vec<R> = self
+            .instances
+            .iter()
+            .filter(|r| {
+                let x_meta = meta.contains(&r.x);
+                let y_meta = meta.contains(&r.y);
+                if !x_meta && !y_meta {
+                    true
+                } else {
+                    subset.contains(&r.x) || subset.contains(&r.y)
+                }
+            })
+            .cloned()
+            .collect();
+        out.sort_by(|a, b| {
+            (a.x.as_str(), a.y.as_str()).cmp(&(b.x.as_str(), b.y.as_str()))
+        });
+        out
     }
 
     /// Enumerate every connected data subgraph whose canonical form
