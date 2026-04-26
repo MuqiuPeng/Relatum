@@ -3506,3 +3506,79 @@ Open questions remaining (deferred to ADR 0062 or beyond):
 - Trigram (length-3) sequences and beyond.
 - Composite of composites (recursive composition).
 - Cross-checkpoint persistence of the H1.x state machine.
+
+### Phase H1.x post-impl empirical refresh
+Re-running `phase_h1_sequence_dump` after H1.2 lands shows
+the closing meta-loop in motion. stream_diamond diff:
+
+```
+                pre-H1.2    post-H1.2
+  episodes        89          48     (composites bundle steps)
+  theories         3           4
+  patterns         0           4     (composite-dispatched naming)
+  promotable
+    (strict)       0           1     (EP-EP count=17 mean=0.19)
+    (relaxed)      1           1
+```
+
+Captured to
+`logs/2026-04-27_phase_h1_sequence_dump.log`.
+
+The runtime is now simultaneously:
+1. Auto-promoting (Declarativize, Declarativize) and similar
+   pairs to meta-R via H1.1.
+2. Dispatching them as composites via H1.2 — fewer episodes,
+   richer rset state.
+3. Mining new sequence stats from this richer behaviour —
+   `(EvaluatePredictions, EvaluatePredictions)` now crosses
+   the *strict* H1.1 threshold (count≥10 mean>0.1) where
+   pre-H1.2 it didn't.
+
+Closing meta-loop: H1.0 mines → H1.1 promotes → H1.2
+dispatches → richer behaviour → H1.0 mines new pairs.
+
+### ADR 0062 (Proposed) — sequence demotion + N-grams
+With H1.x landed, two structural gaps surface:
+
+**1. Promotion is one-way.** No mechanism retracts a
+named pair when its correlation later degrades. Stale
+operational knowledge accumulates.
+
+**2. Pair-only is shallow.** Triples and longer sequences
+encode richer operational patterns; pair stats see them
+only in fragments.
+
+Two sub-slices:
+
+**H1.3 — Sequence demotion.** New
+`pair_recent_post_ep_count` / `_delta_sum` fields on
+`SequenceStats` track a rolling window (default 50 ticks).
+When a named pair's recent mean drops below
+`MIN_RECENT_MEAN_FOR_RETENTION` (0.02 — half the
+promotion floor) for ≥ 3 occurrences, demotion sweep
+retracts the meta-R chain via new
+`RSet::retract_action_sequence_pair`. Asymmetric
+thresholds (promote 0.05 / demote 0.02) provide hysteresis
+to avoid promote/demote oscillation.
+
+**H1.4 — Trigram support.** Extend `SequenceStats` to
+track triples; new `name_action_sequence_triple` mints a
+7-edge meta-R chain. Composite dispatch (H1.2) loops over
+N steps so it scales naturally. Trigram thresholds tighter
+than pair (count ≥ 3 / mean > 0.10) — trigrams accumulate
+slower but each occurrence carries stronger signal.
+
+H1.3 prioritised over H1.4 (correctness > expressivity).
+H1.4's design includes a backward-compat plan: keep
+`action_sequence_pairs` alongside a new
+`action_sequences() -> Vec<(seq_id, Vec<String>)>` to ease
+migration.
+
+ADR 0062 carries 4 alternatives rejected, 5 open
+questions. Status: **Proposed**. No code yet.
+
+H1.3 / H1.4 will close the operational-self-extension
+loop further: not just *grow* the action space (H1.2 does
+that), but also *prune* stale entries (H1.3) and *expand
+expressivity* (H1.4).
+
