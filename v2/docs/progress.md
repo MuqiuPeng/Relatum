@@ -4265,6 +4265,127 @@ snapshot ("sig" column). Captured to a fresh log
 ADR 0063 status: step 1 + step 2 + step 3a implemented;
 step 3b deferred pending OQ #1 empirics + user signal.
 
+### ADR 0063 OQ #1 — hand-tuned vs equal-weighted init experiment
+
+Captured `examples/phase_h2_0_oq1_experiment.rs` →
+`logs/2026-04-27_phase_h2_0_oq1_experiment.log`. Two
+2000-tick runs over the identical multi-regime substrate;
+only DriveMix initial weights differ:
+
+- `hand_tuned`: 0.5 / 0.4 / 0.1 (compression / pe / mode_thrash)
+- `equal_weighted`: 0.333 / 0.333 / 0.333
+
+#### Three findings
+
+**1. Shadow-only property HOLDS empirically.** Both runs
+produce byte-identical behavioural outcomes:
+
+| metric | hand_tuned | equal_weighted |
+|---|---|---|
+| episodes | 268 | 268 |
+| EP attempts | 129 | 129 |
+| composite attempts | 1 | 1 |
+| pairs named | 4 | 4 |
+| triples named | 8 | 8 |
+
+This is the empirical proof that step 3a's signal-only
+addition does not perturb runtime behaviour. The shadow
+guarantee from step 2 carries forward to step 3a unbroken.
+
+**2. Combined-signal magnitudes diverge by ~2-3× across
+the entire run.**
+
+| tick | hand | equal | Δ |
+|---|---|---|---|
+| 200 | 1.146 | 3.161 | 2.015 |
+| 400 | 1.300 | 3.530 | 2.230 |
+| 600 | 1.000 | 3.330 | 2.330 |
+| 1000 | 1.000 | 3.330 | 2.330 |
+| 1600 | 1.265 | 4.172 | 2.908 |
+| 2000 | 1.012 | 3.338 | 2.326 |
+
+The driver: `mode_thrash` evaluates to ~10 (count of
+recent mode transitions) and gets weight 0.1 in
+hand-tuned vs 0.333 in equal-weighted. The
+~2.0-2.3-magnitude gap is `(0.333 - 0.1) * ~10 ≈ 2.33`,
+matching observation closely.
+
+This finding is the critical step 3b design constraint.
+**A threshold for "drive signal too low → sleep" cannot be
+a fixed scalar** — under hand-tuned mix it would need to
+be ~0.5 to be meaningful; under equal-weighted it would
+need to be ~1.5 for the same semantic. Either:
+(a) the threshold itself co-tunes with weights, or
+(b) the signal is normalized before threshold application,
+e.g., divide by `Σ active_weights`.
+
+(b) is cleaner — the normalized signal becomes
+weight-invariant. Step 3b should incorporate this
+normalization rather than calibrating an absolute
+threshold against one mix's range.
+
+**3. Mutation patterns are identical across both inits.**
+
+Both runs mutated the same knobs in the same directions:
+
+- hand_tuned: `a.mode_thrash` 0.10 → 0.125 (×1.25);
+  `b.compression` 0.50 → 0.40 (×0.8)
+- equal_weighted: `a.mode_thrash` 0.333 → 0.4163 (×1.25);
+  `b.compression` 0.333 → 0.2664 (×0.8)
+
+Same mutation factors, same knobs, same A/B swap pattern.
+This is expected: DriveMix's PRNG state starts at the
+same constant in both runs, and at step 3a the EP-delta
+window means seen by DriveMix are identical (since EP
+behaviour is unchanged across mixes). So the mutation
+chooser draws the same key indices and the same up/down
+direction in both runs.
+
+This finding sharpens an open question for step 3b: once
+DriveMix actually gates on combined signal, the EP-delta
+window means will diverge between candidates → the
+mutation chooser will see different evidence → the same
+PRNG state will produce divergent mutation paths.
+**Step 3b is the slice that makes self-tuning observable
+in mutation-trajectory space, not just signal-magnitude
+space.**
+
+#### What this experiment unblocks
+
+Step 3b can now be designed with concrete data:
+
+1. **Use normalized signal** = combined_drive_signal /
+   Σ active_weights, eliminating mix-magnitude
+   sensitivity. Threshold becomes mix-invariant.
+2. **Threshold calibration target**: under hand-tuned and
+   equal-weighted, normalized signal trajectories should
+   look similar (both on the order of recent EP-delta and
+   mode-thrash count, weighted-averaged). A threshold
+   of ~0.5 or so should be meaningful in both regimes.
+3. **MetaScheduler interaction**: at step 3b, MetaScheduler
+   and DriveMix both consume EP delta as their selection
+   signal. ADR 0063 OQ #5 calls for phase-shifted windows.
+   The OQ #1 finding that mutation-trajectories are
+   currently identical confirms the windows aren't
+   currently colliding *behaviourally*, but they *will*
+   start colliding the moment step 3b makes drive weights
+   load-bearing on EP behaviour.
+
+#### Next-slice readiness
+
+Step 3b is now empirically grounded:
+- Shadow property at step 2 + 3a verified.
+- Threshold design constraint identified (normalization
+  needed).
+- Two-loop interaction risk concrete (will manifest
+  immediately at step 3b).
+
+ADR 0063 OQ #1 closed with concrete answer:
+hand-tuned baseline is the right starting weights for
+step 3b *empirics*, but the design must be weight-
+magnitude-invariant. Equal-weighted is reserved as an
+A/B comparison baseline once step 3b lands.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
