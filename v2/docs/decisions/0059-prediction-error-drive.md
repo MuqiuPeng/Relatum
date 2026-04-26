@@ -1,6 +1,6 @@
 # 0059: Prediction-error drive (Phase G1)
 
-Status: Proposed
+Status: Accepted (Phases G1.3 + G1.4 + G1.5 implemented)
 Date: 2026-04-26
 
 ## Context

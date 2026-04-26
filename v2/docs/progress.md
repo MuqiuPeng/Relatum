@@ -2984,6 +2984,93 @@ logged. Status: **Proposed**. No code yet.
 
 Tests: unchanged (413).
 
+### Phase G1.3 — PredictionState + accounting (impl)
+ADR 0059 G1.3 lands. Key additions:
+- `PredictionState` struct on `Memory` with `last_predicted_at_tick`,
+  `last_predicted_per_axiom`, `total_predictions_per_axiom`,
+  `verified_predictions_per_axiom`, plus
+  `last_reflect_hit_rate_per_axiom` (G1.5 — landed alongside).
+- `AutonomousRuntime::snapshot_predictions` runs at end of each
+  Running tick: `forward_apply_axiom(ax)` per named axiom, stores
+  by id.
+- `AutonomousRuntime::verify_predictions` runs at start of each
+  tick (after env events applied): for each (axiom, predicted),
+  intersect with current data edges, increment counters.
+- `PredictionState::hit_rate(ax, min_total)` returns
+  `verified / total` if `total >= min_total`, else `None`.
+- Round-trips through B2 checkpoint as
+  `prediction_state: PredictionState::default()` on restore
+  (counters not yet serialized — deferred).
+
+Tests (5 G1.3): no axioms / closure substrate (100% hit rate
+on every recorded axiom) / hit_rate gating below min_total /
+unknown axiom returns None / sleeping skips snapshot.
+
+### Phase G1.4 — anomaly signal tightening (impl)
+`RSet::unexplained_data_edges() = uncovered_data_edges -
+forward_apply_all()`. Strictly tighter than the G0 metric: an
+edge counts as unexplained iff (1) it's data, (2) no named
+pattern's Layer B covers it, AND (3) no axiom's forward-apply
+predicts it. The two G0 scheduler hooks (cooldown relaxation,
+sleep suppression) now consume the new signal.
+
+Tests (3 G1.4): equals uncovered when no axioms / strictly
+smaller than uncovered when axioms predict data / total-order
+substrate produces unexplained < uncovered.
+
+### Phase G1.5 — EvaluatePredictions + delta override (impl)
+The load-bearing change. New `ActionKind::EvaluatePredictions`
+fires at the **top of `choose`** when `zero_streak >=
+max_zero_streak` (the global stagnation gate would otherwise
+force Sleep) AND `predictions_have_pending_delta(ctx)` is true.
+Anti-stagnation placement, not Reflect-only, because the global
+gate runs before mode dispatch.
+
+Action handler computes per-axiom hit-rate delta vs. previous
+Reflect snapshot, returns `Some(delta_sum)` overriding the
+abstraction-score diff. `execute_and_record` honors the
+override.
+
+`recent_positive_discovers` now also counts EP episodes with
+positive delta — feeds `min_recent_gains` for
+Expand→Consolidate transitions, decoupling sustained activity
+from mode-transition counters.
+
+Tests (4 G1.5): `any_axiom_has_hit_rate` with/without data /
+Reflect picks EP under stagnation + axiom data / Reflect sleeps
+without data / E2E test deferred (interaction with
+sleep-suppression hook makes precise reproduction brittle —
+unit tests cover the load-bearing semantics).
+
+**F0 battery diff vs. pre-G1**:
+```
+                  seed   ep pre  ep post
+              fan_only        0        0  (no axioms)
+         diamond_poset        4        7  (+3 EP eps)
+         bipartite_2_3        0        0
+                star_5        0        0
+ equivalence_3_classes        4        7  (+3 EP eps)
+  disconnected_islands        4        7  (+3 EP eps)
+        stream_diamond        5       64  (DRAMATIC: +59 eps)
+```
+
+`stream_diamond` is the breakthrough: 5 → 64 episodes; theories
+2 → 3; mm.tries 3 → 6; mm.hits 0 → 5. The streaming environment
+keeps generating new R, the prediction-error signal keeps
+fluctuating, EP keeps firing during stagnation gaps. Final
+verdict still CONVERGED (eventually predictions stabilize and
+runtime sleeps), but the runtime's qualitative *amount of
+work* during the active phase is dramatically richer — exactly
+the architectural change Phase G1 was designed to produce.
+
+The static-substrate seeds get a smaller bump (+3 EP eps each):
+once theory + axioms are named, the first EP after stagnation
+records the initial 0% → 100% hit-rate jump as positive delta;
+subsequent EP attempts find no pending delta and Sleep.
+
+ADR 0059 status: Proposed → Accepted (Phases G1.3 + G1.4 + G1.5
+implemented). Tests: 413 → 426 (+13).
+
 ### F0 battery — `stream_diamond` seed added
 ADR 0056's deferred `stream_diamond` seed lands. Drip-feeds a
 diamond poset over the first 24 ticks via

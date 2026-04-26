@@ -3585,6 +3585,33 @@ impl RSet {
         out
     }
 
+    /// Data edges that are explained by NEITHER any named pattern's
+    /// Layer B coverage NOR any axiom's forward-application
+    /// prediction. ADR 0059 / Phase G1.4.
+    ///
+    /// Tighter sibling of `uncovered_data_edges` (Phase G0): the
+    /// G0 metric only credits structural Layer B coverage; G1.4
+    /// also subtracts the axiomatic prediction set. An edge is
+    /// "unexplained" iff:
+    ///   1. it's a data edge (both endpoints non-meta), AND
+    ///   2. it doesn't sit between two participants of any named
+    ///      pattern's Layer B instance (Phase G0 condition), AND
+    ///   3. it isn't predicted by any named axiom's forward-apply
+    ///      output (Phase G1.4 addition).
+    ///
+    /// Once axioms exist that predict the rset's content,
+    /// `unexplained_data_edges()` shrinks even when no patterns
+    /// have been Layer-B-named — the runtime now considers
+    /// axiomatic prediction a valid explanation.
+    pub fn unexplained_data_edges(&self) -> HashSet<R> {
+        let mut out = self.uncovered_data_edges();
+        let predicted = self.forward_apply_all();
+        for edge in &predicted {
+            out.remove(edge);
+        }
+        out
+    }
+
     /// Data edges not in any named pattern's Layer B instance binding.
     /// ADR 0057 / Phase G0.
     ///

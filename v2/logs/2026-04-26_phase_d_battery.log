@@ -14,12 +14,12 @@ verdict: CONVERGED (new patterns named: 2)
 === seed: diamond_poset ===
   tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
      0         0         0           0         0         0       0         0 Running
-    50         0         1           0         0         0       0         4 Sleeping
-   100         0         1           0         0         0       0         4 Sleeping
-   150         0         1           0         0         0       0         4 Sleeping
-   200         0         1           0         0         0       0         4 Sleeping
-   250         0         1           0         0         0       0         4 Sleeping
-   300         0         1           0         0         0       0         4 Sleeping
+    50         0         1           0         0         0       0         7 Sleeping
+   100         0         1           0         0         0       0         7 Sleeping
+   150         0         1           0         0         0       0         7 Sleeping
+   200         0         1           0         0         0       0         7 Sleeping
+   250         0         1           0         0         0       0         7 Sleeping
+   300         0         1           0         0         0       0         7 Sleeping
 verdict: CONVERGED (new patterns named: 0)
 
 === seed: bipartite_2_3 ===
@@ -47,34 +47,34 @@ verdict: CONVERGED (new patterns named: 1)
 === seed: equivalence_3_classes ===
   tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
      0         0         0           0         0         0       0         0 Running
-    50         0         1           0         0         0       0         4 Sleeping
-   100         0         1           0         0         0       0         4 Sleeping
-   150         0         1           0         0         0       0         4 Sleeping
-   200         0         1           0         0         0       0         4 Sleeping
-   250         0         1           0         0         0       0         4 Sleeping
-   300         0         1           0         0         0       0         4 Sleeping
+    50         0         1           0         0         0       0         7 Sleeping
+   100         0         1           0         0         0       0         7 Sleeping
+   150         0         1           0         0         0       0         7 Sleeping
+   200         0         1           0         0         0       0         7 Sleeping
+   250         0         1           0         0         0       0         7 Sleeping
+   300         0         1           0         0         0       0         7 Sleeping
 verdict: CONVERGED (new patterns named: 0)
 
 === seed: disconnected_islands ===
   tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
      0         0         0           0         0         0       0         0 Running
-    50         0         1           0         0         0       0         4 Sleeping
-   100         0         1           0         0         0       0         4 Sleeping
-   150         0         1           0         0         0       0         4 Sleeping
-   200         0         1           0         0         0       0         4 Sleeping
-   250         0         1           0         0         0       0         4 Sleeping
-   300         0         1           0         0         0       0         4 Sleeping
+    50         0         1           0         0         0       0         7 Sleeping
+   100         0         1           0         0         0       0         7 Sleeping
+   150         0         1           0         0         0       0         7 Sleeping
+   200         0         1           0         0         0       0         7 Sleeping
+   250         0         1           0         0         0       0         7 Sleeping
+   300         0         1           0         0         0       0         7 Sleeping
 verdict: CONVERGED (new patterns named: 0)
 
 === seed: stream_diamond ===
   tick  patterns  theories established shared.ax  mm.tries mm.hits  episodes lifecycle
      0         0         0           0         0         0       0         0 Running
-    50         0         2           0         3         0       0         5 Sleeping
-   100         0         2           0         3         0       0         5 Sleeping
-   150         0         2           0         3         0       0         5 Sleeping
-   200         0         2           0         3         0       0         5 Sleeping
-   250         0         2           0         3         0       0         5 Sleeping
-   300         0         2           0         3         0       0         5 Sleeping
+    50         0         3           0         6         0       0        46 Running
+   100         0         3           0         6         5       0        64 Sleeping
+   150         0         3           0         6         5       0        64 Sleeping
+   200         0         3           0         6         5       0        64 Sleeping
+   250         0         3           0         6         5       0        64 Sleeping
+   300         0         3           0         6         5       0        64 Sleeping
 verdict: CONVERGED (new patterns named: 0)
 
 === battery summary ===
