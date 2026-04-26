@@ -2753,3 +2753,45 @@ Two specific findings:
 ADR 0056 status: Proposed → Accepted (Phase F0 implemented).
 Tests: unchanged (402). The battery is a diagnostic example,
 not a unit test.
+
+### ADR 0057 (Proposed) — anomaly-coverage drive (Phase G0)
+First **outward-facing** drive added to the runtime. Triggered
+by F0's empirical confirmation of compression-saturation: 6
+seeds, 0 STILL GROWING. Compression alone always terminates
+fast.
+
+Phase G0 = anomaly-coverage drive (the cheapest of three
+candidate "outward" mechanisms — anomaly-priority,
+prediction-error, curiosity). Key idea: define
+`RSet::uncovered_data_edges()` = data edges not in any named
+pattern's Layer B instance binding. When this set is non-empty,
+the runtime has unexplained data and shouldn't sleep yet.
+
+Two narrow scheduler hooks:
+- **Cooldown relaxation under pressure**: B1+ pattern-cooldown
+  hit-rate floor drops from 10% to 5% (default
+  `anomaly_relaxation = 0.5`) when `uncovered.len() >= 3`
+  (default `anomaly_pressure_threshold`).
+- **Sleep suppression under pressure**: when the scheduler
+  would otherwise return `Sleep` and `uncovered.len() > 0`,
+  return `SwitchMode(Expand)` instead. Bounded by
+  `max_mode_oscillations` so it can't loop forever.
+
+What G0 does NOT do:
+- No prediction. That's G1 / ADR 0058 (forward-application
+  semantics) + ADR 0059 (prediction-error drive).
+- No novelty reward. Curiosity is its own thing.
+- No ActionKind / FrontierKind / Memory schema changes.
+  G0 is purely on-demand computation off the current rset.
+
+Verification plan: 3 new unit tests + F0 battery re-run after
+G0 lands. The expected diff in the new battery log: most seeds
+still CONVERGED (no fresh data → coverage trivially stable),
+but at least one of `bipartite_2_3` / `star_5` /
+`equivalence_3_classes` shows higher pattern count or extended
+runtime (anomaly hooks firing on existing uncovered data).
+
+ADR carries 4 alternatives rejected, 4 open questions logged.
+Status: **Proposed**. No code yet.
+
+Tests: unchanged (402).
