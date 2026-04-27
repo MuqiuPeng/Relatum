@@ -93,3 +93,4 @@ Commit hash(es), file pointers.
 - [0051](0051-adaptive-drive-config.md) — Adaptive drive config (RSet-aware auto-tuning)
 - [0052](0052-autonomous-runtime-architecture.md) — Autonomous runtime architecture (Proposed)
 - [0063](0063-drive-self-modification.md) — Drive self-modification (Phase H2, Proposed)
+- [0064](0064-drives-as-meta-r.md) — Drives as meta-R objects (Phase H2.1, Proposed)
