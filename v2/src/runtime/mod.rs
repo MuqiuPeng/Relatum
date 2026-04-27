@@ -2635,6 +2635,14 @@ impl AutonomousRuntime {
     pub fn combined_drive_signal(&self) -> f64 {
         // ADR 0063 OQ #4 resolution: positive drives add their
         // weighted evaluate; penalty drives subtract.
+        // ADR 0064 / H2.1.0+ — penalty status is now queried
+        // from meta-R (`R(PENALTY_MARKER, drive_<id>)`) as the
+        // canonical source of truth. The compile-time
+        // `Drive::is_penalty()` method is left as a fast-path
+        // fallback but no longer consulted here. This makes
+        // penalty status mutable at runtime: retracting the
+        // PENALTY_MARKER edge for a drive removes its penalty
+        // contribution.
         let weights = self.drive_mix.active_weights();
         let mut total: f64 = 0.0;
         for drive in &self.drives {
@@ -2643,13 +2651,23 @@ impl AutonomousRuntime {
                 continue;
             }
             let signal = drive.evaluate(&self.rset, &self.memory, self.tick);
-            if drive.is_penalty() {
+            if self.is_drive_penalty_via_meta_r(drive.id()) {
                 total -= w * signal;
             } else {
                 total += w * signal;
             }
         }
         total
+    }
+
+    /// Query meta-R for whether a drive is registered as a
+    /// penalty: `R(PENALTY_MARKER, drive_<id>)`. Returns false
+    /// when the drive isn't registered (defensive default —
+    /// treat unknown drives as positive contributors). ADR 0064 /
+    /// Phase H2.1.0+.
+    fn is_drive_penalty_via_meta_r(&self, drive_id_str: &str) -> bool {
+        let drive_id = format!("drive_{}", drive_id_str);
+        self.rset.contains(&R::new(PENALTY_MARKER, drive_id.as_str()))
     }
 
     /// Weight-invariant blended drive signal — positive-drive
@@ -2665,10 +2683,11 @@ impl AutonomousRuntime {
     /// penalty weights would muddy that scale. The numerator
     /// already accounts for penalty contribution by subtraction.
     pub fn normalized_drive_signal(&self) -> f64 {
+        // ADR 0064 / H2.1.0+ — penalty status queried from meta-R.
         let weights = self.drive_mix.active_weights();
         let mut positive_weight_sum: f64 = 0.0;
         for drive in &self.drives {
-            if drive.is_penalty() {
+            if self.is_drive_penalty_via_meta_r(drive.id()) {
                 continue;
             }
             positive_weight_sum +=
@@ -8837,6 +8856,109 @@ mod tests {
                 rt.drive_mix.stage_start_episode_count
             );
         }
+    }
+
+    // ─── ADR 0064 / Phase H2.1.0+ — meta-R is source of truth ───
+
+    #[test]
+    fn h2_1_0_plus_retracting_penalty_marker_flips_drive_to_positive() {
+        // Source of truth: the meta-R edge, not the impl method.
+        // Manually retract R(PENALTY_MARKER, drive_mode_thrash);
+        // mode_thrash should now contribute POSITIVELY to
+        // combined_drive_signal (its weighted evaluate value).
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        // Plant 5 mode transitions → mode_thrash evaluate = 5.
+        for i in 0..5 {
+            rt.memory.record_mode_transition(ModeTransition {
+                tick: i,
+                from: RuntimeMode::Expand,
+                to: RuntimeMode::Consolidate,
+                reason: "test".to_string(),
+            });
+        }
+        // Pre-retract: penalty active → combined = -0.1 * 5 = -0.5
+        // (only mode_thrash contributes; compression / pe both 0).
+        let pre = rt.combined_drive_signal();
+        assert!(
+            (pre - (-0.5)).abs() < 1e-9,
+            "pre-retract expected -0.5; got {}",
+            pre
+        );
+        // Retract the penalty edge.
+        let drive_id = "drive_mode_thrash".to_string();
+        let removed = rt
+            .rset
+            .remove(&R::new(PENALTY_MARKER, drive_id.as_str()));
+        assert!(removed, "expected penalty edge to be present");
+        // Post-retract: meta-R no longer marks mode_thrash as
+        // penalty → combined = +0.1 * 5 = +0.5.
+        let post = rt.combined_drive_signal();
+        assert!(
+            (post - 0.5).abs() < 1e-9,
+            "post-retract expected +0.5; got {}",
+            post
+        );
+    }
+
+    #[test]
+    fn h2_1_0_plus_asserting_penalty_marker_flips_drive_to_negative() {
+        // Inverse: assert R(PENALTY_MARKER, drive_compression);
+        // compression should now contribute negatively even
+        // though Drive::is_penalty() still says false.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverTheory,
+            1.0,
+        ));
+        // Pre-assert: compression positive → 0.5 * 1.0 = +0.5.
+        let pre = rt.combined_drive_signal();
+        assert!(
+            (pre - 0.5).abs() < 1e-9,
+            "pre-assert expected +0.5; got {}",
+            pre
+        );
+        // Assert compression as a penalty in meta-R.
+        rt.rset
+            .add(R::new(PENALTY_MARKER, "drive_compression"));
+        // Post-assert: compression now subtracted → -0.5.
+        let post = rt.combined_drive_signal();
+        assert!(
+            (post - (-0.5)).abs() < 1e-9,
+            "post-assert expected -0.5; got {}",
+            post
+        );
+    }
+
+    #[test]
+    fn h2_1_0_plus_normalized_signal_denominator_uses_meta_r() {
+        // Normalized signal divides by the *positive-only* weight
+        // sum. The set of "positive" drives is determined by
+        // meta-R, not the compile-time method. Manually mark
+        // compression as penalty → denominator drops from
+        // (compression + prediction_error) = 0.9 to just
+        // prediction_error = 0.4.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.rset
+            .add(R::new(PENALTY_MARKER, "drive_compression"));
+        // Plant 1 episode, compression evaluate = 1.0.
+        // mode_thrash penalty (already marked) doesn't contribute
+        // either; compression is now also penalty.
+        rt.memory.record(make_episode(
+            ActionKind::DiscoverTheory,
+            1.0,
+        ));
+        // combined: -0.5 * 1.0 (compression now penalty)
+        //   - 0.1 * 0 (mode_thrash, no transitions)
+        //   + 0.4 * 0 (prediction_error, no axioms)
+        //   = -0.5
+        // Positive-weight sum = just 0.4 (prediction_error).
+        // normalized = -0.5 / 0.4 = -1.25.
+        let normalized = rt.normalized_drive_signal();
+        assert!(
+            (normalized - (-1.25)).abs() < 1e-9,
+            "expected -1.25 (denominator excludes both penalties); got {}",
+            normalized
+        );
     }
 
     // ─── ADR 0064 / Phase H2.1.0 — drive meta-R registration ────

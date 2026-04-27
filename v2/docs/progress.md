@@ -4904,6 +4904,90 @@ class hierarchy.
 ADR 0064 status: H2.1.0 Accepted; H2.1.1 / H2.1.2 remain
 Proposed.
 
+### Phase H2.1.0+ — meta-R as canonical source of truth (impl)
+
+ADR 0064 originally specified that `combined_drive_signal` /
+`normalized_drive_signal` should query meta-R for penalty
+status. H2.1.0 deferred this to keep the registration slice
+strictly additive. H2.1.0+ now lands the query rewire.
+
+#### Changes
+
+`AutonomousRuntime`:
+- `is_drive_penalty_via_meta_r(drive_id) -> bool` — private
+  helper that checks `rset.contains(R::new(PENALTY_MARKER, drive_<id>))`.
+- `combined_drive_signal` now calls this helper instead of
+  `drive.is_penalty()`. Decides add-vs-subtract from meta-R.
+- `normalized_drive_signal` similarly — the positive-only
+  denominator's weight sum is computed by consulting meta-R
+  for each drive's penalty status.
+
+`Drive::is_penalty()` method retained but no longer consulted
+by these two methods. The registration logic
+(`register_drives_in_rset`) still uses the method as the
+seed value when populating meta-R; the method becomes a
+fast-path / declaration mechanism rather than the canonical
+answer.
+
+#### Why this matters
+
+H2.1.0 satisfied commitment 3 by registering drives in meta-R.
+H2.1.0+ operationalizes commitment 3 — the runtime now
+*consults* meta-R when making drive-related decisions, not the
+compile-time catalogue.
+
+The runtime could in principle now:
+- Retract `R(PENALTY_MARKER, drive_id)` to flip a drive's role
+  on the fly.
+- Add penalty status to a drive that didn't have it.
+- (Future H2.1.1) Demote / re-establish drives via the
+  ESTABLISHED-promotion lifecycle.
+
+#### Tests: 512 → 515 (+3)
+
+- `h2_1_0_plus_retracting_penalty_marker_flips_drive_to_positive`
+- `h2_1_0_plus_asserting_penalty_marker_flips_drive_to_negative`
+- `h2_1_0_plus_normalized_signal_denominator_uses_meta_r`
+
+The first two tests are the load-bearing verifications:
+manipulating the meta-R edges *directly changes* the runtime's
+drive computation, even though the compile-time
+`Drive::is_penalty()` still returns its original value.
+
+#### Empirical verification (no regression)
+
+Behaviour byte-identical to post-α / post-H2.1.0 baseline:
+- F0 battery: all 7 seeds CONVERGED.
+- OQ #1 long-run hand-tuned: 268/129/1/4/8. Signal trajectory
+  matches post-α exactly: -0.654 → -1.235 → -0.988.
+- OQ #1 long-run equal-weighted: 203/179/0/1/3.
+
+The runtime's behaviour didn't change because
+`register_drives_in_rset` faithfully encodes `Drive::is_penalty()`
+as meta-R edges. The query-path rewire shifts the source of
+truth without changing the answer under the current
+registration policy.
+
+#### Significance
+
+The "Update existing code paths" requirement of ADR 0064 is now
+fully satisfied. Drive-related runtime decisions read from
+meta-R as the canonical source. The compile-time
+`Drive::is_penalty()` method is now demoted to "declaration
+helper" — it tells the registration logic where to seed meta-R,
+but doesn't gate runtime decisions.
+
+This is the second of three steps that operationalize
+commitment 3 for drives:
+1. **H2.1.0** — drives registered in meta-R.
+2. **H2.1.0+ (this slice)** — meta-R consulted as source of
+   truth for drive-related decisions.
+3. (Future) **H2.1.1** — drives gain ESTABLISHED-promotion
+   lifecycle.
+
+ADR 0064 status: H2.1.0 + H2.1.0+ Accepted; H2.1.1 / H2.1.2
+remain Proposed.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

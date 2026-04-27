@@ -327,7 +327,7 @@ H2.1.0 is the recommended starting slice. It opens the
 constitutional door without touching behaviour. H2.1.1 +
 H2.1.2 follow when empirical motivation surfaces.
 
-Status: H2.1.0 **Accepted (implemented)**; H2.1.1 / H2.1.2 Proposed.
+Status: H2.1.0 + H2.1.0+ **Accepted (implemented)**; H2.1.1 / H2.1.2 Proposed.
 
 ---
 
@@ -395,3 +395,86 @@ DRIVE_MARKER / PENALTY_MARKER edges as the canonical source
 of penalty status (rewire `combined_drive_signal` to
 query rset). That's a small, targeted slice when the time
 comes.
+
+---
+
+## Addendum 2 — H2.1.0+ rewires query path to meta-R (2026-04-28)
+
+The "Update existing code paths" section of this ADR called
+for `combined_drive_signal` / `normalized_drive_signal` to
+query meta-R for penalty status (rather than calling the
+compile-time `Drive::is_penalty()` method). H2.1.0 deferred
+this to keep the registration slice strictly additive.
+H2.1.0+ now lands the query rewire.
+
+#### Changes
+
+- `AutonomousRuntime::is_drive_penalty_via_meta_r(drive_id)`
+  private helper: returns `rset.contains(R::new(PENALTY_MARKER, drive_<id>))`.
+- `combined_drive_signal` consults this helper instead of
+  `drive.is_penalty()` to decide add-vs-subtract.
+- `normalized_drive_signal` consults this helper for the
+  positive-only weight-sum denominator.
+- `Drive::is_penalty()` method retained on the trait but no
+  longer consulted by either method. Documentation updated
+  to describe its new role: a fast-path fallback / convenience
+  marker that the registration logic uses to seed meta-R, but
+  not the canonical answer.
+
+#### Empirical verification
+
+- 512 → 515 tests pass (+3 H2.1.0+):
+  - `h2_1_0_plus_retracting_penalty_marker_flips_drive_to_positive`
+  - `h2_1_0_plus_asserting_penalty_marker_flips_drive_to_negative`
+  - `h2_1_0_plus_normalized_signal_denominator_uses_meta_r`
+- F0 battery: stream_diamond CONVERGED. Other seeds CONVERGED.
+  No regression vs post-α / post-H2.1.0 baseline.
+- OQ #1 long-run (HORIZON=2000):
+  - hand-tuned: 268/129/1/4/8 — byte-identical to baseline.
+    Signal trajectory identical to post-α: -0.654 → -1.235 → -0.988.
+  - equal-weighted: 203/179/0/1/3 — byte-identical to baseline.
+
+#### Why behaviour is byte-identical
+
+The runtime's behaviour didn't change because `register_drives_in_rset`
+faithfully encodes `Drive::is_penalty()` as the meta-R edge
+set. The query-path rewire shifts the *source of truth* without
+changing the *answer* under the current registration policy.
+
+The load-bearing tests verify the source-of-truth shift directly:
+- `_retracting_penalty_marker_flips_drive_to_positive`: removing
+  the meta-R edge makes mode_thrash contribute *positively* even
+  though `Drive::is_penalty()` still returns `true`.
+- `_asserting_penalty_marker_flips_drive_to_negative`: adding a
+  meta-R edge for compression makes it contribute *negatively*
+  even though `Drive::is_penalty()` returns `false`.
+
+Both tests demonstrate that meta-R is now the canonical source.
+
+#### Constitutional implications
+
+This is the slice that *operationalizes* commitment 3 for drives.
+H2.1.0 satisfied commitment 3 by *registering* drives in meta-R.
+H2.1.0+ takes the next step: the runtime now *consults* meta-R
+when making drive-related decisions, rather than the compile-time
+catalogue.
+
+The runtime could in principle now:
+- Retract `R(PENALTY_MARKER, drive_id)` to flip a drive's role
+  on the fly.
+- Add a brand-new drive registration in meta-R that the runtime's
+  drive registry doesn't have (though the evaluate function
+  still has to come from somewhere — H2.2 territory).
+- Demote / re-establish drives via the same lifecycle that
+  patterns and theories use (H2.1.1).
+
+H2.1.0+ doesn't yet exercise these capabilities, but the API
+shape now supports them.
+
+#### Status
+
+H2.1.0 + H2.1.0+ implemented. The ADR's "Update existing code
+paths" requirement is fully satisfied. H2.1.1 + H2.1.2 remain
+Proposed — they're separate slices about *lifecycle*
+(promotion / demotion) and *coupling* (weights tied to
+ESTABLISHED), not about query routing.
