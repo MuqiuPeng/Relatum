@@ -94,3 +94,4 @@ Commit hash(es), file pointers.
 - [0052](0052-autonomous-runtime-architecture.md) — Autonomous runtime architecture (Proposed)
 - [0063](0063-drive-self-modification.md) — Drive self-modification (Phase H2, Proposed)
 - [0064](0064-drives-as-meta-r.md) — Drives as meta-R objects (Phase H2.1, Proposed)
+- [0065](0065-ucb-composite-selection.md) — UCB1 composite selection (Phase Alpha-1, Accepted with negative empirical finding)

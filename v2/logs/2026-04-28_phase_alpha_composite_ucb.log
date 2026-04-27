@@ -1,0 +1,115 @@
+warning: variable does not need to be mutable
+    --> src\runtime\mod.rs:2564:13
+     |
+2564 |         let mut try_add = |seq_id: &str,
+     |             ----^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4525:9
+     |
+4525 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5027:9
+     |
+5027 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5031:9
+     |
+5031 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\mod.rs:418:8
+    |
+310 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+418 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3370:60
+     |
+3370 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3370:72
+     |
+3370 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 7 warnings (run `cargo fix --lib -p relatum-v2` to apply 4 suggestions)
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 0.92s
+     Running `target\release\examples\phase_alpha_composite_ucb.exe`
+=== ADR 0065 Phase Alpha-1 — UCB1 composite selection A/B (HORIZON=2000) ===
+
+=== run: baseline (greedy) ===
+ tick   epis     ep  comp  pairs  tri
+    0      0      0     0      0    0
+  200     34     14     1      1    1
+  400     65     32     1      1    2
+  600     86     47     1      1    2
+  800     98     59     1      1    2
+ 1000    110     71     1      1    2
+ 1200    142     79     1      4    6
+ 1400    176     89     1      4    8
+ 1600    208    101     1      4    8
+ 1800    238    115     1      4    8
+ 2000    268    129     1      4    8
+
+=== run: ucb1 ===
+ tick   epis     ep  comp  pairs  tri
+    0      0      0     0      0    0
+  200     34     14     1      1    1
+  400     65     32     1      1    2
+  600     86     47     1      1    2
+  800     98     59     1      1    2
+ 1000    110     71     1      1    2
+ 1200    142     79     1      4    6
+ 1400    176     89     1      4    8
+ 1600    208    101     1      4    8
+ 1800    238    115     1      4    8
+ 2000    268    129     1      4    8
+
+=== final-snapshot comparison ===
+            episodes  baseline=  268  ucb1=  268  Δ==0
+         ep_attempts  baseline=  129  ucb1=  129  Δ==0
+  composite_attempts  baseline=    1  ucb1=    1  Δ==0
+         pairs_named  baseline=    4  ucb1=    4  Δ==0
+       triples_named  baseline=    8  ucb1=    8  Δ==0
+
+=== per-snapshot trajectory delta (ucb1 - baseline) ===
+ tick    Δepis      Δep    Δcomp   Δpairs     Δtri
+    0        0        0        0        0        0
+  200        0        0        0        0        0
+  400        0        0        0        0        0
+  600        0        0        0        0        0
+  800        0        0        0        0        0
+ 1000        0        0        0        0        0
+ 1200        0        0        0        0        0
+ 1400        0        0        0        0        0
+ 1600        0        0        0        0        0
+ 1800        0        0        0        0        0
+ 2000        0        0        0        0        0
+
+--- end ---

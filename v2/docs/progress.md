@@ -4988,6 +4988,99 @@ commitment 3 for drives:
 ADR 0064 status: H2.1.0 + H2.1.0+ Accepted; H2.1.1 / H2.1.2
 remain Proposed.
 
+### Phase Alpha-1 — UCB1 composite selection (negative finding)
+
+User initiated Phase Alpha to try AlphaGo-flavored ideas
+empirically (a branch off the H2.1 mainline). Drafted ADR
+0065 specifying the smallest tractable slice: replace
+greedy composite-candidate selection with UCB1, using
+existing `SequenceStats` data as priors. No tree search,
+no rollouts — the AlphaGo-MCTS *selection rule* only.
+
+#### Implementation
+
+`UcbCompositeScheduler` wrapper in `runtime/mod.rs`:
+- Wraps any inner `Scheduler` (boxed).
+- For non-composite decisions, delegates unchanged.
+- For composite decisions, applies UCB1 over eligible
+  candidates. Visit count + mean reward computed on the
+  fly from `memory.episodes` (counting `ExecuteComposite`
+  episodes whose target matches each candidate's seq_id).
+- Cold-start: unvisited candidates get `f64::INFINITY`
+  score (always picked first).
+
+A/B comparison example
+`examples/phase_alpha_composite_ucb.rs`: same substrate,
+HORIZON=2000, baseline (greedy) vs ucb1 wrapper.
+
+5 unit tests covering UCB1 score correctness and stats
+attribution. 515 → 520 tests pass.
+
+#### Empirical result: ZERO divergence
+
+| metric | baseline | ucb1 | Δ |
+|---|---|---|---|
+| episodes | 268 | 268 | 0 |
+| EP attempts | 129 | 129 | 0 |
+| composite attempts | 1 | 1 | 0 |
+| pairs named | 4 | 4 | 0 |
+| triples named | 8 | 8 | 0 |
+
+Per-snapshot trajectory delta: ALL ZEROS at every
+checkpoint (11 snapshots).
+
+#### Diagnosis
+
+The runtime fires **exactly 1 composite over the entire
+2000-tick run** under either scheduler. At decision time,
+the frontier typically contains **0 or 1 composite
+candidates** — never multiple competing ones. UCB1 vs
+greedy makes a difference only when N>1; with N≤1, both
+rules are the identity.
+
+#### What the framing doc anticipated vs. what we learned
+
+The framing doc warned about **cost asymmetry** as the
+obstacle to AlphaGo transfer. This experiment surfaced a
+**second obstacle**: **low branching factor at the
+composite layer**. v2's H1.x sequence-mining promotes
+dominant pairs aggressively, leaving little room for
+parallel rival candidates.
+
+ADR 0065's verification plan explicitly anticipated zero
+divergence as a possible outcome ("a useful negative
+finding"). The result is hypothesis-confirmed, not
+unexpected.
+
+#### What this slice produced
+
+1. **Concrete empirical evidence** for the cost-asymmetry +
+   low-branching-factor hypothesis from the framing doc.
+2. **A working `UcbCompositeScheduler`** retained in tree.
+   Doesn't matter on current substrates but ready when /
+   if substrates change.
+3. **Sharper design constraints for future Phase Alpha
+   work**: AlphaGo-flavored selection alone won't move
+   the needle on v2 substrates. Either change the
+   substrate (deliberate high-composite seeding) or change
+   the *layer* (primitive-ActionKind tree search, where
+   branching factor is meaningful but cost asymmetry
+   remains).
+
+#### Phase Alpha-1 status
+
+Closed with negative finding. ADR 0065 retained as record.
+Future Phase Alpha work, if pursued, should target one of:
+
+1. **Synthetic high-composite-density substrate** to rerun
+   UCB1 experiment with multiple competing candidates.
+2. **Primitive-layer search** (Phase Alpha-2 territory).
+3. **Self-play as data generator** (Phase Alpha-3 — different
+   category from selection-rule transfer).
+
+ADR 0065 status: Accepted (with negative empirical
+finding). Tests: 515 → 520 (+5).
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

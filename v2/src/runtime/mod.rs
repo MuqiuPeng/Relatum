@@ -930,6 +930,161 @@ impl Scheduler for MetaScheduler {
     }
 }
 
+// ─── ADR 0065 / Phase Alpha-1 — UCB1 composite selection ──────────
+//
+// Wraps an inner `Scheduler`. Intercepts `Execute(ExecuteComposite)`
+// decisions and replaces the inner scheduler's choice with a UCB1-
+// selected composite over all eligible `CompositeCandidate` items
+// in the frontier. Non-composite decisions delegate to the inner
+// scheduler unchanged.
+//
+// UCB1 selection: argmax over candidates of
+//   mean_reward(c) + exploration_const * sqrt(ln(N) / visits(c))
+//
+// where mean_reward and visits come from `memory.episodes` —
+// counting `ExecuteComposite` episodes whose target matches each
+// candidate's seq_id. This makes "visits" a true bandit visit count
+// (active dispatch), distinct from `SequenceStats.pair_post_ep_count`
+// (passive observation).
+//
+// AlphaGo-flavor: this is the **selection** rule of MCTS, applied
+// to v2's composite layer. Tree expansion / rollouts / value
+// network are intentionally absent — see ADR 0065 § cost asymmetry.
+
+/// Wrap any `Scheduler` with UCB1 selection over composite
+/// candidates. ADR 0065 / Phase Alpha-1.
+pub struct UcbCompositeScheduler {
+    pub inner: Box<dyn Scheduler>,
+    pub exploration_const: f64,
+}
+
+impl UcbCompositeScheduler {
+    pub fn new(inner: Box<dyn Scheduler>) -> Self {
+        Self {
+            inner,
+            exploration_const: std::f64::consts::SQRT_2,
+        }
+    }
+
+    pub fn with_exploration_const(
+        inner: Box<dyn Scheduler>,
+        c: f64,
+    ) -> Self {
+        Self {
+            inner,
+            exploration_const: c,
+        }
+    }
+
+    /// Per-composite visit count + mean reward from episode
+    /// history. Iterates `memory.episodes` and counts
+    /// `ExecuteComposite` whose target matches `seq_id`.
+    fn composite_stats(memory: &Memory, seq_id: &str) -> (u64, f64) {
+        let mut visits: u64 = 0;
+        let mut reward_sum: f64 = 0.0;
+        for ep in &memory.episodes {
+            if ep.action_kind != ActionKind::ExecuteComposite {
+                continue;
+            }
+            if let FrontierTarget::ActionSequence(s) = &ep.target {
+                if s == seq_id {
+                    visits += 1;
+                    reward_sum += ep.delta;
+                }
+            }
+        }
+        let mean = if visits == 0 {
+            0.0
+        } else {
+            reward_sum / visits as f64
+        };
+        (visits, mean)
+    }
+
+    /// UCB1 score. Unvisited candidates return `f64::INFINITY` so
+    /// they're always picked first (cold-start invariant).
+    fn ucb1_score(
+        &self,
+        mean: f64,
+        visits: u64,
+        total_visits: u64,
+    ) -> f64 {
+        if visits == 0 {
+            return f64::INFINITY;
+        }
+        if total_visits == 0 {
+            return mean;
+        }
+        let exploration = self.exploration_const
+            * ((total_visits as f64).ln() / visits as f64).sqrt();
+        mean + exploration
+    }
+
+    /// Pick the composite candidate with highest UCB1 score, if
+    /// any composites are eligible. Returns `None` when no
+    /// composite items present in frontier.
+    fn ucb_select_composite<'a>(
+        &self,
+        ctx: &'a SchedulerContext<'_>,
+    ) -> Option<&'a FrontierItem> {
+        let composites: Vec<&FrontierItem> = ctx
+            .frontier
+            .items
+            .iter()
+            .filter(|it| {
+                matches!(it.kind, FrontierKind::CompositeCandidate)
+            })
+            .collect();
+        if composites.is_empty() {
+            return None;
+        }
+        let stats: Vec<(&FrontierItem, u64, f64)> = composites
+            .iter()
+            .filter_map(|it| match &it.target {
+                FrontierTarget::ActionSequence(s) => {
+                    let (visits, mean) =
+                        Self::composite_stats(ctx.memory, s);
+                    Some((*it, visits, mean))
+                }
+                _ => None,
+            })
+            .collect();
+        let total: u64 = stats.iter().map(|(_, v, _)| v).sum();
+        stats
+            .into_iter()
+            .max_by(|a, b| {
+                let sa = self.ucb1_score(a.2, a.1, total);
+                let sb = self.ucb1_score(b.2, b.1, total);
+                sa.partial_cmp(&sb)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(it, _, _)| it)
+    }
+}
+
+impl Scheduler for UcbCompositeScheduler {
+    fn choose(&mut self, ctx: &SchedulerContext<'_>) -> SchedulerDecision {
+        let base = self.inner.choose(ctx);
+        // Only intercept ExecuteComposite decisions.
+        let plan = match &base {
+            SchedulerDecision::Execute(p)
+                if p.action_kind == ActionKind::ExecuteComposite =>
+            {
+                p.clone()
+            }
+            _ => return base,
+        };
+        let _ = plan; // keep base's plan as fallback (used below)
+        if let Some(item) = self.ucb_select_composite(ctx) {
+            return SchedulerDecision::Execute(ActionPlan {
+                action_kind: ActionKind::ExecuteComposite,
+                target: item.target.clone(),
+            });
+        }
+        base
+    }
+}
+
 // ─── environment ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -8856,6 +9011,149 @@ mod tests {
                 rt.drive_mix.stage_start_episode_count
             );
         }
+    }
+
+    // ─── ADR 0065 / Phase Alpha-1 — UCB composite selection ─────
+
+    #[test]
+    fn alpha1_ucb_falls_through_to_inner_for_non_composite() {
+        // Non-composite decisions should pass through unchanged.
+        let mut sched = UcbCompositeScheduler::new(Box::new(
+            RuleBasedScheduler::default(),
+        ));
+        let rs = RSet::new();
+        let memory = Memory::default();
+        let frontier = Frontier::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+            normalized_drive_signal: 0.0,
+        };
+        // Empty everything → inner returns Sleep or fallthrough;
+        // wrapper should not modify it.
+        let dec = sched.choose(&ctx);
+        // Verify it's not Execute(EvaluatePredictions) via gate or
+        // anything that should pass through unchanged.
+        // In practice empty frontier → falls through to fallback.
+        // Crucial assertion: not Execute(ExecuteComposite) without
+        // the inner having chosen one.
+        if let SchedulerDecision::Execute(plan) = &dec {
+            assert_ne!(
+                plan.action_kind,
+                ActionKind::ExecuteComposite,
+                "wrapper must not invent ExecuteComposite"
+            );
+        }
+    }
+
+    #[test]
+    fn alpha1_ucb_score_unvisited_returns_infinity() {
+        let sched = UcbCompositeScheduler::new(Box::new(
+            RuleBasedScheduler::default(),
+        ));
+        let score = sched.ucb1_score(0.0, 0, 10);
+        assert!(score.is_infinite() && score > 0.0);
+    }
+
+    #[test]
+    fn alpha1_ucb_score_balances_exploration_and_exploitation() {
+        let sched = UcbCompositeScheduler::new(Box::new(
+            RuleBasedScheduler::default(),
+        ));
+        // Two candidates: A has high mean, low visits.
+        // B has low mean, high visits.
+        // UCB1 should explore A more aggressively.
+        let total = 100u64;
+        let score_a = sched.ucb1_score(0.5, 5, total);
+        let score_b = sched.ucb1_score(0.6, 95, total);
+        // A has higher exploration term:
+        // exploration_a = sqrt(2) * sqrt(ln(100)/5) ≈ 1.36
+        // exploration_b = sqrt(2) * sqrt(ln(100)/95) ≈ 0.31
+        // score_a ≈ 0.5 + 1.36 = 1.86
+        // score_b ≈ 0.6 + 0.31 = 0.91
+        // A wins despite lower mean — exploration kicks in.
+        assert!(
+            score_a > score_b,
+            "expected A (low-visit) to score higher under UCB1: \
+             score_a={}, score_b={}",
+            score_a,
+            score_b
+        );
+    }
+
+    #[test]
+    fn alpha1_ucb_composite_stats_counts_only_matching_seq_id() {
+        let mut memory = Memory::default();
+        memory.record(Episode {
+            id: 0,
+            tick: 0,
+            mode: RuntimeMode::Expand,
+            action_kind: ActionKind::ExecuteComposite,
+            target: FrontierTarget::ActionSequence("seq_1".to_string()),
+            score_before: 0.0,
+            score_after: 0.5,
+            delta: 0.5,
+        });
+        memory.record(Episode {
+            id: 1,
+            tick: 1,
+            mode: RuntimeMode::Expand,
+            action_kind: ActionKind::ExecuteComposite,
+            target: FrontierTarget::ActionSequence("seq_2".to_string()),
+            score_before: 0.0,
+            score_after: 0.2,
+            delta: 0.2,
+        });
+        memory.record(Episode {
+            id: 2,
+            tick: 2,
+            mode: RuntimeMode::Expand,
+            action_kind: ActionKind::ExecuteComposite,
+            target: FrontierTarget::ActionSequence("seq_1".to_string()),
+            score_before: 0.0,
+            score_after: 0.3,
+            delta: 0.3,
+        });
+        // seq_1 visited twice, mean reward = (0.5 + 0.3) / 2 = 0.4.
+        let (visits, mean) =
+            UcbCompositeScheduler::composite_stats(&memory, "seq_1");
+        assert_eq!(visits, 2);
+        assert!((mean - 0.4).abs() < 1e-9);
+        // seq_2 visited once, mean = 0.2.
+        let (visits, mean) =
+            UcbCompositeScheduler::composite_stats(&memory, "seq_2");
+        assert_eq!(visits, 1);
+        assert!((mean - 0.2).abs() < 1e-9);
+        // seq_3 (never visited): zero.
+        let (visits, mean) =
+            UcbCompositeScheduler::composite_stats(&memory, "seq_3");
+        assert_eq!(visits, 0);
+        assert_eq!(mean, 0.0);
+    }
+
+    #[test]
+    fn alpha1_ucb_handles_empty_eligible_set() {
+        // No composite candidates in frontier → wrapper returns
+        // base decision unchanged.
+        let mut sched = UcbCompositeScheduler::new(Box::new(
+            RuleBasedScheduler::default(),
+        ));
+        let rs = RSet::new();
+        let memory = Memory::default();
+        let frontier = Frontier::default();
+        let ctx = SchedulerContext {
+            rset: &rs,
+            memory: &memory,
+            frontier: &frontier,
+            mode: RuntimeMode::Expand,
+            tick: 0,
+            normalized_drive_signal: 0.0,
+        };
+        // Should not panic; should return inner's decision.
+        let _ = sched.choose(&ctx);
     }
 
     // ─── ADR 0064 / Phase H2.1.0+ — meta-R is source of truth ───
