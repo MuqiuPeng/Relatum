@@ -15,7 +15,7 @@
 use crate::{
     AutonomousConfig, AxiomDiscoveryConfig, DiscoveryConfig, NamingPolicy,
     PatternRecordingPolicy, RefinementConfig, RSet, TheoryRelationKind,
-    ESTABLISHED_MARKER, SHARED_AXIOM_MARKER, R,
+    DRIVE_MARKER, ESTABLISHED_MARKER, PENALTY_MARKER, SHARED_AXIOM_MARKER, R,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -2577,7 +2577,12 @@ impl AutonomousRuntime {
     /// `scheduler` / `environment` before `run_bounded` as needed.
     pub fn new(rset: RSet) -> Self {
         let current_score = rset.abstraction_score();
-        Self {
+        let drives: Vec<Box<dyn Drive>> = vec![
+            Box::new(CompressionDrive),
+            Box::new(PredictionErrorDrive),
+            Box::new(ModeThrashPenalty),
+        ];
+        let mut rt = Self {
             rset,
             lifecycle: LifecycleState::Running,
             mode: RuntimeMode::Expand,
@@ -2592,11 +2597,28 @@ impl AutonomousRuntime {
             current_score,
             last_checkpoint: None,
             drive_mix: DriveMix::default(),
-            drives: vec![
-                Box::new(CompressionDrive),
-                Box::new(PredictionErrorDrive),
-                Box::new(ModeThrashPenalty),
-            ],
+            drives,
+        };
+        rt.register_drives_in_rset();
+        rt
+    }
+
+    /// Register each drive as `R(DRIVE_MARKER, drive_<id>)` and,
+    /// if penalty, also `R(PENALTY_MARKER, drive_<id>)`. Idempotent —
+    /// `RSet::add` is a no-op if the edge exists, so repeat calls
+    /// (e.g., from `from_checkpoint_text` after restoring a
+    /// checkpoint that already contains these edges) are safe.
+    /// ADR 0064 / Phase H2.1.0 — registration only, no behaviour
+    /// change beyond rset content.
+    fn register_drives_in_rset(&mut self) {
+        for drive in &self.drives {
+            let drive_id = format!("drive_{}", drive.id());
+            self.rset
+                .add(R::new(DRIVE_MARKER, drive_id.as_str()));
+            if drive.is_penalty() {
+                self.rset
+                    .add(R::new(PENALTY_MARKER, drive_id.as_str()));
+            }
         }
     }
 
@@ -4290,7 +4312,12 @@ impl AutonomousRuntime {
             }
         };
 
-        Ok(Self {
+        let drives: Vec<Box<dyn Drive>> = vec![
+            Box::new(CompressionDrive),
+            Box::new(PredictionErrorDrive),
+            Box::new(ModeThrashPenalty),
+        ];
+        let mut rt = Self {
             rset,
             lifecycle,
             mode,
@@ -4305,12 +4332,13 @@ impl AutonomousRuntime {
             current_score,
             last_checkpoint: None,
             drive_mix,
-            drives: vec![
-                Box::new(CompressionDrive),
-                Box::new(PredictionErrorDrive),
-                Box::new(ModeThrashPenalty),
-            ],
-        })
+            drives,
+        };
+        // ADR 0064 / Phase H2.1.0 — re-register drives in rset.
+        // Idempotent: edges already present from the checkpoint
+        // restore will be no-op'd by RSet::add.
+        rt.register_drives_in_rset();
+        Ok(rt)
     }
 }
 
@@ -8809,6 +8837,112 @@ mod tests {
                 rt.drive_mix.stage_start_episode_count
             );
         }
+    }
+
+    // ─── ADR 0064 / Phase H2.1.0 — drive meta-R registration ────
+
+    #[test]
+    fn h2_1_0_drive_marker_registers_three_baseline_drives() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        let drive_ids: HashSet<String> = rt
+            .rset
+            .left_of(DRIVE_MARKER)
+            .into_iter()
+            .map(|r| r.y.to_string())
+            .collect();
+        assert_eq!(drive_ids.len(), 3, "expected 3 baseline drives");
+        assert!(drive_ids.contains("drive_compression"));
+        assert!(drive_ids.contains("drive_prediction_error"));
+        assert!(drive_ids.contains("drive_mode_thrash"));
+    }
+
+    #[test]
+    fn h2_1_0_penalty_marker_only_for_mode_thrash() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        let penalty_ids: HashSet<String> = rt
+            .rset
+            .left_of(PENALTY_MARKER)
+            .into_iter()
+            .map(|r| r.y.to_string())
+            .collect();
+        assert_eq!(
+            penalty_ids.len(),
+            1,
+            "expected exactly 1 penalty drive (mode_thrash); got {:?}",
+            penalty_ids
+        );
+        assert!(penalty_ids.contains("drive_mode_thrash"));
+        assert!(!penalty_ids.contains("drive_compression"));
+        assert!(!penalty_ids.contains("drive_prediction_error"));
+    }
+
+    #[test]
+    fn h2_1_0_drive_registration_round_trips_through_checkpoint() {
+        let rt = AutonomousRuntime::new(RSet::new());
+        let text = rt.checkpoint_text().expect("serialize");
+        // The serialized rset section should contain the marker
+        // edges. Round-trip via from_checkpoint_text and verify
+        // idempotency (drives still registered exactly once).
+        assert!(
+            text.contains("__drive__\tdrive_compression"),
+            "checkpoint text should contain drive_compression edge"
+        );
+        assert!(
+            text.contains("__penalty__\tdrive_mode_thrash"),
+            "checkpoint text should contain mode_thrash penalty edge"
+        );
+        let restored =
+            AutonomousRuntime::from_checkpoint_text(&text).expect("parse");
+        let drive_ids: HashSet<String> = restored
+            .rset
+            .left_of(DRIVE_MARKER)
+            .into_iter()
+            .map(|r| r.y.to_string())
+            .collect();
+        assert_eq!(drive_ids.len(), 3);
+        let penalty_ids: HashSet<String> = restored
+            .rset
+            .left_of(PENALTY_MARKER)
+            .into_iter()
+            .map(|r| r.y.to_string())
+            .collect();
+        assert_eq!(penalty_ids.len(), 1);
+    }
+
+    #[test]
+    fn h2_1_0_drive_registration_is_idempotent() {
+        // Calling register_drives_in_rset multiple times should not
+        // duplicate edges. RSet::add is set-semantics, so this test
+        // pins the contract.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        let initial_drive_count = rt.rset.left_of(DRIVE_MARKER).len();
+        let initial_penalty_count =
+            rt.rset.left_of(PENALTY_MARKER).len();
+        rt.register_drives_in_rset();
+        rt.register_drives_in_rset();
+        assert_eq!(
+            rt.rset.left_of(DRIVE_MARKER).len(),
+            initial_drive_count
+        );
+        assert_eq!(
+            rt.rset.left_of(PENALTY_MARKER).len(),
+            initial_penalty_count
+        );
+    }
+
+    #[test]
+    fn h2_1_0_drive_ids_treated_as_meta_not_data() {
+        // The drive_<id> tokens registered under DRIVE_MARKER /
+        // PENALTY_MARKER must be classified as meta-R, not data.
+        // This matters for prediction-error drive's `data_edges`
+        // filter and other meta/data partitioning logic.
+        let rt = AutonomousRuntime::new(RSet::new());
+        let meta = rt.rset.collect_meta_ids();
+        assert!(meta.contains("__drive__"));
+        assert!(meta.contains("__penalty__"));
+        assert!(meta.contains("drive_compression"));
+        assert!(meta.contains("drive_prediction_error"));
+        assert!(meta.contains("drive_mode_thrash"));
     }
 
     // ─── ADR 0063 OQ #4 resolution — penalty drive tests ────────

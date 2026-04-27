@@ -4822,6 +4822,88 @@ ADR 0064 status: Proposed; no code yet.
 
 ADR 0063 status unchanged. ADR 0064 added (Proposed).
 
+### Phase H2.1.0 — drives as meta-R objects (impl)
+
+User signaled readiness for the constitutionally
+load-bearing slice. Implemented per ADR 0064's
+"registration-only, no behaviour change" spec.
+
+#### Changes
+
+`lib.rs`:
+- `pub const DRIVE_MARKER: &str = "__drive__"`
+- `pub const PENALTY_MARKER: &str = "__penalty__"`
+- `RSet::collect_meta_ids` extended to treat both new
+  markers AND the registered `drive_<id>` tokens as
+  meta-R for the prediction-error drive's data-edge
+  filter.
+
+`runtime/mod.rs`:
+- `AutonomousRuntime::register_drives_in_rset()` private
+  helper. Adds `R(DRIVE_MARKER, drive_<id>)` for each
+  drive in `self.drives`, plus
+  `R(PENALTY_MARKER, drive_<id>)` if `drive.is_penalty()`.
+- Called from both `new` and `from_checkpoint_text`.
+- Idempotent (RSet::add is set-semantics).
+
+#### What H2.1.0 does NOT do
+
+- Does NOT rewire `combined_drive_signal` /
+  `normalized_drive_signal` to query meta-R for penalty
+  status. The compile-time `Drive::is_penalty()` method
+  remains the source of truth. Strictly registration-only
+  to minimize blast radius.
+
+#### Tests: 507 → 512 (+5)
+
+- `h2_1_0_drive_marker_registers_three_baseline_drives`
+- `h2_1_0_penalty_marker_only_for_mode_thrash`
+- `h2_1_0_drive_registration_round_trips_through_checkpoint`
+- `h2_1_0_drive_registration_is_idempotent`
+- `h2_1_0_drive_ids_treated_as_meta_not_data`
+
+#### Empirical verification (no regression)
+
+- F0 battery: all 7 seeds CONVERGED. stream_diamond
+  CONVERGED matches post-EP-fix baseline.
+- OQ #1 long-run (HORIZON=2000):
+  - hand-tuned: 268/129/1/4/8 — byte-identical to
+    post-α baseline.
+  - equal-weighted: 203/179/0/1/3 — byte-identical to
+    post-α baseline.
+
+H2.1.0 is the constitutional fix without runtime
+behavior cost — exactly the registration-only design the
+ADR specified.
+
+#### Constitutional verdict
+
+Commitment 3 (types are meta-R instances) is now
+positively satisfied for the drive catalogue. Drive
+existence is a queryable rset fact:
+
+```rust
+rset.left_of(DRIVE_MARKER)  // → drive_compression,
+                            //   drive_prediction_error,
+                            //   drive_mode_thrash
+rset.left_of(PENALTY_MARKER)  // → drive_mode_thrash
+```
+
+The shape is identical to existing class chains
+(PATTERN_MARKER, AXIOM_MARKER, etc.). All 5 v2
+commitments PASS.
+
+#### Significance
+
+This is the slice that *positively satisfies* commitment 3
+for drives, rather than deferring it as H2.0 did. The
+self-tuning evaluation loop's drive catalogue is now
+constitutionally aligned with the rest of v2's meta-R
+class hierarchy.
+
+ADR 0064 status: H2.1.0 Accepted; H2.1.1 / H2.1.2 remain
+Proposed.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

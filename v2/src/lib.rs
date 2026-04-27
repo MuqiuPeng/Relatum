@@ -181,6 +181,31 @@ pub const SHARED_AXIOM_MARKER: &str = "__shared_axiom__";
 /// learned operational knowledge as first-class meta-R facts.
 pub const ACTION_SEQ_MARKER: &str = "__action_seq__";
 
+/// Marker for runtime-registered drives. ADR 0064 / Phase H2.1.0.
+/// Each drive registered with `AutonomousRuntime` registers as
+/// `R(DRIVE_MARKER, drive_<id>)`. This is the slice that
+/// satisfies commitment 3 (types are meta-R instances) for the
+/// drive catalogue: drive existence becomes a meta-R fact rather
+/// than a compile-time-only construct.
+///
+/// Companion markers:
+/// - `PENALTY_MARKER` — penalty drives also register under this
+///   marker, generalizing the compile-time `Drive::is_penalty()`
+///   method to a queryable meta-R fact.
+///
+/// H2.1.0 is registration-only — no behaviour change. The runtime
+/// can observe its drive catalogue via
+/// `rset.right_of(DRIVE_MARKER)` and penalty status via
+/// `rset.right_of(PENALTY_MARKER)`. Existing code paths
+/// (`combined_drive_signal`, `normalized_drive_signal`) still use
+/// the compile-time `Drive::is_penalty()` method as a fast path.
+/// H2.1.1 + later may rewire those queries to read from rset.
+pub const DRIVE_MARKER: &str = "__drive__";
+
+/// Marker for penalty drives. Penalty drives register under both
+/// `DRIVE_MARKER` and this marker. ADR 0064 / Phase H2.1.0.
+pub const PENALTY_MARKER: &str = "__penalty__";
+
 /// Policy for what meta-R to write when naming pattern instances
 /// (ADR 0029).
 ///
@@ -3957,6 +3982,18 @@ impl RSet {
             for step_edge in self.left_of(seq.y.as_str()) {
                 s.insert(step_edge.y.to_string());
             }
+        }
+        // ADR 0064 / Phase H2.1.0 — DRIVE_MARKER and
+        // PENALTY_MARKER are meta-R class markers; the
+        // `drive_<id>` tokens registered under them are also
+        // meta-R, not data.
+        s.insert(DRIVE_MARKER.to_string());
+        s.insert(PENALTY_MARKER.to_string());
+        for drive in self.left_of(DRIVE_MARKER) {
+            s.insert(drive.y.to_string());
+        }
+        for drive in self.left_of(PENALTY_MARKER) {
+            s.insert(drive.y.to_string());
         }
         for role in self.roles() {
             s.insert(role.to_string());

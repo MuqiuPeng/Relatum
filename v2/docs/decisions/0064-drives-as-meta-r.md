@@ -327,4 +327,71 @@ H2.1.0 is the recommended starting slice. It opens the
 constitutional door without touching behaviour. H2.1.1 +
 H2.1.2 follow when empirical motivation surfaces.
 
-Status: **Proposed**. No code yet.
+Status: H2.1.0 **Accepted (implemented)**; H2.1.1 / H2.1.2 Proposed.
+
+---
+
+## Addendum 1 — H2.1.0 implemented (2026-04-27 late⁶)
+
+User signaled readiness for H2.1.0. Implemented per the
+ADR's "registration-only, no behaviour change" specification.
+
+#### Changes
+
+- `pub const DRIVE_MARKER: &str = "__drive__"` and
+  `pub const PENALTY_MARKER: &str = "__penalty__"` added
+  to `lib.rs` alongside the other meta-R class markers.
+- `RSet::collect_meta_ids` extended to treat both markers
+  AND the registered `drive_<id>` tokens as meta-R (not
+  data) for the prediction-error drive's data-edge filter.
+- `AutonomousRuntime::register_drives_in_rset()` private
+  helper. Called from `new` and `from_checkpoint_text`.
+  Iterates `self.drives`, adds `R(DRIVE_MARKER, drive_<id>)`
+  for each, and `R(PENALTY_MARKER, drive_<id>)` if
+  `drive.is_penalty()` is true.
+- Idempotent by construction (RSet::add is set-semantics).
+
+#### What H2.1.0 does NOT do
+
+- Does NOT rewire `combined_drive_signal` /
+  `normalized_drive_signal` to query meta-R for penalty
+  status. The compile-time `Drive::is_penalty()` method
+  remains the source of truth. The ADR's "Update existing
+  code paths" section is deferred to a follow-up
+  slice (H2.1.0+ or H2.1.1) — keeping this slice
+  strictly registration-only minimizes blast radius.
+
+#### Empirical verification
+
+- 507 → 512 tests pass (+5 H2.1.0-specific):
+  - `h2_1_0_drive_marker_registers_three_baseline_drives`
+  - `h2_1_0_penalty_marker_only_for_mode_thrash`
+  - `h2_1_0_drive_registration_round_trips_through_checkpoint`
+  - `h2_1_0_drive_registration_is_idempotent`
+  - `h2_1_0_drive_ids_treated_as_meta_not_data`
+- F0 battery: stream_diamond CONVERGED. All other seeds
+  CONVERGED. No regression vs post-EP-fix baseline.
+- OQ #1 long-run (HORIZON=2000):
+  - hand-tuned: 268/129/1/4/8 — byte-identical to
+    post-α baseline.
+  - equal-weighted: 203/179/0/1/3 — byte-identical to
+    post-α baseline.
+
+#### Constitutional verdict
+
+H2.1.0 satisfies commitment 3 (types are meta-R instances)
+for the drive catalogue. Drive existence is now a
+queryable rset fact. The shape is identical to existing
+class chains (PATTERN_MARKER, AXIOM_MARKER, etc.). All
+five v2 commitments PASS.
+
+#### Status
+
+H2.1.0 implemented; H2.1.1 (ESTABLISHED-promotion
+lifecycle for drives) and H2.1.2 (DriveMix weights tied to
+ESTABLISHED status) remain Proposed pending future
+iteration. The natural follow-up is to use the registered
+DRIVE_MARKER / PENALTY_MARKER edges as the canonical source
+of penalty status (rewire `combined_drive_signal` to
+query rset). That's a small, targeted slice when the time
+comes.

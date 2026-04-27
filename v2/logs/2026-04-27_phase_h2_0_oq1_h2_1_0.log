@@ -1,0 +1,148 @@
+warning: variable does not need to be mutable
+    --> src\runtime\mod.rs:2409:13
+     |
+2409 |         let mut try_add = |seq_id: &str,
+     |             ----^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4525:9
+     |
+4525 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5027:9
+     |
+5027 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5031:9
+     |
+5031 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\mod.rs:418:8
+    |
+310 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+418 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3370:60
+     |
+3370 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3370:72
+     |
+3370 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 7 warnings (run `cargo fix --lib -p relatum-v2` to apply 4 suggestions)
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: field `label` is never read
+   --> examples\phase_h2_0_oq1_experiment.rs:225:5
+    |
+224 | struct RunResult {
+    |        --------- field in this struct
+225 |     label: &'static str,
+    |     ^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `relatum-v2` (example "phase_h2_0_oq1_experiment") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.93s
+     Running `target\release\examples\phase_h2_0_oq1_experiment.exe`
+=== ADR 0063 OQ #1 — hand-tuned vs equal-weighted DriveMix init (HORIZON=2000) ===
+
+=== run: hand_tuned ===
+ tick   epis     ep  comp  pairs  tri  ab    wC   wPE   wMT     sig
+    0      0      0     0      0    0   A  0.50  0.40  0.10   0.000
+  200     34     14     1      1    1   A  0.50  0.40  0.10  -0.654
+  400     65     32     1      1    2   B  0.50  0.40  0.10  -0.700
+  600     86     47     1      1    2   B  0.50  0.40  0.10  -1.000
+  800     98     59     1      1    2   B  0.50  0.40  0.10  -1.000
+ 1000    110     71     1      1    2   A  0.50  0.40  0.10  -1.000
+ 1200    142     79     1      4    6   A  0.50  0.40  0.10  -0.991
+ 1400    176     89     1      4    8   B  0.40  0.40  0.10  -0.995
+ 1600    208    101     1      4    8   A  0.50  0.40  0.12  -1.235
+ 1800    238    115     1      4    8   A  0.50  0.40  0.12  -1.235
+ 2000    268    129     1      4    8   B  0.40  0.40  0.10  -0.988
+
+=== run: equal_weighted ===
+ tick   epis     ep  comp  pairs  tri  ab    wC   wPE   wMT     sig
+    0      0      0     0      0    0   A  0.33  0.33  0.33   0.000
+  200     33     16     0      1    1   A  0.33  0.33  0.33  -2.100
+  400     55     34     0      1    1   B  0.33  0.33  0.33  -2.997
+  600     72     49     0      2    4   B  0.33  0.33  0.33  -3.330
+  800     84     61     0      2    4   B  0.33  0.33  0.33  -3.330
+ 1000     96     73     0      2    4   B  0.33  0.33  0.33  -3.330
+ 1200    124    100     0      2    4   A  0.33  0.33  0.33  -3.972
+ 1400    150    126     0      2    4   B  0.27  0.33  0.33  -3.982
+ 1600    171    147     0      1    3   B  0.27  0.33  0.33  -3.990
+ 1800    187    163     0      1    3   B  0.27  0.33  0.33  -3.995
+ 2000    203    179     0      1    3   A  0.33  0.33  0.33  -3.995
+
+=== final candidate weights ===
+hand_tuned:
+  candidate_a:
+    compression: 0.5000
+    mode_thrash: 0.1250
+    prediction_error: 0.4000
+  candidate_b:
+    compression: 0.4000
+    mode_thrash: 0.1000
+    prediction_error: 0.4000
+equal_weighted:
+  candidate_a:
+    compression: 0.3330
+    mode_thrash: 0.3330
+    prediction_error: 0.3330
+  candidate_b:
+    compression: 0.2664
+    mode_thrash: 0.4163
+    prediction_error: 0.3330
+
+=== shadow-only verification ===
+episodes match: false (hand=268, equal=203)
+ep_attempts match: false (hand=129, equal=179)
+composite match: false (hand=1, equal=0)
+pairs match: false (hand=4, equal=1)
+triples match: false (hand=8, equal=3)
+
+VERDICT: shadow-only property VIOLATED — investigate.
+
+=== combined_drive_signal trajectory comparison ===
+ tick       hand      equal      delta
+    0     0.0000     0.0000     0.0000
+  200    -0.6537    -2.1003    -1.4467
+  400    -0.7000    -2.9970    -2.2970
+  600    -1.0000    -3.3300    -2.3300
+  800    -1.0000    -3.3300    -2.3300
+ 1000    -1.0000    -3.3300    -2.3300
+ 1200    -0.9910    -3.9722    -2.9812
+ 1400    -0.9951    -3.9817    -2.9866
+ 1600    -1.2350    -3.9901    -2.7551
+ 1800    -1.2350    -3.9948    -2.7598
+ 2000    -0.9880    -3.9945    -3.0065
+
+--- end ---
