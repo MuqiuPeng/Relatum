@@ -5366,6 +5366,90 @@ Alpha-4 in particular surfaced a *real bug surface* in
 v2's runtime-vs-rset interaction layer that was
 previously not exercised.
 
+### Phase Alpha-4 perf diagnosis correction (2026-04-28)
+
+Subsequent investigation withdrew the "retract caused
+regression" narrative. Method: per-100-tick `Instant`
+timing on Alpha-4 example + a control baseline run with
+no intervention.
+
+#### Headline correction
+
+| Tick range | Baseline | Alpha-4 | Δ |
+|---|---|---|---|
+| 1001–1100 | 159.8ms/tick | 121.3ms/tick | **Alpha-4 −38.5ms (faster)** |
+| 1101–1200 | 224.1 | 166.6 | -57.5 (faster) |
+| 1201–1300 | 313.0 | 231.4 | -81.6 (faster) |
+| 1301–1400 | 396.4 | 296.4 | -100.0 (faster) |
+
+**Alpha-4 is consistently 25-30% faster than baseline at
+the same tick range.** This is exactly what retracting 4
+axioms (13 → 9) would predict — proportionally less
+forward_apply_axiom work per tick.
+
+#### What's actually slow: forward_apply_axiom O(N^k) scaling
+
+Both runs show inherent linear ms/tick growth:
+- Tick 100: ~2ms/tick
+- Tick 1000: ~92ms/tick
+- Tick 1500: ~470ms/tick
+- Tick 2000: extrapolated ~900ms/tick
+
+Per-axiom recursion is O(|data_ids|^|axiom_vars|). As the
+streaming substrate ingests more identifiers, data_ids
+grows; for 3-variable axioms (most on this substrate)
+per-axiom cost grows cubically. Multiplied across all
+named axioms per tick (`snapshot_predictions` calls
+forward_apply_axiom for each axiom every Running tick).
+
+#### My earlier reasoning errors
+
+1. **"Alpha-3+ Phase 2 took ~30 seconds" was a guess**, not
+   a measurement. Any 1000-tick run starting from tick
+   1000 takes 5+ minutes due to inherent scaling.
+
+2. **Phase 1's 28ms/tick is an average** across ticks
+   0-1000 (where early ticks are 2ms and late ticks are
+   90ms). Comparing this average to Phase 2's first-chunk
+   121ms/tick was apples-to-oranges.
+
+3. **The apparent "jump" 28→121ms** wasn't retract-caused —
+   it was just continuing the natural cost curve.
+
+#### Real architectural finding
+
+> v2's `forward_apply_axiom` is the dominant per-tick cost
+> on long substrate runs. At HORIZON ≥ 2000, per-tick
+> costs reach 100-1000ms+, making some experiments
+> impractically slow.
+
+The framing doc's "cost asymmetry" warning was right at a
+higher level than initially recognized: forward_apply_axiom
+IS the asymmetric component, and it's biting at
+2000-tick scale.
+
+#### Fix candidates (now properly motivated)
+
+1. **Cache `forward_apply_axiom` results** across ticks;
+   invalidate on relevant rset changes.
+2. **Restrict forward-apply to recent data identifiers**;
+   stable identifiers don't need re-evaluation.
+3. **Defer to Reflect mode only** instead of every tick.
+4. **Index optimization** for data_ids extraction in RSet.
+
+Each is a clean engineering slice. Future ADR territory.
+
+#### Status correction
+
+Phase Alpha-4 verdict updated: **mechanism works,
+retract is correctly faster than baseline by axiom-count
+ratio**. The "perf regression" narrative is withdrawn.
+
+Real finding worth pursuing as separate slice:
+forward_apply_axiom architectural cost.
+
+
+
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
 
 The 2026-04-27 retrospective listed "H2 ADR drafting" as

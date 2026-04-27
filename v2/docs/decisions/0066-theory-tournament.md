@@ -545,3 +545,145 @@ underlying constitutional-vs-implementation gap noted.
 ADR 0066 status: Phase Alpha-3 + Alpha-3+ + Alpha-4 all
 implemented. Alpha-4 with caveat about runtime
 performance.
+
+---
+
+## Addendum 4 — Phase Alpha-4 perf diagnosis: misdiagnosed (2026-04-28)
+
+User confirmed Phase Alpha-4 perf investigation. Added per-
+chunk timing to the example (`Instant`-based, 100-tick
+granularity) and ran a control baseline (no intervention)
+for direct comparison.
+
+#### Method
+
+- `examples/phase_alpha_axiom_demote.rs` instrumented with
+  `Instant::now()` around `run_bounded(100)` calls.
+- New `examples/phase_alpha_baseline_timed.rs`: same
+  substrate, 2000 ticks, NO intervention. Provides per-
+  chunk time series for the same tick range Alpha-4
+  covered.
+- Both runs in `--release` mode for fair comparison.
+
+#### Headline correction
+
+**My earlier diagnosis ("Phase 2 has retract-attributable
+performance regression") was wrong.**
+
+Direct comparison at the same tick range:
+
+| Tick range | Baseline ms/tick | Alpha-4 ms/tick | Δ |
+|---|---|---|---|
+| 1001–1100 | 159.8 | 121.3 | **-38.5 (Alpha-4 faster)** |
+| 1101–1200 | 224.1 | 166.6 | -57.5 (Alpha-4 faster) |
+| 1201–1300 | 313.0 | 231.4 | -81.6 (Alpha-4 faster) |
+| 1301–1400 | 396.4 | 296.4 | -100.0 (Alpha-4 faster) |
+
+**Alpha-4 is consistently 25-30% faster per tick than
+baseline at the same tick range.** This is exactly what
+retracting axioms predicts: 9 axioms vs 13 means
+proportionally less forward_apply_axiom work per tick.
+
+#### What's actually slow: forward_apply_axiom O(N^k) scaling
+
+Both runs (baseline + Alpha-4) exhibit linear growth in
+ms/tick over time:
+
+Baseline pattern:
+- Tick 100: 2.2 ms/tick
+- Tick 500: 18.9 ms/tick
+- Tick 1000: 92.2 ms/tick
+- Tick 1500: ~470 ms/tick (extrapolated)
+- Tick 2000: ~900+ ms/tick (extrapolated)
+
+This is **inherent** scaling of `forward_apply_axiom`'s
+O(|data_ids|^|axiom_vars|) recursion. As the streaming
+substrate ingests more identifiers, `data_ids` grows; for
+3-variable axioms (which is the majority on this
+substrate) per-axiom cost grows cubically. Multiplied
+across all named axioms per tick (`snapshot_predictions`
+calls `forward_apply_axiom` for each axiom every tick).
+
+#### What I previously got wrong
+
+Earlier observation: "Alpha-4 Phase 2 took 5+ minutes
+while Alpha-3+ Phase 2 took ~30 seconds; therefore retract
+caused regression."
+
+Errors in this reasoning:
+
+1. **Alpha-3+ Phase 2 timing was a guess, not a measurement.**
+   The baseline-timed run shows that any 1000-tick run
+   starting from tick 1000 will take ~6+ minutes due to
+   inherent scaling, regardless of intervention.
+
+2. **The "Phase 1 baseline 28ms/tick" was an average across
+   ticks 0-1000.** Ticks 0-100 are 2ms/tick; ticks 900-1000
+   are 90ms/tick. Comparing Phase 2's 121ms/tick (at tick
+   1001-1100) to the Phase 1 average is comparing different
+   parts of the curve.
+
+3. **Apparent "post-retract jump" was just continuing the
+   curve.** Baseline at tick 1100 is 159.8ms/tick;
+   Alpha-4 at tick 1100 is 121.3ms/tick. The jump from
+   28ms (Phase 1 avg) to 121ms is just the curve, not
+   retract overhead.
+
+#### Real finding
+
+The actual finding is more interesting than "retract is
+slow":
+
+> **v2's `forward_apply_axiom` has O(N^k) per-axiom per-
+> tick complexity, where N = data identifiers and k =
+> axiom variable count. Long substrate runs (HORIZON ≥
+> 2000) hit per-tick costs of 100-1000ms+, making them
+> impractically slow for some experiments.**
+
+This is an architectural observation that affects every
+long-running experiment, not just Alpha-4. The framing
+doc's "cost asymmetry" warning was right at a higher level
+than I initially appreciated: forward_apply_axiom's cost
+is the asymmetric component, and it's already biting on
+2000-tick runs.
+
+#### Fix candidates (now properly motivated)
+
+The fix surface is clear:
+
+1. **Cache `forward_apply_axiom` results across ticks.**
+   Invalidate when rset changes for that axiom's
+   premise / conclusion edges. Most ticks make small
+   rset changes; cached results would only need partial
+   recomputation.
+
+2. **Restrict forward-apply to recent data identifiers.**
+   New edges only need re-evaluation; old identifiers'
+   forward-apply contribution is mostly stable.
+
+3. **Defer forward_apply to specific scheduler phases**
+   (e.g., Reflect mode only) instead of every tick.
+   Currently `snapshot_predictions` runs every Running
+   tick; making it conditional would cut the dominant cost.
+
+4. **Index optimization in `RSet`**: data_ids set could be
+   maintained incrementally rather than recomputed each
+   call.
+
+These are cleanly scoped engineering work. ADR 0066 doesn't
+spec them; future ADRs can pick up.
+
+#### Status correction
+
+Phase Alpha-4 verdict: **mechanism works, retract is
+correctly faster than baseline by axiom-count ratio**. The
+"perf regression" narrative is withdrawn.
+
+Real architectural finding: forward_apply_axiom is the
+fundamental v2 long-run bottleneck. Worth its own
+investigation but separate from Phase Alpha.
+
+ADR 0066 status: Phase Alpha-3 + Alpha-3+ + Alpha-4 all
+implemented; Alpha-4 verified correct (no regression);
+underlying forward_apply_axiom scaling identified as
+architectural concern for future work.

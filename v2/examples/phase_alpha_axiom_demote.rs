@@ -30,9 +30,10 @@ use relatum_v2::{
     ESTABLISHED_MARKER, PATTERN_MARKER, R, RSet,
 };
 use std::collections::HashSet;
+use std::time::Instant;
 
 const PHASE_1_TICKS: u64 = 1000;
-const PHASE_2_TICKS: u64 = 200;
+const PHASE_2_TICKS: u64 = 1000;
 const MIN_AXIOM_PREDICTIONS: u64 = 5;
 /// Orphan-axiom retraction threshold. Empirically calibrated:
 /// at 1000-tick Phase 1, t_0's orphan axioms have hit rates
@@ -268,13 +269,17 @@ fn main() {
     // ── Phase 1 ──────────────────────────────────────────────
     println!();
     println!("--- Phase 1: discovery (1000 ticks) ---");
+    let t0 = Instant::now();
     rt.run_bounded(PHASE_1_TICKS);
+    let phase1_elapsed = t0.elapsed();
     println!(
-        "tick={} episodes={} theories={} axioms={}",
+        "tick={} episodes={} theories={} axioms={} elapsed={:.2}s ({:.1}ms/tick)",
         rt.tick,
         rt.memory.episodes.len(),
         rt.rset.theories().len(),
         rt.rset.axioms().len(),
+        phase1_elapsed.as_secs_f64(),
+        phase1_elapsed.as_secs_f64() * 1000.0 / PHASE_1_TICKS as f64,
     );
 
     let phase1_theory_ranks = rank_theories(&rt);
@@ -365,14 +370,33 @@ fn main() {
 
     // ── Phase 2 ──────────────────────────────────────────────
     println!();
-    println!("--- Phase 2: post-cleanup (1000 ticks) ---");
-    rt.run_bounded(PHASE_2_TICKS);
+    println!("--- Phase 2: post-cleanup ({} ticks; per-100-tick timed) ---", PHASE_2_TICKS);
+    let phase2_start = Instant::now();
+    let chunk = 100u64;
+    let chunks = PHASE_2_TICKS / chunk;
+    for i in 0..chunks {
+        let chunk_start = Instant::now();
+        rt.run_bounded(chunk);
+        let chunk_elapsed = chunk_start.elapsed();
+        println!(
+            "  Phase 2 chunk {}/{}: tick={} episodes={} elapsed={:.2}s ({:.1}ms/tick)",
+            i + 1,
+            chunks,
+            rt.tick,
+            rt.memory.episodes.len(),
+            chunk_elapsed.as_secs_f64(),
+            chunk_elapsed.as_secs_f64() * 1000.0 / chunk as f64,
+        );
+    }
+    let phase2_elapsed = phase2_start.elapsed();
     println!(
-        "tick={} episodes={} theories={} axioms={}",
+        "tick={} episodes={} theories={} axioms={} total elapsed={:.2}s ({:.1}ms/tick avg)",
         rt.tick,
         rt.memory.episodes.len(),
         rt.rset.theories().len(),
         rt.rset.axioms().len(),
+        phase2_elapsed.as_secs_f64(),
+        phase2_elapsed.as_secs_f64() * 1000.0 / PHASE_2_TICKS as f64,
     );
 
     let phase2_theory_ranks = rank_theories(&rt);
