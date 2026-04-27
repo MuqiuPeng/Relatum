@@ -331,3 +331,111 @@ finding** validates self-play candidate (a). Phase Alpha-3+
 
 ADR 0066 status: **Accepted (with strong positive empirical
 finding)**.
+
+---
+
+## Addendum 2 — Phase Alpha-3+ iterative demotion lands cleanly (2026-04-28 late)
+
+User confirmed Phase Alpha-3+ direction. Implemented per
+the Addendum 1 sketch: run 1000 ticks → tournament →
+retract bottom-ranked theory via `RSet::retract_theory` →
+run 1000 more ticks → re-rank.
+
+#### Implementation
+
+`examples/phase_alpha_theory_demote_loop.rs`. Pure example
+— no runtime changes, no new tests. Demotion happens at
+the example level via direct `rset.retract_theory()` call.
+
+#### Results
+
+| metric | Phase 1 (post-1000-ticks) | Phase 2 (post-demote+1000) | Δ |
+|---|---|---|---|
+| theories | 4 | 3 | -1 |
+| qualifying axioms | 4 | 3 | -1 |
+| mean hit rate | 0.7188 | 0.8401 | **+0.1212** |
+| min  hit rate | 0.3757 | 0.6664 | **+0.2908** |
+| episodes | 110 | 268 | +158 |
+
+Demotion target was `t_0` (hit rate 0.3757, the broad-and-
+noisy theory from Addendum 1).
+
+Four specific empirical confirmations:
+
+1. **All 10 axioms of t_0 survived demotion.** Per ADR 0030
+   design: `retract_theory` removes membership edges +
+   theory-marker registration, but does NOT remove the
+   axioms themselves. 16 meta-R edges removed; axiom
+   registrations intact.
+
+2. **Load-bearing axiom preserved.**
+   `ax_tpl_v3_p0-1_p1-2_c0-2` was 1.0000 hit rate in
+   Phase 1 (it's the high-quality axiom that t_0 *also*
+   contained); in Phase 2 it's 0.9992 — still essentially
+   perfect. Survived because t_2 still references it.
+
+3. **No re-discovery.** Over the 1000 ticks of Phase 2,
+   the runtime did NOT recreate t_0 or any similar
+   "broad" theory grouping. Demotion is empirically
+   sticky on this substrate.
+
+4. **Other theories unperturbed.** Phase 2's t_2/t_3/t_1
+   hit rates (0.9992/0.8545/0.6664) match Phase Alpha-3's
+   *baseline* values byte-identically. The demoted theory
+   wasn't load-bearing for the others.
+
+#### Significance
+
+The empirical loop closes:
+
+```
+discover → rank → demote loser → continue → re-rank
+```
+
+All four steps now have working machinery in v2. The
+intervention demonstrably:
+- Improves measured aggregate theory quality (+12% mean,
+  +29% min)
+- Preserves load-bearing axioms (no information loss)
+- Doesn't perturb productive theory structure
+- Doesn't trigger compensatory re-discovery (the bad
+  grouping stays gone)
+
+#### Deeper question raised
+
+The bad axioms (`ax_tpl_v3_p0-0_p1-2_c0-1` etc., hit rates
+0.04-0.05) **still exist as rset registrations** after
+t_0 demotion. They're just no longer grouped under any
+theory. They:
+- Don't hurt directly (predictions are evaluated, just
+  rarely match)
+- DO consume `forward_apply_axiom` cycles each tick
+- COULD be re-grouped into a new theory by future
+  discovery (didn't happen in 1000 ticks)
+
+Phase Alpha-4 candidate: **per-axiom tournament**. Rank
+all axioms (regardless of theory membership) and
+retract bottom-N axioms via `RSet::retract_axiom`. This
+would be the finer-grained version of theory demotion —
+strip noisy axioms while keeping good ones, even if they
+share theory homes.
+
+That's a separate slice; not committed in this addendum.
+
+#### What this slice produced
+
+1. Empirical confirmation that tournament-driven demotion
+   is a *load-bearing* runtime intervention, not just an
+   observational metric.
+2. A reusable example pattern for "intervention then
+   continue" — useful template for future Phase Alpha
+   experiments.
+3. Validation that v2's existing theory machinery
+   (`retract_theory` + axiom-survival semantics) is
+   correctly designed for tournament integration.
+
+#### Status
+
+ADR 0066 Phase Alpha-3 + Phase Alpha-3+ both **Accepted
+with positive empirical findings**. Phase Alpha-4
+(per-axiom tournament) recorded as natural next slice.

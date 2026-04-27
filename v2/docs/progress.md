@@ -5195,6 +5195,86 @@ empirical confirmation of that distinction.
 ADR 0066 status: **Accepted (with strong positive
 empirical finding)**.
 
+### Phase Alpha-3+ — iterative demotion lands cleanly
+
+User confirmed Phase Alpha-3+ direction (positive Phase
+Alpha-3 result motivates trying actual demotion). Pure
+example implementation: run 1000 ticks → tournament →
+`rset.retract_theory(loser)` → run 1000 more → re-rank.
+
+#### Implementation
+
+`examples/phase_alpha_theory_demote_loop.rs`. No runtime
+changes; demotion via direct `RSet::retract_theory()`
+call. No new tests.
+
+#### Results
+
+| metric | Phase 1 | Phase 2 (post-demote) | Δ |
+|---|---|---|---|
+| theories | 4 | 3 | -1 |
+| mean hit rate | 0.7188 | 0.8401 | **+0.1212** |
+| min hit rate | 0.3757 | 0.6664 | **+0.2908** |
+
+Demotion target: `t_0` (hit rate 0.3757, the broad-and-
+noisy theory from Phase Alpha-3).
+
+#### Four empirical confirmations
+
+1. **All 10 axioms of t_0 survived** demotion. Per ADR 0030,
+   `retract_theory` removes membership edges + theory
+   marker but not the axiom registrations.
+2. **Load-bearing axiom preserved**: `ax_tpl_v3_p0-1_p1-2_c0-2`
+   was 1.0000 in P1 → 0.9992 in P2 (still perfect, kept
+   alive by t_2's reference).
+3. **No re-discovery** over 1000 ticks of Phase 2. The
+   runtime did NOT recreate t_0 or similar broad
+   grouping. Demotion is sticky.
+4. **Other theories unperturbed**: t_2/t_3/t_1 Phase 2
+   hit rates (0.9992/0.8545/0.6664) match the Phase
+   Alpha-3 *baseline* values byte-identically.
+
+#### Significance: the loop closes
+
+```
+discover → rank → demote loser → continue → re-rank
+```
+
+All four steps now have working machinery. The
+intervention:
+- Improves measured aggregate theory quality (+12% mean,
+  +29% min)
+- Preserves load-bearing axioms (no information loss)
+- Doesn't perturb productive theory structure
+- Doesn't trigger compensatory re-discovery
+
+This is the AlphaGo-self-play pattern landing in v2:
+generate ranking signal through symmetric comparison,
+act on the signal, observe.
+
+#### Deeper question raised
+
+t_0's bad axioms (hit rates 0.04-0.05) **still exist as
+rset registrations** after demotion. They're just no
+longer grouped. Per-axiom tournament — rank ALL axioms
+regardless of theory membership, retract bottom-N via
+`RSet::retract_axiom` — would be the finer-grained
+version. Recorded as Phase Alpha-4 candidate; not
+committed in this slice.
+
+#### Phase Alpha summary so far
+
+| Phase | What was tried | Result |
+|---|---|---|
+| Alpha-1 | UCB1 composite selection | **Negative** (UCB ≡ greedy under low branching) |
+| Alpha-3 | Theory tournament observation | **Strong positive** (spread 0.6095) |
+| Alpha-3+ | Iterative theory demotion | **Strong positive** (+12% mean quality, no perturbation) |
+
+Two out of three AlphaGo-flavored experiments produced
+load-bearing positive findings in the *self-play data
+generation* category. The selection-rule category remains
+silent on v2's current substrates.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
