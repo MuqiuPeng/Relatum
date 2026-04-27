@@ -1,6 +1,6 @@
 # 0063: Drive self-modification (Phase H2)
 
-Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a + OQ #4 resolution implemented; step 3b gate integration tried twice and reverted — Addendum 4 closes the question of whether AND-on-EP-gate is the right shape: it's not)
+Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a + OQ #4 + step 3b shape α implemented; α is the working step 3b — Addendum 5 captures empirical verification)
 Date: 2026-04-27
 
 ## Context
@@ -876,3 +876,141 @@ easiest empirically.
 Status: OQ #4 resolved; step 3b mechanical infrastructure
 shipped; gate integration reverted twice; refined gate
 shape (α/β/γ) deferred to future iteration.
+
+---
+
+## Addendum 5 — Step 3b shape (α) implemented and verified (2026-04-27 late⁵)
+
+User signaled readiness for step 3b α. Implemented OR
+semantics on EP gate with threshold `-2.0`. Verified on
+both F0 battery and OQ #1 long-run (2000 ticks ×
+hand-tuned vs equal-weighted). Verdict: **α succeeds**
+— hand-tuned baseline preserved, equal-weighted demonstrates
+load-bearing divergence.
+
+#### Implementation
+
+Two condition arms in the EP anti-stagnation gate:
+
+```rust
+// Original arm (zero_streak >= max): unchanged.
+if Self::zero_streak(ctx) >= self.max_zero_streak {
+    if !ctx.rset.axioms().is_empty()
+        && Self::predictions_have_pending_delta(ctx) {
+        return Execute(EvaluatePredictions);
+    }
+    return Sleep;
+}
+// NEW α arm: fire EP if drive signal is deeply negative
+// AND EP would actually report something.
+if ctx.normalized_drive_signal < STEP3B_ALPHA_LOW_SIGNAL_THRESHOLD
+    && !ctx.rset.axioms().is_empty()
+    && Self::predictions_have_pending_delta(ctx) {
+    return Execute(EvaluatePredictions);
+}
+```
+
+Threshold: `STEP3B_ALPHA_LOW_SIGNAL_THRESHOLD = -2.0`.
+
+Critical design choice: the α arm fires EP but does NOT
+sleep. AND-on-EP failed because it removed EP firings;
+α only adds firings. Strictly more conservative than
+either reverted attempt.
+
+#### Calibration: why threshold -2.0
+
+Hand-tuned baseline post-OQ-#4 long-run signal range:
+**-0.65 to -1.235** (never crosses -2.0).
+
+Equal-weighted post-OQ-#4 long-run signal range:
+**-2.83 to -3.99** (constantly below -2.0).
+
+Threshold -2.0 is positioned between these two regimes:
+hand-tuned never triggers the new path (baseline
+preserved); equal-weighted constantly triggers it
+(divergence observable).
+
+#### Empirical verification
+
+| metric | baseline (hand-tuned) | post-α hand-tuned | post-α equal-weighted |
+|---|---|---|---|
+| episodes | 268 | **268** ✓ | 203 |
+| EP attempts | 129 | **129** ✓ | **179** (+39%) |
+| composite | 1 | **1** ✓ | 0 |
+| pairs named | 4 | **4** ✓ | 1 |
+| triples named | 8 | **8** ✓ | 3 |
+
+Hand-tuned: byte-identical to baseline (α never fires
+on this mix). Equal-weighted: significantly diverged
+(+39% EP attempts; pairs/triples down because EP-EP
+sequences shift in timing under more frequent EP firing).
+
+The empirical verification crosses the bar the prior
+addendum set: pre-step-3b baseline must not regress.
+Hand-tuned matches exactly. Equal-weighted DIFFERS — but
+that's the success criterion: drive signal load-bearing.
+
+F0 battery: stream_diamond CONVERGED (consistent
+post-EP-fix baseline). All other seeds CONVERGED. No
+regression.
+
+#### Why α succeeded where AND failed
+
+AND-on-EP shape blocked EP firing when drives reported
+high activity. But EP IS the observation that produces
+the credit signal sequence-mining bootstraps from —
+blocking it kills H1.x.
+
+α shape ADDS EP firing when drives report deep
+stagnation. Strictly more EP firing, never less. The
+H1.x bootstrap (zero_streak path) continues unchanged;
+α adds an extra observation channel.
+
+Conceptually: step 3b α treats drive signal as a
+**stagnation amplifier**, not a productivity throttle.
+This matches the actual semantic ("drives say nothing's
+happening, observe more aggressively") rather than
+inverting it.
+
+#### Tests: 505 → 507 (+2 α-specific)
+
+- `h2_0_step3b_alpha_low_signal_fires_ep_below_threshold`:
+  α path entry conditions verified at signal -3.0.
+- `h2_0_step3b_alpha_high_signal_doesnt_invoke_extra_path`:
+  α inactive when signal above threshold.
+
+The retired `signal_does_not_currently_gate_decisions`
+test was renamed
+`zero_streak_path_unchanged_post_alpha` to reflect that
+the *original* path semantics are preserved while α
+adds a new path.
+
+#### What this slice produced
+
+Step 3b is now ACTUALLY load-bearing:
+- Drive signal contributes to runtime decisions for the
+  first time.
+- DriveMix mutation paths empirically diverge between
+  hand-tuned and equal-weighted (equal-weighted
+  candidate_b.compression mutated 0.333 → 0.2664;
+  candidate_b.mode_thrash mutated 0.333 → 0.4163; under
+  hand-tuned the mutation pattern is different).
+- The shadow-only-then-load-bearing transition has been
+  achieved without F0 verdict regression.
+
+#### What step 3b α does NOT do
+
+- Does NOT replace the zero_streak gate (it's additive,
+  per user constraint).
+- Does NOT touch wake/mode/sleep beyond the EP gate.
+- Does NOT calibrate threshold per-mix; the choice
+  -2.0 is global.
+- Does NOT introduce drive_mix mutation interaction with
+  scheduler MetaScheduler beyond what step 2 already had.
+
+#### Status
+
+ADR 0063 status: step 1 + step 2 + step 3a + step 3b α
++ OQ #4 ALL implemented. Self-tuning evaluation loop is
+load-bearing. Future work (β / γ shapes, H2.1 drive-as-
+meta-R, H2.2 drive synthesis) remains research.

@@ -4624,6 +4624,116 @@ resolution implemented; step 3b gate integration tried
 twice and reverted twice; refined gate shape (α/β/γ)
 deferred.
 
+### Phase H2.0 step 3b shape (α) — implemented and verified
+
+User signaled readiness for shape (α). Implemented OR
+semantics on EP gate with threshold `-2.0`. Empirical
+verification on F0 + OQ #1 long-run: **α succeeds** —
+hand-tuned baseline preserved byte-identical, equal-
+weighted demonstrates load-bearing divergence.
+
+#### Implementation
+
+```rust
+// Existing zero_streak path: UNCHANGED.
+if zero_streak >= max_zero_streak { ... existing logic ... }
+
+// NEW α arm — strictly additive (fires EP, never sleeps).
+if ctx.normalized_drive_signal < -2.0
+    && !axioms.is_empty()
+    && pending_delta() {
+    return Execute(EvaluatePredictions);
+}
+```
+
+Critical design choice: α only adds EP firing. The two
+prior attempts (AND semantics) failed because they
+*removed* EP firings — EP is the observation mechanism;
+removing it starves H1.x. α adds firings strictly,
+never blocks.
+
+#### Threshold calibration
+
+Empirical signal ranges post-OQ-#4 long-run:
+
+| mix | signal range |
+|---|---|
+| hand-tuned | -0.65 to -1.235 |
+| equal-weighted | -2.83 to -3.99 |
+
+Threshold -2.0 is between these regimes. Hand-tuned never
+crosses → baseline preserved. Equal-weighted constantly
+crosses → divergence observable.
+
+#### Empirical results
+
+Long-run (HORIZON=2000):
+
+| metric | baseline | post-α hand-tuned | post-α equal-weighted |
+|---|---|---|---|
+| episodes | 268 | 268 ✓ | 203 |
+| EP attempts | 129 | 129 ✓ | **179 (+39%)** |
+| composite | 1 | 1 ✓ | 0 |
+| pairs | 4 | 4 ✓ | 1 |
+| triples | 8 | 8 ✓ | 3 |
+
+Hand-tuned: byte-identical to baseline. Equal-weighted:
+significantly diverged.
+
+F0 battery: stream_diamond CONVERGED (consistent
+post-EP-fix baseline). No regression.
+
+DriveMix mutation patterns also diverge:
+- Hand-tuned: `b.compression 0.5→0.4`, `a.mode_thrash 0.10→0.125`
+- Equal-weighted: `b.compression 0.333→0.2664`, `b.mode_thrash 0.333→0.4163`
+
+Different mutation paths under different mixes. This is
+the "self-tuning observable in mutation-trajectory space"
+property the retrospective named.
+
+#### Why α succeeded where AND failed
+
+AND blocked EP firing when drives reported high activity.
+But EP IS the observation that produces sequence-mining
+credits — blocking it killed H1.x.
+
+α adds EP firing when drives report deep stagnation.
+Strictly more EP firing, never less. The H1.x bootstrap
+continues unchanged; α opens an extra observation channel
+under deeply unproductive conditions.
+
+Conceptually: step 3b α treats drive signal as a
+**stagnation amplifier**, not a productivity throttle.
+
+#### Tests: 505 → 507 (+2)
+
+- `h2_0_step3b_alpha_low_signal_fires_ep_below_threshold`
+- `h2_0_step3b_alpha_high_signal_doesnt_invoke_extra_path`
+
+Plus the renamed `zero_streak_path_unchanged_post_alpha`
+that pins original path semantics.
+
+#### Step 3b is ACTUALLY load-bearing
+
+Drive signal now contributes to runtime decisions:
+- Self-tuning evaluation loop is closed end-to-end.
+- DriveMix mutations diverge between mixes (validated
+  empirically on hand-tuned vs equal-weighted).
+- Shadow-only → load-bearing transition achieved without
+  F0 regression.
+- The retrospective's open question 5 ("does the system
+  drift to sensible values, or thrash between extremes?")
+  becomes answerable for drives — under hand-tuned, the
+  system stays in a regime where α never triggers (drives
+  agree on activity); under equal-weighted, drive
+  disagreement triggers extra observation. Different
+  empirical regimes, different behavioural responses.
+
+ADR 0063 status: step 1 + 2 + 3a + 3b (α) + OQ #4
+resolution ALL implemented. Self-tuning load-bearing.
+Future work (β / γ shapes, H2.1 drive-as-meta-R, H2.2
+synthesis) remains research.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
