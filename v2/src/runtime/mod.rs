@@ -619,24 +619,28 @@ impl Scheduler for RuleBasedScheduler {
         // is delta to capture. Stable hit rates skip EP and Sleep
         // proceeds.
         //
-        // ADR 0063 / Phase H2.0 step 3b — initial AND-gate
-        // attempt was reverted (see retrospective-2026-04-27-late²
-        // and progress.md). The mode_thrash drive contributes
-        // *positively* to normalized signal but conceptually it's
-        // a penalty: high mode-thrash means churn, not productive
-        // activity. With baseline weights the long-run signal
-        // sits at 1.7-2.3, well above the 0.3 threshold, so the
-        // AND gate never fires → EP never runs → H1.x sequence
-        // mining freezes (regression: 268 → 1000+ episodes, 129
-        // → 0 EP attempts, 4/8 named pairs/triples → 0/0).
+        // ADR 0063 / Phase H2.0 step 3b — second attempt
+        // reverted. With OQ #4 resolved (mode_thrash now
+        // correctly subtracts), the gate's AND semantics no
+        // longer suffered the feedback-loop bug, but it
+        // produced a different regression: high drive signal
+        // delays EP firing → fewer EP runs (129 → 71) → fewer
+        // post-EP credits → slower H1.x bootstrap (4/8 → 3/5
+        // named pairs/triples; 1 → 0 composite attempts).
         //
-        // The fix surface is OQ #4 — distinguish penalty drives
-        // from positive drives. That's a step 3b/c slice. For now
-        // the gate keeps its pre-3b semantics. The
-        // `normalized_drive_signal` machinery from step 3b stays
-        // in place (SchedulerContext field, normalized_drive_signal
-        // method, unit tests) so the refined refactor can wire it
-        // back in cleanly once the penalty handling is designed.
+        // Conceptual diagnosis: EP serves as the *observation*
+        // mechanism that produces the credit signal sequence-
+        // mining depends on. Blocking it when drive signal is
+        // high inverts the desired semantics — high signal
+        // means "productive activity is happening, observe it
+        // (run EP) more, not less". The AND-gate-on-EP design
+        // is therefore the wrong shape.
+        //
+        // OQ #4 fix retained (Drive::is_penalty +
+        // ModeThrashPenalty's true override + signal math).
+        // STEP3B_NORMALIZED_SIGNAL_THRESHOLD constant retained
+        // for the future correctly-shaped gate. The AND gate
+        // condition is removed; pre-3b semantics restored.
         if Self::zero_streak(ctx) >= self.max_zero_streak {
             if !ctx.rset.axioms().is_empty()
                 && Self::predictions_have_pending_delta(ctx)
@@ -648,9 +652,6 @@ impl Scheduler for RuleBasedScheduler {
             }
             return SchedulerDecision::Sleep;
         }
-        // `STEP3B_NORMALIZED_SIGNAL_THRESHOLD` is intentionally
-        // referenced via `_` to suppress the unused-const warning
-        // until the refined gate is wired.
         let _ = STEP3B_NORMALIZED_SIGNAL_THRESHOLD;
 
         match ctx.mode {
@@ -943,6 +944,29 @@ pub trait Drive {
         memory: &Memory,
         tick: u64,
     ) -> f64;
+
+    /// Whether this drive contributes a *penalty* to the blended
+    /// signal rather than positive activity. Default: `false`
+    /// (positive contribution). ADR 0063 OQ #4 resolution
+    /// (option c — mathematical handling).
+    ///
+    /// When `is_penalty()` returns `true`:
+    /// - `combined_drive_signal` *subtracts* this drive's
+    ///   weight × evaluate from the total.
+    /// - `normalized_drive_signal` excludes this drive's weight
+    ///   from the denominator (so the divisor reflects only
+    ///   positive drives' weight contribution).
+    ///
+    /// The conceptual semantic this fixes: a drive like
+    /// `ModeThrashPenalty` reports "how much the runtime is
+    /// thrashing"; high values should *reduce* the perceived
+    /// activity signal, not increase it. Pre-OQ-#4 the
+    /// implementation treated all drives as positive,
+    /// causing step 3b's gate to fail on real substrates
+    /// (long-run regression: 268 → 1000+ episodes).
+    fn is_penalty(&self) -> bool {
+        false
+    }
 }
 
 /// Compression drive — recent positive abstraction-score delta.
@@ -1049,6 +1073,13 @@ impl Drive for ModeThrashPenalty {
             .rev()
             .take(K)
             .count() as f64
+    }
+
+    /// `mode_thrash` is a penalty drive — high churn-count
+    /// should *reduce* the perceived activity signal, not raise
+    /// it. ADR 0063 OQ #4 resolution.
+    fn is_penalty(&self) -> bool {
+        true
     }
 }
 
@@ -2557,6 +2588,8 @@ impl AutonomousRuntime {
     /// yet. Step 3b will replace the zero-streak anti-stagnation
     /// gate with `combined_drive_signal < threshold`.
     pub fn combined_drive_signal(&self) -> f64 {
+        // ADR 0063 OQ #4 resolution: positive drives add their
+        // weighted evaluate; penalty drives subtract.
         let weights = self.drive_mix.active_weights();
         let mut total: f64 = 0.0;
         for drive in &self.drives {
@@ -2565,27 +2598,41 @@ impl AutonomousRuntime {
                 continue;
             }
             let signal = drive.evaluate(&self.rset, &self.memory, self.tick);
-            total += w * signal;
+            if drive.is_penalty() {
+                total -= w * signal;
+            } else {
+                total += w * signal;
+            }
         }
         total
     }
 
-    /// Weight-invariant blended drive signal — combined signal
-    /// divided by `Σ active_weights`. ADR 0063 / Phase H2.0 step 3b.
-    /// Used by the EP anti-stagnation gate as the "drives say no
-    /// productive work available" criterion. Weight-invariant by
-    /// construction so the gate threshold doesn't need per-mix
-    /// recalibration (OQ #1 finding).
+    /// Weight-invariant blended drive signal — positive-drive
+    /// contribution minus penalty-drive contribution, divided by
+    /// the *positive* drives' weight sum. ADR 0063 / Phase H2.0
+    /// step 3b + OQ #4 resolution. Used by the EP anti-stagnation
+    /// gate as the "drives say no productive work available"
+    /// criterion.
+    ///
+    /// Why exclude penalty weights from the denominator:
+    /// the denominator answers "what's the weight-magnitude scale
+    /// of positive activity I'm averaging across"; including
+    /// penalty weights would muddy that scale. The numerator
+    /// already accounts for penalty contribution by subtraction.
     pub fn normalized_drive_signal(&self) -> f64 {
-        let weight_sum: f64 = self
-            .drive_mix
-            .active_weights()
-            .values()
-            .sum();
-        if weight_sum < f64::EPSILON {
+        let weights = self.drive_mix.active_weights();
+        let mut positive_weight_sum: f64 = 0.0;
+        for drive in &self.drives {
+            if drive.is_penalty() {
+                continue;
+            }
+            positive_weight_sum +=
+                weights.get(drive.id()).copied().unwrap_or(0.0);
+        }
+        if positive_weight_sum < f64::EPSILON {
             return 0.0;
         }
-        self.combined_drive_signal() / weight_sum
+        self.combined_drive_signal() / positive_weight_sum
     }
 
     /// Record a lifecycle transition and update `self.lifecycle`.
@@ -8466,16 +8513,27 @@ mod tests {
     }
 
     #[test]
-    fn h2_0_step3b_signal_does_not_currently_gate_decisions() {
-        // Step 3b's initial AND gate was reverted (long-run
-        // regressed: mode_thrash positive contribution kept
-        // signal high → gate never fired → EP froze → H1.x
-        // sequence-mining starved). Until OQ #4 (penalty drives)
-        // is addressed, normalized_drive_signal is computed and
-        // available in SchedulerContext, but the EP gate ignores
-        // it. This test pins the current state: same memory +
-        // empty axioms, two different signal values, identical
-        // decision.
+    fn h2_0_step3b_signal_does_not_currently_gate_ep_path() {
+        // Step 3b's second attempt (post-OQ-#4) was also reverted
+        // — the AND-on-EP-gate shape inverts the desired
+        // semantics. EP is the *observation* mechanism that
+        // produces post-EP credits; blocking it when drive
+        // signal is high starves H1.x sequence-mining
+        // (long-run regression: 129 → 71 EP attempts, 4/8 →
+        // 3/5 named pairs/triples).
+        //
+        // Current state (after both reverts):
+        // - Drive trait + 3 baseline impls retained.
+        // - DriveMix struct + checkpoint retained.
+        // - normalized_drive_signal API retained.
+        // - SchedulerContext.normalized_drive_signal retained.
+        // - OQ #4 penalty handling retained
+        //   (Drive::is_penalty / ModeThrashPenalty subtracts).
+        // - EP anti-stagnation gate uses pre-3b semantics
+        //   (zero_streak only).
+        //
+        // This test pins the current state: signal value does
+        // not affect EP gate decisions.
         let rs = RSet::new();
         let mut memory = Memory::default();
         for _ in 0..5 {
@@ -8505,19 +8563,10 @@ mod tests {
         let mut sched_b = RuleBasedScheduler::default();
         let dec_low = sched_a.choose(&ctx_low);
         let dec_high = sched_b.choose(&ctx_high);
-        // Both produce Sleep (zero_streak high + no axioms →
-        // gate path takes Sleep branch). The signal value is
-        // currently ignored.
-        assert!(
-            matches!(dec_low, SchedulerDecision::Sleep),
-            "expected Sleep at low signal, got {:?}",
-            dec_low
-        );
-        assert!(
-            matches!(dec_high, SchedulerDecision::Sleep),
-            "expected Sleep at high signal too (signal currently ignored), got {:?}",
-            dec_high
-        );
+        // Both paths take the gate's Sleep branch (no axioms).
+        // Signal value is recorded but doesn't gate the decision.
+        assert!(matches!(dec_low, SchedulerDecision::Sleep));
+        assert!(matches!(dec_high, SchedulerDecision::Sleep));
     }
 
     #[test]
@@ -8571,10 +8620,13 @@ mod tests {
     #[test]
     fn h2_0_step3a_combined_signal_blends_active_weights() {
         let rt = AutonomousRuntime::new(RSet::new());
-        // With baseline weights (0.5/0.4/0.1) and zero raw signals,
-        // the blend is 0. Plant non-zero returns by hand by adding
-        // mode transitions (raises mode_thrash) and recording an
-        // episode (raises compression).
+        // ADR 0063 OQ #4 resolution: mode_thrash is now a penalty
+        // drive — its weighted contribution is *subtracted*. With
+        // baseline weights (0.5/0.4/0.1):
+        //   compression evaluate = 0.6 (recent positive delta)
+        //   prediction_error evaluate = 0 (no axioms)
+        //   mode_thrash evaluate = 1 (1 mode transition in K=20)
+        //   combined = 0.5*0.6 + 0.4*0 - 0.1*1 = 0.3 - 0.1 = 0.2
         let mut rt = rt;
         rt.memory.record(make_episode(
             ActionKind::DiscoverTheory,
@@ -8586,16 +8638,10 @@ mod tests {
             to: RuntimeMode::Consolidate,
             reason: "test".to_string(),
         });
-        // Expected:
-        //   compression evaluate = 0.6 / 1 (sum positive / count)
-        //   prediction_error evaluate = 0 (no axioms)
-        //   mode_thrash evaluate = 1 (1 transition in K=20 window)
-        // Active = TestingA (baseline): wC=0.5, wPE=0.4, wMT=0.1.
-        //   combined = 0.5*0.6 + 0.4*0 + 0.1*1 = 0.3 + 0.0 + 0.1 = 0.4
         let signal = rt.combined_drive_signal();
         assert!(
-            (signal - 0.4).abs() < 1e-9,
-            "expected 0.4, got {}",
+            (signal - 0.2).abs() < 1e-9,
+            "expected 0.2 (penalty-subtracted), got {}",
             signal
         );
     }
@@ -8687,6 +8733,103 @@ mod tests {
                 rt.drive_mix.stage_start_episode_count
             );
         }
+    }
+
+    // ─── ADR 0063 OQ #4 resolution — penalty drive tests ────────
+
+    #[test]
+    fn h2_0_oq4_compression_drive_is_not_penalty() {
+        let d = CompressionDrive;
+        assert!(!d.is_penalty());
+    }
+
+    #[test]
+    fn h2_0_oq4_prediction_error_drive_is_not_penalty() {
+        let d = PredictionErrorDrive;
+        assert!(!d.is_penalty());
+    }
+
+    #[test]
+    fn h2_0_oq4_mode_thrash_is_penalty() {
+        let d = ModeThrashPenalty;
+        assert!(d.is_penalty(), "ModeThrashPenalty must be a penalty drive");
+    }
+
+    #[test]
+    fn h2_0_oq4_penalty_subtracts_from_combined_signal() {
+        // Setup: 1 mode transition → mode_thrash evaluate = 1.
+        // No episodes, no axioms → compression / pred_error = 0.
+        // Pre-OQ-#4: combined = 0.1 * 1 = +0.1.
+        // Post-OQ-#4: combined = -(0.1 * 1) = -0.1.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        rt.memory.record_mode_transition(ModeTransition {
+            tick: 0,
+            from: RuntimeMode::Expand,
+            to: RuntimeMode::Consolidate,
+            reason: "test".to_string(),
+        });
+        let signal = rt.combined_drive_signal();
+        assert!(
+            (signal - (-0.1)).abs() < 1e-9,
+            "expected -0.1 (penalty subtracts), got {}",
+            signal
+        );
+    }
+
+    #[test]
+    fn h2_0_oq4_normalized_excludes_penalty_weight_from_denominator() {
+        // Baseline: positive weights = compression(0.5) +
+        // prediction_error(0.4) = 0.9. Penalty weight (0.1) is
+        // excluded from the denominator.
+        // Plant compression evaluate = 1.0, mode_thrash evaluate = 0.
+        // (Avoid mode_thrash interference for this test.)
+        // combined = 0.5 * 1.0 + 0.4 * 0 - 0.1 * 0 = 0.5
+        // normalized = 0.5 / 0.9 ≈ 0.5555...
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        // Plant 10 positive-delta episodes so CompressionDrive
+        // returns mean = 1.0 (sum 10.0 / count 10).
+        for _ in 0..10 {
+            rt.memory.record(make_episode(
+                ActionKind::DiscoverTheory,
+                1.0,
+            ));
+        }
+        let normalized = rt.normalized_drive_signal();
+        let expected = 0.5 / 0.9;
+        assert!(
+            (normalized - expected).abs() < 1e-9,
+            "expected {} (penalty excluded from denominator), got {}",
+            expected,
+            normalized
+        );
+    }
+
+    #[test]
+    fn h2_0_oq4_high_thrash_drives_normalized_signal_negative() {
+        // The whole point of OQ #4: when the runtime is thrashing
+        // hard, normalized signal should be NEGATIVE (drives say
+        // "this isn't productive activity"). Pre-OQ-#4 it was
+        // positive and unbounded.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        // 10 mode transitions, no episodes, no axioms.
+        for i in 0..10 {
+            rt.memory.record_mode_transition(ModeTransition {
+                tick: i,
+                from: RuntimeMode::Expand,
+                to: RuntimeMode::Consolidate,
+                reason: "test".to_string(),
+            });
+        }
+        // mode_thrash = 10, weight 0.1 → contribution -1.0.
+        // No positive drives contributing → combined = -1.0.
+        // normalized denominator = 0.9 (positive weights only).
+        // normalized = -1.0 / 0.9 ≈ -1.111
+        let normalized = rt.normalized_drive_signal();
+        assert!(
+            normalized < 0.0,
+            "high thrash → normalized signal should be negative; got {}",
+            normalized
+        );
     }
 
     #[test]

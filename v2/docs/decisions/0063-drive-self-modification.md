@@ -1,6 +1,6 @@
 # 0063: Drive self-modification (Phase H2)
 
-Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a implemented; step 3b infrastructure shipped but gate integration reverted — see Addendum 3; OQ #4 escalated to blocker)
+Status: Accepted (Phase H2.0 step 1 + step 2 + step 3a + OQ #4 resolution implemented; step 3b gate integration tried twice and reverted — Addendum 4 closes the question of whether AND-on-EP-gate is the right shape: it's not)
 Date: 2026-04-27
 
 ## Context
@@ -778,3 +778,101 @@ ADR 0063 status update: step 1 + step 2 + step 3a
 implemented; step 3b infrastructure shipped, gate
 integration reverted; OQ #4 escalated from "open question"
 to "blocker for step 3b adoption".
+
+---
+
+## Addendum 4 — OQ #4 resolved + step 3b retried + reverted again (2026-04-27 late⁴)
+
+#### OQ #4 resolution shipped (option c)
+
+Drive trait gains:
+```rust
+fn is_penalty(&self) -> bool { false }
+```
+
+`ModeThrashPenalty` overrides to `true`.
+`combined_drive_signal` subtracts penalty contributions;
+`normalized_drive_signal` divides by positive-only weight
+sum (penalty weight excluded from denominator).
+
+Verification: 6 new `h2_0_oq4_*` unit tests covering
+is_penalty, penalty subtraction, normalized denominator,
+and high-thrash → negative-signal property. Step 3a
+`combined_signal_blends_active_weights` test updated:
+expected value 0.2 (penalty-subtracted) vs previous 0.4.
+
+#### Step 3b retried with corrected signal math
+
+Drive signal under hand-tuned baseline post-OQ-#4 ranges
+-0.65 to -1.24 (well below the 0.3 threshold), so the AND
+gate WAS firing now, unlike pre-OQ-#4.
+
+But long-run produced a *different* regression:
+
+| metric | pre-step-3b | step-3b post-OQ-#4 |
+|---|---|---|
+| episodes | 268 | 824 |
+| EP attempts | 129 | **71** |
+| composite | 1 | **0** |
+| pairs named | 4 | **3** |
+| triples named | 8 | **5** |
+
+#### Diagnosis: AND-on-EP-gate is the wrong gate shape
+
+EP is the *observation* mechanism producing post-EP-delta
+credits — sequence-mining bootstraps from those credits.
+The AND gate blocks EP when drive signal is high ("don't
+disturb productive activity"). But the inverted
+conclusion: **high signal means "observe it more (run EP),
+not less"**.
+
+Two attempts, two different regressions, same conceptual
+root cause: AND-on-EP-gate is the wrong gate-semantic
+shape for the EP path.
+
+#### Decision: revert AGAIN, retain everything else
+
+Retained:
+- OQ #4 resolution (Drive::is_penalty + math).
+- Step 3b infrastructure (SchedulerContext field,
+  normalized signal API, drive registry, run_bounded
+  computation).
+- Step 3b unit tests (refined to reflect re-reverted state).
+
+Reverted:
+- The AND condition on the EP anti-stagnation gate.
+
+Long-run post-second-revert: byte-identical to pre-step-3b
+baseline (268/129/1/4/8). F0 battery consistent.
+
+#### What this slice produced
+
+Two empirical findings that close design questions:
+
+1. **OQ #4 has a clean answer (option c).** Penalty
+   subtraction works mechanically and produces semantically
+   correct magnitudes (negative under thrash).
+
+2. **The EP anti-stagnation gate is the wrong target for
+   step 3b.** Two attempts, two regressions, same root
+   cause. Future step 3b should target a different gate.
+
+#### Refined step 3b design space (3 candidates)
+
+(α) **OR semantics on EP gate**: fire EP if EITHER
+    zero_streak high OR signal low. Adds firing conditions,
+    never blocks. Should boost EP rate.
+
+(β) **Separate sleep guard**: force Sleep when normalized
+    signal is very negative, independent of zero_streak.
+    EP gate untouched.
+
+(γ) **Mode-transition modulation**: low signal pushes
+    Reflect, high signal pushes Expand. EP untouched.
+
+Each is a different design-space slice. (α) is probably
+easiest empirically.
+
+Status: OQ #4 resolved; step 3b mechanical infrastructure
+shipped; gate integration reverted twice; refined gate
+shape (α/β/γ) deferred to future iteration.

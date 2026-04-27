@@ -4501,6 +4501,129 @@ ADR 0063 status: step 1 + step 2 + step 3a implemented;
 step 3b infrastructure shipped; gate integration
 reverted; OQ #4 blocker for next attempt.
 
+### ADR 0063 OQ #4 resolved (option c) + step 3b retried + reverted again
+
+User signaled readiness for OQ #4 resolution + step 3b
+retry. Implemented option (c) — mathematical handling of
+penalty drives. Retried step 3b with corrected signal math.
+Long-run produced a *different* regression than the first
+attempt; root cause analysis closes the question of whether
+AND-on-EP-gate is the right shape: it isn't.
+
+#### OQ #4 resolution
+
+Drive trait gains:
+
+```rust
+fn is_penalty(&self) -> bool { false }
+```
+
+`ModeThrashPenalty.is_penalty()` returns `true`.
+`combined_drive_signal` subtracts penalty contributions;
+`normalized_drive_signal` divides by positive-only weight
+sum.
+
+Verification:
+- 6 new `h2_0_oq4_*` unit tests
+- `h2_0_step3a_combined_signal_blends_active_weights`
+  expected value updated from 0.4 to 0.2 (penalty
+  subtracted: 0.5*0.6 + 0.4*0 - 0.1*1 = 0.2).
+
+#### Empirical evidence OQ #4 fixed the original bug
+
+Long-run signal trajectory pre-OQ-#4 (hand-tuned): 1.0–1.3.
+Post-OQ-#4 (hand-tuned): -0.65 to -1.24. Signal is now
+correctly NEGATIVE during runtime activity (mode_thrash
+penalty subtracted). The pre-OQ-#4 feedback loop (mode
+transitions inflate signal → gate blocked → more mode
+transitions) is broken: signal now drops as mode_thrash
+rises, not climbs.
+
+#### Step 3b retry: different regression, same conceptual
+root cause
+
+With OQ #4's negative-signal capability, the AND gate now
+fires (-0.65 < 0.3 threshold = condition met). But long-run
+produces a *different* regression vs baseline:
+
+| metric | pre-step-3b | post-OQ-#4 step-3b |
+|---|---|---|
+| episodes | 268 | 824 |
+| EP attempts | 129 | **71** |
+| composite | 1 | **0** |
+| pairs named | 4 | **3** |
+| triples named | 8 | **5** |
+
+EP attempts down 45%; composite/pairs/triples all reduced.
+
+#### Diagnosis: AND-on-EP-gate inverts the desired semantics
+
+EP is the *observation mechanism* producing post-EP-delta
+credits — those credits feed sequence_stats which drives
+H1.x bootstrap. Blocking EP when drive signal is high
+("don't disturb productive activity") is exactly backwards:
+high signal means "productive activity, observe it more
+(run EP), not less".
+
+Two step 3b attempts, two different regressions, same
+conceptual root cause:
+- Pre-OQ-#4: signal kept high by feedback loop → AND
+  blocks → 0 EP attempts.
+- Post-OQ-#4: signal correctly negative during activity →
+  AND blocks → 71 EP attempts (vs 129 baseline).
+
+The AND-on-EP-gate gate-semantic shape is wrong.
+
+#### Decision: revert step 3b a second time; retain OQ #4
+
+Retained:
+- OQ #4 resolution (Drive::is_penalty + math)
+- Step 3b infrastructure (SchedulerContext field,
+  normalized signal API, drive registry, run_bounded
+  computation, all 7 step 3b tests + 6 OQ #4 tests).
+
+Reverted:
+- The AND condition on the EP anti-stagnation gate.
+
+Verification:
+- Long-run post-second-revert: 268/129/1/4/8 — byte-identical
+  to pre-step-3b baseline. ✓
+- F0 battery: stream_diamond CONVERGED (post-EP-fix
+  baseline). ✓
+- 505 tests pass (was 499 before + 6 OQ #4 tests). ✓
+
+#### What this slice produced (positive findings)
+
+1. **OQ #4 has a working answer.** Drive::is_penalty +
+   penalty subtraction is small, clean, and produces
+   semantically correct signal magnitudes. The slice is
+   load-bearing — it's the foundation any future drive-
+   gated logic will need.
+
+2. **AND-on-EP-gate is closed as a design candidate.** Two
+   attempts have shown the shape is wrong for the EP path
+   regardless of signal-math correctness. The gate's job
+   isn't to throttle EP based on activity; EP IS the
+   observation that defines activity.
+
+3. **Refined step 3b design space narrows to 3 candidates**
+   (recorded in ADR 0063 Addendum 4): (α) OR semantics
+   on EP gate, (β) separate sleep guard, (γ) mode-
+   transition modulation. Each opens a different slice.
+
+#### Tests: 499 → 505 (+6 OQ #4 tests)
+
+Includes the load-bearing
+`h2_0_oq4_high_thrash_drives_normalized_signal_negative`
+test asserting that high mode-thrash genuinely produces
+negative signal (i.e., the conceptual fix works
+empirically, not just by override).
+
+ADR 0063 status: step 1 + step 2 + step 3a + OQ #4
+resolution implemented; step 3b gate integration tried
+twice and reverted twice; refined gate shape (α/β/γ)
+deferred.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
