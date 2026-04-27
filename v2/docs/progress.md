@@ -5081,6 +5081,120 @@ Future Phase Alpha work, if pursued, should target one of:
 ADR 0065 status: Accepted (with negative empirical
 finding). Tests: 515 → 520 (+5).
 
+### Phase Alpha-3 — theory self-play tournament (positive finding)
+
+User requested another AlphaGo-flavored path after Phase
+Alpha-1's negative result. Picked candidate (a) from the
+framing doc's three symmetric self-play candidates: theory
+self-play tournament. Drafted ADR 0066 specifying the
+smallest tractable prototype: post-hoc rank theories by
+aggregated per-axiom hit rate, no runtime changes.
+
+#### Implementation
+
+`examples/phase_alpha_theory_tournament.rs`:
+- Run runtime on OQ #1 substrate (HORIZON=2000).
+- For each theory: aggregate per-axiom `hit_rate` (≥ 5
+  total predictions) into a single score (mean over
+  qualifying axioms).
+- Sort theories by aggregated score.
+- Print rank table + per-theory axiom breakdown for
+  top-1 and bottom-1.
+- Diagnostic verdict: spread > 0.20 → "DIFFERENTIATE",
+  > 0.05 → "MILDLY DIFFERENTIATE", else "DO NOT".
+
+Pure observational. No runtime changes, no demotion, no
+new unit tests.
+
+#### Empirical result: theories DIFFERENTIATE strongly
+
+| rank | theory | axioms | qualifying | hit rate |
+|---|---|---|---|---|
+| 1 | t_2 | 3 | 1 | **0.9992** |
+| 2 | t_3 | 4 | 3 | 0.8545 |
+| 3 | t_1 | 6 | 5 | 0.6664 |
+| 4 | t_0 | 10 | 9 | **0.3898** |
+
+**Hit-rate spread: 0.6095** — well above the 0.20
+differentiation threshold. **Verdict: theories
+DIFFERENTIATE strongly.**
+
+#### Per-axiom breakdown — the structural insight
+
+The interesting finding isn't that theories rank — it's
+*why*:
+
+- **t_2 (top, 0.9992)** has 1 load-bearing axiom
+  (`ax_tpl_v3_p0-1_p1-2_c0-2`) at 99.92% hit rate, plus 2
+  non-predicting structural axioms (antisymmetry,
+  reflexivity).
+- **t_0 (bottom, 0.3898)** ALSO contains
+  `ax_tpl_v3_p0-1_p1-2_c0-2` at 99.92%, but ALSO contains
+  many low-quality axioms at 0.04-0.05 hit rate.
+- t_0's bad axioms drag its average from 0.99 down to
+  0.39.
+
+t_0 is "broad and noisy"; t_2 is "narrow and precise". The
+tournament correctly identifies the higher-density theory.
+
+#### Sharp contrast with Phase Alpha-1
+
+The contrast between the two AlphaGo-flavored experiments
+is informative:
+
+| | Phase Alpha-1 (UCB1) | Phase Alpha-3 (Tournament) |
+|---|---|---|
+| Category | selection rule | data generation |
+| AlphaGo aspect | MCTS selection | self-play |
+| Empirical result | zero divergence | spread 0.6095 |
+| Status | negative finding | positive finding |
+
+**AlphaGo's value isn't a single thing.** Different
+aspects of its design transfer differently. Selection
+rules need branching factor (v2 doesn't have it at the
+composite layer). Comparative data generation needs
+ranking signal (v2 has it strongly for theories).
+
+#### What this enables
+
+With strong tournament signal validated, **Phase Alpha-3+
+(iterative demotion)** is concrete:
+
+1. Run runtime to baseline.
+2. Rank theories.
+3. Retract bottom-N theories via existing
+   `RSet::retract_theory`.
+4. Continue running, re-rank, repeat.
+
+Open empirical questions for that slice:
+- Do demoted theories' good axioms get re-attached
+  elsewhere?
+- Does the runtime re-discover them?
+- Does the system stabilize on smaller, higher-quality
+  theory sets?
+
+Not implemented in this slice — observation only.
+
+#### What this does NOT yet show
+
+- Whether dynamic demotion actually improves long-term
+  productivity.
+- Whether axiom hit rate is the right tournament metric
+  (theories may have other load-bearing properties).
+- Whether the result transfers to other substrates.
+
+#### Significance
+
+Phase Alpha-3 prototype validates one specific transfer
+path (self-play data generation) where Phase Alpha-1's
+selection-rule transfer failed. The framing doc
+distinguished selection vs data-generation as two
+different categories of AlphaGo contribution; this is the
+empirical confirmation of that distinction.
+
+ADR 0066 status: **Accepted (with strong positive
+empirical finding)**.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
