@@ -1,0 +1,132 @@
+warning: variable does not need to be mutable
+    --> src\runtime\mod.rs:2564:13
+     |
+2564 |         let mut try_add = |seq_id: &str,
+     |             ----^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4525:9
+     |
+4525 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5027:9
+     |
+5027 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5031:9
+     |
+5031 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\mod.rs:418:8
+    |
+310 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+418 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3370:60
+     |
+3370 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3370:72
+     |
+3370 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 7 warnings (run `cargo fix --lib -p relatum-v2` to apply 4 suggestions)
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.28s
+     Running `target\release\examples\phase_alpha_axiom_demote.exe`
+=== ADR 0066 Phase Alpha-4 — per-axiom tournament + orphan retract (PHASE_1=1000, PHASE_2=200, threshold=0.15) ===
+
+--- Phase 1: discovery (1000 ticks) ---
+tick=1000 episodes=110 theories=4 axioms=13
+
+=== Tournament: end of Phase 1 (theories) ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+--- Step A: theory-level demotion (Alpha-3+) ---
+Retracted theory: t_0 (16 edges removed)
+
+=== Axiom ranking: post-theory-demote, all axioms ===
+                                axiom_id   hit_rate   orphan theories
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000       no        3
+                     ax_tpl_v2_p0-1_c0-0     0.8947       no        1
+                     ax_tpl_v2_p0-1_c1-1     0.8461       no        1
+                ax_tpl_v3_p0-1_p2-1_c0-2     0.5476       no        1
+                ax_tpl_v3_p0-1_p0-2_c1-2     0.5038       no        1
+                ax_tpl_v3_p0-1_p1-2_c2-0     0.4682       no        1
+                     ax_tpl_v2_p0-1_c1-0     0.4110       no        1
+                ax_tpl_v3_p0-0_p1-2_c0-1     0.1160      yes        0
+                ax_tpl_v3_p0-0_p1-2_c1-0     0.1160      yes        0
+                ax_tpl_v3_p0-0_p1-2_c2-0     0.1092      yes        0
+                ax_tpl_v3_p0-0_p1-2_c0-2     0.1092      yes        0
+                          ax_reflexivity          —       no        2
+                         ax_antisymmetry          —       no        2
+
+--- Step B: per-axiom orphan retract (threshold 0.15 for hit rate) ---
+  retracted: ax_tpl_v3_p0-0_p1-2_c0-1 (rate=0.1160, edges removed=19)
+  retracted: ax_tpl_v3_p0-0_p1-2_c1-0 (rate=0.1160, edges removed=19)
+  retracted: ax_tpl_v3_p0-0_p1-2_c2-0 (rate=0.1092, edges removed=19)
+  retracted: ax_tpl_v3_p0-0_p1-2_c0-2 (rate=0.1092, edges removed=19)
+
+  retracted: 4 | skipped (theory-referenced): 0 | skipped (rate ≥ 0.15): 7 | skipped (no data): 2
+
+--- Phase 2: post-cleanup (1000 ticks) ---
+tick=1200 episodes=142 theories=3 axioms=9
+
+=== Tournament: end of Phase 2 (theories) ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8562
+   3                            t_1     6          5          0.5829
+
+=== Axiom ranking: end of Phase 2, all axioms ===
+                                axiom_id   hit_rate   orphan theories
+                ax_tpl_v3_p0-1_p1-2_c0-2     0.9992       no        3
+                     ax_tpl_v2_p0-1_c0-0     0.8210       no        1
+                     ax_tpl_v2_p0-1_c1-1     0.7484       no        1
+                ax_tpl_v3_p0-1_p2-1_c0-2     0.5368       no        1
+                ax_tpl_v3_p0-1_p1-2_c2-0     0.5073       no        1
+                ax_tpl_v3_p0-1_p0-2_c1-2     0.4722       no        1
+                     ax_tpl_v2_p0-1_c1-0     0.3989       no        1
+                          ax_reflexivity          —       no        2
+                         ax_antisymmetry          —       no        2
+
+=== Phase 1 vs Phase 2 comparison ===
+theories:           4 → 3 (Δ -1)
+axioms:             13 → 9 (Δ -4)
+theory mean rate:   0.7188 → 0.8128 (Δ +0.0939)
+theory min  rate:   0.3757 → 0.5829 (Δ +0.2072)
+  (axioms retracted at intervention: 4)
+  retracted axioms NOT resurrected during Phase 2 ✓
+
+--- end ---

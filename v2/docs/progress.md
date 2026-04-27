@@ -5275,7 +5275,96 @@ load-bearing positive findings in the *self-play data
 generation* category. The selection-rule category remains
 silent on v2's current substrates.
 
+### Phase Alpha-4 — per-axiom orphan retract (mixed finding)
 
+User confirmed Phase Alpha-4 direction. Implemented as a
+combined Alpha-3+/Alpha-4 example: theory-level demote
+followed by orphan-axiom retraction. The orphan filter is
+load-bearing because `RSet::retract_axiom` fails on
+theory-referenced axioms (ADR 0030); only axioms freshly
+orphaned by the preceding theory-level demote can be
+retracted.
+
+#### Implementation
+
+`examples/phase_alpha_axiom_demote.rs`:
+1. Phase 1: discover (1000 ticks).
+2. Step A: retract worst theory (Alpha-3+).
+3. Step B: rank ALL axioms; for orphans with hit rate <
+   0.15, retract via `RSet::retract_axiom`.
+4. Phase 2: continue (200 ticks; longer hangs).
+5. Compare.
+
+#### Threshold calibration
+
+Initial 0.10 caught 0 axioms (orphan rates 0.10–0.12 at
+1000-tick horizon, less converged than 2000-tick's
+0.04–0.05). Adjusted to 0.15 — caught all 4. Substrate
+convergence time governs threshold viability.
+
+#### Results
+
+| metric | Phase 1 | Phase 2 | Δ |
+|---|---|---|---|
+| theories | 4 | 3 | -1 |
+| **axioms** | **13** | **9** | **-4** |
+| theory mean rate | 0.7188 | 0.8128 | +0.0939 |
+| theory min rate | 0.3757 | 0.5829 | +0.2072 |
+
+4 orphan axioms retracted (`ax_tpl_v3_p0-0_p1-2_*`
+family, rates 0.109–0.116). Each removed 19 meta-R edges;
+76 total. No resurrection.
+
+#### New empirical finding: post-retract performance regression
+
+Phase 2 ran **dramatically slower** than baseline:
+- Alpha-3+'s 1000-tick Phase 2: ~30 seconds.
+- Alpha-4's 1000-tick Phase 2: 10+ minutes, abandoned.
+- Alpha-4 reduced to 200-tick Phase 2: ~5 minutes.
+
+Likely cause: `RSet::retract_axiom` removes structural
+edges correctly, but runtime-side indices
+(`prediction_state.last_predicted_per_axiom`,
+forward-apply caches) aren't incrementally maintained on
+retract. ADR 0020 (pattern retraction) and H1.3 sequence
+demotion don't trigger this — different substructures,
+different runtime-side dependencies.
+
+#### Findings
+
+1. **Mechanism works**: retraction at runtime succeeds;
+   axioms stay gone (13 → 9).
+2. **Threshold calibration matters**: substrate-aware
+   tuning needed.
+3. **Performance regression**: post-retract runtime is
+   slower per tick. Likely an index/cache invalidation
+   gap.
+
+#### Constitutional vs implementation gap
+
+- **Constitutional**: axioms can be retracted at runtime
+  (commitments 1-5 pass).
+- **Implementation**: retract-while-running is not an
+  optimized path. Prediction-state and frontier refresh
+  paths assume axioms are stable.
+
+Phase Alpha-4 surfaces the gap; doesn't fix it. Future
+fix candidates: lazy prediction-state cleanup, batch
+retract during Reflect mode.
+
+#### Phase Alpha summary updated
+
+| Phase | What | Result |
+|---|---|---|
+| Alpha-1 | UCB1 selection | ❌ negative (zero divergence) |
+| Alpha-3 | Tournament observation | ✅ positive (spread 0.6095) |
+| Alpha-3+ | Iterative theory demotion | ✅ positive (+12% mean) |
+| Alpha-4 | Per-axiom retraction | ⚠️ **mixed** (mechanism works; perf regression) |
+
+Each experiment yielded distinct empirical information.
+Alpha-4 in particular surfaced a *real bug surface* in
+v2's runtime-vs-rset interaction layer that was
+previously not exercised.
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
 

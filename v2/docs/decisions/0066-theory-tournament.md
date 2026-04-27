@@ -439,3 +439,109 @@ That's a separate slice; not committed in this addendum.
 ADR 0066 Phase Alpha-3 + Phase Alpha-3+ both **Accepted
 with positive empirical findings**. Phase Alpha-4
 (per-axiom tournament) recorded as natural next slice.
+
+---
+
+## Addendum 3 — Phase Alpha-4 lands with new performance finding (2026-04-28)
+
+User confirmed Phase Alpha-4 direction. Implemented as a
+combined Alpha-3+/Alpha-4 example: theory-level demote
+followed by orphan-axiom retraction. The orphan filter is
+load-bearing because `RSet::retract_axiom` fails on
+theory-referenced axioms (per ADR 0030 design); only
+axioms freshly orphaned by the preceding theory-level
+demote can be retracted.
+
+#### Implementation
+
+`examples/phase_alpha_axiom_demote.rs`. Pure example —
+no runtime changes. Pipeline:
+
+1. Phase 1: discover (1000 ticks)
+2. Step A: retract worst theory (Alpha-3+)
+3. Step B: rank ALL axioms; for each orphan with
+   hit_rate < 0.15 (calibrated), retract via `retract_axiom`
+4. Phase 2: continue (200 ticks; longer hangs — see below)
+5. Final tournament + comparison
+
+#### Threshold calibration note
+
+First attempt used 0.10 — caught 0 axioms (orphan rates
+were 0.10–0.12 at 1000-tick horizon vs 0.04–0.05 at the
+2000-tick Phase Alpha-3 horizon; less converged). Adjusted
+to 0.15. Empirical lesson: hit-rate thresholds must be
+calibrated to substrate convergence time. Percentile-based
+selection (bottom 20%) would be more substrate-robust.
+
+#### Results
+
+| metric | Phase 1 | Phase 2 (200 ticks post-cleanup) | Δ |
+|---|---|---|---|
+| theories | 4 | 3 | -1 |
+| **axioms** | **13** | **9** | **-4** |
+| theory mean rate | 0.7188 | 0.8128 | +0.0939 |
+| theory min rate | 0.3757 | 0.5829 | +0.2072 |
+
+4 orphan axioms retracted (`ax_tpl_v3_p0-0_p1-2_c0-1` /
+`_c1-0` / `_c2-0` / `_c0-2`, rates 0.109–0.116). Each
+removed 19 meta-R edges. **76 meta-R edges cleaned in
+total.** No retracted axiom resurrected.
+
+#### New empirical finding: post-retract performance regression
+
+Phase 2 ran **dramatically slower** than baseline. Phase
+Alpha-3+'s 1000-tick Phase 2 finished in ~30 seconds.
+Phase Alpha-4's 1000-tick Phase 2 attempt ran for 10+
+minutes without finishing; reduced to 200 ticks completed
+in ~5 minutes.
+
+Likely cause: `RSet::retract_axiom` removes axiom +
+variables + premise/conclusion edges correctly, but
+runtime-side indices (`prediction_state.last_predicted_per_axiom`,
+forward-apply caches, etc.) may not be incrementally
+maintained on retract. Each subsequent tick may rebuild
+or scan more than usual.
+
+This is a **previously-unobserved performance
+characteristic** of retract_axiom invoked on a live
+runtime. ADR 0020 (pattern retraction) and H1.3 sequence
+demotion don't trigger this — they operate on different
+substructures with different runtime-side dependencies.
+
+#### Findings summary
+
+1. **Mechanism works**: orphan-axiom retraction succeeds
+   at runtime; retracted axioms stay gone. Cleanup is
+   real (13 → 9 axioms).
+2. **Threshold calibration matters**: substrate
+   convergence time governs which axioms can be reached.
+3. **Performance regression discovered**: post-retract
+   runtime is much slower per tick. Likely an
+   index/cache invalidation gap. Worth investigating
+   before deploying tournament-driven retraction in
+   production paths.
+
+#### Constitutional vs implementation gap
+
+This is a real gap:
+
+- **Constitutional layer**: axioms can be retracted at
+  runtime (ADR 0030 / 0034 supports it; commitments 1-5
+  pass).
+- **Implementation layer**: retract-while-running is not
+  an optimized path. Prediction state and frontier
+  refreshes assume axioms are stable.
+
+Phase Alpha-4 surfaces the gap; doesn't fix it. Future
+fix candidates: lazy `prediction_state` cleanup, batch
+retract during Reflect mode, etc.
+
+#### Status
+
+Phase Alpha-4 **Accepted with mixed findings**:
+mechanism works, performance regression discovered,
+underlying constitutional-vs-implementation gap noted.
+
+ADR 0066 status: Phase Alpha-3 + Alpha-3+ + Alpha-4 all
+implemented. Alpha-4 with caveat about runtime
+performance.
