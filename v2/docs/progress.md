@@ -4734,6 +4734,94 @@ resolution ALL implemented. Self-tuning load-bearing.
 Future work (β / γ shapes, H2.1 drive-as-meta-R, H2.2
 synthesis) remains research.
 
+### Phase H2.0 long5k partial empirics + ADR 0064 (Proposed)
+
+Built `examples/phase_h2_0_long5k.rs` for HORIZON=5000
+empirical study (5 regimes × 1000 ticks each, 100-tick
+snapshots, captures both candidate weights + signal).
+Run terminated at tick 3000 of hand-tuned (substrate
+density × HORIZON exceeded available wall-time budget;
+the larger workload was empirically slower than
+expected). Captured to
+`logs/2026-04-27_phase_h2_0_long5k.log`.
+
+#### Hand-tuned partial findings (through tick 3000)
+
+| tick | epis | ep | norm sig | a.mt | b.c |
+|---|---|---|---|---|---|
+| 0 | 0 | 0 | 0.000 | 0.10 | 0.50 |
+| 500 | 80 | 41 | -1.111 | 0.10 | 0.50 |
+| 1000 | 145 | 76 | -1.109 | 0.10 | 0.40 (mut) |
+| 1500 | 175 | 106 | -1.250 | 0.10 | 0.40 |
+| 2000 | 205 | 136 | -1.111 | 0.12 (mut) | 0.40 |
+| 2500 | 285 | 156 | -1.559 | 0.10 (mut) | 0.40 |
+| 3000 | 370 | 181 | -1.247 | 0.10 | 0.40 |
+
+Observations:
+
+1. **Signal stable in [-1.5, -1.0] band throughout.** Never
+   crosses the α threshold of -2.0. This means α never
+   fires under hand-tuned even at extended scale —
+   baseline is preserved beyond the 2000-tick window
+   where this was first verified. The α gate is
+   correctly calibrated: fires only when drives
+   genuinely report deep stagnation.
+
+2. **Mutation cadence consistent.** ~3 mutations across
+   2500 ticks, matching the expected 1 mutation per
+   ~50-episode window × A/B cycle. No mutation
+   acceleration or stalling.
+
+3. **Episode growth roughly linear at scale.** ~120
+   episodes per 1000 ticks under hand-tuned, with regime
+   transitions barely perceptible. The post-EP-fix
+   composite + α + OQ #4 stack maintains steady runtime
+   activity across regimes.
+
+4. **Pair/triple count plateaus**. Through tick 3000,
+   only 1 pair and 2 triples remain named. Sequence-
+   mining catches the dominant (EP, EP) pair and
+   (EP, EP, EP) triple early, but does not promote new
+   sequences as the substrate shifts. This may be a
+   threshold-tuning question (H1.x promotion thresholds)
+   rather than an H2.0 issue.
+
+#### ADR 0064 (Proposed) — drives as meta-R objects
+
+Drafted `decisions/0064-drives-as-meta-r.md` covering H2.1
+in three sub-slices:
+
+- **H2.1.0** — `DRIVE_MARKER` + `PENALTY_MARKER`
+  registration only. No behaviour change. Constitutionally
+  load-bearing (opens commitment 3 for drives). Recommended
+  starting slice.
+- **H2.1.1** — ESTABLISHED-promotion lifecycle for drives.
+  Mirrors ADR 0053 mechanics. Drives earn ESTABLISHED via
+  EP-delta contribution, demoted under retention floor.
+- **H2.1.2** — DriveMix weights tied to drive ESTABLISHED
+  status. Closes the loop: drive contributes → ESTABLISHED
+  → weight stays positive → drive contributes more.
+
+H2.1.0's design is concrete enough to start. Constitutional
+review: PASSes all 5 commitments; this is the slice that
+*positively satisfies* commitment 3 for drives (rather
+than deferring as H2.0 did). The constitutional shift is
+specific: penalty status becomes a *fact about the drive*
+(meta-R edge `R(PENALTY_MARKER, drive_id)`), not a
+*method on the impl* (compile-time `is_penalty()`).
+
+ADR 0064 status: Proposed; no code yet.
+
+#### What this slice produced
+
+- Empirical confirmation that α + OQ #4 stack is stable at
+  scale (3000 ticks) under hand-tuned baseline.
+- A drafted H2.1 ADR with concrete H2.1.0 starting design.
+- Both retained as records; H2.1 implementation deferred
+  pending user signal.
+
+ADR 0063 status unchanged. ADR 0064 added (Proposed).
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
