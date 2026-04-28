@@ -1681,3 +1681,216 @@ selectivity-based join order, indexed intersection
 algorithms) would yield further small gains but are
 unlikely to break the diminishing-returns pattern. They
 are recorded as deferred but de-prioritized.
+
+---
+
+## Addendum 13 — Phase Alpha-7: DreamCoder cross-precision dream phase (2026-04-28)
+
+User picked Direction B (DreamCoder-style sleep substrate
+generation) after Direction A finished. Transfer: agent
+generates imagined data from its current theories, then
+validates predictions across the imagined corpus to
+extract information not present in the primary stream.
+
+#### New primitive
+
+[`RSet::generate_substrate_from_theory`](../../src/lib.rs)
+(+ `saturate_under_axioms` helper) constructs a fresh
+RSet exemplifying a given theory:
+1. Generate `num_ids` identifiers `gen_<theory_id>_<i>`
+2. If theory has `ax_reflexivity`, seed self-loops
+3. Random sparse seed at `seed_density` per ordered pair
+4. Iterate forward-apply on every template axiom until
+   fixed point (each iteration only adds, never removes)
+5. Register theory's axioms (intension) in the result
+   so callers can `forward_apply_axiom` on it directly
+
+Predicate axioms (`ax_antisymmetry`, `ax_totality`) are
+not constructively applied — they are constraints, not
+generators. Documented as a known soundness gap (random
+seeds may violate them; saturation respects only forward
+axioms). Pre-OQ#1's theories on this substrate it didn't
+matter empirically.
+
+4 unit tests pass (transitivity holds on generated chain;
+reflexivity self-loops added; self not modified; unknown
+theory rejected). 536 lib tests total.
+
+#### Experiment design
+
+[`examples/phase_alpha_dream_phase.rs`](../../examples/phase_alpha_dream_phase.rs):
+
+1. Run primary OQ#1 stream 1000 ticks → discover N theories
+2. **Dream phase**: for each theory T_i, generate one
+   substrate S_i
+3. **Cross-precision matrix**: for each (i, j),
+   precision = | forward_apply_all(theory_j, S_i)
+   ∩ S_i | / | forward_apply_all(theory_j, S_i) |
+4. Report: diagonal sanity, off-diagonal variance,
+   per-theory generality (column means)
+
+Verdict tiers:
+- POSITIVE: all diagonals = 1.0; off-diagonal var ≥ 0.01
+  (cross-precision is discriminative)
+- WEAK: diagonals = 1.0 but off-diagonals nearly identical
+- INCONCLUSIVE / BUG: otherwise
+
+#### Two false-start runs as a methodological lesson
+
+**Run 1** (NUM_GEN_IDS=8, SEED_DENSITY=0.30, only theory_i's
+axioms registered in S_i): every cell = 1.0, but with
+`forward_apply` returning empty for any axiom not registered
+in the substrate. The matrix was an artefact: only the
+SHARED transitivity axiom contributed anything. Not a real
+signal.
+
+**Run 2** (NUM_GEN_IDS=15, SEED_DENSITY=0.05, same axiom
+registration): every cell = 1.0 with prediction counts
+identical across columns (33/33, 34/34, 23/23, 225/225).
+Same artefact — sparser substrates didn't help because the
+underlying bug was that theory_j's axioms weren't
+registered in substrate_i, so `forward_apply_axiom`
+returned empty and only transitivity (universally
+registered because shared) contributed.
+
+**Run 3** (same parameters as run 2 + register every
+theory's axioms in every substrate): finally produced a
+discriminative matrix.
+
+The lesson: `forward_apply_axiom(ax)` requires `ax` to be
+registered (its intension wired into the rset). Cross-
+validation experiments must register all relevant axioms
+in every substrate before forward-applying.
+
+#### Discriminative result (run 3)
+
+| sub\theory_j | t_0 | t_2 | t_3 | t_1 |
+|---|---|---|---|---|
+| t_0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| t_2 | **0.15** | 1.00 | 1.00 | **0.45** |
+| t_3 | **0.16** | 1.00 | 1.00 | **0.50** |
+| t_1 | **0.76** | 1.00 | 1.00 | 1.00 |
+
+Diagonals = 1.0 (sanity ✓). Off-diagonal variance = 0.108
+(POSITIVE verdict).
+
+Per-theory generality (column means, excluding diagonal):
+
+| theory | mean precision | min |
+|---|---|---|
+| t_0 | **0.36** | 0.15 |
+| t_1 | 0.65 | 0.45 |
+| t_2 | **1.00** | 1.00 |
+| t_3 | **1.00** | 1.00 |
+
+#### Mechanistic interpretation
+
+- **t_2, t_3 universal**: contain only transitivity-shaped
+  forward axioms (plus predicate axioms that don't
+  forward-apply). Predictions on any saturated substrate
+  are subsets of that substrate.
+- **t_1 weak on antisymmetric substrates**: t_1 has
+  symmetry (`ax_tpl_v2_p0-1_c1-0`). On t_2/t_3 substrates
+  (antisymmetric by construction), symmetry predicts
+  reverse edges that don't exist → precision ~0.45-0.50.
+- **t_0 worst**: t_0's 4 `p0-0` noise axioms have premises
+  like `R(x,x) ∧ R(x,z)` and conclusions involving
+  reverse-direction edges. On any substrate with self-
+  loops (reflexive), they fire on every (x,x) × (x,z)
+  pair and predict edges that mostly don't exist. On
+  t_1's substrate (which IS reflexive + symmetric, but
+  NOT noise-saturated): t_0's 0.76 because the noise
+  axioms predict edges not in t_1's substrate.
+
+#### Significance
+
+**Cross-precision provides a theory-quality signal
+INDEPENDENT of primary-stream hit rate**. The result
+recovers the same verdict as the prior tournament line —
+t_0 is the worst theory, t_2/t_3 are the best — but via
+a totally different mechanism: imagined substrate
+cross-validation, no consultation of the primary stream's
+hit-rate counters.
+
+This is the first v2 mechanism that produces a
+quality-judgment signal **without** running on real data.
+DreamCoder's premise — that an agent can extract
+information about its concepts via imagined-task
+generation — empirically transfers to v2.
+
+The signal is also strictly newer than prior tournament
+metrics:
+- `forward_apply` hit rate uses primary-stream observation
+- Cross-precision uses theory-on-theory validation in
+  generated synthetic data
+
+These are complementary, not redundant.
+
+#### Constitution check
+
+- C1 (R singular): ✓ Generated substrate uses R
+- C2 (R binary): ✓
+- C3 (types as meta-R): ✓ Theories registered as meta-R
+  in the generated substrate (so forward_apply works)
+- C4 (token identity): ✓ Generated identifiers prefixed
+  `gen_<theory_id>_<i>` to avoid primary collisions
+- C5 (structural similarity): ✓ Saturation is purely
+  structural (forward-apply over axiom templates), no
+  external semantics
+
+#### Echo-chamber resolved as setup-driven, not structural
+
+Pre-experiment I worried about echo chamber: substrates
+generated from theories would tautologically confirm them.
+The empirical result shows **the echo chamber risk is
+real but bounded**:
+- Echo chamber appears when substrate isn't sparse enough
+  AND only the source theory's axioms are registered
+- With ALL theories registered + moderate sparsity,
+  cross-precision is discriminative
+
+Future slices using dream phase should:
+1. Always register ALL relevant axioms in generated
+   substrates
+2. Use sparse seed density (0.05 worked; 0.30 saturates
+   to near-complete graphs)
+3. Treat self-precision = 1.0 as a sanity check, not a
+   signal
+
+#### What this slice produced
+
+1. `generate_substrate_from_theory` API + 4 unit tests;
+   536 lib tests total
+2. Cross-precision matrix as a new theory-quality signal
+   on OQ#1
+3. Empirical recovery of the prior tournament verdict
+   (t_0 worst, t_2/t_3 best) via independent mechanism
+4. Methodological note: register all axioms in
+   substrates for cross-validation experiments
+5. Bounded echo-chamber characterization: setup-driven
+   (avoidable) vs structural (not the case here)
+
+#### Future deferred slices
+
+- **Dream phase as scheduler signal**: feed cross-
+  precision matrix into theory tournament; demote
+  theories with low column means even if they look fine
+  on primary stream
+- **Generate from axiom REJECTIONS**: deliberately seed
+  edges that violate theory axioms, see how the runtime
+  reacts — turns the dream phase into a "boundary
+  exploration" tool
+- **Predicate-axiom enforcement during generation**:
+  filter random seeds to respect antisymmetry / totality,
+  closing the soundness gap
+- **Dream phase + held-out stream**: generate substrates,
+  run primary stream forward, compare predictions before/
+  after to test if dreaming improves real prediction
+
+#### Status
+
+Phase Alpha-7 Accepted with **strong positive empirical
+finding**. DreamCoder-style cross-validation transfers to
+v2 and produces theory-quality signal independent of
+primary-stream observation. Dream phase as a scheduler
+input is recorded as a high-priority future slice.

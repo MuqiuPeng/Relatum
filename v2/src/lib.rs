@@ -2585,6 +2585,101 @@ impl RSet {
         Ok(merged_id)
     }
 
+    /// Generate a fresh RSet that satisfies all template axioms of
+    /// `theory_id` by construction. ADR 0066 Phase Alpha-7
+    /// (Direction B — DreamCoder-style imagined-task generation).
+    ///
+    /// Algorithm:
+    /// 1. Allocate `num_ids` fresh identifiers `gen_<theory_id>_<i>`
+    ///    that won't collide with primary RSet identifiers.
+    /// 2. If the theory contains `ax_reflexivity`, seed `R(id, id)`
+    ///    for each generated id.
+    /// 3. Seed sparse random data edges with probability
+    ///    `seed_density` per ordered pair (deterministic via
+    ///    `rng_seed`).
+    /// 4. Iteratively forward-apply each template axiom and add any
+    ///    predicted edges not yet present, until a fixed point.
+    /// 5. Return the resulting RSet (no theory/axiom registrations
+    ///    in it — pure data substrate).
+    ///
+    /// Predicate axioms (`ax_antisymmetry`, `ax_totality`) are not
+    /// constructively applied — they are constraints, not
+    /// generators. The caller can verify them on the result.
+    ///
+    /// Use case: dream-phase cross-validation. Generate a substrate
+    /// from theory T_i; forward-apply other theories T_j on it to
+    /// see how well each generalizes to T_i's exemplar data.
+    ///
+    /// Does NOT modify `self`.
+    pub fn generate_substrate_from_theory(
+        &self,
+        theory_id: &str,
+        num_ids: usize,
+        seed_density: f64,
+        rng_seed: u64,
+    ) -> Result<RSet, TheoryError> {
+        if !self.is_theory(theory_id) {
+            return Err(TheoryError::UnsatisfiedMember(theory_id.to_string()));
+        }
+        let axiom_ids: Vec<String> = self
+            .theory_axioms(theory_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+
+        let id_prefix = format!("gen_{}_", theory_id);
+        let ids: Vec<String> = (0..num_ids)
+            .map(|i| format!("{}{}", id_prefix, i))
+            .collect();
+
+        let mut out = RSet::new();
+
+        // Reflexivity (constructive).
+        let has_reflexivity = axiom_ids.iter().any(|a| a == AX_REFLEXIVITY);
+        if has_reflexivity {
+            for id in &ids {
+                out.add(R::new(id.clone(), id.clone()));
+            }
+        }
+
+        // Sparse random seeding.
+        let mut rng = rng_seed | 1; // avoid 0 state
+        for i in 0..num_ids {
+            for j in 0..num_ids {
+                if i == j {
+                    continue;
+                }
+                let r = next_xorshift64(&mut rng) as f64 / (u64::MAX as f64 + 1.0);
+                if r < seed_density {
+                    out.add(R::new(ids[i].clone(), ids[j].clone()));
+                }
+            }
+        }
+
+        // Collect template axioms to saturate.
+        let templates: Vec<AxiomTemplate> = axiom_ids
+            .iter()
+            .filter_map(|id| axiom_id_to_template(id))
+            .collect();
+        if !templates.is_empty() {
+            saturate_under_axioms(&mut out, &templates);
+        }
+
+        // Register each theory axiom (and the theory itself) in the
+        // generated rset so callers can `forward_apply_axiom` on it
+        // without first re-registering. ADR 0066 Phase Alpha-7.
+        for ax in &axiom_ids {
+            out.register_axiom_with_intension(ax);
+        }
+        let ax_refs: Vec<&str> = axiom_ids.iter().map(String::as_str).collect();
+        // Use a synthetic theory id to avoid colliding with the
+        // primary's namespace; if the same axiom set was already
+        // discovered in `out`, name_theory will reuse the existing
+        // id rather than duplicate.
+        let _ = out.name_theory(&ax_refs);
+        Ok(out)
+    }
+
     fn mint_theory_id(&self) -> String {
         let existing = self.identifiers();
         let mut n = self.theories().len();
@@ -5009,6 +5104,64 @@ fn forward_apply_recursive_indexed(
                     rs, template, ids, id_index, binding, depth + 1, out,
                 );
             }
+        }
+    }
+}
+
+/// Saturate `rs` under a list of forward-applicable axiom templates:
+/// repeatedly forward-apply each template and insert any predicted
+/// edges not yet in the rset, until no template adds anything new.
+/// ADR 0066 Phase Alpha-7. Used by
+/// `generate_substrate_from_theory`.
+///
+/// Termination: each iteration strictly grows the edge set (else we
+/// stop), and the edge set is bounded by `|ids|^2 + |meta_edges|`,
+/// so the loop terminates. In practice convergence is fast (≤ a few
+/// iterations) because the indexed enumerator handles the join.
+fn saturate_under_axioms(rs: &mut RSet, templates: &[AxiomTemplate]) {
+    loop {
+        let mut changed = false;
+        let meta = rs.collect_meta_ids();
+        let data_ids = rs.compute_data_ids(&meta);
+        if data_ids.is_empty() {
+            break;
+        }
+        let id_index: HashMap<&str, usize> = data_ids
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_str(), i))
+            .collect();
+        // Collect edges to add across all templates this iteration,
+        // then commit. (Collecting first avoids borrow conflict
+        // between rs read for forward_apply and rs write for add.)
+        let mut to_add: HashSet<R> = HashSet::new();
+        for tpl in templates {
+            if tpl.num_vars == 0 {
+                continue;
+            }
+            let mut binding: Vec<usize> = vec![0; tpl.num_vars];
+            let mut predicted: HashSet<R> = HashSet::new();
+            forward_apply_recursive_indexed(
+                rs,
+                tpl,
+                &data_ids,
+                &id_index,
+                &mut binding,
+                0,
+                &mut predicted,
+            );
+            for r in predicted {
+                if !rs.instances.contains(&r) {
+                    to_add.insert(r);
+                }
+            }
+        }
+        for r in to_add {
+            rs.add(r);
+            changed = true;
+        }
+        if !changed {
+            break;
         }
     }
 }

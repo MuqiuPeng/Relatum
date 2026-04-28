@@ -1,0 +1,146 @@
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4648:9
+     |
+4648 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5301:9
+     |
+5301 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5305:9
+     |
+5305 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3440:60
+     |
+3440 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3440:72
+     |
+3440 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 10.08s
+     Running `target\release\examples\phase_alpha_dream_phase.exe`
+=== ADR 0066 Phase Alpha-7 — DreamCoder-style cross-precision matrix (1000 ticks Phase 0) ===
+NUM_GEN_IDS=8, SEED_DENSITY=0.3, RNG_SEED_BASE=0xC0FFEEDEADBEEF
+
+Phase 0 complete. 4 theories discovered: ["t_3", "t_0", "t_2", "t_1"]
+  t_3: 4 axioms (["ax_antisymmetry", "ax_tpl_v2_p0-1_c0-0", "ax_tpl_v2_p0-1_c1-1", "ax_tpl_v3_p0-1_p1-2_c0-2"])
+  t_0: 10 axioms (["ax_reflexivity", "ax_tpl_v2_p0-1_c1-0", "ax_tpl_v3_p0-0_p1-2_c0-1", "ax_tpl_v3_p0-0_p1-2_c0-2", "ax_tpl_v3_p0-0_p1-2_c1-0", "ax_tpl_v3_p0-0_p1-2_c2-0", "ax_tpl_v3_p0-1_p0-2_c1-2", "ax_tpl_v3_p0-1_p1-2_c0-2", "ax_tpl_v3_p0-1_p1-2_c2-0", "ax_tpl_v3_p0-1_p2-1_c0-2"])
+  t_2: 3 axioms (["ax_antisymmetry", "ax_reflexivity", "ax_tpl_v3_p0-1_p1-2_c0-2"])
+  t_1: 6 axioms (["ax_reflexivity", "ax_tpl_v2_p0-1_c1-0", "ax_tpl_v3_p0-1_p0-2_c1-2", "ax_tpl_v3_p0-1_p1-2_c0-2", "ax_tpl_v3_p0-1_p1-2_c2-0", "ax_tpl_v3_p0-1_p2-1_c0-2"])
+
+=== Dream phase: generate one substrate per theory ===
+  t_3 → substrate with 103 edges, 30 identifiers (seed=0xC0FFEEDEADBEEF)
+  t_0 → substrate with 241 edges, 76 identifiers (seed=0x9EF879A85DF83B04)
+  t_2 → substrate with 85 edges, 21 identifiers (seed=0x3D2FF361DD42B719)
+  t_1 → substrate with 161 edges, 48 identifiers (seed=0xDB676D1B5C8D332E)
+
+=== Cross-precision matrix ===
+rows: substrate (theory_i); cols: forward-applying theory_j
+                 t_3       t_0       t_2       t_1
+       t_3    1.0000    1.0000    1.0000    1.0000
+       t_0    1.0000    1.0000    1.0000    1.0000
+       t_2    1.0000    1.0000    1.0000    1.0000
+       t_1    1.0000    1.0000    1.0000    1.0000
+
+=== Diagnostics ===
+  ✓ Sanity: all diagonals = 1.0 (theories satisfy themselves on their own substrate)
+  off-diagonal: mean=1.0000 var=0.0000 min=1.0000 max=1.0000 (n=12)
+
+=== Per-theory generality (column means, excluding diagonal) ===
+    theory  mean_precision   min_precision
+       t_3          1.0000          1.0000
+       t_0          1.0000          1.0000
+       t_2          1.0000          1.0000
+       t_1          1.0000          1.0000
+
+=== Verdict ===
+  → INCONCLUSIVE — only one theory or no off-diagonal data.
+
+--- end ---

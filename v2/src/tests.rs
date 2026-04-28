@@ -2846,6 +2846,98 @@
     }
 
     #[test]
+    fn adr0066_generate_substrate_satisfies_transitivity() {
+        // Build an RSet with transitivity holding (poset). Name a
+        // theory containing transitivity. Then generate a substrate
+        // and verify transitivity holds at rate 1.0 by construction.
+        let mut rs = RSet::new();
+        // Small poset: a→b→c→d + closure
+        rs.extend([
+            R::new("a", "b"), R::new("b", "c"), R::new("c", "d"),
+            R::new("a", "c"), R::new("a", "d"), R::new("b", "d"),
+        ]);
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        let t_id = rs.name_theory(&[trans_id]).unwrap();
+
+        let gen = rs
+            .generate_substrate_from_theory(&t_id, 6, 0.30, 12345)
+            .unwrap();
+        // Generated data identifiers shouldn't collide with primary.
+        // (After axiom registration the rset also contains meta-R
+        // identifiers like `ax_tpl_..._prem_0`; we only check data ids.)
+        let meta = gen.collect_meta_ids();
+        let data_ids = gen.compute_data_ids(&meta);
+        for id in &data_ids {
+            assert!(
+                id.starts_with("gen_"),
+                "expected generated data id to be prefixed: got {}",
+                id
+            );
+        }
+        // Transitivity should hold by construction: every predicted
+        // edge from forward-apply must already be in the substrate.
+        let predicted = gen.forward_apply_axiom(trans_id);
+        assert!(!predicted.is_empty(), "expected non-empty predictions");
+        for r in &predicted {
+            assert!(
+                gen.contains(r),
+                "transitivity violated on generated substrate: {:?}",
+                r,
+            );
+        }
+    }
+
+    #[test]
+    fn adr0066_generate_substrate_handles_reflexivity() {
+        // Theory with just reflexivity → every generated id has self-loop.
+        let mut rs = RSet::new();
+        for n in ["a", "b", "c"] {
+            rs.add(R::new(n, n));
+        }
+        let t_id = rs.name_theory(&[AX_REFLEXIVITY]).unwrap();
+        let gen = rs
+            .generate_substrate_from_theory(&t_id, 5, 0.0, 1)
+            .unwrap();
+        // Every generated DATA id should appear as a self-loop.
+        let meta = gen.collect_meta_ids();
+        let data_ids = gen.compute_data_ids(&meta);
+        for id in &data_ids {
+            assert!(
+                gen.contains(&R::new(id.clone(), id.clone())),
+                "missing self-loop for generated id {}",
+                id,
+            );
+        }
+    }
+
+    #[test]
+    fn adr0066_generate_substrate_does_not_modify_self() {
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"), R::new("b", "c"), R::new("a", "c"),
+        ]);
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        let t_id = rs.name_theory(&[trans_id]).unwrap();
+        let before: usize = rs.len();
+        let _gen = rs
+            .generate_substrate_from_theory(&t_id, 4, 0.30, 99)
+            .unwrap();
+        assert_eq!(
+            rs.len(),
+            before,
+            "generate_substrate_from_theory must not modify self",
+        );
+    }
+
+    #[test]
+    fn adr0066_generate_substrate_rejects_unknown_theory() {
+        let rs = RSet::new();
+        assert!(rs
+            .generate_substrate_from_theory("t_does_not_exist", 4, 0.5, 1)
+            .is_err());
+    }
+
+    #[test]
     fn adr0066_indexed_forward_apply_matches_transitivity_on_chain() {
         // Sanity: on a small chain a→b→c→d (with closure), transitivity
         // axiom (R(0,1) ∧ R(1,2) ⇒ R(0,2)) predicts every R(x, z) where

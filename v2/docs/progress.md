@@ -6478,3 +6478,114 @@ validated; the forward_apply line is closed by
 diminishing returns. Next perf slice (if any) requires
 profiling first — recorded as future deferred work.
 
+
+
+### Phase Alpha-7 — DreamCoder cross-precision dream phase (2026-04-28)
+
+User picked Direction B (DreamCoder-style sleep substrate
+generation). Transfer: agent generates imagined data from
+its current theories, then validates predictions across
+the imagined corpus to extract information not present
+in the primary stream.
+
+#### New primitive
+
+`RSet::generate_substrate_from_theory(theory_id, num_ids,
+seed_density, rng_seed)` constructs a fresh RSet
+exemplifying a theory:
+1. `num_ids` fresh identifiers `gen_<theory_id>_<i>`
+2. Seed self-loops if reflexivity is in the theory
+3. Random sparse data-edge seed at `seed_density`
+4. Iterate forward-apply on every template axiom until
+   fixed point
+5. Register theory's axioms in the result
+
+Predicate axioms (antisymmetry, totality) are constraints
+not generators — known soundness gap recorded.
+
+4 new unit tests pass; 536 lib tests total.
+
+#### Two false-start runs (methodological lesson)
+
+Run 1 (dense): all-1.0 echo chamber, 8 ids @ 0.30 density.
+Run 2 (sparse, same axiom registration bug): still all-1.0,
+prediction counts identical across columns —
+forward_apply was returning empty for theory_j's unique
+axioms because they weren't registered in substrate_i.
+
+**Fix**: register every theory's axioms in every
+substrate before forward-applying. Without this,
+cross-precision is a measurement artefact.
+
+#### Discriminative result (run 3, 15 ids @ 0.05 density,
+all axioms registered everywhere)
+
+| sub\theory_j | t_0 | t_2 | t_3 | t_1 |
+|---|---|---|---|---|
+| t_0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| t_2 | **0.15** | 1.00 | 1.00 | 0.45 |
+| t_3 | **0.16** | 1.00 | 1.00 | 0.50 |
+| t_1 | 0.76 | 1.00 | 1.00 | 1.00 |
+
+Per-theory generality (column means):
+
+| theory | mean | min | meaning |
+|---|---|---|---|
+| t_0 | **0.36** | 0.15 | Worst — noise axioms predict false edges everywhere |
+| t_1 | 0.65 | 0.45 | symmetry fails on antisymmetric substrates |
+| t_2 | 1.00 | 1.00 | universal |
+| t_3 | 1.00 | 1.00 | universal |
+
+#### Significance
+
+**Cross-precision provides a theory-quality signal
+INDEPENDENT of primary-stream hit rate**. The matrix
+recovers the prior tournament's verdict (t_0 worst,
+t_2/t_3 best) via a totally different mechanism —
+imagined substrate cross-validation, never consulting
+primary-stream hit-rate counters.
+
+This is the first v2 mechanism that produces a quality
+judgment **without** running on real data. DreamCoder's
+core premise empirically transfers to v2.
+
+#### Mechanism
+
+- t_2, t_3 universal: only transitivity-shaped forward
+  axioms; on saturated substrates, predictions ⊆ actual
+- t_1's symmetry fails on antisymmetric substrates
+  (predicts reverse edges that don't exist)
+- t_0's 4 `p0-0` noise axioms predict reverse edges via
+  conclusions like c1-0 / c2-0; fail on antisymmetric
+  substrates (precision 0.15-0.16)
+
+#### Bounded echo-chamber characterization
+
+Pre-experiment I worried the dream phase would be a
+tautological echo chamber. **Empirical answer**: echo
+chamber is real but bounded — appears under specific
+setup conditions (overly dense substrate, missing axiom
+registration). With proper setup, cross-precision is
+discriminative.
+
+#### What this slice produced
+
+1. `generate_substrate_from_theory` API + 4 unit tests
+2. Cross-precision matrix as a new theory-quality signal
+3. Empirical recovery of prior tournament verdict via
+   independent mechanism
+4. Methodological note: register all axioms in
+   substrates before cross-validating
+5. ADR 0066 Addendum 13 with three-run methodological
+   trace
+6. New future-slice candidates recorded: dream-phase as
+   scheduler signal; rejection-based dreaming; predicate-
+   axiom enforcement during generation
+
+#### Status
+
+Phase Alpha-7 Accepted with strong positive finding.
+DreamCoder cross-validation transfers to v2 and produces
+theory-quality signal independent of primary-stream
+observation.
+
