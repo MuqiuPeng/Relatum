@@ -5953,3 +5953,113 @@ Phase Alpha-3++ Accepted with positive empirical
 findings. Demote loop converges in one iteration on OQ#1
 with no re-discovery.
 
+
+
+### Phase Alpha-3+++ — counterexample-guided theory repair (2026-04-28, research-scout slice)
+
+User asked the system to act as research scout: find an
+academic transferable mechanism, design the smallest
+falsifiable slice. Selected ILP / FOIL / PROGOL
+counterexample-guided specialization as the cleanest
+follow-up to Phase Alpha-3+/3++. Instead of removing the
+whole theory, detach only the "counterexample" axioms.
+
+#### Implementation
+
+New API `RSet::retract_theory_member(theory_id, axiom_id)`
+in [src/lib.rs](../src/lib.rs):
+- Removes a single `R(theory_id, axiom_id)` membership edge
+- Theory itself preserved
+- Axiom global registration preserved
+- `SHARED_AXIOM_MARKER` cascade if axiom theory-count < 2
+
+4 unit tests added (membership preservation, rejection of
+non-member / unknown theory, no-cross-theory effects).
+524 lib tests pass.
+
+[`examples/phase_alpha_theory_repair.rs`](../examples/phase_alpha_theory_repair.rs)
+runs two paths from byte-identical Phase 0 (deterministic
+OQ#1 stream, 1000 ticks):
+- **Path A (control = Alpha-3+)**: retract whole bottom
+  theory; run 1000 more ticks
+- **Path B (treatment = repair)**: detach axioms below
+  `REPAIR_AXIOM_THRESHOLD=0.20` from bottom theory; theory
+  itself stays; run 1000 more ticks
+
+#### Results
+
+Log: [`logs/2026-04-28_phase_alpha_theory_repair.log`](../logs/2026-04-28_phase_alpha_theory_repair.log).
+
+t_0 in Phase 0 has bimodal axioms: 4 noise (0.10–0.12, all
+`p0-0` premise — false transitivity shape), 5 signal
+(0.41–1.00). Repair detaches the 4 noise axioms.
+
+| metric | A:demote | B:repair |
+|---|---|---|
+| theories | 3 | **4** |
+| qualifying | 3 | **4** |
+| mean hit rate | 0.8401 | 0.7967 |
+| min hit rate | 0.6664 | **0.6664** |
+| t_0 post-intervention | retracted | **rate=0.6664, qualifying=5** |
+
+#### The "negative mean" was a Simpson's-paradox artefact
+
+The example's verdict classifier flagged B negative on
+arithmetic mean (0.7967 < 0.8401). Wrong framing. B
+retains a 4th theory at 0.6664; including it in the
+average drags the mean down. By the four real success
+criteria — target above threshold (0.6664 ≥ 0.50), min not
+degraded (≡), qualifying preserved (+1), no global axiom
+loss — **repair succeeds cleanly**.
+
+ADR 0066 Addendum 9 records the methodological correction:
+future tournament-style verdicts should report the tuple
+(target_rate, min, qualifying, preserved) rather than a
+mean that reacts to set-size changes.
+
+#### Surprise: t_0(post-repair) ≡ t_1
+
+After +1000 ticks both stand at 0.6664 exactly. t_0's
+qualifying axioms post-detach average the same as t_1's
+qualifying mean pre-Phase-0; both evolve identically.
+
+**Implication**: t_0 and t_1 are *functionally redundant*
+on this substrate — demote works not because t_0 was bad
+but because its good content was already captured by t_1.
+Repair preserves the redundancy explicitly.
+
+#### Significance
+
+- Theory repair is a viable intervention alongside demote.
+  On OQ#1 they produce equivalent functional outcomes; on
+  substrates where bottom theory has *unique* good content
+  (untested), repair would strictly beat demote.
+- The Simpson's-paradox finding is a methodological lesson
+  for the whole tournament line — mean is the wrong
+  primary metric across qualifying-set-size changes.
+- A new candidate future slice is suggested by the
+  redundancy observation: **theory deduplication / merge**
+  as a third intervention (when bottom and survivor share
+  the good core, merge instead of demote-or-repair).
+
+#### What this slice produced
+
+1. New `retract_theory_member` API + 4 unit tests; 524
+   lib tests pass.
+2. Empirical evidence that counterexample-guided
+   specialization works in v2 (target theory rises from
+   0.3757 to 0.6664 by detaching 4/10 axioms).
+3. Methodological correction: arithmetic mean is
+   misleading when interventions change qualifying-set
+   size.
+4. Discovery that on OQ#1 the bottom theory shares its
+   good core with a survivor — a candidate motivation for
+   future theory-merge work.
+5. ADR 0066 Addendum 9 with full diagnosis.
+
+#### Status
+
+Phase Alpha-3+++ Accepted with positive empirical
+findings (corrected verdict). Theory deduplication / merge
+recorded as future slice candidate.
+

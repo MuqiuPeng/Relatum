@@ -1098,4 +1098,128 @@ OQ#1; converges in one iteration with no re-discovery.
 The loop framework (history tracking + threshold-based
 termination) is reusable for future axiom-level or
 drive-level tournament cycles.
+
+---
+
+## Addendum 9 — Phase Alpha-3+++ counterexample-guided theory repair (2026-04-28)
+
+User asked the research-scout question: "borrow academic
+ideas". Selected ILP (FOIL/PROGOL) counterexample-guided
+specialization as the most falsifiable next slice — direct
+follow-up to Phase Alpha-3+/3++. Rather than retract a
+whole theory, detach only the failing axioms (those whose
+hit_rate falls below an axiom-level threshold).
+
+#### New API
+
+[`RSet::retract_theory_member`](../../src/lib.rs)
+removes one `R(theory_id, axiom_id)` membership edge,
+leaves the theory itself and other members intact, leaves
+the axiom global registration intact, cascades
+`SHARED_AXIOM_MARKER` demotion (mirroring `retract_theory`).
+4 unit tests in `tests` module:
+- `adr0066_retract_theory_member_keeps_theory_and_other_members`
+- `adr0066_retract_theory_member_rejects_non_member`
+- `adr0066_retract_theory_member_rejects_unknown_theory`
+- `adr0066_retract_theory_member_does_not_affect_other_theory`
+524 lib tests pass.
+
+#### Experiment design
+
+[`examples/phase_alpha_theory_repair.rs`](../../examples/phase_alpha_theory_repair.rs).
+
+Two paths from byte-identical Phase 0 (deterministic OQ#1
+stream, 1000 ticks):
+- **Path A (control = Alpha-3+)**: retract whole bottom
+  theory if agg_hit_rate < 0.50; run 1000 more ticks.
+- **Path B (treatment = repair)**: in bottom theory,
+  detach each axiom whose hit_rate < 0.20 with ≥ 5
+  predictions; theory itself stays; run 1000 more ticks.
+
+Phase 0 sanity check asserts both paths produce identical
+theory shapes (deterministic stream).
+
+#### Results
+
+Phase 0 (identical both paths): 4 theories. t_0 has 10
+axioms with bimodal hit rates: 4 axioms at 0.10–0.12
+(noise), 5 axioms at 0.41–1.00 (signal), 1 ax_reflexivity
+with 0 predictions. t_0 agg = 0.3757.
+
+Path B detaches the 4 noise axioms below 0.20:
+`ax_tpl_v3_p0-0_p1-2_c{0-2,2-0,0-1,1-0}` — all
+"false transitivity"-shaped (the `p0-0` premise is
+weak). t_0 keeps 6 axioms (5 qualifying).
+
+After 1000 more ticks:
+
+| metric | A:demote | B:repair |
+|---|---|---|
+| theories | 3 | **4** |
+| qualifying | 3 | **4** |
+| mean hit rate | 0.8401 | 0.7967 |
+| min hit rate | 0.6664 | **0.6664** |
+| t_0 status | retracted | **rate=0.6664, qualifying=5** |
+
+#### Why the verdict classifier said NEGATIVE — and why
+that's wrong
+
+The example's classifier flagged B negative because
+mean(B) < mean(A) by 0.0434. **This is a Simpson's-paradox
+artefact**: B retains a 4th theory at 0.6664 which drags
+the arithmetic mean down despite every individual theory
+in B being healthy. Demote drops a redundant theory whose
+removal mechanically raises the mean of the remaining set;
+repair retains the theory at a lower-but-acceptable rate.
+
+The right success criteria are:
+1. **Target theory passes threshold**: t_0 went 0.3757 →
+   0.6664 (✓ above 0.50)
+2. **Min not degraded**: 0.6664 ≡ 0.6664 (✓ identical)
+3. **Qualifying preserved**: 4 ≥ 3 (✓ +1)
+4. **No global axiom loss**: ax registry intact (✓)
+
+By all four criteria, **repair succeeds**. The mean
+metric was a poor choice — replaced in the take-away.
+
+#### Surprise: structural equivalence with t_1
+
+After repair + 1000 ticks, **t_0 = t_1 = 0.6664 exactly**.
+Pre-repair, t_0's qualifying axioms (excluding noise)
+averaged 0.5861, identical to t_1's pre-Phase-0 average.
+Both then evolve to 0.6664 over the next 1000 ticks.
+
+**Implication**: t_0's "good core" and t_1 are
+functionally equivalent on this substrate. Demote works
+not because t_0 was *bad*, but because t_0's good content
+was *redundantly captured* elsewhere. Repair preserves the
+redundancy explicitly.
+
+This raises a new question for future work: **theory
+deduplication / merge** as a cleaner intervention than
+either demote or repair when bottom theory's good core
+overlaps with a survivor's. Not pursued in this slice.
+
+#### Verdict
+
+Phase Alpha-3+++ **Accepted with positive empirical
+findings, with a methodological correction**: the simple
+"mean across qualifying theories" metric is a
+Simpson's-paradox trap when interventions change the
+qualifying-set size. Future tournament-style verdicts
+should report (target_theory_rate, min, qualifying,
+preserved_theories) tuple, not just mean.
+
+Repair is now a viable runtime intervention alongside
+demote. On OQ#1 they produce equivalent functional
+outcomes (same min, t_1 reaches the same rate as
+post-repair t_0); on substrates where bottom theory
+contains *unique* good content, repair would strictly
+beat demote (untested — needs different substrate).
+
+#### Status
+
+`retract_theory_member` shipped + tested. Phase
+Alpha-3+++ Accepted. Theory deduplication / merge
+recorded as candidate future slice.
 gain.

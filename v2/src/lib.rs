@@ -2626,6 +2626,40 @@ impl RSet {
         Ok(removed)
     }
 
+    /// Remove a single membership edge `R(theory_id, axiom_id)` from a
+    /// theory, leaving the theory itself and its other members intact.
+    /// ADR 0066 Phase Alpha-3+++. Counterexample-guided specialization:
+    /// theory survives, only the failing axiom is detached. Axiom
+    /// remains globally registered; other theories that share it are
+    /// unaffected. Cascades the SHARED_AXIOM_MARKER demotion when the
+    /// axiom's theory count drops below 2, mirroring `retract_theory`.
+    /// Returns the number of meta-R edges removed.
+    pub fn retract_theory_member(
+        &mut self,
+        theory_id: &str,
+        axiom_id: &str,
+    ) -> Result<usize, TheoryError> {
+        if !self.is_theory(theory_id) {
+            return Err(TheoryError::UnsatisfiedMember(theory_id.to_string()));
+        }
+        if !self
+            .instances
+            .contains(&R::new(theory_id.to_string(), axiom_id.to_string()))
+        {
+            return Err(TheoryError::UnsatisfiedMember(axiom_id.to_string()));
+        }
+        let mut removed = 0usize;
+        if self.remove(&R::new(theory_id.to_string(), axiom_id.to_string())) {
+            removed += 1;
+        }
+        if self.theories_containing(axiom_id).len() < 2
+            && self.remove(&R::new(axiom_id.to_string(), SHARED_AXIOM_MARKER))
+        {
+            removed += 1;
+        }
+        Ok(removed)
+    }
+
     fn mint_theory_id(&self) -> String {
         let existing = self.identifiers();
         let mut n = self.theories().len();
@@ -8674,6 +8708,79 @@ mod tests {
         assert!(!rs.is_theory(&t_id));
         // Axiom registry is NOT touched (other theories may share).
         assert_eq!(rs.axioms().len(), axiom_count_before);
+    }
+
+    #[test]
+    fn adr0066_retract_theory_member_keeps_theory_and_other_members() {
+        // Build a 2-axiom theory; remove one member; verify theory
+        // survives, axiom global registration intact, other member
+        // intact, and the removed axiom no longer counted as member.
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        assert!(ids.len() >= 2, "test needs ≥2 member axioms");
+        let t_id = rs.name_theory(&ids).unwrap();
+        let target = ids[0].to_string();
+        let kept = ids[1].to_string();
+        let axiom_count_before = rs.axioms().len();
+
+        let removed = rs.retract_theory_member(&t_id, &target).unwrap();
+        assert!(removed >= 1, "should remove ≥ 1 edge");
+
+        // Theory itself survives.
+        assert!(rs.is_theory(&t_id));
+        // Theory's member set no longer contains target.
+        let members_after: Vec<&str> = rs.theory_axioms(&t_id);
+        assert!(!members_after.contains(&target.as_str()));
+        // Other member still there.
+        assert!(members_after.contains(&kept.as_str()));
+        // Axiom global registration unchanged.
+        assert_eq!(rs.axioms().len(), axiom_count_before);
+        assert!(rs.is_axiom(&target));
+    }
+
+    #[test]
+    fn adr0066_retract_theory_member_rejects_non_member() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let t_id = rs.name_theory(&ids).unwrap();
+        let err = rs.retract_theory_member(&t_id, "ax_not_a_member").unwrap_err();
+        assert_eq!(err, TheoryError::UnsatisfiedMember("ax_not_a_member".to_string()));
+    }
+
+    #[test]
+    fn adr0066_retract_theory_member_rejects_unknown_theory() {
+        let mut rs = poset_with_selfloops();
+        let err = rs.retract_theory_member("t_does_not_exist", AX_REFLEXIVITY).unwrap_err();
+        assert_eq!(err, TheoryError::UnsatisfiedMember("t_does_not_exist".to_string()));
+    }
+
+    #[test]
+    fn adr0066_retract_theory_member_does_not_affect_other_theory() {
+        // Two theories that share axiom A; retract A from theory_1
+        // only; theory_2 still contains A; A still global; SHARED
+        // marker stays because A is still in theory_2 alone? Actually
+        // SHARED requires count ≥ 2, so demoting from one of two
+        // theories drops it.
+        let mut rs = equivalence_relation();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        assert!(ids.len() >= 2);
+        let t1 = rs.name_theory(&ids).unwrap();
+        // theory_2 = first axiom only.
+        let t2 = rs.name_theory(&[ids[0]]).unwrap();
+        assert_ne!(t1, t2);
+
+        let target = ids[0].to_string();
+        let _ = rs.retract_theory_member(&t1, &target).unwrap();
+
+        // theory_1 lost target.
+        assert!(!rs.theory_axioms(&t1).contains(&target.as_str()));
+        // theory_2 unaffected.
+        assert!(rs.theory_axioms(&t2).contains(&target.as_str()));
+        // Axiom global registration intact.
+        assert!(rs.is_axiom(&target));
     }
 
     #[test]
