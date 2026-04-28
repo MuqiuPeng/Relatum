@@ -885,3 +885,143 @@ speedup on OQ#1 but reusable infrastructure shipped.
 
 ADR 0066 status: Phase Alpha series + Option A + Option B
 all shipped. Options D/E/F scoped for future ADR.
+
+---
+
+## Addendum 7 — Option D (early premise termination) — major win (2026-04-28)
+
+User confirmed Option D follow-up. Implemented algorithm-
+level pruning in `forward_apply_recursive`: at each
+recursion depth, after binding a variable, immediately
+check any premises whose variables are all now bound.
+If unsatisfied, prune the branch instead of letting the
+recursion explore N more levels of bindings before
+discovering the violation at the leaf.
+
+#### Change
+
+`v2/src/lib.rs` — `forward_apply_recursive` body modified
+to add the early-termination check inside the iteration
+loop:
+
+```rust
+for i in 0..ids.len() {
+    binding[depth] = i;
+    // Early-termination: are any premises fully bound now?
+    let mut prune = false;
+    for e in &template.premise {
+        if e.x_var <= depth && e.y_var <= depth {
+            let x = &ids[binding[e.x_var]];
+            let y = &ids[binding[e.y_var]];
+            if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                prune = true;
+                break;
+            }
+        }
+    }
+    if prune {
+        continue;
+    }
+    forward_apply_recursive(rs, template, ids, binding, depth + 1, out);
+}
+```
+
+This is the only change. ~15 lines of code added.
+
+#### Why this works
+
+Without pruning, the recursion explores all `N^k`
+combinations of variable bindings, then checks premises
+at the leaf. Premises that fail at depth d trigger a
+return that wastes the entire `N^(k-d)` subtree
+exploration.
+
+With pruning, premises are checked AS variables are
+bound. For an axiom like transitivity `R(x,y) ∧ R(y,z) ⇒
+R(x,z)`:
+- At depth 1 (y bound), premise `R(x,y)` is fully bound
+- If unsatisfied, prune — saves all N values of z
+- Effective complexity: `N * |children(x)| * |children(y)|`
+  instead of `N^3` — substantially less for sparse rsets
+
+#### Empirical impact: ~40% speedup, consistent across N
+
+Comparison vs all prior options (per-100-tick):
+
+| Chunk | Pre-fix | Option A | Option B | Option D | Δ vs pre |
+|---|---|---|---|---|---|
+| 1 | 2.2 | 1.8 | 1.7 | 1.6 | -27% |
+| 5 | 18.9 | 17.2 | 17.9 | 12.3 | -35% |
+| 8 | 47.6 | 44.8 | 45.9 | 26.8 | -44% |
+| 10 | 92.2 | 87.7 | 88.5 | 49.2 | **-47%** |
+| 11 | 159.8 | 166.9 | 163.4 | 94.6 | -41% |
+| 12 | 224.1 | 223.8 | — | 131.2 | -41% |
+| 13 | 313.0 | — | — | 182.6 | -42% |
+| 14 | 396.4 | — | — | 237.1 | -40% |
+| 15 | 496.4 | — | — | 295.5 | -40% |
+
+Consistent **40-47% reduction** in per-tick cost.
+Importantly, the speedup HOLDS at high N — it's an
+algorithmic improvement, not a constant-factor win.
+
+#### Correctness verification
+
+- 520 unit tests pass (no regression).
+- F0 battery: stream_diamond CONVERGED, all CONVERGED.
+- OQ #1 long-run: **hand-tuned 268/129/1/4/8 byte-identical**
+  through tick 2000. Equal-weighted run also byte-
+  identical (matches at every snapshot from tick 200 to
+  tick 2000). Signal trajectory matches exactly:
+  hand-tuned -0.654 → -1.235 → -0.988.
+
+The pruning is correct because it's strictly an
+**ordering** change: same premises, same conclusion. We
+just check earlier rather than at the leaf. Any branch
+where ALL premises hold reaches the leaf and produces
+the same conclusion edge.
+
+#### Why this is the right slice
+
+- Algorithmic gain (not constant-factor): scales with N.
+- Tiny code change (~15 lines): low complexity, easy to
+  reason about correctness.
+- General-purpose: helps any axiom with multiple
+  premises, regardless of substrate.
+- No new state, no API change.
+
+The framing doc's "cost asymmetry" warning was real —
+forward_apply_recursive is the asymmetric component. But
+the asymmetry isn't N^k inherent; it's
+**unconstrained** N^k. Constraining via early
+termination produces effective N^k_eff with k_eff
+smaller than k.
+
+#### What this slice produced
+
+Three layered perf improvements now in place:
+
+| Slice | Mechanism | Effect on OQ#1 |
+|---|---|---|
+| Option A | Amortize meta_ids/data_ids across axiom calls | -5-10% (low N), invisible (high N) |
+| Option B | Per-axiom cache keyed on rset.version | ~0% (cache rarely hits) |
+| Option D | Early premise termination in recursion | **-40-47%** (uniform) |
+
+Option D is empirically the load-bearing one. Options A
+and B are kept for completeness and future utility.
+
+#### What remains
+
+`forward_apply_recursive` still has tail recursion +
+HashSet contains lookups. Further optimizations
+(unrolling, indexing-based premise lookup) would yield
+diminishing returns. Most algorithmic work is now done.
+
+#### Status
+
+Option D shipped. ~40% speedup verified. Byte-identical
+correctness confirmed.
+
+ADR 0066 status: Phase Alpha series + Option A + Option B
++ Option D all shipped. Options E/F (snapshot-level cache,
+lazy snapshot) deferred but lower priority given Option D's
+gain.

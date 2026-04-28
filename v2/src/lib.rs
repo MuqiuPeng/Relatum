@@ -5001,7 +5001,12 @@ fn forward_apply_recursive(
     out: &mut HashSet<R>,
 ) {
     if depth == binding.len() {
-        // Check premise.
+        // All variables bound; verify any premises not already
+        // verified by the early-termination logic below. (In
+        // practice all premises will have been verified by the
+        // time we get here, but the leaf check is kept as a
+        // safety net for premises whose variables are bound
+        // simultaneously at depth = binding.len().)
         for e in &template.premise {
             let x = &ids[binding[e.x_var]];
             let y = &ids[binding[e.y_var]];
@@ -5015,8 +5020,37 @@ fn forward_apply_recursive(
         out.insert(R::new(cx.clone(), cy.clone()));
         return;
     }
+    // ADR 0066 Addendum 7 — Option D: early premise termination.
+    // After binding[depth] is set, check any premise whose
+    // variables are all already bound (i.e., max var index <=
+    // depth). If unsatisfied, prune this branch immediately
+    // instead of letting the recursion explore all sub-branches
+    // before discovering at the leaf that the premise was
+    // violated.
+    //
+    // Prune impact: for axioms like transitivity (R(x,y) ∧ R(y,z)
+    // ⇒ R(x,z)), the first premise R(x,y) is fully bound by
+    // depth=1 (when y is bound). Branches where R(x,y) doesn't
+    // hold get cut here, skipping the entire z-recursion. Total
+    // operations: N * |children(x)| * |children(y)| instead of
+    // N^3 — substantial saving when graph is sparse.
     for i in 0..ids.len() {
         binding[depth] = i;
+        // Early-termination check: are any premises fully bound now?
+        let mut prune = false;
+        for e in &template.premise {
+            if e.x_var <= depth && e.y_var <= depth {
+                let x = &ids[binding[e.x_var]];
+                let y = &ids[binding[e.y_var]];
+                if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                    prune = true;
+                    break;
+                }
+            }
+        }
+        if prune {
+            continue;
+        }
         forward_apply_recursive(rs, template, ids, binding, depth + 1, out);
     }
 }

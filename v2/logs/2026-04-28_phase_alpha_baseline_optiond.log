@@ -1,0 +1,80 @@
+warning: variable does not need to be mutable
+    --> src\runtime\mod.rs:2581:13
+     |
+2581 |         let mut try_add = |seq_id: &str,
+     |             ----^^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4584:9
+     |
+4584 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5120:9
+     |
+5120 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5124:9
+     |
+5124 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\mod.rs:418:8
+    |
+310 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+418 |     fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3386:60
+     |
+3386 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3386:72
+     |
+3386 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 7 warnings (run `cargo fix --lib -p relatum-v2` to apply 4 suggestions)
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 0.77s
+     Running `target\release\examples\phase_alpha_baseline_timed.exe`
+=== Phase Alpha — baseline timed run (HORIZON=2000, 100-tick chunks, no intervention) ===
+  chunk  1/20: tick= 100 episodes= 22 axioms=11 theories=3 elapsed=  0.16s (  1.6ms/tick)
+  chunk  2/20: tick= 200 episodes= 34 axioms=13 theories=4 elapsed=  0.15s (  1.5ms/tick)
+  chunk  3/20: tick= 300 episodes= 46 axioms=13 theories=4 elapsed=  0.48s (  4.8ms/tick)
+  chunk  4/20: tick= 400 episodes= 65 axioms=13 theories=4 elapsed=  0.96s (  9.6ms/tick)
+  chunk  5/20: tick= 500 episodes= 80 axioms=13 theories=4 elapsed=  1.23s ( 12.3ms/tick)
+  chunk  6/20: tick= 600 episodes= 86 axioms=13 theories=4 elapsed=  1.29s ( 12.9ms/tick)
+  chunk  7/20: tick= 700 episodes= 92 axioms=13 theories=4 elapsed=  1.90s ( 19.0ms/tick)
+  chunk  8/20: tick= 800 episodes= 98 axioms=13 theories=4 elapsed=  2.68s ( 26.8ms/tick)
+  chunk  9/20: tick= 900 episodes=104 axioms=13 theories=4 elapsed=  3.69s ( 36.9ms/tick)
+  chunk 10/20: tick=1000 episodes=110 axioms=13 theories=4 elapsed=  4.92s ( 49.2ms/tick)
+  chunk 11/20: tick=1100 episodes=126 axioms=13 theories=4 elapsed=  9.46s ( 94.6ms/tick)
+  chunk 12/20: tick=1200 episodes=142 axioms=13 theories=4 elapsed= 13.12s (131.2ms/tick)
+  chunk 13/20: tick=1300 episodes=159 axioms=13 theories=4 elapsed= 18.26s (182.6ms/tick)
+  chunk 14/20: tick=1400 episodes=176 axioms=13 theories=4 elapsed= 23.71s (237.1ms/tick)
+  chunk 15/20: tick=1500 episodes=193 axioms=13 theories=4 elapsed= 29.55s (295.5ms/tick)
+error: process didn't exit successfully: `target\release\examples\phase_alpha_baseline_timed.exe` (exit code: 1)
