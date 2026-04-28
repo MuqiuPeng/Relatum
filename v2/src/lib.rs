@@ -2491,6 +2491,100 @@ impl RSet {
         Ok(removed)
     }
 
+    /// Merge two theories into one whose member set is the union of
+    /// the inputs. ADR 0066 Phase Alpha-3++++ (Direction F).
+    ///
+    /// Semantics:
+    /// - Both inputs must currently be registered theories.
+    /// - The merged theory's member set is `members(a) ∪ members(b)`.
+    /// - If the union exactly equals the member set of an existing
+    ///   theory (commonly `a`, `b`, or a third theory), reuses that
+    ///   id and retracts the *other* input (or both, if the matching
+    ///   theory is a third one).
+    /// - Otherwise mints a new theory id `t_N` and retracts both
+    ///   inputs.
+    /// - Axiom global registrations are preserved (other theories
+    ///   may share them).
+    /// - `SHARED_AXIOM_MARKER` cascades follow the standard
+    ///   `retract_theory` semantics for each retracted input.
+    /// - Does NOT call `verify_axiom_holds`; merging two valid
+    ///   theory objects is a structural operation on already-named
+    ///   members. The merged theory inherits validity.
+    ///
+    /// Returns the merged theory id (could be `a`, `b`, a third, or
+    /// a freshly-minted id).
+    pub fn merge_theories(
+        &mut self,
+        a: &str,
+        b: &str,
+    ) -> Result<String, TheoryError> {
+        if !self.is_theory(a) {
+            return Err(TheoryError::UnsatisfiedMember(a.to_string()));
+        }
+        if !self.is_theory(b) {
+            return Err(TheoryError::UnsatisfiedMember(b.to_string()));
+        }
+        if a == b {
+            return Err(TheoryError::UnsatisfiedMember(a.to_string()));
+        }
+
+        let members_a: HashSet<String> = self
+            .theory_axioms(a)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let members_b: HashSet<String> = self
+            .theory_axioms(b)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let union: HashSet<String> =
+            members_a.union(&members_b).cloned().collect();
+
+        // If an existing theory already has the union member set,
+        // reuse its id rather than mint a new one. Iterate over a
+        // snapshot of theory ids so we don't borrow self mutably
+        // mid-loop.
+        let theory_ids: Vec<String> = self
+            .theories()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for existing in &theory_ids {
+            let members: HashSet<String> = self
+                .theory_axioms(existing)
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+            if members == union {
+                let merged_id = existing.clone();
+                if merged_id != a {
+                    let _ = self.retract_theory(a);
+                }
+                if merged_id != b {
+                    let _ = self.retract_theory(b);
+                }
+                return Ok(merged_id);
+            }
+        }
+
+        // Mint a new merged theory.
+        let merged_id = self.mint_theory_id();
+        self.add(R::new(THEORY_MARKER, merged_id.clone()));
+        // Sort for deterministic edge insertion order.
+        let mut union_sorted: Vec<String> = union.into_iter().collect();
+        union_sorted.sort();
+        for id in &union_sorted {
+            if !self.is_axiom(id) {
+                self.register_axiom_with_intension(id);
+            }
+            self.add(R::new(merged_id.clone(), id.clone()));
+        }
+        let _ = self.retract_theory(a);
+        let _ = self.retract_theory(b);
+        Ok(merged_id)
+    }
+
     fn mint_theory_id(&self) -> String {
         let existing = self.identifiers();
         let mut n = self.theories().len();

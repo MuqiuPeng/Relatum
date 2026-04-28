@@ -1,0 +1,214 @@
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4543:9
+     |
+4543 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5026:9
+     |
+5026 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5030:9
+     |
+5030 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:60
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:72
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_alpha_theory_merge.exe`
+=== ADR 0066 Phase Alpha-3++++ — theory dedup/merge vs demote vs repair (1000 ticks per phase) ===
+DEMOTE_THRESHOLD=0.5, REPAIR_AXIOM_THRESHOLD=0.2, MERGE_JACCARD_FLOOR=0.3
+
+############### Path A: demote (Alpha-3+ baseline) ###############
+
+=== Tournament: A:Phase 0 ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+--- Pairwise Jaccard similarity (full member sets) ---
+             t_3       t_1       t_2       t_0
+   t_3         —    0.1111    0.4000    0.0769
+   t_1    0.1111         —    0.2857    0.6000
+   t_2    0.4000    0.2857         —    0.1818
+   t_0    0.0769    0.6000    0.1818         —
+
+--- A: retract 't_0' (rate 0.3757) — 16 edges removed ---
+
+=== Tournament: A: after demote + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8545
+   3                            t_1     6          5          0.6664
+
+############### Path B: repair (Alpha-3+++ baseline) ###############
+
+--- B: theory 't_0' (rate 0.3757) — detach 4 axioms below 0.2 ---
+
+=== Tournament: B: after repair + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8545
+   3                            t_0     6          5          0.6664
+   4                            t_1     6          5          0.6664
+
+############### Path C: merge (treatment) ###############
+
+=== Tournament: C:Phase 0 ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+--- C: merge candidates 't_0' + 't_1' (Jaccard=0.6000) ---
+
+--- Axiom breakdown: C: candidate A (t_0) ---
+                                axiom_id   hit_rate  predictions
+                          ax_reflexivity          —            0
+                ax_tpl_v3_p0-0_p1-2_c0-2     0.1092        30706
+                ax_tpl_v3_p0-0_p1-2_c2-0     0.1092        30706
+                ax_tpl_v3_p0-0_p1-2_c0-1     0.1160        28906
+                ax_tpl_v3_p0-0_p1-2_c1-0     0.1160        28906
+                     ax_tpl_v2_p0-1_c1-0     0.4110         3810
+                ax_tpl_v3_p0-1_p1-2_c2-0     0.4682         3345
+                ax_tpl_v3_p0-1_p0-2_c1-2     0.5038         6647
+                ax_tpl_v3_p0-1_p2-1_c0-2     0.5476         6109
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000         3345
+
+--- Axiom breakdown: C: candidate B (t_1) ---
+                                axiom_id   hit_rate  predictions
+                          ax_reflexivity          —            0
+                     ax_tpl_v2_p0-1_c1-0     0.4110         3810
+                ax_tpl_v3_p0-1_p1-2_c2-0     0.4682         3345
+                ax_tpl_v3_p0-1_p0-2_c1-2     0.5038         6647
+                ax_tpl_v3_p0-1_p2-1_c0-2     0.5476         6109
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000         3345
+
+--- C: merged into 't_0' ---
+
+--- Axiom breakdown: C: merged theory (t_0) ---
+                                axiom_id   hit_rate  predictions
+                          ax_reflexivity          —            0
+                ax_tpl_v3_p0-0_p1-2_c0-2     0.1092        30706
+                ax_tpl_v3_p0-0_p1-2_c2-0     0.1092        30706
+                ax_tpl_v3_p0-0_p1-2_c0-1     0.1160        28906
+                ax_tpl_v3_p0-0_p1-2_c1-0     0.1160        28906
+                     ax_tpl_v2_p0-1_c1-0     0.4110         3810
+                ax_tpl_v3_p0-1_p1-2_c2-0     0.4682         3345
+                ax_tpl_v3_p0-1_p0-2_c1-2     0.5038         6647
+                ax_tpl_v3_p0-1_p2-1_c0-2     0.5476         6109
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000         3345
+
+=== Tournament: C: after merge + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8545
+   3                            t_0    10          9          0.3898
+
+=== Comparison ===
+                         phase       mean        min  qual
+           Phase 0 (all paths)     0.7188     0.3757     4
+                     A: demote     0.8401     0.6664     3
+                     B: repair     0.7967     0.6664     4
+                      C: merge     0.7479     0.3898     3
+
+=== Verdict ===
+  A: demoted          : t_0
+  B: repaired axioms  : 4 detached
+  C: merged           : 't_0' + 't_1' (Jaccard=0.6000) → 't_0'
+  C: merged post-rate : 0.3898 (qualifying=9)
+  → NEGATIVE — merged theory rate 0.3898 < threshold 0.5 (mixed good and noise?)
+
+--- end ---

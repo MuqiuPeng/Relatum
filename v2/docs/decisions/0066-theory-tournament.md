@@ -1222,4 +1222,166 @@ beat demote (untested — needs different substrate).
 `retract_theory_member` shipped + tested. Phase
 Alpha-3+++ Accepted. Theory deduplication / merge
 recorded as candidate future slice.
-gain.
+
+---
+
+## Addendum 10 — Phase Alpha-3++++ naive merge falsified; reveals subset+noise structure (2026-04-28)
+
+User picked Direction F (theory dedup/merge) as continuation
+of Alpha-3+++ — borrowing concept-lattice / FCA-style
+consolidation for v2's theory layer.
+
+#### New API
+
+[`RSet::merge_theories(a, b)`](../../src/lib.rs) — takes
+the union of two theories' member sets. If the union
+matches an existing theory's member set, reuses that id;
+otherwise mints a new theory id. Both originals retracted
+(except the reuse target). 5 unit tests cover disjoint
+union, subset reuse, self-rejection, unknown rejection,
+overlapping-dedup. 529 lib tests total pass.
+
+The API does NOT call `verify_axiom_holds` — merging two
+already-named valid theory objects is a structural
+operation. Validity is inherited.
+
+#### Experiment design
+
+[`examples/phase_alpha_theory_merge.rs`](../../examples/phase_alpha_theory_merge.rs).
+Three paths from byte-identical Phase 0 (deterministic
+OQ#1 stream, 1000 ticks):
+
+- **Path A** (demote, Alpha-3+ baseline): retract bottom
+- **Path B** (repair, Alpha-3+++ baseline): detach noise axioms
+- **Path C** (merge, treatment): pick highest-Jaccard pair
+  (≥ 0.30 floor), call `merge_theories`
+
+Pairwise Jaccard matrix computed on full member sets.
+Phase 0 sanity check asserts identical theory shape across
+paths.
+
+#### Results — naive merge underperforms
+
+Pairwise Jaccard matrix at Phase 0:
+
+|   | t_3 | t_1 | t_2 | t_0 |
+|---|---|---|---|---|
+| t_3 | — | 0.11 | 0.40 | 0.08 |
+| t_1 | 0.11 | — | 0.29 | **0.60** |
+| t_2 | 0.40 | 0.29 | — | 0.18 |
+| t_0 | 0.08 | **0.60** | 0.18 | — |
+
+Highest pair: (t_0, t_1) at Jaccard = 0.60. Merge picked.
+
+| metric | A:demote | B:repair | C:merge |
+|---|---|---|---|
+| theories | 3 | 4 | 3 |
+| qualifying | 3 | 4 | 3 |
+| mean hit rate | 0.8401 | 0.7967 | **0.7479** |
+| min hit rate | 0.6664 | 0.6664 | **0.3898** |
+| target post-rate | retracted | t_0' = 0.6664 | **t_0 = 0.3898** |
+
+C **NEGATIVE on min** — merged theory's hit rate drops to
+0.3898, well below threshold.
+
+#### The falsification's empirical content: t_1 ⊆ t_0
+
+Inspecting axiom breakdowns reveals: **t_1's 5 qualifying
+axioms are a strict subset of t_0's qualifying axioms**.
+
+t_0's members (with rates):
+- 4 noise axioms (`p0-0`-shaped, rates 0.10–0.12)
+- 5 signal axioms (`p0-1`-shaped, rates 0.41–1.00) ← same 5 as t_1
+- ax_reflexivity (no predictions)
+
+t_1's members:
+- The same 5 signal axioms
+- ax_reflexivity
+
+So **t_1 = t_0 \ noise**. The "redundancy" between them is
+asymmetric: t_1 is the clean version of t_0.
+
+When `merge_theories(t_0, t_1)` computes union, the result
+equals t_0's full member set (since t_1 ⊆ t_0). The API's
+existing-id reuse logic returns t_0, retracts t_1. **Merge
+degenerated to "retract the clean subset, keep the noisy
+superset"** — exactly the wrong direction.
+
+#### Why this is a useful negative
+
+This negative result *explains* the Alpha-3+++ surprise
+finding ("t_0(post-repair) ≡ t_1") with a sharper
+mechanism: it's not that they "converge" — t_1 was always
+the qualifying core of t_0. Repair makes t_0 lose its
+noise; the clean remainder is structurally identical to
+t_1.
+
+The right operation on a subset+noise pair is:
+- Detect the subset relation
+- Keep the higher-quality theory
+- Retract the other
+
+On (t_0, t_1) where t_1 ⊂ t_0 and t_1 has higher hit rate,
+the "smart merge" answer = retract t_0 = **what Alpha-3+
+demote already does**. Demote on this substrate is
+implicitly a "quality-aware subset merge".
+
+#### Recommended future work
+
+Naive union-style merge is now **falsified** as a general
+intervention. Two follow-up directions:
+
+1. **Quality-aware merge**: before merging (a, b), compute
+   per-axiom hit rates. If union members include axioms
+   below `REPAIR_AXIOM_THRESHOLD`, exclude them from the
+   merged theory (= merge + repair fused). On (t_0, t_1)
+   this would produce a theory with the 5 signal axioms,
+   matching what repair gives standalone.
+
+2. **Subset detection + winner-take-all**: when one
+   theory's member set ⊆ another's, compute aggregate hit
+   rate of each. Keep the higher; retract the other. On
+   (t_0, t_1) this collapses to `retract_theory(t_0)` =
+   Alpha-3+ demote. So this isn't a *new* operation in
+   that case; it's a *named recognition* that demote was
+   the right move because of structural subset
+   relationship, not just rate ranking.
+
+Direction 1 is the more interesting follow-up because it
+introduces a genuinely new operation (filtered merge).
+Direction 2 codifies what Alpha-3+ already does, useful
+mainly as documentation.
+
+#### Methodological note for the tournament line
+
+The verdict tuple should now report not just (target_rate,
+min, qualifying, preserved) but also **structural
+relations between candidates** (subset / superset / disjoint
+/ overlapping). On substrates where bottom theory is the
+*superset* of a higher-rated theory, demote is the optimal
+move and we should not even *propose* merge of that pair.
+This guards future tournament code against the same naive
+union mistake.
+
+#### What this slice produced
+
+1. New `merge_theories` API + 5 unit tests; 529 lib tests
+   pass.
+2. Empirical falsification of naive union-style merge on
+   OQ#1: NEGATIVE on min hit rate (0.3898 vs. baseline
+   0.6664).
+3. Sharper mechanistic explanation of the Alpha-3+++
+   "t_0 ≡ t_1" finding: t_1 ⊂ t_0 (subset+noise structure),
+   not symmetric functional equivalence.
+4. Identified two concrete follow-up slices (quality-
+   aware merge, subset-detection winner-take-all).
+5. ADR 0066 Addendum 10 with full diagnosis.
+
+#### Status
+
+Phase Alpha-3++++ Accepted with **negative finding plus
+positive mechanistic insight**. Naive merge falsified;
+quality-aware merge recorded as next candidate slice.
+The merge_theories API stays in the codebase as a
+primitive, available for compositional use (e.g., in a
+future filtered-merge or subset-aware operator).

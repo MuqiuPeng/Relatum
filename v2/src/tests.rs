@@ -2919,6 +2919,94 @@
     }
 
     #[test]
+    fn adr0066_merge_theories_disjoint_produces_union() {
+        // Two theories with disjoint members; merge mints a new id
+        // whose member set is the union; both originals retracted.
+        let mut rs = equivalence_relation();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        assert!(ids.len() >= 2, "test needs ≥2 axioms");
+        // Split: t_a has only ids[0], t_b has only ids[1].
+        let t_a = rs.name_theory(&[ids[0]]).unwrap();
+        let t_b = rs.name_theory(&[ids[1]]).unwrap();
+        assert_ne!(t_a, t_b);
+
+        let merged = rs.merge_theories(&t_a, &t_b).unwrap();
+        // Merged theory contains both axioms.
+        let members: HashSet<&str> = rs.theory_axioms(&merged).into_iter().collect();
+        assert!(members.contains(&ids[0]));
+        assert!(members.contains(&ids[1]));
+        // Both originals retracted.
+        assert!(!rs.is_theory(&t_a));
+        assert!(!rs.is_theory(&t_b));
+        // Axioms still globally registered.
+        assert!(rs.is_axiom(ids[0]));
+        assert!(rs.is_axiom(ids[1]));
+    }
+
+    #[test]
+    fn adr0066_merge_theories_subset_reuses_superset_id() {
+        // a's members ⊃ b's members. merge returns a's id and only
+        // retracts b. a's structure preserved.
+        let mut rs = equivalence_relation();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        assert!(ids.len() >= 2);
+        let t_super = rs.name_theory(&ids).unwrap(); // all members
+        let t_sub = rs.name_theory(&[ids[0]]).unwrap(); // proper subset
+
+        let merged = rs.merge_theories(&t_super, &t_sub).unwrap();
+        assert_eq!(merged, t_super, "should reuse superset's id");
+        assert!(rs.is_theory(&t_super));
+        assert!(!rs.is_theory(&t_sub));
+        // Member set unchanged on the surviving theory.
+        let members: HashSet<&str> = rs.theory_axioms(&t_super).into_iter().collect();
+        for id in &ids {
+            assert!(members.contains(id));
+        }
+    }
+
+    #[test]
+    fn adr0066_merge_theories_rejects_self() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let t_id = rs.name_theory(&ids).unwrap();
+        assert!(rs.merge_theories(&t_id, &t_id).is_err());
+    }
+
+    #[test]
+    fn adr0066_merge_theories_rejects_unknown() {
+        let mut rs = poset_with_selfloops();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        let t_id = rs.name_theory(&ids).unwrap();
+        assert!(rs.merge_theories(&t_id, "t_does_not_exist").is_err());
+        assert!(rs.merge_theories("t_phantom", &t_id).is_err());
+    }
+
+    #[test]
+    fn adr0066_merge_theories_overlapping_members_dedups() {
+        // a = {ids[0], ids[1]}, b = {ids[1], ids[2]} → merged has 3.
+        let mut rs = equivalence_relation();
+        let th = rs.discover_theory(&AxiomDiscoveryConfig::default());
+        let ids: Vec<&str> = th.member_axiom_ids.iter().map(|s| s.as_str()).collect();
+        assert!(ids.len() >= 3, "test needs ≥3 axioms");
+        let t_a = rs.name_theory(&[ids[0], ids[1]]).unwrap();
+        let t_b = rs.name_theory(&[ids[1], ids[2]]).unwrap();
+
+        let merged = rs.merge_theories(&t_a, &t_b).unwrap();
+        let members: HashSet<&str> = rs.theory_axioms(&merged).into_iter().collect();
+        assert_eq!(members.len(), 3);
+        assert!(members.contains(&ids[0]));
+        assert!(members.contains(&ids[1]));
+        assert!(members.contains(&ids[2]));
+        // Both originals retracted (merged is a fresh id).
+        assert!(!rs.is_theory(&t_a));
+        assert!(!rs.is_theory(&t_b));
+    }
+
+    #[test]
     fn adr0030_theories_containing() {
         let mut rs = poset_with_selfloops();
         let th = rs.discover_theory(&AxiomDiscoveryConfig::default());

@@ -6157,3 +6157,114 @@ ADR 0067 Accepted. Source tree now has 21 logical files
 instead of 2 monolithic ones. Largest production file is
 1,932 lines (down from 10,972).
 
+
+
+### Phase Alpha-3++++ — naive theory merge falsified, mechanism revealed (2026-04-28)
+
+User picked Direction F (theory dedup/merge) as
+continuation of Alpha-3+++. Goal: borrow concept-lattice /
+FCA-style consolidation as a third intervention alongside
+demote and repair.
+
+#### Implementation
+
+New API `RSet::merge_theories(a, b)` in [src/lib.rs](../src/lib.rs):
+- Takes union of member sets
+- Reuses existing theory id if union matches one
+- Mints new id otherwise; retracts both inputs
+- Bypasses `verify_axiom_holds` (merging valid theory
+  objects is structural)
+- 5 unit tests (disjoint union, subset reuse, self/unknown
+  rejection, overlapping dedup); 529 lib tests pass
+
+[`examples/phase_alpha_theory_merge.rs`](../examples/phase_alpha_theory_merge.rs)
+runs three paths from byte-identical Phase 0:
+- A (demote, Alpha-3+ baseline): retract bottom
+- B (repair, Alpha-3+++ baseline): detach noise axioms
+- C (merge, treatment): merge highest-Jaccard pair
+
+#### Results — naive merge underperforms
+
+Pairwise Jaccard at Phase 0 picked (t_0, t_1) at 0.60.
+
+| metric | A:demote | B:repair | C:merge |
+|---|---|---|---|
+| theories | 3 | 4 | 3 |
+| qualifying | 3 | 4 | 3 |
+| mean | 0.8401 | 0.7967 | 0.7479 |
+| min | 0.6664 | 0.6664 | **0.3898** |
+| target post | retracted | t_0' = 0.6664 | **t_0 = 0.3898** |
+
+C is **NEGATIVE** on min — merged theory rate stays at
+the noisy 0.3898 because…
+
+#### The empirical content: t_1 ⊆ t_0 (subset+noise)
+
+Axiom breakdown reveals **t_1's 5 qualifying axioms are a
+strict subset of t_0's**. t_0 = t_1 ∪ {4 noise axioms}.
+The Jaccard 0.60 reflects this asymmetric containment.
+
+When `merge_theories(t_0, t_1)` computes union → equals
+t_0's full set → API's reuse logic returns t_0 → retracts
+t_1. **Merge degenerated to "retract the clean subset,
+keep the noisy superset"** — wrong direction on this
+substrate.
+
+#### Why the negative is useful
+
+It sharpens the Alpha-3+++ finding. We previously thought
+t_0 and t_1 "converged" to functional equivalence after
+repair. The truth is sharper: **t_1 was always the
+qualifying core of t_0**. Repair makes t_0 lose its noise;
+the residue equals t_1.
+
+This means:
+- Alpha-3+ demote was the optimal move *because of
+  structural subset+noise relationship*, not just rate
+  ranking
+- Naive union-style merge can never beat demote on a
+  subset+noise pair — it's symmetric to picking the wrong
+  side
+- The right operation is **quality-aware merge** (filter
+  union by hit rate) or **subset-detection winner-take-
+  all** (keep the higher-rated subset)
+
+#### Significance
+
+- Naive merge is **falsified** as a general intervention.
+- Mechanism behind Alpha-3+++ "redundancy" finding now
+  understood: subset-with-noise, not symmetric
+  equivalence.
+- New methodological rule: tournament verdicts should
+  also report structural relations between candidates
+  (subset / superset / disjoint / overlapping). On
+  subset+noise pairs, demote is provably optimal; don't
+  propose merge.
+- API stays in codebase as a primitive — useful in a
+  future filtered-merge that combines union with hit-rate
+  threshold.
+
+#### Future deferred slices (recorded as candidates)
+
+1. **Quality-aware merge** (genuinely new operation):
+   compute union, filter by hit_rate ≥ threshold, name
+   the filtered set as the new theory.
+2. **Subset-detection winner-take-all** (named recognition
+   of demote semantics): codifies what Alpha-3+ already
+   does as an explicit operator.
+
+#### What this slice produced
+
+1. `merge_theories` API + 5 unit tests + ADR 0066
+   Addendum 10.
+2. Falsification of naive union merge on OQ#1.
+3. Sharper mechanistic understanding of the Alpha-3+++
+   "t_0 ≡ t_1" finding.
+4. Two concrete future slices identified.
+
+#### Status
+
+Phase Alpha-3++++ Accepted with negative finding +
+positive mechanistic insight. Naive merge primitive
+shipped; quality-aware merge recorded as next candidate.
+
