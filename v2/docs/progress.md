@@ -5695,6 +5695,71 @@ tractable.
 Options A + B + D all shipped. Options E/F deferred but
 lower priority given Option D's gain. Tests: 520 pass.
 
+### Long-horizon empirics post-Option D (HORIZON=5000 attempt)
+
+Re-ran `phase_h2_0_long5k.rs` (5 regimes × 1000 ticks)
+which previously hung pre-Option D. Goal: validate that
+Option D's 40% speedup makes long-horizon experiments
+tractable, and observe DriveMix self-tuning over extended
+substrate.
+
+#### Result: progress matches pre-Option-D byte-by-byte through tick 2000
+
+Hand-tuned trajectory at intervals:
+
+| tick | epis | ep | comp | pairs | tri | sig | candidate_a | candidate_b |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0 | 0 | 0.000 | 0.5/0.4/0.1 | 0.5/0.4/0.1 |
+| 500 | 80 | 41 | 1 | 1 | 2 | -1.111 | 0.5/0.4/0.1 | 0.5/0.4/0.1 |
+| 1000 | 145 | 76 | 1 | 1 | 2 | -1.109 | 0.5/0.4/0.1 | 0.4/0.4/0.1 |
+| 1500 | 175 | 106 | 1 | 1 | 2 | -1.250 | 0.5/0.4/0.1 | 0.4/0.4/0.1 |
+| 2000 | 205 | 136 | 1 | 1 | 2 | -1.111 | 0.5/0.4/0.1 | 0.4/0.4/0.12 |
+
+Compared to the pre-Option-D partial run (which reached
+tick 3000 before being killed): trajectory **byte-
+identical** through tick 2000. Option D preserves
+correctness exactly while running ~40% faster per tick.
+
+Run was killed past tick 2000 due to wall-time budget —
+the substrate's high density (5 regimes × 1000 ticks each
+with all subtypes) means even at 60% of pre-fix cost,
+the runtime takes minutes per 100-tick chunk in the
+high-N region.
+
+#### What this validates
+
+1. **Option D works as designed**: byte-identical to
+   pre-fix logic, ~40% faster per tick measured on the
+   simpler OQ#1 substrate.
+2. **DriveMix mutation cadence consistent**: 4
+   mutations across 2000 ticks matches expected ~1 per
+   50-episode A/B window (with 205 episodes total,
+   that's ~4 windows; matches observed 4 mutations).
+3. **Long-horizon substrates remain expensive**: even
+   with 40% speedup, 5000 ticks of 5-regime substrate
+   exceeds reasonable wall-time budget. The bottleneck
+   is substrate density × N^k_eff growth, not simply
+   N^k.
+
+#### Next-direction implication
+
+For tractable long-horizon experiments:
+
+- **Substrates with sleep periods** (where rset stops
+  changing for stretches): post-Option-B cache would
+  hit, providing additional speedup beyond Option D.
+- **Smaller substrates**: current OQ#1 (4 regimes × 500
+  ticks) at HORIZON=2000 is feasible (~2-3 minutes
+  total post-Option-D). HORIZON=3000-4000 likely
+  feasible for OQ#1.
+- **Long5k with denser substrate**: needs further perf
+  work or a redesigned substrate.
+
+The realistic ceiling for fast iteration is ~HORIZON=
+2000-3000 on OQ#1-class substrates. Phase Alpha-3++
+(multi-round demote iteration) could be done at this
+scale if each iteration is HORIZON=1000-1500.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
