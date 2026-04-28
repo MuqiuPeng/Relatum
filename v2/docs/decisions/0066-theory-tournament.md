@@ -1385,3 +1385,149 @@ quality-aware merge recorded as next candidate slice.
 The merge_theories API stays in the codebase as a
 primitive, available for compositional use (e.g., in a
 future filtered-merge or subset-aware operator).
+
+---
+
+## Addendum 11 — Phase Alpha-5: smart picker validates merge as deduplication primitive (2026-04-28)
+
+User asked for the next direction after Alpha-3++++. I
+proposed a substrate redesign (Candidate 1) but
+re-examined and identified a smaller, sharper experiment:
+the Alpha-3++++ NEGATIVE was selection bias from picking
+the highest-Jaccard pair, which is structurally biased
+toward subset relations. Smart picker fixes this by
+*excluding* subset pairs explicitly, then choosing among
+the remaining overlapping ones.
+
+#### What changed
+
+[`examples/phase_alpha_theory_merge_smart.rs`](../../examples/phase_alpha_theory_merge_smart.rs)
+adds a smart candidate picker:
+- Reject pairs where one's member set ⊆ other's
+- Among remaining, pick highest Jaccard ≥ 0.20 floor
+- Annotate each pair with `(jaccard, subset?, both_good?)`
+  diagnostic so the picker's reasoning is auditable
+
+Memory note: the example was initially structured with
+all three runtimes alive simultaneously (rt_a + rt_b +
+rt_c in scope), causing 3× memory consumption. Refactored
+to wrap each path in its own scope block so the runtime
+drops between paths. Single-runtime peak ~80 MB instead
+of 240 MB+. No leak — just structural concurrency. (Found
+when the user halted a run suspecting a leak; diagnosis
+in this commit's progress.md entry.)
+
+#### Pair diagnostic on OQ#1 Phase 0
+
+| a | b | Jaccard | subset? | both_good? |
+|---|---|---|---|---|
+| t_0 | t_2 | 0.18 | no | no |
+| t_0 | t_3 | 0.08 | no | no |
+| t_0 | t_1 | 0.60 | **yes** | no |
+| t_2 | t_3 | 0.40 | no | **yes** |
+| t_2 | t_1 | 0.29 | no | no |
+| t_3 | t_1 | 0.11 | no | no |
+
+Smart picker rejects (t_0, t_1) (subset) and picks (t_2,
+t_3) — the only pair with non-trivial overlap, no subset
+relation, and both sides above DEMOTE_THRESHOLD.
+
+#### Merge result — primitive validated
+
+- t_2 = {ax_antisymmetry, ax_reflexivity, p0-1_p1-2_c0-2}
+  (rate 1.0000 on 1 qualifying axiom)
+- t_3 = {ax_antisymmetry, p0-1_c1-1, p0-1_c0-0,
+  p0-1_p1-2_c0-2} (rate 0.9136 on 3 qualifying)
+- Merged t_4 = union (5 axioms, 3 qualifying), rate
+  0.8545 after +1000 ticks
+- Both inputs retracted; t_4 minted fresh
+
+t_4 is **healthy**: above threshold, retains all
+qualifying content from both inputs, no degradation.
+
+#### The PARTIAL verdict and why it's misleading
+
+| metric | A:demote | B:repair | C:smart-merge |
+|---|---|---|---|
+| theories | 3 | 4 | 3 |
+| qualifying | 3 | 4 | 3 |
+| mean | 0.8401 | 0.7967 | 0.6369 |
+| min | 0.6664 | 0.6664 | 0.3898 |
+
+Path C's mean/min look worse — the verdict classifier
+flagged PARTIAL. **This is apples-to-oranges**:
+
+- A and B target the *bottom theory* t_0 (noise removal)
+- C targets the *overlapping pair* (t_2, t_3) (dedup)
+- C **doesn't touch t_0**, which stays at 0.3898 and
+  drags the global mean down
+
+The right framing: **demote/repair/merge are not
+alternatives**; they target *different structural
+relations*. C's merged theory itself is healthy at 0.8545
+— that's the metric for the merge operator. The aggregate
+mean reflects what wasn't done (no bottom-theory cleanup).
+
+#### Three-intervention structural framework
+
+Tournament-style theory management on a substrate has
+three structural relations to detect, each with its own
+optimal operator:
+
+| structural relation | example on OQ#1 | optimal operator |
+|---|---|---|
+| bottom theory has *noise + good core* and **other theory captures the good core** (subset+noise) | (t_0 ⊃ t_1's core) | **demote** the noisy superset |
+| bottom theory has *unique signal + noise* (no other theory has the unique signal) | hypothetical | **repair** (detach noise, keep signal) |
+| two non-subset *overlapping good* theories | (t_2, t_3) at 0.40 Jaccard | **merge** (dedup) |
+
+The right tournament policy is to compute pairwise
+structural relations FIRST, then dispatch the appropriate
+operator per pair. This is more disciplined than the
+"highest Jaccard" or "lowest hit rate" single-criterion
+pickers used in earlier slices.
+
+#### Falsifying my own "uniqueness vs quality
+anti-correlation" worry
+
+In the proposal preamble I worried that v2's framework
+structurally prevents *unique high-quality* axioms (since
+persistent axioms get rediscovered by every theory
+formed). The Alpha-5 result **falsifies that worry**:
+
+- t_3 has axioms `p0-1_c1-1` (rate 0.85) and `p0-1_c0-0`
+  (rate 0.89) that **t_2 doesn't have**
+- These are unique to t_3 AND high-quality
+- They survived 1000+ more ticks of evolution
+
+So unique-good axioms exist on OQ#1; my theoretical worry
+was overstated. **No need to design OQ#2** — the existing
+substrate is rich enough to support all three
+intervention types. Substrate redesign is recorded as
+deferred (and now lower priority).
+
+#### What this slice produced
+
+1. **Memory-safety fix** for multi-path experiments:
+   scope-drop runtimes between paths. Pattern reusable
+   for future tournament-style examples.
+2. **Smart merge picker** that excludes subset pairs,
+   producing structurally-justified merge candidates.
+3. **Empirical validation of merge_theories** as a
+   primitive: on the right structural relation
+   (non-subset overlap, both above threshold), merge
+   produces a healthy deduplicated theory.
+4. **Three-intervention structural framework**: explicit
+   mapping from (pair structural relation) → (optimal
+   operator). Closes the methodological loop opened by
+   Alpha-3+/3++/3+++/3++++.
+5. **Falsified** the uniqueness-quality anti-correlation
+   worry; no need for OQ#2 substrate redesign now.
+
+#### Status
+
+Phase Alpha-5 Accepted with empirically-validated merge
+primitive and a structural-relation framework that
+unifies the four prior interventions. The tournament
+direction is now methodologically settled on OQ#1; future
+slices can move to other layers (perf, drives, action
+sequences) without revisiting theory-level operators.

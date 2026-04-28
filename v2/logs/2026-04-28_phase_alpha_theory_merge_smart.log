@@ -1,0 +1,202 @@
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4543:9
+     |
+4543 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5026:9
+     |
+5026 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5030:9
+     |
+5030 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:60
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:72
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_alpha_theory_merge_smart.exe`
+=== ADR 0066 Phase Alpha-5 — smart-merge vs demote vs repair (1000 ticks per phase) ===
+DEMOTE_THRESHOLD=0.5, REPAIR_AXIOM_THRESHOLD=0.2, MERGE_JACCARD_FLOOR=0.2 (subset pairs excluded)
+
+############### Path A: demote (Alpha-3+ baseline) ###############
+
+=== Tournament: A:Phase 0 ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+--- A: retract 't_0' (rate 0.3757) — 16 edges removed ---
+
+=== Tournament: A: after demote + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8545
+   3                            t_1     6          5          0.6664
+
+############### Path B: repair (Alpha-3+++ baseline) ###############
+
+--- B: theory 't_0' (rate 0.3757) — detach 4 axioms below 0.2 ---
+
+=== Tournament: B: after repair + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8545
+   3                            t_1     6          5          0.6664
+   4                            t_0     6          5          0.6664
+
+############### Path C: smart-merge (treatment) ###############
+
+=== Tournament: C:Phase 0 ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+--- Pair diagnostics ---
+         a          b  jaccard  subset? both_good?
+       t_0        t_2   0.1818       no         no
+       t_0        t_3   0.0769       no         no
+       t_0        t_1   0.6000      yes         no
+       t_2        t_3   0.4000       no        yes
+       t_2        t_1   0.2857       no        yes
+       t_3        t_1   0.1111       no        yes
+
+--- C: smart pair 't_2' + 't_3' (Jaccard=0.4000, NON-subset) ---
+
+--- Axiom breakdown: C: candidate A (t_2) ---
+                                axiom_id   hit_rate  predictions
+                         ax_antisymmetry          —            0
+                          ax_reflexivity          —            0
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000         3345
+
+--- Axiom breakdown: C: candidate B (t_3) ---
+                                axiom_id   hit_rate  predictions
+                         ax_antisymmetry          —            0
+                     ax_tpl_v2_p0-1_c1-1     0.8461         1657
+                     ax_tpl_v2_p0-1_c0-0     0.8947         1567
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000         3345
+
+--- C: merged into 't_4' ---
+
+--- Axiom breakdown: C: merged theory (t_4) ---
+                                axiom_id   hit_rate  predictions
+                         ax_antisymmetry          —            0
+                          ax_reflexivity          —            0
+                     ax_tpl_v2_p0-1_c1-1     0.8461         1657
+                     ax_tpl_v2_p0-1_c0-0     0.8947         1567
+                ax_tpl_v3_p0-1_p1-2_c0-2     1.0000         3345
+
+=== Tournament: C: after smart-merge + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_4     5          3          0.8545
+   2                            t_1     6          5          0.6664
+   3                            t_0    10          9          0.3898
+
+=== Comparison ===
+                         phase       mean        min  qual
+           Phase 0 (all paths)     0.7188     0.3757     4
+                     A: demote     0.8401     0.6664     3
+                     B: repair     0.7967     0.6664     4
+                C: smart-merge     0.6369     0.3898     3
+
+=== Verdict ===
+  A: demoted          : t_0
+  B: repaired axioms  : 4 detached
+  C: smart-merged     : 't_2' + 't_3' (Jaccard=0.4000) → 't_4'
+  C: merged post-rate : 0.8545 (qualifying=3)
+  → PARTIAL — smart-merge meets threshold but mean < repair
+
+--- end ---

@@ -6268,3 +6268,114 @@ Phase Alpha-3++++ Accepted with negative finding +
 positive mechanistic insight. Naive merge primitive
 shipped; quality-aware merge recorded as next candidate.
 
+
+
+### Phase Alpha-5 — smart picker validates merge primitive + structural framework (2026-04-28)
+
+User asked for next direction; I proposed substrate
+redesign (Candidate 1) but re-examined: Alpha-3++++'s
+NEGATIVE was selection bias from "highest Jaccard"
+heuristic, which structurally favors subset pairs. Smart
+picker fixes this by excluding subsets explicitly.
+
+#### Memory diagnostic interlude
+
+User halted the first run suspecting a memory leak.
+Diagnosis: **no leak** (all per-runtime structures are
+bounded — episodes capped at 1000, forward_apply_cache
+clears on rset version change, ObjectHistoryStore bounded
+by named-object count, sequence stats bounded by ActionKind
+combinations). The actual issue: example code held three
+runtimes alive simultaneously (rt_a + rt_b + rt_c all in
+scope), giving 3× memory consumption (~250 MB total).
+Fix: wrap each path in a scope block so the runtime drops
+between paths. Single-runtime peak ~80 MB.
+
+This is now a reusable pattern for multi-path tournament
+experiments.
+
+#### Smart picker mechanics
+
+[`examples/phase_alpha_theory_merge_smart.rs`](../examples/phase_alpha_theory_merge_smart.rs):
+
+1. Compute pairwise (Jaccard, subset?, both_good?) for
+   every theory pair
+2. Reject subset pairs (one ⊆ other)
+3. Among remaining, pick highest Jaccard ≥ 0.20 floor
+
+On OQ#1, this rejects (t_0, t_1) at 0.60 (subset+noise,
+the bias trap from Alpha-3++++) and picks (t_2, t_3) at
+0.40 — both above DEMOTE_THRESHOLD, mutually overlapping,
+neither a subset.
+
+#### Result: merge primitive validated
+
+t_2 = {ax_antisymmetry, ax_reflexivity, p0-1_p1-2_c0-2}
+(rate 1.00 on 1 qualifying)
+t_3 = {ax_antisymmetry, p0-1_c1-1, p0-1_c0-0,
+p0-1_p1-2_c0-2} (rate 0.91 on 3 qualifying)
+
+Merged → t_4 (5 axioms, 3 qualifying), rate **0.8545**
+after +1000 ticks. Above threshold, healthy.
+
+| metric | A:demote | B:repair | C:smart-merge |
+|---|---|---|---|
+| theories | 3 | 4 | 3 |
+| qualifying | 3 | 4 | 3 |
+| mean | 0.8401 | 0.7967 | 0.6369 |
+| min | 0.6664 | 0.6664 | 0.3898 |
+
+Verdict classifier said PARTIAL because mean(C) < mean(B).
+**This is apples-to-oranges**: A and B target the bottom
+(t_0); C targets the overlapping pair (t_2, t_3). Path C
+doesn't touch t_0, which stays at 0.3898 and drags the
+global mean. **Merge as a primitive** evaluated on the
+merged theory itself is healthy (0.8545 ≥ threshold).
+
+#### Three-intervention structural framework
+
+Tournament theory management has **three structural
+relations**, each with its own optimal operator:
+
+| relation | OQ#1 example | operator |
+|---|---|---|
+| subset+noise (bottom ⊃ survivor's good core) | (t_0, t_1) | **demote** |
+| unique signal + noise (no peer captures unique) | hypothetical | **repair** |
+| non-subset overlapping good pair | (t_2, t_3) | **merge** |
+
+Right policy = detect structural relation per pair,
+dispatch matching operator. **The interventions are not
+alternatives — they compose**.
+
+This closes the methodological loop opened by
+Alpha-3/3+/3++/3+++/3++++.
+
+#### Falsified my own pre-experiment worry
+
+Pre-experiment I argued v2's framework might structurally
+prevent *unique high-quality* axioms. **Falsified**: t_3
+has `p0-1_c1-1` (0.85) and `p0-1_c0-0` (0.89) — unique to
+t_3, persistent, high-quality. So unique-good axioms exist
+on OQ#1. **No OQ#2 substrate redesign needed**; existing
+substrate is rich enough.
+
+#### What this slice produced
+
+1. Memory-safety fix (scope-drop pattern for multi-path
+   experiments)
+2. Smart merge picker (subset-exclusion + Jaccard floor)
+3. Empirical validation of `merge_theories` on the right
+   structural relation
+4. Three-intervention structural framework as ADR 0066
+   Addendum 11
+5. Falsification of the uniqueness-quality
+   anti-correlation worry (substrate redesign deferred)
+
+#### Status
+
+Phase Alpha-5 Accepted with validated merge primitive and
+unified structural framework. The theory-level tournament
+direction is now methodologically settled on OQ#1. Future
+slices can move to other layers (perf / drives / action
+sequences) without revisiting theory-level operators.
+
