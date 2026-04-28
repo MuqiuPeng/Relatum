@@ -1,0 +1,133 @@
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4553:9
+     |
+4553 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5148:9
+     |
+5148 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5152:9
+     |
+5152 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:60
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3345:72
+     |
+3345 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 10.00s
+     Running `target\release\examples\phase_alpha_baseline_timed.exe`
+=== Phase Alpha — baseline timed run (HORIZON=2000, 100-tick chunks, no intervention) ===
+  chunk  1/20: tick= 100 episodes= 22 axioms=11 theories=3 elapsed=  0.15s (  1.5ms/tick)
+  chunk  2/20: tick= 200 episodes= 34 axioms=13 theories=4 elapsed=  0.12s (  1.2ms/tick)
+  chunk  3/20: tick= 300 episodes= 46 axioms=13 theories=4 elapsed=  0.39s (  3.9ms/tick)
+  chunk  4/20: tick= 400 episodes= 65 axioms=13 theories=4 elapsed=  0.70s (  7.0ms/tick)
+  chunk  5/20: tick= 500 episodes= 80 axioms=13 theories=4 elapsed=  0.85s (  8.5ms/tick)
+  chunk  6/20: tick= 600 episodes= 86 axioms=13 theories=4 elapsed=  0.85s (  8.5ms/tick)
+  chunk  7/20: tick= 700 episodes= 92 axioms=13 theories=4 elapsed=  1.43s ( 14.3ms/tick)
+  chunk  8/20: tick= 800 episodes= 98 axioms=13 theories=4 elapsed=  2.18s ( 21.8ms/tick)
+  chunk  9/20: tick= 900 episodes=104 axioms=13 theories=4 elapsed=  3.00s ( 30.0ms/tick)
+  chunk 10/20: tick=1000 episodes=110 axioms=13 theories=4 elapsed=  3.95s ( 39.5ms/tick)
+  chunk 11/20: tick=1100 episodes=126 axioms=13 theories=4 elapsed=  8.16s ( 81.6ms/tick)
+  chunk 12/20: tick=1200 episodes=142 axioms=13 theories=4 elapsed= 11.09s (110.9ms/tick)
+  chunk 13/20: tick=1300 episodes=159 axioms=13 theories=4 elapsed= 15.11s (151.1ms/tick)
+  chunk 14/20: tick=1400 episodes=176 axioms=13 theories=4 elapsed= 19.17s (191.7ms/tick)
+  chunk 15/20: tick=1500 episodes=193 axioms=13 theories=4 elapsed= 23.73s (237.3ms/tick)
+  chunk 16/20: tick=1600 episodes=208 axioms=13 theories=4 elapsed= 29.95s (299.5ms/tick)
+  chunk 17/20: tick=1700 episodes=223 axioms=13 theories=4 elapsed= 34.52s (345.2ms/tick)
+  chunk 18/20: tick=1800 episodes=238 axioms=13 theories=4 elapsed= 40.10s (401.0ms/tick)
+  chunk 19/20: tick=1900 episodes=253 axioms=13 theories=4 elapsed= 46.04s (460.4ms/tick)
+  chunk 20/20: tick=2000 episodes=268 axioms=13 theories=4 elapsed= 52.39s (523.9ms/tick)
+
+Total: tick=2000 episodes=268 axioms=13 theories=4 elapsed=293.87s (146.9ms/tick avg)
+
+--- end ---

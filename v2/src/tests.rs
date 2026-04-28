@@ -2846,6 +2846,85 @@
     }
 
     #[test]
+    fn adr0066_indexed_forward_apply_matches_transitivity_on_chain() {
+        // Sanity: on a small chain a→b→c→d (with closure), transitivity
+        // axiom (R(0,1) ∧ R(1,2) ⇒ R(0,2)) predicts every R(x, z) where
+        // ∃ y. R(x, y) ∧ R(y, z). Verify the indexed enumerator
+        // produces the expected set.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"),
+            R::new("b", "c"),
+            R::new("c", "d"),
+            R::new("a", "c"),
+            R::new("a", "d"),
+            R::new("b", "d"),
+        ]);
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        // Register axiom (forward_apply needs intension wired to meta-R).
+        rs.name_theory(&[trans_id]).unwrap();
+        let predicted = rs.forward_apply_axiom(trans_id);
+        // Expected forward-apply output on {(a,b), (b,c), (c,d),
+        // (a,c), (a,d), (b,d)}: every (x, z) such that ∃ y with both
+        // (x,y) and (y,z) present. That gives:
+        //   from (a,b)+(b,c)→(a,c); (a,b)+(b,d)→(a,d); (a,c)+(c,d)→(a,d);
+        //   from (b,c)+(c,d)→(b,d).
+        // Set: {(a,c), (a,d), (b,d)}.
+        let expected: HashSet<R> = [
+            R::new("a", "c"),
+            R::new("a", "d"),
+            R::new("b", "d"),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(predicted, expected);
+    }
+
+    #[test]
+    fn adr0066_indexed_forward_apply_matches_symmetry_on_clique() {
+        // Symmetry axiom (R(0,1) ⇒ R(1,0)) on a 3-node symmetric clique.
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"),
+            R::new("b", "a"),
+            R::new("a", "c"),
+            R::new("c", "a"),
+            R::new("b", "c"),
+            R::new("c", "b"),
+        ]);
+        let sym_id = "ax_tpl_v2_p0-1_c1-0";
+        rs.name_theory(&[sym_id]).unwrap();
+        let predicted = rs.forward_apply_axiom(sym_id);
+        // 6 input edges × symmetric reflection = same 6 edges
+        // (since clique is symmetric).
+        assert_eq!(predicted.len(), 6);
+        for r in &[
+            R::new("b", "a"),
+            R::new("a", "b"),
+            R::new("c", "a"),
+            R::new("a", "c"),
+            R::new("c", "b"),
+            R::new("b", "c"),
+        ] {
+            assert!(predicted.contains(r));
+        }
+    }
+
+    #[test]
+    fn adr0066_indexed_forward_apply_empty_premise_chain() {
+        // Single-edge RSet: transitivity has no satisfiable bindings.
+        let mut rs = RSet::new();
+        rs.extend([R::new("a", "b")]);
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        // Cannot name_theory here since transitivity doesn't hold at
+        // rate 1.0 on a single edge. Use forward_apply directly with
+        // an unregistered axiom; it should return empty (the axiom
+        // template id parses but the RSet has no chain-of-2).
+        let predicted = rs.forward_apply_axiom(trans_id);
+        assert!(predicted.is_empty());
+    }
+
+    #[test]
     fn adr0066_retract_theory_member_keeps_theory_and_other_members() {
         // Build a 2-axiom theory; remove one member; verify theory
         // survives, axiom global registration intact, other member

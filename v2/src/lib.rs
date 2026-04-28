@@ -3852,9 +3852,19 @@ impl RSet {
         template: &AxiomTemplate,
         data_ids: &[String],
     ) -> HashSet<R> {
+        // ADR 0066 Phase Alpha-6: route through indexed-join enumerator
+        // for O(d^k) instead of O(N^k) on sparse graphs. Build a borrow-
+        // based string→index lookup once per call (no String cloning).
+        let id_index: HashMap<&str, usize> = data_ids
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.as_str(), i))
+            .collect();
         let mut binding: Vec<usize> = vec![0; template.num_vars];
         let mut out: HashSet<R> = HashSet::new();
-        forward_apply_recursive(self, template, data_ids, &mut binding, 0, &mut out);
+        forward_apply_recursive_indexed(
+            self, template, data_ids, &id_index, &mut binding, 0, &mut out,
+        );
         out
     }
 
@@ -4895,9 +4905,121 @@ fn evaluate_template_recursive(
     }
 }
 
+/// Indexed-join forward-apply enumerator. ADR 0066 Phase Alpha-6.
+///
+/// Borrows the ILP / Datalog "indexed join" pattern: at each variable
+/// binding step, identify premises that constrain the current
+/// variable to a previously-bound one, and iterate **only over the
+/// neighbors** in the relevant direction (out-edges or in-edges of
+/// the bound variable). Falls back to full iteration when no premise
+/// constrains the current depth.
+///
+/// Cost model:
+/// - Old `forward_apply_recursive` (Option D): O(N^k) worst case,
+///   O(N^k) best case when no premise pruning applies.
+/// - New: O(d^k) when each binding step has at least one
+///   constraining premise, where d = average out/in-degree.
+///   Falls back to O(N^k) when no constraint applies.
+///
+/// Byte-identical output to the previous Option D implementation;
+/// the only change is iteration order and pruning aggressiveness.
+fn forward_apply_recursive_indexed(
+    rs: &RSet,
+    template: &AxiomTemplate,
+    ids: &[String],
+    id_index: &HashMap<&str, usize>,
+    binding: &mut [usize],
+    depth: usize,
+    out: &mut HashSet<R>,
+) {
+    if depth == binding.len() {
+        // All variables bound; final premise verification (catches
+        // premises whose vars span both `<depth` only — those weren't
+        // touched by the candidate filter, since the filter only
+        // constrains premises that *involve* the current depth).
+        for e in &template.premise {
+            let x = &ids[binding[e.x_var]];
+            let y = &ids[binding[e.y_var]];
+            if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
+                return;
+            }
+        }
+        let cx = &ids[binding[template.conclusion.x_var]];
+        let cy = &ids[binding[template.conclusion.y_var]];
+        out.insert(R::new(cx.clone(), cy.clone()));
+        return;
+    }
+
+    // Build the candidate set for var `depth`. Each premise edge that
+    // has one endpoint == depth and the other < depth contributes a
+    // neighbor set; the candidate set is their intersection.
+    //
+    // - premise R(p, depth) where p < depth: candidates = right-
+    //   neighbors of binding[p] (i.e., ids appearing as `y` when
+    //   binding[p] is `x`).
+    // - premise R(depth, q) where q < depth: candidates = left-
+    //   neighbors of binding[q] (i.e., ids appearing as `x` when
+    //   binding[q] is `y`).
+    let mut candidates: Option<HashSet<usize>> = None;
+    for e in &template.premise {
+        let neighbor_set: HashSet<usize> = if e.y_var == depth && e.x_var < depth {
+            // R(bound_x, ?) — find indices i such that R(bound_x, ids[i]) ∈ rset.
+            let bound_id = ids[binding[e.x_var]].as_str();
+            rs.left_of(bound_id)
+                .iter()
+                .filter_map(|r| id_index.get(r.y.as_str()).copied())
+                .collect()
+        } else if e.x_var == depth && e.y_var < depth {
+            // R(?, bound_y) — find indices i such that R(ids[i], bound_y) ∈ rset.
+            let bound_id = ids[binding[e.y_var]].as_str();
+            rs.right_of(bound_id)
+                .iter()
+                .filter_map(|r| id_index.get(r.x.as_str()).copied())
+                .collect()
+        } else {
+            continue;
+        };
+        candidates = Some(match candidates {
+            None => neighbor_set,
+            Some(c) => &c & &neighbor_set,
+        });
+    }
+
+    // Iterate over the candidate set (or all ids if no constraint).
+    // The candidate filter already encodes the depth-involving
+    // premise constraints structurally, so no per-iteration premise
+    // recheck is needed. The leaf check at depth == num_vars handles
+    // the residual case (premises with vars strictly < depth, which
+    // were already validated when those vars were bound).
+    match candidates {
+        Some(set) => {
+            let mut v: Vec<usize> = set.into_iter().collect();
+            v.sort_unstable();
+            for i in v {
+                binding[depth] = i;
+                forward_apply_recursive_indexed(
+                    rs, template, ids, id_index, binding, depth + 1, out,
+                );
+            }
+        }
+        None => {
+            for i in 0..ids.len() {
+                binding[depth] = i;
+                forward_apply_recursive_indexed(
+                    rs, template, ids, id_index, binding, depth + 1, out,
+                );
+            }
+        }
+    }
+}
+
 /// Forward-apply enumerator. Mirror of `evaluate_template_recursive`
 /// but inserts a predicted `R(σ(c.x), σ(c.y))` into `out` for every
 /// σ that satisfies every premise edge. ADR 0058.
+///
+/// Kept for reference / debug comparison. Production callers route
+/// through `forward_apply_recursive_indexed` (Phase Alpha-6).
+#[allow(dead_code)]
 fn forward_apply_recursive(
     rs: &RSet,
     template: &AxiomTemplate,

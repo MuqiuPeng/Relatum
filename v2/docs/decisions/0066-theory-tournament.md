@@ -1531,3 +1531,153 @@ unifies the four prior interventions. The tournament
 direction is now methodologically settled on OQ#1; future
 slices can move to other layers (perf, drives, action
 sequences) without revisiting theory-level operators.
+
+---
+
+## Addendum 12 — Phase Alpha-6: ILP-style indexed-join forward apply (2026-04-28)
+
+User picked Direction A (ILP join optimizer for
+`forward_apply_axiom`) as next slice after the tournament
+line settled. This is a research-scout transfer from the
+ILP / Datalog tradition: instead of full Cartesian
+enumeration, use **binding propagation** — when a variable
+gets bound, only iterate the next variable over neighbors
+that satisfy a constraining premise edge.
+
+#### Implementation
+
+[`forward_apply_recursive_indexed`](../../src/lib.rs)
+replaces `forward_apply_recursive` as the production
+enumerator. The old function is kept (`#[allow(dead_code)]`)
+for reference / debug-comparison.
+
+Mechanics:
+- For each premise edge `R(p, q)` where one endpoint is
+  the current depth and the other is already bound:
+  - If `q == depth, p < depth`: candidate set =
+    `right-neighbors of binding[p]` (look up `left_of`)
+  - If `p == depth, q < depth`: candidate set =
+    `left-neighbors of binding[q]` (look up `right_of`)
+- Take intersection of all such candidate sets
+- Iterate over the (sorted) intersection
+- Fall back to full `0..N` iteration when no premise
+  constrains the current depth
+- Final leaf check verifies premises with both vars
+  strictly < depth (already bound at earlier depths,
+  validated then)
+
+The redundant Option D early-termination check inside the
+iteration loop was removed: the candidate filter
+structurally enforces depth-involving premises, and
+strictly-earlier premises were validated when their max
+var was bound.
+
+Optimization details:
+- `id_index: HashMap<&str, usize>` (borrowed, no String
+  cloning). Built once per `forward_apply_axiom_with_data_ids`
+  call, amortized over recursion depth.
+- `left_of` and `right_of` already exist as O(d) indexed
+  lookups via `RSet::by_source` / `by_target`.
+
+#### Correctness
+
+532 lib tests pass (529 before + 3 new). 3 explicit
+equivalence tests for transitivity on chain, symmetry on
+clique, empty-premise edge case. All examples build.
+
+#### Performance — measured against Option D baseline
+
+Baseline: [`logs/2026-04-28_phase_alpha_baseline_optiond.log`](../../logs/2026-04-28_phase_alpha_baseline_optiond.log)
+(Option D, crashed at chunk 15 — exit code 1; pre-crash
+data still useful).
+
+After indexed join (HORIZON=2000, OQ#1, no intervention):
+[`logs/2026-04-28_phase_alpha_baseline_indexed_v2.log`](../../logs/2026-04-28_phase_alpha_baseline_indexed_v2.log).
+
+| chunk | tick | Option D | Indexed | speedup |
+|---|---|---|---|---|
+| 5 | 500 | 12.3 ms/tick | 8.5 ms/tick | 1.45× |
+| 10 | 1000 | 49.2 ms/tick | 39.5 ms/tick | 1.25× |
+| 15 | 1500 | 295.5 ms/tick | 237.3 ms/tick | 1.25× |
+| 20 | 2000 | crashed | 523.9 ms/tick | (no Option D data) |
+
+Indexed run completes HORIZON=2000 in 294s (Option D
+crashed mid-run). **~25% per-tick speedup** consistent
+across all chunks.
+
+#### The empirical surprise: forward_apply is no longer
+the dominant cost
+
+Theoretical complexity argument predicted 100×+ speedup
+from O(d^k) replacing O(N^k) on sparse OQ#1 (N≈300, d≈5).
+Actual: 1.25×.
+
+This **falsifies** the working assumption (carried since
+ADR 0066 Addendum 4) that `forward_apply_axiom` is the
+dominant per-tick bottleneck. The optimization line on
+this function has reached **diminishing returns**.
+
+Where the time actually goes (hypotheses, not yet
+profiled):
+1. `snapshot_predictions` building `HashMap<axiom_id,
+   HashSet<R>>` per call — O(axioms × predicted_edges)
+   HashSet inserts.
+2. `compute_data_ids` rebuilding the data-id set from
+   rset every snapshot — O(|rset|) HashSet operations.
+3. Per-tick scheduler / frontier construction.
+4. Mode-transition / lifecycle bookkeeping.
+5. Memory accumulation cost (HashMap growth, rehashes
+   in `PredictionState`).
+
+To attack any of these would require **profiling first**.
+Without profile data, further perf work on `forward_apply`
+is wasted effort.
+
+#### Methodological lesson
+
+When a transferred academic technique gives a much
+smaller-than-expected speedup, the productive next step
+is **identifying the new dominant cost**, not iterating
+on the same function. We had two prior optimizations on
+`forward_apply` (Options A/B/D) that each landed
+modest (~5–40%) gains; this Phase Alpha-6 slice continues
+that trend with another 25%, but the cumulative effect
+plateaus because the function is no longer the long pole.
+
+The right next move on perf is **profile-driven**: run
+a representative workload under a profiler (e.g.,
+`samply`, `cargo flamegraph`), identify the hot path, and
+attack that. Generic algorithmic improvements without
+profile data are speculative.
+
+#### What this slice produced
+
+1. `forward_apply_recursive_indexed` — production
+   indexed-join enumerator with O(d^k) on sparse premise
+   edges, byte-identical to Option D output.
+2. 3 new equivalence unit tests (transitivity chain,
+   symmetry clique, empty premise) — paper trail for
+   correctness equivalence.
+3. ~25% per-tick speedup measured on HORIZON=2000 OQ#1.
+4. **Empirical falsification** of "forward_apply is the
+   bottleneck" working assumption. New question:
+   *what's the new dominant cost?*
+5. Methodological note: future perf work should be
+   profile-driven, not theory-driven.
+
+#### Status
+
+Phase Alpha-6 Accepted with positive perf finding +
+methodological pivot. ILP indexed-join transfer
+empirically validated as a primitive (correctness +
+modest speedup). The forward_apply optimization line
+is now **closed by diminishing returns**; future perf
+slices need profile data first.
+
+Direction A (ILP join optimizer) is the **last of the
+"obvious" perf optimizations on forward_apply**. The
+deferred candidate operations (premise reordering,
+selectivity-based join order, indexed intersection
+algorithms) would yield further small gains but are
+unlikely to break the diminishing-returns pattern. They
+are recorded as deferred but de-prioritized.

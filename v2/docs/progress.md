@@ -6379,3 +6379,102 @@ direction is now methodologically settled on OQ#1. Future
 slices can move to other layers (perf / drives / action
 sequences) without revisiting theory-level operators.
 
+
+
+### Phase Alpha-6 — ILP indexed-join + diminishing-returns finding (2026-04-28)
+
+User picked Direction A (research-scout's ILP join
+optimizer for `forward_apply_axiom`) after the tournament
+line settled. Transfer from ILP / Datalog: binding
+propagation — at each variable depth, only iterate the
+neighbors satisfying a constraining premise edge, not
+all N data identifiers.
+
+#### Implementation
+
+[`forward_apply_recursive_indexed`](../src/lib.rs)
+replaces the production enumerator. For each premise
+edge `R(p, q)` with one endpoint at current depth and
+the other already bound, candidate set = right-neighbors
+(if `q == depth`) or left-neighbors (if `p == depth`)
+of the bound variable. Candidates are intersected
+across constraining premises. Falls back to full
+`0..N` only when no premise constrains the depth.
+
+`id_index: HashMap<&str, usize>` (borrowed, no String
+cloning) built once per call. `RSet::left_of` /
+`right_of` already provide O(d) indexed lookups.
+
+The redundant Option D early-termination check inside
+the iteration loop was removed: the candidate filter
+structurally enforces depth-involving premises.
+
+#### Correctness
+
+532 lib tests pass (529 before + 3 new equivalence tests
+for transitivity on chain, symmetry on clique, empty
+premise). All examples build.
+
+#### Perf — 25% speedup on OQ#1, but...
+
+Baseline (Option D) vs indexed (HORIZON=2000):
+
+| chunk | tick | Option D | Indexed | speedup |
+|---|---|---|---|---|
+| 5 | 500 | 12.3 ms | 8.5 ms | 1.45× |
+| 10 | 1000 | 49.2 ms | 39.5 ms | 1.25× |
+| 15 | 1500 | 295.5 ms | 237.3 ms | 1.25× |
+| 20 | 2000 | (crashed) | 523.9 ms | — |
+
+Indexed completes HORIZON=2000 in 294s; Option D crashed
+at chunk 15. ~25% per-tick speedup consistent.
+
+#### The unexpected finding: forward_apply ISN'T the bottleneck anymore
+
+Theory predicted 100×+ from O(d^k) vs O(N^k) on sparse
+OQ#1 (N≈300, d≈5). **Actual: 1.25×**.
+
+This **falsifies** the working assumption (carried since
+Addendum 4) that `forward_apply_axiom` is the dominant
+per-tick cost. Three Options + indexed-join later, the
+function is well-optimized; remaining time is elsewhere.
+
+Hypotheses for the new bottleneck (un-profiled):
+1. `snapshot_predictions` building HashMap<axiom,
+   HashSet<R>> per snapshot
+2. `compute_data_ids` rebuilding from rset every call
+3. Frontier / scheduler construction per tick
+4. Memory bookkeeping (HashMap growth, rehashes)
+
+#### Methodological lesson
+
+Future perf slices should be **profile-driven, not
+theory-driven**. The forward_apply optimization line
+hit diminishing returns: each round (Options A/B/D +
+indexed) added ~5–40% but cumulative gain plateaus
+because the function is no longer the long pole.
+
+#### What this slice produced
+
+1. `forward_apply_recursive_indexed` shipped as
+   production enumerator
+2. 3 new equivalence unit tests
+3. ~25% per-tick speedup verified end-to-end
+4. **Empirical falsification** of "forward_apply is the
+   bottleneck" working assumption
+5. Methodological pivot: future perf work needs profile
+   data first
+6. Direction A (ILP join optimizer) marked as **last of
+   the obvious perf moves on this function**;
+   premise-reorder / selectivity-based join order /
+   indexed-intersection algorithms recorded as deferred
+   and de-prioritized
+
+#### Status
+
+Phase Alpha-6 Accepted with positive perf finding +
+methodological pivot. ILP indexed-join empirically
+validated; the forward_apply line is closed by
+diminishing returns. Next perf slice (if any) requires
+profiling first — recorded as future deferred work.
+
