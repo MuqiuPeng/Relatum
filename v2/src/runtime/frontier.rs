@@ -1,0 +1,690 @@
+//! Frontier subsystem (A1): candidate enumeration, dirty tracking,
+//! cooldown bookkeeping. ADR 0052 / A1.
+
+use std::collections::HashSet;
+
+use crate::{
+    AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+    SHARED_AXIOM_MARKER,
+};
+use super::action::{ActionKind, FrontierTarget};
+use super::scheduler_rule::RuleBasedScheduler;
+use super::{parse_action_kind, theory_pair_has_relation};
+use super::{ObjectHistory, ObjectHistoryStore};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontierKind {
+    TheoryCandidate,
+    PatternCandidate,
+    LowValueObjectForPrune,
+    /// At least two named theories exist with no recorded relation
+    /// edge between them. ADR 0052 / A2.
+    TheoryNeedsRelations,
+    /// A named pattern has met the C0 promotion gate (age + has at
+    /// least one positive-delta contribution) and is not yet marked
+    /// `R(id, ESTABLISHED_MARKER)`. ADR 0053 / Phase C0.
+    EstablishedPromotion,
+    /// The rset has accumulated enough M1 marker edges to warrant a
+    /// pass of meta-meta discovery. ADR 0054 / Phase D0.
+    MetaMetaCandidate,
+    /// A promoted `R(ACTION_SEQ_MARKER, seq_N)` chain exists in rset
+    /// AND the frontier holds matching items for both prefix and
+    /// suffix kinds. The scheduler dispatches `ExecuteComposite`
+    /// against the seq_id. ADR 0061 / Phase H1.2.
+    CompositeCandidate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontierStatus {
+    Fresh,
+    Active,
+    Cooling,
+    Saturated,
+    Blocked,
+}
+
+#[derive(Debug, Clone)]
+pub struct FrontierItem {
+    pub id: String,
+    pub kind: FrontierKind,
+    pub target: FrontierTarget,
+    pub priority: f64,
+    pub estimated_value: f64,
+    pub estimated_cost: f64,
+    pub novelty_score: f64,
+    pub first_seen_tick: u64,
+    pub last_visited_tick: Option<u64>,
+    pub revisit_count: u32,
+    pub cooldown_until_tick: Option<u64>,
+    pub status: FrontierStatus,
+}
+
+/// Threshold config for staleness-based prune injection.
+/// ADR 0052 / B3.
+///
+/// A named pattern is "stale" if it has been around long enough
+/// (`first_seen_tick` ≥ `min_pattern_age_for_staleness` ticks ago)
+/// but its `last_improved_tick` has not advanced for at least
+/// `max_pattern_staleness_ticks`. Stale patterns become
+/// `LowValueObjectForPrune` candidates with a low fixed priority,
+/// so the existing Consolidate / Prune lane retires them without
+/// the scheduler needing a new dispatch path.
+#[derive(Debug, Clone, Copy)]
+pub struct StalenessConfig {
+    pub max_pattern_staleness_ticks: u64,
+    pub min_pattern_age_for_staleness: u64,
+}
+
+impl Default for StalenessConfig {
+    fn default() -> Self {
+        Self {
+            max_pattern_staleness_ticks: 30,
+            min_pattern_age_for_staleness: 50,
+        }
+    }
+}
+
+/// Config for meta-meta-pattern discovery. ADR 0054 / Phase D0.
+///
+/// Drives the `MetaMetaCandidate` frontier item: surfaced once the
+/// rset has accumulated at least `min_m1_edges_for_meta_meta` edges
+/// involving the listed M1 markers. The default markers correspond
+/// to ADR 0053's two M1 marker classes.
+#[derive(Debug, Clone)]
+pub struct MetaMetaConfig {
+    pub min_m1_edges_for_meta_meta: usize,
+    pub markers: Vec<&'static str>,
+    pub target_size: usize,
+    pub sample_count: usize,
+    pub top_m: usize,
+    pub rng_seed: u64,
+}
+
+impl Default for MetaMetaConfig {
+    fn default() -> Self {
+        Self {
+            min_m1_edges_for_meta_meta: 5,
+            markers: vec![ESTABLISHED_MARKER, SHARED_AXIOM_MARKER],
+            target_size: 3,
+            sample_count: 200,
+            top_m: 10,
+            rng_seed: 2026,
+        }
+    }
+}
+
+/// Threshold config for ESTABLISHED promotion. ADR 0053 / Phase C0/C1.
+///
+/// A named object (pattern or theory) earns the
+/// `R(id, ESTABLISHED_MARKER)` edge once it has been alive in the
+/// runtime's `ObjectHistory` for at least the relevant age threshold
+/// AND has contributed to at least the relevant `min_*_use_for_promotion`
+/// number of positive-delta episodes. The contribution count is
+/// the `times_contributed_positive` counter on `ObjectHistory`,
+/// added in Phase C0+ alongside this knob.
+///
+/// Theory thresholds are more conservative than pattern (200/3
+/// vs. 100/3) per ADR 0053 / Phase C1 — theories are larger
+/// investments and the runtime should be slower to declare them
+/// stable. The default `min_*_use_for_promotion = 3` reproduces
+/// ADR 0053's original sketch ("M = 3"), now that the counter
+/// exists to enforce it.
+#[derive(Debug, Clone, Copy)]
+pub struct PromotionConfig {
+    pub min_pattern_age_for_promotion: u64,
+    pub min_theory_age_for_promotion: u64,
+    pub min_pattern_use_for_promotion: u32,
+    pub min_theory_use_for_promotion: u32,
+}
+
+impl Default for PromotionConfig {
+    fn default() -> Self {
+        Self {
+            min_pattern_age_for_promotion: 100,
+            min_theory_age_for_promotion: 200,
+            min_pattern_use_for_promotion: 3,
+            min_theory_use_for_promotion: 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Frontier {
+    pub items: Vec<FrontierItem>,
+    pub last_full_refresh_tick: u64,
+    pub dirty: bool,
+    /// ADR 0052 / B3.
+    pub staleness: StalenessConfig,
+    /// ADR 0053 / Phase C0.
+    pub promotion: PromotionConfig,
+    /// ADR 0054 / Phase D0.
+    pub meta_meta: MetaMetaConfig,
+}
+
+impl Default for Frontier {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            last_full_refresh_tick: 0,
+            dirty: true,
+            staleness: StalenessConfig::default(),
+            promotion: PromotionConfig::default(),
+            meta_meta: MetaMetaConfig::default(),
+        }
+    }
+}
+
+impl Frontier {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Enumerate candidate actions from the current RSet state and
+    /// sort by priority (descending). ADR 0052 / A1.
+    pub fn refresh(&mut self, rset: &RSet, tick: u64) {
+        let mut items: Vec<FrontierItem> = Vec::new();
+
+        // 1. TheoryCandidate: propose if discover_theory yields a
+        //    nonempty member set AND no existing theory has exactly
+        //    that member set.
+        let cfg = AxiomDiscoveryConfig::default();
+        let th = rset.discover_theory(&cfg);
+        if !th.member_axiom_ids.is_empty() {
+            let want: HashSet<&str> = th
+                .member_axiom_ids
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+            let already_named = rset.theories().iter().any(|t| {
+                let members: HashSet<&str> =
+                    rset.theory_axioms(t).into_iter().collect();
+                members == want
+            });
+            if !already_named {
+                let value = (th.member_axiom_ids.len() * 2) as f64;
+                items.push(FrontierItem {
+                    id: format!("theory_cand_{}", tick),
+                    kind: FrontierKind::TheoryCandidate,
+                    target: FrontierTarget::WholeRSet,
+                    priority: value / 1.0,
+                    estimated_value: value,
+                    estimated_cost: 1.0,
+                    novelty_score: value,
+                    first_seen_tick: tick,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                });
+            }
+        }
+
+        // 2. PatternCandidate: for each k in [2, 3], if there are at
+        //    least k data edges, propose discovery at that size.
+        let meta = rset.collect_meta_ids();
+        let data_edge_count = rset
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .count();
+        for &size in &[2usize, 3] {
+            if data_edge_count >= size {
+                let value = (data_edge_count as f64) / (size as f64);
+                items.push(FrontierItem {
+                    id: format!("pattern_size_{}_{}", size, tick),
+                    kind: FrontierKind::PatternCandidate,
+                    target: FrontierTarget::PatternSize(size),
+                    priority: value / (size as f64 + 1.0),
+                    estimated_value: value,
+                    estimated_cost: size as f64,
+                    novelty_score: value / 2.0,
+                    first_seen_tick: tick,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                });
+            }
+        }
+
+        // 3. LowValueObjectForPrune: every named object with
+        //    counterfactual value < 0.
+        for (id, cv) in rset.rank_by_counterfactual() {
+            if cv < 0.0 {
+                items.push(FrontierItem {
+                    id: format!("prune_{}_{}", id, tick),
+                    kind: FrontierKind::LowValueObjectForPrune,
+                    target: FrontierTarget::Pattern(id.clone()),
+                    priority: (-cv) * 2.0, // slight preference over
+                                            // equal-value discovery
+                    estimated_value: -cv,
+                    estimated_cost: 1.0,
+                    novelty_score: 0.0,
+                    first_seen_tick: tick,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                });
+            }
+        }
+
+        // 4. TheoryNeedsRelations: ≥ 2 named theories AND at least one
+        //    pair has no extension/independence/parallel edge between
+        //    them. ADR 0052 / A2.
+        let theories: Vec<String> =
+            rset.theories().iter().map(|s| s.to_string()).collect();
+        if theories.len() >= 2 {
+            let missing_pair = (0..theories.len()).any(|i| {
+                ((i + 1)..theories.len()).any(|j| {
+                    !theory_pair_has_relation(rset, &theories[i], &theories[j])
+                })
+            });
+            if missing_pair {
+                items.push(FrontierItem {
+                    id: format!("theory_relations_{}", tick),
+                    kind: FrontierKind::TheoryNeedsRelations,
+                    target: FrontierTarget::WholeRSet,
+                    // Mid priority — slightly below pruning, above
+                    // pattern-discovery on small graphs.
+                    priority: 1.5,
+                    estimated_value: 1.0,
+                    estimated_cost: 1.0,
+                    novelty_score: 0.5,
+                    first_seen_tick: tick,
+                    last_visited_tick: None,
+                    revisit_count: 0,
+                    cooldown_until_tick: None,
+                    status: FrontierStatus::Fresh,
+                });
+            }
+        }
+
+        items.sort_by(|a, b| {
+            b.priority
+                .partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        self.items = items;
+        self.last_full_refresh_tick = tick;
+        self.dirty = false;
+    }
+
+    /// Append `LowValueObjectForPrune` items for named patterns whose
+    /// `last_improved_tick` is too stale relative to `tick`. Idempotent
+    /// against repeat calls in the same tick (skips targets that
+    /// already have a Prune item) and re-sorts items by priority on
+    /// exit. ADR 0052 / B3.
+    pub fn refresh_stale_prune(
+        &mut self,
+        history: &ObjectHistoryStore,
+        tick: u64,
+    ) {
+        let cfg = self.staleness;
+        let mut added = false;
+        for (id, h) in &history.patterns {
+            let age = tick.saturating_sub(h.first_seen_tick);
+            if age < cfg.min_pattern_age_for_staleness {
+                continue;
+            }
+            let stale_since = match h.last_improved_tick {
+                Some(t) => tick.saturating_sub(t),
+                None => age,
+            };
+            if stale_since < cfg.max_pattern_staleness_ticks {
+                continue;
+            }
+            let target = FrontierTarget::Pattern(id.clone());
+            let already = self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::LowValueObjectForPrune)
+                    && it.target == target
+            });
+            if already {
+                continue;
+            }
+            self.items.push(FrontierItem {
+                id: format!("prune_stale_{}_{}", id, tick),
+                kind: FrontierKind::LowValueObjectForPrune,
+                target,
+                // Below the typical negative-cv prune priority
+                // (≈ -cv * 2.0, normally ≥ 1.0). Staleness is a
+                // softer signal so it should not preempt a
+                // counterfactually-bad object.
+                priority: 0.5,
+                estimated_value: 0.5,
+                estimated_cost: 1.0,
+                novelty_score: 0.0,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
+            added = true;
+        }
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
+
+    /// Append `EstablishedPromotion` items for named patterns and
+    /// theories that meet the C0/C1 gate: alive for ≥ the relevant
+    /// age threshold AND `last_improved_tick.is_some()` (M ≥ 1) AND
+    /// not yet promoted. Skips ids that already have a pending
+    /// promotion item. Re-sorts on exit.
+    /// ADR 0053 / Phase C0 (patterns) + C1 (theories).
+    pub fn refresh_established_promotions(
+        &mut self,
+        rset: &RSet,
+        history: &ObjectHistoryStore,
+        tick: u64,
+    ) {
+        let cfg = self.promotion;
+        let mut added = false;
+
+        // Patterns (C0).
+        let named_patterns: HashSet<&str> =
+            rset.patterns().into_iter().collect();
+        for (id, h) in &history.patterns {
+            if !named_patterns.contains(id.as_str()) {
+                continue;
+            }
+            if !Self::passes_promotion_gate(
+                h,
+                tick,
+                cfg.min_pattern_age_for_promotion,
+                cfg.min_pattern_use_for_promotion,
+            ) {
+                continue;
+            }
+            if rset.contains(&R::new(id.clone(), ESTABLISHED_MARKER)) {
+                continue;
+            }
+            let target = FrontierTarget::Pattern(id.clone());
+            if self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::EstablishedPromotion)
+                    && it.target == target
+            }) {
+                continue;
+            }
+            self.items.push(Self::make_promotion_item(
+                id, target, tick,
+            ));
+            added = true;
+        }
+
+        // Theories (C1).
+        let named_theories: HashSet<&str> =
+            rset.theories().into_iter().collect();
+        for (id, h) in &history.theories {
+            if !named_theories.contains(id.as_str()) {
+                continue;
+            }
+            if !Self::passes_promotion_gate(
+                h,
+                tick,
+                cfg.min_theory_age_for_promotion,
+                cfg.min_theory_use_for_promotion,
+            ) {
+                continue;
+            }
+            if rset.contains(&R::new(id.clone(), ESTABLISHED_MARKER)) {
+                continue;
+            }
+            let target = FrontierTarget::Theory(id.clone());
+            if self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::EstablishedPromotion)
+                    && it.target == target
+            }) {
+                continue;
+            }
+            self.items.push(Self::make_promotion_item(
+                id, target, tick,
+            ));
+            added = true;
+        }
+
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
+
+    fn passes_promotion_gate(
+        h: &ObjectHistory,
+        tick: u64,
+        min_age: u64,
+        min_use: u32,
+    ) -> bool {
+        let age = tick.saturating_sub(h.first_seen_tick);
+        age >= min_age && h.times_contributed_positive >= min_use
+    }
+
+    fn make_promotion_item(
+        id: &str,
+        target: FrontierTarget,
+        tick: u64,
+    ) -> FrontierItem {
+        FrontierItem {
+            id: format!("promote_{}_{}", id, tick),
+            kind: FrontierKind::EstablishedPromotion,
+            target,
+            // Mid-tier consolidate priority: above stale-prune
+            // (0.5) so a freshly-mature object is acknowledged
+            // before stale ones are trimmed, but below normal
+            // negative-cv prune so a known-bad object still wins.
+            priority: 1.5,
+            estimated_value: 1.0,
+            estimated_cost: 1.0,
+            novelty_score: 0.5,
+            first_seen_tick: tick,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        }
+    }
+
+    /// Append a single `MetaMetaCandidate` item if the rset carries
+    /// at least `meta_meta.min_m1_edges_for_meta_meta` M1-marker
+    /// edges and no MetaMetaCandidate is already pending. The
+    /// runtime executes this through `DiscoverMetaMetaPatterns`,
+    /// which calls `RSet::discover_motifs_with_meta_subset` over a
+    /// view that contains data + edges anchored to the markers.
+    /// ADR 0054 / Phase D0.
+    pub fn refresh_meta_meta_candidates(
+        &mut self,
+        rset: &RSet,
+        tick: u64,
+    ) {
+        if self.items.iter().any(|it| {
+            matches!(it.kind, FrontierKind::MetaMetaCandidate)
+        }) {
+            return;
+        }
+        let cfg = &self.meta_meta;
+        let m1_edge_count: usize = cfg
+            .markers
+            .iter()
+            .map(|m| rset.right_of(*m).len())
+            .sum();
+        if m1_edge_count < cfg.min_m1_edges_for_meta_meta {
+            return;
+        }
+        // Conservative priority: above pattern-discovery floor but
+        // below TheoryCandidate when a useful theory is in play.
+        // Meta-meta is exploratory; let it lose ties.
+        self.items.push(FrontierItem {
+            id: format!("meta_meta_{}", tick),
+            kind: FrontierKind::MetaMetaCandidate,
+            target: FrontierTarget::WholeRSet,
+            priority: 1.0,
+            estimated_value: m1_edge_count as f64,
+            estimated_cost: cfg.target_size as f64,
+            novelty_score: 1.0,
+            first_seen_tick: tick,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        });
+        self.items.sort_by(|a, b| {
+            b.priority
+                .partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
+
+    /// Append a `CompositeCandidate` item for each promoted
+    /// action-sequence pair where BOTH the prefix and suffix
+    /// `ActionKind`s have at least one matching frontier item to
+    /// dispatch through. ADR 0061 / Phase H1.2.
+    ///
+    /// Idempotent: skips seq_ids already represented in the
+    /// frontier. Re-sorts on exit. Priority is conservatively set
+    /// to mid-tier (1.5) — above stale-prune (0.5), below typical
+    /// negative-cv prune. The H1.1 priority bias still applies on
+    /// top via `pick_top_biased`.
+    pub fn refresh_composite_candidates(
+        &mut self,
+        rset: &RSet,
+        tick: u64,
+    ) {
+        let pairs = rset.action_sequence_pairs();
+        let triples = rset.action_sequence_triples();
+        if pairs.is_empty() && triples.is_empty() {
+            return;
+        }
+        // ADR 0062 retrospective #3 — EP is dispatched outside the
+        // frontier (zero-streak anti-stagnation path), so no
+        // FrontierKind maps to it. Treat it as always-present here
+        // to permit composite eligibility for EP-containing pairs;
+        // the scheduler's own EP gating still controls when the
+        // synthetic step actually fires.
+        let mut kinds_present: HashSet<ActionKind> = self
+            .items
+            .iter()
+            .map(|it| RuleBasedScheduler::execute_for_kind(it.kind))
+            .collect();
+        kinds_present.insert(ActionKind::EvaluatePredictions);
+        let mut added = false;
+        let mut try_add = |seq_id: &str,
+                           kinds: Vec<ActionKind>,
+                           items: &mut Vec<FrontierItem>,
+                           added: &mut bool| {
+            if kinds.iter().any(|k| !kinds_present.contains(k)) {
+                return;
+            }
+            let target =
+                FrontierTarget::ActionSequence(seq_id.to_string());
+            if items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::CompositeCandidate)
+                    && it.target == target
+            }) {
+                return;
+            }
+            items.push(FrontierItem {
+                id: format!("composite_{}_{}", seq_id, tick),
+                kind: FrontierKind::CompositeCandidate,
+                target,
+                priority: 1.5,
+                estimated_value: 1.0,
+                estimated_cost: kinds.len() as f64,
+                novelty_score: 0.5,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
+            *added = true;
+        };
+        for (seq_id, prefix_name, suffix_name) in pairs {
+            let kinds_opt: Option<Vec<ActionKind>> = (|| {
+                Some(vec![
+                    parse_action_kind(&prefix_name).ok()?,
+                    parse_action_kind(&suffix_name).ok()?,
+                ])
+            })();
+            if let Some(ks) = kinds_opt {
+                try_add(&seq_id, ks, &mut self.items, &mut added);
+            }
+        }
+        for (seq_id, a_name, b_name, c_name) in triples {
+            let kinds_opt: Option<Vec<ActionKind>> = (|| {
+                Some(vec![
+                    parse_action_kind(&a_name).ok()?,
+                    parse_action_kind(&b_name).ok()?,
+                    parse_action_kind(&c_name).ok()?,
+                ])
+            })();
+            if let Some(ks) = kinds_opt {
+                try_add(&seq_id, ks, &mut self.items, &mut added);
+            }
+        }
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
+
+    /// Append `EstablishedPromotion` items for axioms that are
+    /// referenced by ≥ 2 named theories AND don't yet carry the
+    /// `SHARED_AXIOM_MARKER` edge. Demotion is handled by
+    /// `RSet::retract_theory`'s cascade — no history is consulted
+    /// because C2's gate is purely structural. Re-sorts on exit.
+    /// ADR 0053 / Phase C2.
+    pub fn refresh_shared_axiom_promotions(
+        &mut self,
+        rset: &RSet,
+        tick: u64,
+    ) {
+        let mut added = false;
+        for axiom_id in rset.axioms() {
+            if rset.theories_containing(axiom_id).len() < 2 {
+                continue;
+            }
+            if rset.contains(&R::new(axiom_id, SHARED_AXIOM_MARKER)) {
+                continue;
+            }
+            let target = FrontierTarget::Axiom(axiom_id.to_string());
+            if self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::EstablishedPromotion)
+                    && it.target == target
+            }) {
+                continue;
+            }
+            self.items.push(Self::make_promotion_item(
+                axiom_id, target, tick,
+            ));
+            added = true;
+        }
+        if added {
+            self.items.sort_by(|a, b| {
+                b.priority
+                    .partial_cmp(&a.priority)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+    }
+}

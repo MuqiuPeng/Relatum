@@ -6063,3 +6063,97 @@ Phase Alpha-3+++ Accepted with positive empirical
 findings (corrected verdict). Theory deduplication / merge
 recorded as future slice candidate.
 
+
+
+### ADR 0067 — source-tree refactor (2026-04-28)
+
+User: 目前的代码文件过长了，而且放在一起没有逻辑，将其
+进行一次重构.
+
+Two monolithic files at 21,663 lines total:
+- `src/lib.rs` — 10,691 lines
+- `src/runtime/mod.rs` — 10,972 lines
+
+Refactored in 4 phases. 524 lib tests pass + all examples
+build at every checkpoint.
+
+#### Phase 1 — extract test modules
+
+`#[cfg(test)] mod tests { ... }` inline blocks moved to
+sibling files via `mod tests;`:
+- lib.rs lines 5864–10691 → `src/tests.rs` (4,825 lines)
+- runtime/mod.rs lines 4978–10972 → `src/runtime/tests.rs` (5,992 lines)
+
+Rust submodule semantics preserved — tests still see all
+crate-private items via `super::*`.
+
+#### Phase 3 — runtime/mod.rs into 12 submodules
+
+Done before Phase 2 because trait-based subsystems have
+cleaner extraction boundaries than RSet's monolithic impl.
+
+12 new files, each one logical subsystem (lifecycle,
+action, scheduler base, scheduler_rule, scheduler_meta,
+scheduler_ucb, drive, environment, memory, frontier,
+autonomous, persistence). Largest is `autonomous.rs` at
+1,932 lines (the AutonomousRuntime impl + tick loop).
+
+`runtime/mod.rs` reduced to 68 lines — pure module
+declarations + `pub use` re-exports + tests mod.
+
+Visibility audit: 17 private methods made `pub(crate)`
+for cross-submodule access (would_thrash, pattern_cooldown_
+active, meta_meta_cooldown_active, etc.) — recorded in ADR
+0067. No new public symbols.
+
+#### Phase 2 — lib.rs subsystem extraction (conservative)
+
+5 new files for standalone definitions; the giant
+`impl RSet { ... }` (~3,900 lines) was deliberately kept
+in lib.rs to avoid the multi-impl-block split risk.
+
+| file | contents | lines |
+|---|---|---|
+| `markers.rs` | 18 markers + 3 small adjacent types | 185 |
+| `stats.rs` | wilson_score_95, null_baseline_probability | 57 |
+| `axiom_ids.rs` | axiom id encoders/decoders | 151 |
+| `types_axiom_drive.rs` | discovery + axiom + drive types | 344 |
+| `types_runtime.rs` | autonomous config + outcome types | 93 |
+
+`lib.rs` reduced from 10,691 → 5,086 lines (52% reduction).
+
+#### Final layout
+
+| metric | before | after | Δ |
+|---|---|---|---|
+| files in `src/` | 2 | 21 | +19 |
+| `src/lib.rs` | 10,691 | 5,086 | −52% |
+| `src/runtime/mod.rs` | 10,972 | 68 | −99% |
+| largest prod file | 10,972 | 1,932 | −82% |
+| `cargo test --lib` | 524 pass | 524 pass | — |
+| examples build | ✓ | ✓ | — |
+
+#### Constitution check
+
+All five commitments unchanged. Refactor is purely
+mechanical; no semantic surface touched. Markers remain
+`pub const &str` in `markers.rs` with identical meta-R
+semantics.
+
+#### Future deferred work
+
+- Splitting `impl RSet { ... }` across files using Rust's
+  extension-method pattern (multiple `impl RSet` blocks).
+  Deferred until concrete pain emerges.
+- Subsumption helpers (subsume_by_*, template_derivable_
+  from, plus 6 private helpers) — dependency graph
+  tangled with RSet impl helpers; deferred.
+- Subgraph + impl (370 lines) — sits between motif
+  discovery and RSet impl; deferred.
+
+#### Status
+
+ADR 0067 Accepted. Source tree now has 21 logical files
+instead of 2 monolithic ones. Largest production file is
+1,932 lines (down from 10,972).
+
