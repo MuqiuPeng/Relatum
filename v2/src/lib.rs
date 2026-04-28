@@ -319,6 +319,12 @@ pub struct RSet {
     // have equivalent indices and are considered equal.
     by_source: HashMap<String, HashSet<R>>,
     by_target: HashMap<String, HashSet<R>>,
+    // ADR 0066 Addendum 5+ — monotonic version counter incremented on
+    // every successful add/remove. Used by external caches (e.g.,
+    // forward_apply_axiom result caches in the runtime layer) to invalidate
+    // when the rset has changed. Not part of identity (PartialEq compares
+    // instances only).
+    version: u64,
 }
 
 impl PartialEq for RSet {
@@ -343,8 +349,17 @@ impl RSet {
                 .or_default()
                 .insert(r.clone());
             self.by_target.entry(r.y.clone()).or_default().insert(r);
+            self.version = self.version.wrapping_add(1);
         }
         is_new
+    }
+
+    /// Monotonic version counter incremented on every successful
+    /// add/remove. External caches (e.g., forward_apply_axiom
+    /// caches) read this to detect rset changes. ADR 0066
+    /// Addendum 5+ perf path.
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     pub fn extend<I: IntoIterator<Item = R>>(&mut self, iter: I) {
@@ -374,6 +389,7 @@ impl RSet {
                     self.by_target.remove(&r.y);
                 }
             }
+            self.version = self.version.wrapping_add(1);
         }
         removed
     }

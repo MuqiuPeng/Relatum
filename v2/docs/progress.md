@@ -5515,6 +5515,75 @@ that call `forward_apply_axiom` per axiom can reuse
 (B or C) remains future work but is now properly
 scoped.
 
+### Forward_apply_axiom perf fix Option B — per-axiom cache
+
+Implemented Option B from the fix candidates: cache
+`forward_apply_axiom` results per-axiom keyed by
+`rset.version()`.
+
+#### Changes
+
+`lib.rs`:
+- `RSet` gains private `version: u64` field. Incremented
+  in `add()` / `remove()` on successful mutation.
+- New public `RSet::version()` accessor.
+
+`runtime/mod.rs`:
+- New `PredictionState` fields:
+  - `forward_apply_cache: HashMap<String, HashSet<R>>`
+  - `forward_apply_cache_version: Option<u64>`
+- `snapshot_predictions` consults cache: hit → clone
+  cached; miss → compute + store. Cache wipes wholesale
+  on rset version change.
+
+#### Empirical impact
+
+Per-100-tick comparison vs Option A (only):
+
+| Chunk | Option A | Option B | Δ |
+|---|---|---|---|
+| 1 | 1.8 | 1.7 | -0.1 |
+| 5 | 17.2 | 17.9 | +0.7 |
+| 8 | 44.8 | 45.9 | +1.1 |
+| 10 | 87.7 | 88.5 | +0.8 |
+| 11 | 166.9 | 163.4 | -3.5 |
+
+Within-variance. **No measurable speedup on OQ#1
+substrate.** OQ#1 mutates rset on essentially every
+Running tick (Discover / Declarativize / Prune all
+increment version), so cache invalidates each tick
+before it can be reused. Cache hit rate ≈ 0%.
+
+#### Why ship anyway
+
+1. **Correctness-preserving** by construction. Cache hits
+   return byte-identical data to fresh computation.
+   Verified on OQ#1 hand-tuned: trajectory ticks 0-1400
+   match pre-fix baseline exactly.
+2. **Reusable infrastructure**: `RSet::version()` is a
+   general-purpose API for any future cache /
+   invalidation logic.
+3. **Negligible overhead**: O(1) cache check + O(axioms)
+   wipe on version change.
+4. **Future-proofing**: substrates with sleep-stable
+   phases would hit cache often. The mechanism is ready
+   when those experiments come.
+
+#### What remains unsolved
+
+`forward_apply_recursive`'s O(N^k) is unchanged. Cache
+hit rate is substrate-dependent (0% on OQ#1; potentially
+80%+ on stable-phase substrates).
+
+Future fix candidates D/E/F (algorithm-level recursion
+pruning, snapshot-level caching, lazy snapshot) all
+deferred.
+
+#### Status
+
+Options A + B both shipped. Correctness verified. Future
+ADR territory: D/E/F.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)

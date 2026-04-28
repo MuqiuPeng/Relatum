@@ -779,3 +779,109 @@ identical long-run baseline. Modest empirical improvement
 ADR 0066 status: Phase Alpha series complete + Option A
 perf fix shipped + remaining perf options scoped for
 future ADR.
+
+---
+
+## Addendum 6 — Option B (per-axiom cache) shipped (2026-04-28)
+
+User confirmed Option B follow-up. Implemented per-axiom
+`forward_apply_axiom` result caching keyed on `rset.version()`.
+
+#### Changes
+
+`v2/src/lib.rs`:
+- New private `version: u64` field on `RSet`. Incremented
+  in `add()` and `remove()` when a mutation actually
+  occurs. Not part of identity (`PartialEq` compares
+  `instances` only).
+- New public `RSet::version()` accessor.
+
+`v2/src/runtime/mod.rs`:
+- New fields on `PredictionState`:
+  - `forward_apply_cache: HashMap<String, HashSet<R>>` —
+    per-axiom cached forward-apply results.
+  - `forward_apply_cache_version: Option<u64>` — rset
+    version at which cache was built.
+- `snapshot_predictions` now:
+  1. Queries `rset.version()`.
+  2. If matches `forward_apply_cache_version`, cache is
+     valid. Otherwise wipes cache + updates version.
+  3. For each axiom: cache hit → clone cached HashSet;
+     cache miss → run `forward_apply_axiom_with_data_ids`
+     and store result in cache.
+
+#### Empirical impact
+
+Per-100-tick comparison vs Option A (only):
+
+| Chunk | Option A | Option B | Δ |
+|---|---|---|---|
+| 1 | 1.8 | 1.7 | -0.1 |
+| 5 | 17.2 | 17.9 | +0.7 |
+| 8 | 44.8 | 45.9 | +1.1 |
+| 10 | 87.7 | 88.5 | +0.8 |
+| 11 | 166.9 | 163.4 | -3.5 |
+
+Within-variance. **No measurable speedup on OQ#1
+substrate.**
+
+Diagnosis: OQ#1's runtime executes a rset-mutating action
+on essentially every Running tick (Discover / Declarativize
+/ Prune all increment version). Cache invalidates each
+tick before it can be reused. Cache hit rate ≈ 0%.
+
+#### Why ship anyway
+
+1. **Correctness-preserving.** Cache hits return byte-
+   identical data to fresh computation. Verified on OQ#1
+   long-run: hand-tuned trajectory ticks 0-1400 match
+   pre-fix baseline exactly (signal -0.654 → -0.991, all
+   intermediate snapshots identical).
+2. **Reusable infrastructure.** `RSet::version()` is a
+   general-purpose API for any future cache /
+   invalidation logic. The forward_apply_cache mechanism
+   itself is ready for substrates where rset has stable
+   periods.
+3. **Negligible overhead.** Cache check is O(1) per axiom
+   per tick; cache wipe is O(axioms) per rset change. Both
+   small constants relative to forward_apply work.
+4. **Future-proofing.** When v2 develops substrates with
+   sleep-then-wake-stable phases (e.g., long-horizon
+   experiments where the runtime stops actively
+   mutating rset for stretches), cache will hit and
+   provide proportional speedup.
+
+#### What remains unsolved
+
+- `forward_apply_recursive`'s O(N^k) is unchanged (was
+  always the dominant term).
+- Cache hit rate is substrate-dependent. On OQ#1: 0%.
+  On hypothetical sleep-stable substrates: could be 80%+.
+
+#### Refined fix candidates
+
+After Options A + B, the dominant remaining cost is
+`forward_apply_recursive` itself. Future approaches:
+
+- **Option D (algorithm-level)**: prune the recursion
+  by indexing data_ids by their roles in axiom premises
+  (e.g., for an axiom with premise `R(x, y)`, only iterate
+  data_ids that appear as `x` of some edge). Could turn
+  N^k into N^(k-1) or better depending on axiom structure.
+- **Option E (cache further upstream)**: cache the entire
+  snapshot (not per-axiom) when no rset change AND
+  episode count unchanged. Less granularity than
+  per-axiom but might catch patterns A/B miss.
+- **Option F (lazy snapshot)**: skip `snapshot_predictions`
+  on ticks where it's known to be redundant (e.g., no
+  data event arrived AND no productive action fired).
+
+All deferred. Options A + B are sufficient for now.
+
+#### Status
+
+Option B implemented; correctness verified. No empirical
+speedup on OQ#1 but reusable infrastructure shipped.
+
+ADR 0066 status: Phase Alpha series + Option A + Option B
+all shipped. Options D/E/F scoped for future ADR.

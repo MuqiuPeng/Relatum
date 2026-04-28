@@ -1784,6 +1784,15 @@ pub struct PredictionState {
     /// the per-axiom delta that's summed into the episode's overall
     /// `delta` field. ADR 0059 / Phase G1.5.
     pub last_reflect_hit_rate_per_axiom: HashMap<String, f64>,
+    /// Per-axiom forward_apply result cache. Filled by
+    /// `snapshot_predictions`; invalidated wholesale when
+    /// `rset.version()` differs from `forward_apply_cache_version`.
+    /// ADR 0066 Addendum 5+ — perf path.
+    ///
+    /// Not part of identity; not round-tripped through the B2
+    /// checkpoint (rebuilt on first snapshot post-restore).
+    pub forward_apply_cache: HashMap<String, HashSet<R>>,
+    pub forward_apply_cache_version: Option<u64>,
 }
 
 impl PredictionState {
@@ -3051,13 +3060,27 @@ impl AutonomousRuntime {
     /// stored set will be verified against rset state at the start
     /// of the next tick. ADR 0059 / Phase G1.3.
     fn snapshot_predictions(&mut self) {
-        // ADR 0066 Addendum 4 perf fix: amortize meta_ids +
-        // data_ids computation across all axioms. Pre-fix:
-        // forward_apply_axiom called collect_meta_ids and rebuilt
-        // data_ids per axiom call. With N axioms that's N
-        // redundant scans of rset per tick. Post-fix: compute
-        // once, pass to per-axiom forward_apply via
-        // forward_apply_axiom_with_data_ids.
+        // ADR 0066 Addendum 4 perf fix (Option A): amortize
+        // meta_ids + data_ids computation across all axioms.
+        //
+        // ADR 0066 Addendum 5+ perf fix (Option B / per-axiom
+        // cache): cache forward_apply_axiom results keyed by
+        // rset.version(). When rset is unchanged since last
+        // snapshot, cache hits skip the expensive
+        // forward_apply_recursive O(N^k) call. Cache invalidates
+        // wholesale on any rset change.
+        let rset_version = self.rset.version();
+        let cache_valid = self
+            .memory
+            .prediction_state
+            .forward_apply_cache_version
+            == Some(rset_version);
+        if !cache_valid {
+            self.memory.prediction_state.forward_apply_cache.clear();
+            self.memory
+                .prediction_state
+                .forward_apply_cache_version = Some(rset_version);
+        }
         let meta = self.rset.collect_meta_ids();
         let data_ids = self.rset.compute_data_ids(&meta);
         let mut snapshot: HashMap<String, HashSet<R>> = HashMap::new();
@@ -3068,9 +3091,23 @@ impl AutonomousRuntime {
             return;
         }
         for ax in self.rset.axioms() {
-            let predicted = self
-                .rset
-                .forward_apply_axiom_with_data_ids(ax, &data_ids);
+            let predicted = if let Some(cached) = self
+                .memory
+                .prediction_state
+                .forward_apply_cache
+                .get(ax)
+            {
+                cached.clone()
+            } else {
+                let p = self
+                    .rset
+                    .forward_apply_axiom_with_data_ids(ax, &data_ids);
+                self.memory
+                    .prediction_state
+                    .forward_apply_cache
+                    .insert(ax.to_string(), p.clone());
+                p
+            };
             if !predicted.is_empty() {
                 snapshot.insert(ax.to_string(), predicted);
             }
