@@ -449,7 +449,10 @@ impl RuleBasedScheduler {
     fn predictions_have_pending_delta(
         ctx: &SchedulerContext<'_>,
     ) -> bool {
+        // ADR 0066 Addendum 4 perf fix: amortize collect_meta_ids
+        // + data_ids across all axioms.
         let meta = ctx.rset.collect_meta_ids();
+        let data_ids = ctx.rset.compute_data_ids(&meta);
         let data_edges: HashSet<R> = ctx
             .rset
             .iter()
@@ -458,7 +461,9 @@ impl RuleBasedScheduler {
             .collect();
         let ps = &ctx.memory.prediction_state;
         for ax in ctx.rset.axioms() {
-            let pred = ctx.rset.forward_apply_axiom(ax);
+            let pred = ctx
+                .rset
+                .forward_apply_axiom_with_data_ids(ax, &data_ids);
             if pred.is_empty() {
                 continue;
             }
@@ -1200,7 +1205,10 @@ impl Drive for PredictionErrorDrive {
         memory: &Memory,
         _tick: u64,
     ) -> f64 {
+        // ADR 0066 Addendum 4 perf fix: amortize collect_meta_ids +
+        // data_ids across all axioms.
         let meta = rset.collect_meta_ids();
+        let data_ids = rset.compute_data_ids(&meta);
         let data_edges: HashSet<R> = rset
             .iter()
             .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
@@ -1209,7 +1217,7 @@ impl Drive for PredictionErrorDrive {
         let ps = &memory.prediction_state;
         let mut total: f64 = 0.0;
         for ax in rset.axioms() {
-            let pred = rset.forward_apply_axiom(ax);
+            let pred = rset.forward_apply_axiom_with_data_ids(ax, &data_ids);
             if pred.is_empty() {
                 continue;
             }
@@ -3043,9 +3051,26 @@ impl AutonomousRuntime {
     /// stored set will be verified against rset state at the start
     /// of the next tick. ADR 0059 / Phase G1.3.
     fn snapshot_predictions(&mut self) {
+        // ADR 0066 Addendum 4 perf fix: amortize meta_ids +
+        // data_ids computation across all axioms. Pre-fix:
+        // forward_apply_axiom called collect_meta_ids and rebuilt
+        // data_ids per axiom call. With N axioms that's N
+        // redundant scans of rset per tick. Post-fix: compute
+        // once, pass to per-axiom forward_apply via
+        // forward_apply_axiom_with_data_ids.
+        let meta = self.rset.collect_meta_ids();
+        let data_ids = self.rset.compute_data_ids(&meta);
         let mut snapshot: HashMap<String, HashSet<R>> = HashMap::new();
+        if data_ids.is_empty() {
+            self.memory.prediction_state.last_predicted_at_tick =
+                Some(self.tick);
+            self.memory.prediction_state.last_predicted_per_axiom = snapshot;
+            return;
+        }
         for ax in self.rset.axioms() {
-            let predicted = self.rset.forward_apply_axiom(ax);
+            let predicted = self
+                .rset
+                .forward_apply_axiom_with_data_ids(ax, &data_ids);
             if !predicted.is_empty() {
                 snapshot.insert(ax.to_string(), predicted);
             }
@@ -3620,7 +3645,9 @@ impl AutonomousRuntime {
                 // at wake-time. Per-axiom hit-rate delta vs. the
                 // previous EP snapshot becomes the episode delta;
                 // pure observation, no rset mutation.
+                // ADR 0066 Addendum 4 perf fix: amortize.
                 let meta = self.rset.collect_meta_ids();
+                let data_ids = self.rset.compute_data_ids(&meta);
                 let data_edges: HashSet<R> = self
                     .rset
                     .iter()
@@ -3635,7 +3662,9 @@ impl AutonomousRuntime {
                     .map(str::to_owned)
                     .collect();
                 for ax in axioms {
-                    let pred = self.rset.forward_apply_axiom(&ax);
+                    let pred = self
+                        .rset
+                        .forward_apply_axiom_with_data_ids(&ax, &data_ids);
                     if pred.is_empty() {
                         continue;
                     }

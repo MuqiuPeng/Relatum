@@ -687,3 +687,95 @@ ADR 0066 status: Phase Alpha-3 + Alpha-3+ + Alpha-4 all
 implemented; Alpha-4 verified correct (no regression);
 underlying forward_apply_axiom scaling identified as
 architectural concern for future work.
+
+---
+
+## Addendum 5 — Perf fix Option A implemented (2026-04-28)
+
+User confirmed perf-fix follow-up. Implemented Option A
+from Addendum 4's fix candidates: amortize redundant
+`collect_meta_ids` and `data_ids` computation across
+the multiple `forward_apply_axiom` calls in a single tick.
+
+#### Changes
+
+`v2/src/lib.rs`:
+- New public `RSet::forward_apply_axiom_with_data_ids(axiom_id, data_ids)`
+  accepting precomputed `data_ids: &[String]`. Identical
+  output to `forward_apply_axiom`.
+- New public `RSet::compute_data_ids(meta) -> Vec<String>`
+  extracting non-meta identifiers (sorted, deterministic).
+- Original `forward_apply_axiom` unchanged in API; internally
+  delegates after computing meta + data_ids itself.
+
+`v2/src/runtime/mod.rs`: 4 hot-path call sites refactored:
+- `AutonomousRuntime::snapshot_predictions` (every Running tick)
+- `RuleBasedScheduler::predictions_have_pending_delta`
+  (every scheduler.choose call)
+- `PredictionErrorDrive::evaluate` (consulted by
+  `combined_drive_signal`)
+- `ActionKind::EvaluatePredictions` arm in `execute_action`
+  (when EP fires)
+
+Pattern: each site computes `meta = rset.collect_meta_ids()`
+and `data_ids = rset.compute_data_ids(&meta)` once at the
+top, then calls `forward_apply_axiom_with_data_ids(ax,
+&data_ids)` per axiom.
+
+#### Empirical impact
+
+Per-100-tick comparison (no intervention, 2000 ticks):
+
+| Chunk | Pre-fix ms/tick | Post-fix ms/tick | Δ% |
+|---|---|---|---|
+| 1 | 2.2 | 1.8 | -18% |
+| 5 | 18.9 | 17.2 | -9% |
+| 7 | 30.8 | 29.7 | -4% |
+| 10 | 92.2 | 87.7 | -5% |
+| 11 | 159.8 | 166.9 | +4% (variance) |
+| 12 | 224.1 | 223.8 | ~0% |
+
+5-10% reduction at low N where `collect_meta_ids` is a
+meaningful fraction of per-tick cost. Invisible at high N
+where `forward_apply_recursive`'s O(N^k) dominates.
+Amortization saves ~12 redundant `collect_meta_ids` calls
+per `snapshot_predictions` invocation but doesn't address
+the recursion's exponential scaling.
+
+#### Correctness verification
+
+- **520 unit tests pass** post-fix (no regression).
+- F0 battery: stream_diamond CONVERGED, all CONVERGED
+  (identical to pre-fix).
+- OQ #1 long-run hand-tuned: **268/129/1/4/8 — byte-
+  identical to pre-fix baseline.** Signal trajectory
+  matches exactly: -0.654 → -1.235 → -0.988.
+
+The fix is "compute-once-pass-in" refactor; results
+guaranteed identical to pre-fix.
+
+#### What Option A does NOT address
+
+`forward_apply_recursive`'s O(N^k) cost is unchanged. To
+address: Options B/C from Addendum 4:
+
+- **Option B**: Cache `forward_apply_axiom` results across
+  ticks; invalidate on relevant rset changes. Complex
+  invalidation; correctness risk.
+- **Option C**: Defer `snapshot_predictions` to specific
+  scheduler phases (e.g., Reflect mode only) instead of
+  every Running tick. Simpler change; affects prediction-
+  error-drive responsiveness.
+
+Both deferred. Option A landed first because smallest +
+guaranteed correct.
+
+#### Status
+
+Option A implemented; correctness verified by byte-
+identical long-run baseline. Modest empirical improvement
+(5-10% at low N). Options B/C scoped but deferred.
+
+ADR 0066 status: Phase Alpha series complete + Option A
+perf fix shipped + remaining perf options scoped for
+future ADR.

@@ -3839,6 +3839,55 @@ impl RSet {
             return HashSet::new();
         }
         let meta = self.collect_meta_ids();
+        let data_ids = self.compute_data_ids(&meta);
+        if data_ids.is_empty() {
+            return HashSet::new();
+        }
+        self.forward_apply_axiom_with_data_ids_inner(&template, &data_ids)
+    }
+
+    /// Performance-amortized variant of `forward_apply_axiom`. The
+    /// caller precomputes `data_ids` (sorted, deterministic) and
+    /// passes it in. Useful when forward-applying many axioms in a
+    /// single tick: caller calls `compute_data_ids` once, then
+    /// invokes this method per axiom.
+    ///
+    /// Behavior is byte-identical to `forward_apply_axiom` for the
+    /// same `axiom_id`; this just removes the per-call recomputation
+    /// of `meta_ids` and `data_ids`. Performance fix motivated by
+    /// Phase Alpha-4 perf diagnosis (forward_apply_axiom is the
+    /// dominant per-tick cost on long substrate runs).
+    pub fn forward_apply_axiom_with_data_ids(
+        &self,
+        axiom_id: &str,
+        data_ids: &[String],
+    ) -> HashSet<R> {
+        let template = match self.reconstruct_axiom_template(axiom_id) {
+            Some(t) => t,
+            None => return HashSet::new(),
+        };
+        if template.num_vars == 0 || data_ids.is_empty() {
+            return HashSet::new();
+        }
+        self.forward_apply_axiom_with_data_ids_inner(&template, data_ids)
+    }
+
+    fn forward_apply_axiom_with_data_ids_inner(
+        &self,
+        template: &AxiomTemplate,
+        data_ids: &[String],
+    ) -> HashSet<R> {
+        let mut binding: Vec<usize> = vec![0; template.num_vars];
+        let mut out: HashSet<R> = HashSet::new();
+        forward_apply_recursive(self, template, data_ids, &mut binding, 0, &mut out);
+        out
+    }
+
+    /// Compute the sorted vector of data identifiers (non-meta).
+    /// Caller passes a precomputed `meta_ids` set so this can be
+    /// amortized across multiple axiom forward-applies in the same
+    /// tick. Result is deterministic (sorted lexicographically).
+    pub fn compute_data_ids(&self, meta: &HashSet<String>) -> Vec<String> {
         let mut data_ids_set: HashSet<String> = HashSet::new();
         for r in &self.instances {
             if !meta.contains(&r.x) {
@@ -3848,15 +3897,9 @@ impl RSet {
                 data_ids_set.insert(r.y.clone());
             }
         }
-        if data_ids_set.is_empty() {
-            return HashSet::new();
-        }
         let mut data_ids: Vec<String> = data_ids_set.into_iter().collect();
-        data_ids.sort(); // deterministic enumeration order
-        let mut binding: Vec<usize> = vec![0; template.num_vars];
-        let mut out: HashSet<R> = HashSet::new();
-        forward_apply_recursive(self, &template, &data_ids, &mut binding, 0, &mut out);
-        out
+        data_ids.sort();
+        data_ids
     }
 
     /// Forward-apply every named axiom. Union of

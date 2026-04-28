@@ -5448,6 +5448,73 @@ ratio**. The "perf regression" narrative is withdrawn.
 Real finding worth pursuing as separate slice:
 forward_apply_axiom architectural cost.
 
+### Forward_apply_axiom perf fix Option A — amortization
+
+Implemented Option A from the fix candidates: amortize
+`collect_meta_ids` and `data_ids` extraction across the
+multiple `forward_apply_axiom` calls in a single tick.
+
+#### Changes
+
+`lib.rs`:
+- New `RSet::forward_apply_axiom_with_data_ids(axiom_id,
+  data_ids)` accepting precomputed `data_ids: &[String]`.
+- New `RSet::compute_data_ids(meta) -> Vec<String>`
+  extracting non-meta identifiers, sorted deterministically.
+- Original `forward_apply_axiom` API unchanged.
+
+`runtime/mod.rs`: 4 hot-path call sites refactored to
+amortize:
+- `snapshot_predictions` (per Running tick)
+- `predictions_have_pending_delta` (per scheduler.choose)
+- `PredictionErrorDrive::evaluate` (drive signal)
+- `EvaluatePredictions` action arm (when EP fires)
+
+Pattern: compute meta + data_ids ONCE at top of method,
+then call `forward_apply_axiom_with_data_ids` per axiom.
+
+#### Empirical impact
+
+Per-100-tick comparison (no intervention, 2000 ticks):
+
+| Chunk | Pre-fix | Post-fix | Δ% |
+|---|---|---|---|
+| 1 | 2.2 ms/tick | 1.8 | -18% |
+| 5 | 18.9 | 17.2 | -9% |
+| 10 | 92.2 | 87.7 | -5% |
+| 11 | 159.8 | 166.9 | +4% (variance) |
+| 12 | 224.1 | 223.8 | ~0% |
+
+5-10% reduction at low N. Invisible at high N where
+`forward_apply_recursive`'s O(N^k) dominates. Saves ~12
+redundant `collect_meta_ids` calls per
+`snapshot_predictions` (13 axioms → 1 call).
+
+#### Correctness
+
+- 520 tests pass (no regression).
+- F0 battery: stream_diamond CONVERGED, all CONVERGED.
+- OQ #1 long-run hand-tuned: **268/129/1/4/8 — byte-
+  identical to pre-fix baseline**. Signal trajectory
+  matches exactly.
+
+Pure compute-once-pass-in refactor — guaranteed-correct.
+
+#### What this slice does NOT address
+
+`forward_apply_recursive`'s O(N^k) cost is unchanged. To
+address: Options B (cache across ticks) or C (skip
+snapshot most ticks). Both deferred.
+
+#### Significance
+
+Modest perf win, big correctness win. The amortization
+pattern is now a tooling primitive — future hot paths
+that call `forward_apply_axiom` per axiom can reuse
+`compute_data_ids` similarly. The architectural fix
+(B or C) remains future work but is now properly
+scoped.
+
 
 
 ### ADR 0063 (Proposed) — drive self-modification (Phase H2)
