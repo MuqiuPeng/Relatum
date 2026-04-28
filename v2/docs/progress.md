@@ -5856,3 +5856,100 @@ called for "a careful ADR before any implementation"; this
 file is that ADR. Acceptance + H2.0 implementation is a
 future commit when the user signals readiness.
 
+
+
+### Phase Alpha-3++ — multi-round demote loop converges in one iteration (2026-04-28)
+
+User confirmed plan: "Phase Alpha-3++ — 多轮 demote
+iteration on OQ#1：每轮 1000 ticks → tournament → 撤销
+bottom-ranked theory → 再跑 1000 ticks → 重复 3 轮。观察
+fixed point / re-discovery / hit rate trajectory."
+
+#### Implementation
+
+[`examples/phase_alpha_theory_demote_loop_n.rs`](../examples/phase_alpha_theory_demote_loop_n.rs).
+Same OQ#1 4-regime substrate as Phase Alpha-3+ (regimes
+a/b/c/d × 250 ticks initial + per-iter regime mixes).
+
+Constants:
+- ITERATIONS = 3
+- TICKS_PER_ROUND = 1000
+- MIN_AXIOM_PREDICTIONS = 5 (qualifying threshold)
+- DEMOTE_THRESHOLD = 0.50 (stop if lowest theory ≥ this)
+
+Per-round flow: tournament → if lowest below threshold,
+retract that theory and run 1000 more ticks; if at/above
+threshold, stop and tag converged.
+
+History tracked: (iter, mean, min, qualifying, demoted_id,
+Δ_mean) across rounds.
+
+#### Empirical questions
+
+1. Does the demote loop reach a fixed point, or does each
+   round demote a new "worst" theory?
+2. Does the runtime re-discover demoted theories within
+   the next 1000 ticks of any subsequent round?
+3. Do mean/min hit rates monotonically improve across
+   rounds, or plateau / regress?
+
+#### Results
+
+Log: [`logs/2026-04-28_phase_alpha_theory_demote_loop_n.log`](../logs/2026-04-28_phase_alpha_theory_demote_loop_n.log).
+
+| iter | mean | min | qual | demoted | Δ_mean |
+|---|---|---|---|---|---|
+| 0 | 0.7188 | 0.3757 | 4 | — | — |
+| 1 | 0.8401 | 0.6664 | 3 | t_0 | +0.1212 |
+| 2 | 0.8401 | 0.6664 | 3 | — (converged) | +0.0000 |
+
+Iteration 2 stopped without demoting because t_1 (the new
+lowest, rate 0.6664) was already above threshold.
+
+Verdict: **converged after 1 iteration**. Phase Alpha-3+'s
+single-round demote is a stable fixed point on OQ#1; the
+multi-round iteration is a no-op beyond round 1.
+
+Final state byte-identical to Phase Alpha-3+ post-demote
+state (Addendum 2 of ADR 0066).
+
+#### Answers
+
+1. **N=1 fixed point.** OQ#1 produces exactly one
+   structurally-broad-and-noisy theory (t_0). Once
+   removed, all remaining theories pass the 0.50 bar.
+2. **No re-discovery.** Confirms Addendum 2 finding at
+   2× horizon (1000 ticks initial + 1000 ticks
+   continuation = 2000 ticks post-demote without t_0
+   reappearing). Demotion is empirically sticky.
+3. **Monotonic improvement, then plateau.** +12% mean /
+   +29% min in iter 1; iter 2 byte-identical (no churn).
+
+#### Significance
+
+Phase Alpha-3+ proved demote works *once*. Phase Alpha-3++
+proves the loop *terminates cleanly* — no risk of cycling
+through demote → re-discover → demote on this substrate.
+The intervention is well-defined as a "prune to fixed
+point" operation.
+
+A different substrate (more theory diversity, denser
+co-occurrence) might produce N>1 convergence. Worth re-
+running on long5k or a future H2-class substrate before
+declaring N=1 universal.
+
+#### What this slice produced
+
+1. Empirical validation that single-round demote is a
+   stable fixed point on OQ#1 (not a partial step).
+2. A reusable history-tracking + threshold-termination
+   loop framework for future axiom-level or drive-level
+   tournament cycles.
+3. ADR 0066 Addendum 8 with full results table.
+
+#### Status
+
+Phase Alpha-3++ Accepted with positive empirical
+findings. Demote loop converges in one iteration on OQ#1
+with no re-discovery.
+

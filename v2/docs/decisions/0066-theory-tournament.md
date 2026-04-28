@@ -1025,3 +1025,77 @@ ADR 0066 status: Phase Alpha series + Option A + Option B
 + Option D all shipped. Options E/F (snapshot-level cache,
 lazy snapshot) deferred but lower priority given Option D's
 gain.
+
+---
+
+## Addendum 8 — Phase Alpha-3++ multi-round demote: converges in one iteration (2026-04-28)
+
+User confirmed Phase Alpha-3++ direction. Implemented as
+`examples/phase_alpha_theory_demote_loop_n.rs`: same
+OQ#1 4-regime substrate as Phase Alpha-3+, but the demote
+loop now runs up to N=3 iterations with a stop condition
+(lowest theory hit rate ≥ 0.50 threshold) and tracks
+history across rounds.
+
+#### Empirical questions
+
+1. Does the demote loop reach a fixed point, or does each
+   round produce a new "worst" theory?
+2. Does the runtime re-discover demoted theories within
+   the next 1000 ticks?
+3. Do mean/min hit rates monotonically improve, or does
+   demotion plateau / regress?
+
+#### Results
+
+| iter | mean | min | qualifying | demoted | Δ_mean |
+|---|---|---|---|---|---|
+| 0 (initial) | 0.7188 | 0.3757 | 4 | — | — |
+| 1 | 0.8401 | 0.6664 | 3 | t_0 | +0.1212 |
+| 2 | 0.8401 | 0.6664 | 3 | — (converged) | +0.0000 |
+
+Iteration 2 stopped without demoting because t_1 (the new
+lowest, rate 0.6664) was already above the 0.50 threshold.
+
+Verdict: **converged after 1 iteration**. Phase Alpha-3+'s
+single-round demote is a stable fixed point on this
+substrate, not a partial step.
+
+#### Answers to the empirical questions
+
+1. **Fixed point: yes, at N=1.** The substrate produces
+   exactly one structurally-broad-and-noisy theory (t_0).
+   Once removed, remaining theories all clear the 0.50
+   bar. Multi-round iteration is a no-op on OQ#1.
+
+2. **No re-discovery in 1000 ticks.** Confirms Addendum 2
+   finding at the 2× horizon (effectively 2000 ticks
+   post-demote). t_0-shaped grouping does not regenerate.
+
+3. **Monotonic improvement, then plateau.** Iteration 1
+   produces +12% mean / +29% min; iteration 2 is
+   byte-identical to post-iter-1 (no churn).
+
+#### Why this matters beyond Phase Alpha-3+
+
+Phase Alpha-3+ proved demote works *once*. Phase Alpha-3++
+proves the loop *terminates cleanly* — there's no risk of
+the runtime cycling through demote → re-discover → demote
+on this substrate. The intervention is well-defined as a
+"prune to fixed point" operation, not a destabilizing one.
+
+A different substrate (more theory diversity, denser
+co-occurrence) might produce N>1 convergence. Worth
+re-running Phase Alpha-3++ on long5k or a future H2-class
+substrate before declaring N=1 universal.
+
+#### Status
+
+Phase Alpha-3++ **Accepted with positive empirical
+findings**. Demote loop is a fixed-point intervention on
+OQ#1; converges in one iteration with no re-discovery.
+
+The loop framework (history tracking + threshold-based
+termination) is reusable for future axiom-level or
+drive-level tournament cycles.
+gain.
