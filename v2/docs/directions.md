@@ -96,4 +96,34 @@ Soundness gap closed: antisymmetry enforced via DAG-restriction at seed time (sa
 
 ## Newly discovered (added during execution)
 
-(empty initially; appended as new directions emerge)
+### Round 2 — appended after first 10/10 sweep (2026-04-29)
+
+### B.5.1 — Scheduler picks DiscoverAxiomShapeFamilies | ✓ done
+New FrontierKind::ShapeFamilyDiscoveryCandidate + refresh_shape_family_candidates + scheduler routing in Expand mode. On OQ#1 scheduler autonomously fires 1 DiscoverAxiomShapeFamilies episode → 6 families. Trajectory changed (16 axioms / 5 theories vs prior 13/4) — runtime integration is real, not just plumbing. [Result](results/B.5.1_scheduler_shape_family.md).
+
+### D.4 — Continuous dream-phase loop | ✓ done
+6 phases × 300 ticks. Phase 0: t_0 cross-prec=0.3248 → demote. Phases 1-5: stable, no further demote (lowest = t_1 at 0.5273, just above 0.50 threshold). Loop converges in 1 demote; idempotent post-convergence (4 phases byte-identical). [Result](results/D.4_continuous_dream.md).
+
+### D.3.1 — Signals-disagree substrate (composite arbitration test) | ✓ done
+NULL on hypothesis: narrow_a substrate (regime A only) still has both signals picking t_0. Magnitudes differ (t_3: primary 0.9427 vs cross 0.7500) but ranking ties. **POSITIVE methodological finding**: signals correlate strongly because they measure the same property from different angles. Composite's value is robustness/smoothing, not arbitration. [Result](results/D.3.1_signals_disagree.md).
+
+### F.1 — Per-axiom cross-precision API | ✓ done
+`RSet::axiom_cross_precision(ax, substrates)` shipped + 2 unit tests. **Bonus latent-bug fix**: `collect_meta_ids` now includes SHAPE_FAMILY_MARKER + META_SHAPE_FAMILY_MARKER (without it, B.5.1 would have polluted data-id accounting). 552 lib tests pass. [Result](results/F.1_per_axiom_cross_precision.md).
+
+### C.2.1 — OQ#2 with non-overlapping regimes | ✓ done
+PARTIAL/STRUCTURAL-LIMIT. OQ#2 (tournament+lattice+star) produces 0 template axioms (transitivity violations break it) → 0 shape families, no cross-precision applicable. **Methodological**: cross-precision and shape-family signals require forward-applicable template axioms; don't apply to predicate-axiom-only theories. Qualifies C.2's "generalizes" claim. [Result](results/C.2.1_oq2_validation.md).
+
+### B.7 — Layer-3 nested abstraction (meta-meta-families) | ✓ done
+SUPER_META_SHAPE_FAMILY_MARKER + discover_super_meta_shape_families. Groups L3 nested families by shared L2 member. On OQ#1 mints 1 super-meta containing both nested families (they share shape_premise_p0-1_p1-2). 4-layer recursive structural abstraction: L0→L1→L2→L3→L4. 3 unit tests, 554 lib tests pass. [Result](results/B.7_super_meta_l4.md).
+
+### E.2 — Drive query meta-R replacement (full) | ✓ done (verification only)
+Audit complete: runtime decision paths already use `is_drive_penalty_via_meta_r`. Only the registration source-of-truth call site keeps `drive.is_penalty()` (structurally necessary — boot circular dependency). No code change required. [Result](results/E.2_drive_query_audit.md).
+
+### F.2 — Family-aware merge candidate selector | ✓ done (signal)
+Family-signature complementarity (1 - Jaccard of family-set per theory) computed pairwise. On OQ#1 picks (t_0, t_2) at 0.667 as most complementary — distinct from Alpha-5's (t_2, t_3) Jaccard pick. **Caveat**: signal needs combining with quality-floor to avoid diluting good theories. [Result](results/F.2_family_aware_merge.md).
+
+### F.3 — Cross-precision-driven theory merge | ✓ done
+STRONGLY POSITIVE convergent finding. (t_2, t_3) max_diff = **0.0000** — identical cross-precision column profiles. **Same pick as Alpha-5's smart-merge** (different signal, same answer) → high-confidence merge target. Method-of-method: convergent signals from independent metrics is stronger evidence than either alone. [Result](results/F.3_xprec_merge.md).
+
+### A.1 — ILP premise reordering by selectivity | ✓ verified deferred
+Audit confirms Alpha-6's diminishing-returns finding. forward_apply leaf-check already short-circuits. Catch-22: selectivity-aware reorder needs neighbor-set sizes, but computing those IS the work. Bottleneck has moved elsewhere per Alpha-6. **No code change**. Closes the last item from the original scout-framework backlog. [Result](results/A.1_premise_reorder.md).

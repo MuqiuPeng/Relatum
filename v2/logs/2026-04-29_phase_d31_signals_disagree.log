@@ -1,0 +1,49 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3749:60
+     |
+3749 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3749:72
+     |
+3749 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_d31_signals_disagree.exe`
+=== Phase D.3.1 — Signals-disagree substrate test ===
+Stream: narrow_a (regime A only, 5 phases × 100 ticks)
+
+Phase 0 state: 5 theories, 16 axioms
+
+theory         primary      cross-prec       composite
+   t_0          0.3991          0.2436          0.3213
+   t_1          0.5957          0.5124          0.5541
+   t_2          1.0000          1.0000          1.0000
+   t_3          0.9427          0.7500          0.8463
+   t_4          1.0000          1.0000          1.0000
+
+=== Bottoms by signal ===
+  primary-rate    : Some(("t_0", 0.39913003188013196))
+  cross-precision : Some(("t_0", 0.24356290174471995))
+  composite (α=0.5): Some(("t_0", 0.32134646681242596))
+
+=== Verdict ===
+  → AGREE — both primary and cross pick the same theory; arbitration moot.
+
+--- end ---

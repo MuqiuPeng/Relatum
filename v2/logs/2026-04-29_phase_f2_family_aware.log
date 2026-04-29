@@ -1,0 +1,53 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_f2_family_aware_merge.exe`
+=== Phase F.2 — Family-aware merge candidate signal ===
+
+Phase 0: 4 theories, 6 shape families
+
+=== Per-theory family signatures ===
+  t_0: 6 families = ["shape_conclusion_c0-2", "shape_conclusion_c1-0", "shape_conclusion_c2-0", "shape_premise_p0-0_p1-2", "shape_premise_p0-1", "shape_premise_p0-1_p1-2"]
+  t_1: 5 families = ["shape_conclusion_c0-2", "shape_conclusion_c1-0", "shape_conclusion_c2-0", "shape_premise_p0-1", "shape_premise_p0-1_p1-2"]
+  t_2: 2 families = ["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"]
+  t_3: 3 families = ["shape_conclusion_c0-2", "shape_premise_p0-1", "shape_premise_p0-1_p1-2"]
+
+=== Pairwise signature complementarity (1 - jaccard) ===
+    higher complementarity = signatures more disjoint = better merge candidate
+         a          b     sig_jaccard      complementarity
+       t_0        t_1          0.8333               0.1667
+       t_0        t_2          0.3333               0.6667
+       t_0        t_3          0.5000               0.5000
+       t_1        t_2          0.4000               0.6000
+       t_1        t_3          0.6000               0.4000
+       t_2        t_3          0.6667               0.3333
+
+=== Verdict ===
+  → POSITIVE — best merge pair by signature complementarity: (t_0, t_2) at 0.6667
+    F.2 produces a complementary pair-selection signal distinct from Alpha-5's Jaccard-on-membership.
+
+--- end ---

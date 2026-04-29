@@ -1,0 +1,48 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3788:60
+     |
+3788 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3788:72
+     |
+3788 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_c21_oq2_validation.exe`
+=== Phase C.2.1 — OQ#2 non-overlapping-regimes validation ===
+Stream: oq2 (tournament + lattice + star, 3 regimes × 5 phases)
+
+Phase 0: 2 theories, 2 axioms, 10 episodes
+  theories: ["t_0", "t_1"]
+    t_0: 2 axioms = ["ax_antisymmetry", "ax_totality"]
+    t_1: 1 axioms = ["ax_antisymmetry"]
+
+=== Cross-precision column means ===
+    theory            mean
+       t_0               —
+       t_1               —
+
+=== Beta-1 shape families on OQ#2 ===
+  minted 0 families:
+
+=== Verdict ===
+  → MIXED — only theory discovery works.
+
+--- end ---

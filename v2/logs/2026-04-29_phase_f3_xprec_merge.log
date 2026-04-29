@@ -1,0 +1,51 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_f3_xprec_merge.exe`
+=== Phase F.3 — Cross-precision-driven merge candidate ===
+
+=== Cross-precision matrix ===
+                 t_0       t_1       t_2       t_3
+       t_0    1.0000    1.0000    1.0000    1.0000
+       t_1    0.6622    1.0000    1.0000    1.0000
+       t_2    0.0889    0.6897    1.0000    1.0000
+       t_3    0.2231    0.3600    1.0000    1.0000
+
+=== Pairwise column-profile difference ===
+         a          b        max_diff
+       t_0        t_1          0.6008
+       t_0        t_2          0.7769
+       t_0        t_3          0.9111
+       t_1        t_2          0.6400
+       t_1        t_3          0.3103
+       t_2        t_3          0.0000
+
+=== Verdict ===
+  → POSITIVE — found 1 candidate merge pair(s) by cross-precision profile equivalence:
+    (t_2, t_3) max_diff=0.0000
+
+--- end ---

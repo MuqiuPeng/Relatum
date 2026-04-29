@@ -215,6 +215,9 @@ impl RuleBasedScheduler {
             FrontierKind::CompositeCandidate => {
                 ActionKind::ExecuteComposite
             }
+            FrontierKind::ShapeFamilyDiscoveryCandidate => {
+                ActionKind::DiscoverAxiomShapeFamilies
+            }
         }
     }
 
@@ -226,6 +229,7 @@ impl RuleBasedScheduler {
             FrontierKind::PatternCandidate => !pattern_cool,
             FrontierKind::MetaMetaCandidate => !meta_meta_cool,
             FrontierKind::CompositeCandidate => true,
+            FrontierKind::ShapeFamilyDiscoveryCandidate => true,
             _ => false,
         })
     }
@@ -526,6 +530,7 @@ impl Scheduler for RuleBasedScheduler {
                         FrontierKind::PatternCandidate => !pattern_cool,
                         FrontierKind::MetaMetaCandidate => !meta_meta_cool,
                         FrontierKind::CompositeCandidate => true,
+                        FrontierKind::ShapeFamilyDiscoveryCandidate => true,
                         _ => false,
                     },
                     &bonus_kinds,

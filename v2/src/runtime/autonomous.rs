@@ -326,6 +326,15 @@ impl AutonomousRuntime {
                     &self.rset,
                     self.tick,
                 );
+                // ADR 0068 / Phase B.5.1 — surface shape-family
+                // discovery candidate when registered axioms have
+                // a shared premise that's not yet a family. Cheap
+                // structural check; ran after composite to keep
+                // composite's freshness check unchanged.
+                self.frontier.refresh_shape_family_candidates(
+                    &self.rset,
+                    self.tick,
+                );
             }
 
             // 4. Scheduler decision. ADR 0063 / Phase H2.0 step 3b

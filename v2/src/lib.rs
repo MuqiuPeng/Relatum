@@ -2989,6 +2989,139 @@ impl RSet {
         out
     }
 
+    /// Per-axiom **cross-precision mean** across substrates.
+    /// ADR 0068 / Phase F.1.
+    ///
+    /// For each substrate in `substrates` (typically generated via
+    /// `generate_substrate_from_theory` for each currently-named
+    /// theory), compute `precision = |predict_axiom(substrate) ∩
+    /// substrate| / |predict_axiom(substrate)|`. Return the mean
+    /// across substrates where the prediction was non-empty
+    /// (so the denominator is well-defined). Returns `None` if no
+    /// substrate produced any prediction for this axiom.
+    ///
+    /// This is the per-axiom version of Alpha-7's per-theory column
+    /// mean. Useful for Beta-X analyses that need to compare
+    /// individual axioms (e.g., shape-family member uniformity)
+    /// without aggregating to theory-level first.
+    pub fn axiom_cross_precision(
+        &self,
+        axiom_id: &str,
+        substrates: &[RSet],
+    ) -> Option<f64> {
+        let single = vec![axiom_id.to_string()];
+        let mut sum = 0.0;
+        let mut count = 0;
+        for sub in substrates {
+            let predicted: HashSet<R> = single
+                .iter()
+                .flat_map(|ax| sub.forward_apply_axiom(ax))
+                .collect();
+            if predicted.is_empty() {
+                continue;
+            }
+            let actual: HashSet<R> = sub.iter().cloned().collect();
+            let inter = predicted.iter().filter(|r| actual.contains(*r)).count();
+            sum += inter as f64 / predicted.len() as f64;
+            count += 1;
+        }
+        if count == 0 { None } else { Some(sum / count as f64) }
+    }
+
+    /// Discover **super-meta-families** — Layer 3 abstraction over
+    /// nested shape families (B.6). For each shape family that
+    /// appears in ≥ `min_member_metas` nested families, mint
+    /// `R(SUPER_META_SHAPE_FAMILY_MARKER, super_<sf_id>)` plus
+    /// `R(super_id, meta_id)` for each containing meta-family.
+    /// ADR 0068 / Phase Beta-1.7 (B.7).
+    ///
+    /// Returns minted super-meta-family ids (empty if none qualify
+    /// or all already named). Idempotent.
+    pub fn discover_super_meta_shape_families(
+        &mut self,
+        min_member_metas: usize,
+    ) -> Vec<String> {
+        if min_member_metas < 2 {
+            return Vec::new();
+        }
+
+        // Index: shape family id → list of nested families that
+        // contain it.
+        let mut sf_to_metas: std::collections::BTreeMap<
+            String,
+            Vec<String>,
+        > = std::collections::BTreeMap::new();
+
+        let metas: Vec<String> = self
+            .nested_shape_families()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for meta_id in &metas {
+            for sf_id in self.nested_shape_family_members(meta_id) {
+                sf_to_metas
+                    .entry(sf_id.to_string())
+                    .or_default()
+                    .push(meta_id.clone());
+            }
+        }
+
+        let mut minted: Vec<String> = Vec::new();
+        for (sf_id, member_metas) in sf_to_metas {
+            if member_metas.len() < min_member_metas {
+                continue;
+            }
+            let super_id = format!("super_{}", sf_id);
+            if self.is_super_meta_shape_family(&super_id) {
+                continue;
+            }
+            self.add(R::new(
+                SUPER_META_SHAPE_FAMILY_MARKER,
+                super_id.clone(),
+            ));
+            for m in &member_metas {
+                self.add(R::new(super_id.clone(), m.clone()));
+            }
+            minted.push(super_id);
+        }
+        minted
+    }
+
+    /// Is `id` a registered super-meta-shape-family? ADR 0068 / B.7.
+    pub fn is_super_meta_shape_family(&self, id: &str) -> bool {
+        self.instances
+            .contains(&R::new(SUPER_META_SHAPE_FAMILY_MARKER, id))
+    }
+
+    /// All registered super-meta-shape-family ids. ADR 0068 / B.7.
+    pub fn super_meta_shape_families(&self) -> Vec<&str> {
+        self.left_of(SUPER_META_SHAPE_FAMILY_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Member nested-family ids of a super-meta-family, sorted.
+    /// ADR 0068 / B.7.
+    pub fn super_meta_shape_family_members(&self, super_id: &str) -> Vec<&str> {
+        let nested_set: std::collections::HashSet<&str> =
+            self.nested_shape_families().into_iter().collect();
+        let mut out: Vec<&str> = self
+            .left_of(super_id)
+            .into_iter()
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if nested_set.contains(y) {
+                    Some(y)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
     fn mint_theory_id(&self) -> String {
         let existing = self.identifiers();
         let mut n = self.theories().len();
@@ -4426,6 +4559,22 @@ impl RSet {
         }
         for drive in self.left_of(PENALTY_MARKER) {
             s.insert(drive.y.to_string());
+        }
+        // ADR 0068 / Phase Beta-1 — shape family marker + nested
+        // family marker. Shape ids and meta-shape ids are meta-R
+        // tokens, not data; same for their members (already counted
+        // via axioms / shape families above, but defensive).
+        s.insert(SHAPE_FAMILY_MARKER.to_string());
+        s.insert(META_SHAPE_FAMILY_MARKER.to_string());
+        s.insert(SUPER_META_SHAPE_FAMILY_MARKER.to_string());
+        for sf in self.left_of(SHAPE_FAMILY_MARKER) {
+            s.insert(sf.y.to_string());
+        }
+        for msf in self.left_of(META_SHAPE_FAMILY_MARKER) {
+            s.insert(msf.y.to_string());
+        }
+        for smsf in self.left_of(SUPER_META_SHAPE_FAMILY_MARKER) {
+            s.insert(smsf.y.to_string());
         }
         for role in self.roles() {
             s.insert(role.to_string());

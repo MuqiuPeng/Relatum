@@ -227,3 +227,28 @@ pub const SHAPE_FAMILY_MARKER: &str = "__shape_family__";
 /// derived from rset's *existing meta-R structure*, not from raw
 /// axioms — recursive structural abstraction.
 pub const META_SHAPE_FAMILY_MARKER: &str = "__meta_shape_family__";
+
+/// Marker for **layer-3** abstraction: super-meta-families whose
+/// members are themselves nested shape families (B.6) that share
+/// a member shape family (B.1). ADR 0068 / Phase Beta-1.7 (B.7).
+///
+/// `R(SUPER_META_SHAPE_FAMILY_MARKER, super_X)` declares `super_X`
+/// as a layer-3 family. Members are `R(super_X, meta_id)` for
+/// each nested family that contains the relevant shape family.
+///
+/// On OQ#1, two nested families `meta_premise_p0-1` and
+/// `meta_premise_p1-2` both contain `shape_premise_p0-1_p1-2`.
+/// A B.7 super-meta-family captures this overlap structurally.
+///
+/// Layer hierarchy:
+///   L0 — data (R)
+///   L1 — axioms (templates)
+///   L1.5 — theories (axiom conjunctions)
+///   L2 — shape families (axioms grouped by structure) — Beta-1
+///   L3 — nested families (families grouped by shared edge) — B.6
+///   **L4 — super-meta-families (nested grouped by shared member) — B.7**
+///
+/// Each layer derives instances from the layer below. The marker
+/// itself is declared (compile-time); the instance population is
+/// data-derived.
+pub const SUPER_META_SHAPE_FAMILY_MARKER: &str = "__super_meta_shape_family__";

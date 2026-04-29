@@ -32,6 +32,14 @@ pub enum FrontierKind {
     /// suffix kinds. The scheduler dispatches `ExecuteComposite`
     /// against the seq_id. ADR 0061 / Phase H1.2.
     CompositeCandidate,
+    /// At least 2 registered axioms share a structural sub-component
+    /// (premise or conclusion edge set) that has not yet been
+    /// captured by an existing shape family. The scheduler dispatches
+    /// `DiscoverAxiomShapeFamilies` to mint the family. ADR 0068 /
+    /// Phase Beta-1.5.1 (B.5.1). Surfaced when the registered axiom
+    /// count > the count at last family discovery (cheap freshness
+    /// check; no need to enumerate all premises here).
+    ShapeFamilyDiscoveryCandidate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -645,6 +653,93 @@ impl Frontier {
                     .then_with(|| a.id.cmp(&b.id))
             });
         }
+    }
+
+    /// Append a `ShapeFamilyDiscoveryCandidate` item if the rset has
+    /// at least 2 registered template axioms whose canonicalized
+    /// premise key is shared but no `shape_premise_*` family
+    /// containing them yet exists. ADR 0068 / Phase Beta-1.5.1
+    /// (B.5.1).
+    ///
+    /// Cheap freshness check: bucket axioms by premise key, surface
+    /// the candidate iff any bucket of size ≥ 2 has no corresponding
+    /// shape_premise_<...> family registered. Avoids
+    /// re-discovering already-named families. Item priority kept
+    /// low (1.0) — discovery is cheap, but should not steal from
+    /// theory/pattern work.
+    pub fn refresh_shape_family_candidates(
+        &mut self,
+        rset: &RSet,
+        tick: u64,
+    ) {
+        // Already an item? Skip.
+        if self.items.iter().any(|it| {
+            it.kind == FrontierKind::ShapeFamilyDiscoveryCandidate
+        }) {
+            return;
+        }
+        // Bucket template axioms by canonicalized premise key.
+        use std::collections::BTreeMap;
+        let mut buckets: BTreeMap<Vec<(usize, usize)>, usize> =
+            BTreeMap::new();
+        for ax_id in rset.axioms() {
+            if let Some(template) =
+                crate::axiom_id_to_template(ax_id)
+            {
+                let canon =
+                    crate::canonicalize_template(template);
+                let mut key: Vec<(usize, usize)> = canon
+                    .premise
+                    .iter()
+                    .map(|e| (e.x_var, e.y_var))
+                    .collect();
+                key.sort();
+                if key.is_empty() {
+                    continue;
+                }
+                *buckets.entry(key).or_insert(0) += 1;
+            }
+        }
+        // Find any bucket with ≥ 2 axioms whose canonical
+        // shape_premise_<...> id is NOT yet registered.
+        let mut needs_discovery = false;
+        for (key, count) in &buckets {
+            if *count < 2 {
+                continue;
+            }
+            let key_str: Vec<String> = key
+                .iter()
+                .map(|(x, y)| format!("p{}-{}", x, y))
+                .collect();
+            let shape_id = format!("shape_premise_{}", key_str.join("_"));
+            if !rset.is_axiom_shape_family(&shape_id) {
+                needs_discovery = true;
+                break;
+            }
+        }
+        if !needs_discovery {
+            return;
+        }
+        self.items.push(FrontierItem {
+            id: format!("shape_family_{}", tick),
+            kind: FrontierKind::ShapeFamilyDiscoveryCandidate,
+            target: FrontierTarget::WholeRSet,
+            priority: 1.0,
+            estimated_value: 1.0,
+            estimated_cost: 0.5,
+            novelty_score: 0.5,
+            first_seen_tick: tick,
+            last_visited_tick: None,
+            revisit_count: 0,
+            cooldown_until_tick: None,
+            status: FrontierStatus::Fresh,
+        });
+        self.items.sort_by(|a, b| {
+            b.priority
+                .partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
     }
 
     /// Append `EstablishedPromotion` items for axioms that are

@@ -8,4 +8,6 @@
 //! guaranteed by the fixed event schedule.
 
 pub mod oq1;
+pub mod oq2;
 pub mod long5k;
+pub mod narrow_a;
