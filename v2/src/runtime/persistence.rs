@@ -55,6 +55,7 @@ pub(crate) fn action_kind_to_str(a: ActionKind) -> &'static str {
         ActionKind::DiscoverMetaMetaPatterns => "DiscoverMetaMetaPatterns",
         ActionKind::EvaluatePredictions => "EvaluatePredictions",
         ActionKind::ExecuteComposite => "ExecuteComposite",
+        ActionKind::DiscoverAxiomShapeFamilies => "DiscoverAxiomShapeFamilies",
     }
 }
 
@@ -70,6 +71,7 @@ pub(crate) fn parse_action_kind(s: &str) -> Result<ActionKind, String> {
         }
         "EvaluatePredictions" => Ok(ActionKind::EvaluatePredictions),
         "ExecuteComposite" => Ok(ActionKind::ExecuteComposite),
+        "DiscoverAxiomShapeFamilies" => Ok(ActionKind::DiscoverAxiomShapeFamilies),
         other => Err(format!("unknown ActionKind '{}'", other)),
     }
 }

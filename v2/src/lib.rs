@@ -2643,16 +2643,52 @@ impl RSet {
             }
         }
 
-        // Sparse random seeding.
+        // Predicate-axiom enforcement during seeding (ADR 0068 / D.2).
+        // - antisymmetry: never seed both R(x,y) AND R(y,x)
+        // - totality: ensure at least one of R(x,y), R(y,x) is seeded
+        //   for every unordered pair (x,y) with x != y.
+        // These are constraints, not generators — saturation step
+        // doesn't enforce them, so we filter at the seed step.
+        let has_antisymmetry = axiom_ids.iter().any(|a| a == AX_ANTISYMMETRY);
+        let has_totality = axiom_ids.iter().any(|a| a == AX_TOTALITY);
+
+        // Sparse random seeding (with antisymmetry filter).
+        // When antisymmetry is required, restrict seeds to i<j
+        // (DAG): saturation under template axioms (e.g., transitivity)
+        // preserves DAG structure → antisymmetry holds at the
+        // post-saturation rset. Without this constraint, a random
+        // 3-cycle seed + transitive closure would produce a
+        // complete digraph 3-cycle, violating antisymmetry.
         let mut rng = rng_seed | 1; // avoid 0 state
         for i in 0..num_ids {
             for j in 0..num_ids {
                 if i == j {
                     continue;
                 }
+                if has_antisymmetry && j < i {
+                    // DAG constraint — only forward direction.
+                    continue;
+                }
                 let r = next_xorshift64(&mut rng) as f64 / (u64::MAX as f64 + 1.0);
                 if r < seed_density {
                     out.add(R::new(ids[i].clone(), ids[j].clone()));
+                }
+            }
+        }
+        // Totality: pass over unordered pairs and add a directed edge
+        // if neither direction is present. Use deterministic
+        // direction (lower index → higher index) to keep with
+        // antisymmetry if both present.
+        if has_totality {
+            for i in 0..num_ids {
+                for j in (i + 1)..num_ids {
+                    let fwd = R::new(ids[i].clone(), ids[j].clone());
+                    let rev = R::new(ids[j].clone(), ids[i].clone());
+                    if !out.instances.contains(&fwd)
+                        && !out.instances.contains(&rev)
+                    {
+                        out.add(fwd);
+                    }
                 }
             }
         }
@@ -2838,6 +2874,111 @@ impl RSet {
             .filter_map(|r| {
                 let y = r.y.as_str();
                 if axiom_set.contains(y) {
+                    Some(y)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Discover and name **nested shape families** — meta-families
+    /// whose members are themselves shape families that share a
+    /// structural sub-component. ADR 0068 / Phase Beta-1.6
+    /// (Direction B.6).
+    ///
+    /// First kind: shared premise edge across premise families.
+    /// For each individual premise edge `p<x>-<y>` that appears
+    /// in ≥ `min_member_families` registered `shape_premise_*`
+    /// families, mint
+    /// `R(META_SHAPE_FAMILY_MARKER, meta_premise_p<x>-<y>)` plus
+    /// `R(meta_X, shape_id)` for each containing family.
+    ///
+    /// Returns the list of newly-minted meta-family ids. Idempotent.
+    /// This is **recursive structural abstraction**: Layer 1
+    /// (Beta-1) groups axioms by structure; this layer groups
+    /// the resulting families by structure of their keys.
+    pub fn discover_nested_shape_families(
+        &mut self,
+        min_member_families: usize,
+    ) -> Vec<String> {
+        if min_member_families < 2 {
+            return Vec::new();
+        }
+
+        // Index: premise edge → list of premise family ids that
+        // contain it.
+        let mut edge_to_families: std::collections::BTreeMap<
+            (usize, usize),
+            Vec<String>,
+        > = std::collections::BTreeMap::new();
+
+        let families: Vec<String> = self
+            .axiom_shape_families()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for shape_id in &families {
+            let key = match self.shape_premise_key(shape_id) {
+                Some(k) => k,
+                None => continue, // skip conclusion-shape families
+            };
+            for edge in &key {
+                edge_to_families
+                    .entry(*edge)
+                    .or_default()
+                    .push(shape_id.clone());
+            }
+        }
+
+        let mut minted: Vec<String> = Vec::new();
+        for ((x, y), member_families) in edge_to_families {
+            if member_families.len() < min_member_families {
+                continue;
+            }
+            let meta_id = format!("meta_premise_p{}-{}", x, y);
+            if self.is_nested_shape_family(&meta_id) {
+                continue;
+            }
+            self.add(R::new(
+                META_SHAPE_FAMILY_MARKER,
+                meta_id.clone(),
+            ));
+            for f in &member_families {
+                self.add(R::new(meta_id.clone(), f.clone()));
+            }
+            minted.push(meta_id);
+        }
+        minted
+    }
+
+    /// Is `id` a registered nested shape family? ADR 0068 / B.6.
+    pub fn is_nested_shape_family(&self, id: &str) -> bool {
+        self.instances
+            .contains(&R::new(META_SHAPE_FAMILY_MARKER, id))
+    }
+
+    /// All registered nested shape family ids. ADR 0068 / B.6.
+    pub fn nested_shape_families(&self) -> Vec<&str> {
+        self.left_of(META_SHAPE_FAMILY_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Member shape family ids of a given nested family, sorted.
+    /// ADR 0068 / B.6.
+    pub fn nested_shape_family_members(&self, meta_id: &str) -> Vec<&str> {
+        let family_set: std::collections::HashSet<&str> =
+            self.axiom_shape_families().into_iter().collect();
+        let mut out: Vec<&str> = self
+            .left_of(meta_id)
+            .into_iter()
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if family_set.contains(y) {
                     Some(y)
                 } else {
                     None

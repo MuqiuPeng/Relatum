@@ -1,0 +1,53 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:239:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+239 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3608:60
+     |
+3608 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3608:72
+     |
+3608 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_beta_5_runtime_family.exe`
+=== Phase Beta-1.5 — Runtime integration of shape family discovery ===
+
+=== Pre-dispatch state ===
+  axioms registered  : 13
+  shape families     : 0
+  episodes recorded  : 110
+
+=== Dispatch 1 ===
+  delta returned    : Some(6.0)
+  families minted   : 6
+    shape_premise_p0-1_p1-2: 2 members
+    shape_conclusion_c1-0: 2 members
+    shape_conclusion_c0-2: 3 members
+    shape_premise_p0-1: 3 members
+    shape_premise_p0-0_p1-2: 4 members
+    shape_conclusion_c2-0: 2 members
+
+=== Dispatch 2 (idempotency check) ===
+  delta returned    : Some(0.0)
+  families total    : 6
+
+=== Verdict ===
+  → POSITIVE — runtime dispatch mints 6 families, second dispatch idempotent (delta=0).
+
+--- end ---

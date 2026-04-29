@@ -33,25 +33,19 @@ Mechanism shipped: `enumerate_axiom_templates_filtered(config, blocked_premise_k
 
 **Falsifiable**: with this filter, future axiom discovery on similar substrates skips the p0-0 noise family entirely.
 
-### B.5 — Runtime integration of shape-family discovery | pending
-**Goal**: Add `DiscoverAxiomShapeFamilies` as a runtime `ActionKind`. Currently the API is invoked externally from examples. Make it part of the autonomous loop.
+### B.5 — Runtime integration of shape-family discovery | ✓ done (wiring only)
+ActionKind::DiscoverAxiomShapeFamilies added; persistence round-trip + execute_action arm; execute_action made pub. Demo verifies dispatch mints 6 families on OQ#1, idempotent on re-dispatch (delta=0). Scheduler integration deferred to B.5.1. [Result](results/B.5_runtime_family_integration.md).
 
-**Falsifiable**: runtime spontaneously mints shape families during normal Phase 0 runs without external intervention.
-
-### B.6 — Family of families (nested abstraction) | pending
-**Goal**: When multiple shape families themselves share structure (e.g., several "shared-premise" families with overlapping premise sets), promote that to a higher-order abstraction.
-
-**Risk**: combinatorial. Probably needs constraint via cross-precision before pursuing.
+### B.6 — Family of families (nested abstraction) | ✓ done
+META_SHAPE_FAMILY_MARKER + discover_nested_shape_families: groups premise families by shared individual premise edge. On OQ#1, mints 2 nested families (meta_premise_p0-1, meta_premise_p1-2). Recursive structural abstraction works — Layer 2 (meta-families) discovered from Layer 1 (families) discovered from axioms. 3 unit tests; 550 lib tests pass. [Result](results/B.6_nested_families.md).
 
 ## Phase C — Cross-cutting cleanup
 
 ### C.1 — Extract OQ#1 stream to shared library | ✓ done
 17 stream-fn copies → 2 in lib (`src/test_substrates/{oq1,long5k}.rs`). 16 examples refactored via Python script + 1 manual; all 51 examples build, 545 lib tests pass. ~1300 lines net deletion. [Result](results/C.1_oq1_extraction.md).
 
-### C.2 — Cross-precision validation on long5k | pending
-**Goal**: Re-run Phase Alpha-7..9 (dream phase, cross-precision-driven demote, varying-T) on the long5k substrate. Does the structural-signal vs accumulative-signal gap hold on a more complex substrate?
-
-**Falsifiable**: cross-precision still picks correct demote target on long5k AND still wins on threshold-crossing time.
+### C.2 — Cross-precision validation on long5k | ✓ done
+STRONGLY POSITIVE. long5k @ 1500 ticks discovers same 4 theories with same axiom counts as OQ#1. t_0 cross-precision column mean = 0.3248 (vs 0.3756 on OQ#1). Beta-1 mints **identical 6 shape families**. Cross-precision + shape-family signals generalize across substrates that share regime types. [Result](results/C.2_long5k_validation.md).
 
 ### C.3 — Integer-direction prep work | pending
 **Goal**: Implement the smallest mechanism that mints a new identifier via axiom application. E.g., a "successor closure" rule that, given seed `0` and rule `R(succ_marker, n) → R(succ_marker, S(n))`, generates `S(0), S(S(0)), ...`.
@@ -65,15 +59,11 @@ Mechanism shipped: `enumerate_axiom_templates_filtered(config, blocked_premise_k
 
 **Falsifiable**: axioms that hold on rejection-substrates are universally robust; axioms that fail are substrate-specific.
 
-### D.2 — Predicate-axiom enforcement during substrate generation | pending
-**Goal**: Currently `generate_substrate_from_theory` ignores predicate axioms (antisymmetry, totality). For theories containing antisymmetry, the random seed could violate it. Filter seeds to maintain predicate constraints.
+### D.2 — Predicate-axiom enforcement during substrate generation | ✓ done
+Soundness gap closed: antisymmetry enforced via DAG-restriction at seed time (saturation preserves DAG); totality enforced via post-saturation pair sweep. 2 unit tests, 547 lib tests pass. First-attempt naive "filter at seed only" failed because saturation under transitivity re-introduced violations — DAG construction is the right shape. [Result](results/D.2_predicate_enforcement.md).
 
-**Falsifiable**: post-fix substrates verify all theory axioms (including predicate) at rate 1.0.
-
-### D.3 — Composite scheduler signal | pending
-**Goal**: Blend primary-rate + cross-precision-mean into a single tournament score. Test composite vs each alone on tournament decisions.
-
-**Falsifiable**: composite outperforms either alone on a multi-substrate test.
+### D.3 — Composite scheduler signal | ✓ done
+α=0.5 blend mechanism shipped + 5-T sweep on OQ#1. Composite matches cross-precision speed (both cross 0.50 threshold at T=100, vs primary T=350). Mechanism POSITIVE; arbitration value not yet shown — OQ#1 has both signals always agreeing. Future D.3.1: construct a substrate where signals disagree. [Result](results/D.3_composite_signal.md).
 
 ### D.4 — Continuous dream loop in runtime | pending
 **Goal**: Run dream phase every K ticks; demote whenever cross-precision drops below threshold. Tests stability and overhead.
@@ -82,10 +72,8 @@ Mechanism shipped: `enumerate_axiom_templates_filtered(config, blocked_premise_k
 
 ## Phase E — Constitutional cleanup (drive layer)
 
-### E.1 — Verify H2.1.0 drive-as-meta-R registration | pending
-**Goal**: H2.1.0 was supposedly done (`register_drives_in_rset` exists). Verify the registrations are correct, queryable, and used by no path that breaks EP.
-
-**Falsifiable**: query `rset.right_of(DRIVE_MARKER)` returns the registered drives.
+### E.1 — Verify H2.1.0 drive-as-meta-R registration | ✓ done
+4-check verification: drive count + penalty marker + EP path intact + trait/meta-R consistency. All POSITIVE on default runtime + OQ#1 stream. API note: `left_of(MARKER)` for `R(MARKER, ?)` patterns (initial attempt used `right_of`, got 0). Confirms H2.1.0 is intact. [Result](results/E.1_drive_meta_r_verify.md).
 
 ### E.2 — Drive query via meta-R (replace compile-time fast paths) | pending
 **Goal**: Currently `combined_drive_signal` and `normalized_drive_signal` use `Drive::is_penalty()` compile-time method. Replace with rset query (`rset.right_of(PENALTY_MARKER)`).

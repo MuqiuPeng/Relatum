@@ -1,0 +1,47 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:239:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+239 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3644:60
+     |
+3644 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3644:72
+     |
+3644 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_d3_composite_signal.exe`
+=== Phase D.3 — Composite scheduler signal (α=0.5) ===
+Composite = 0.5 × primary_rate + 0.5 × cross_prec_mean
+
+    T      primary        cross    composite       agree?
+  100   t_0=0.5790   t_0=0.3756   t_0=0.4773          yes
+  200   t_0=0.5064   t_0=0.3248   t_0=0.4156          yes
+  350   t_0=0.4267   t_0=0.3248   t_0=0.3757          yes
+  500   t_0=0.4129   t_0=0.3248   t_0=0.3688          yes
+ 1000   t_0=0.3757   t_0=0.3248   t_0=0.3502          yes
+
+=== First T to cross 0.50 demote threshold ===
+  primary  : T=350
+  cross    : T=100
+  composite: T=100
+
+=== Verdict ===
+  → POSITIVE — composite crosses threshold at T=100 ≤ min(primary=350, cross=100)
+
+--- end ---

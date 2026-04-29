@@ -1,0 +1,74 @@
+warning: duplicated attribute
+    --> src\runtime\tests.rs:2267:5
+     |
+2267 |     #[test]
+     |     ^^^^^^^
+     |
+     = note: `#[warn(duplicate_macro_attributes)]` on by default
+
+warning: variable does not need to be mutable
+   --> src\runtime\tests.rs:377:13
+    |
+377 |         let mut rs = rset_with_multiple_theories();
+    |             ----^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\runtime\tests.rs:1048:13
+     |
+1048 |         let mut rs = rset_with_multiple_theories();
+     |             ----^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\runtime\tests.rs:1076:13
+     |
+1076 |         let mut rs = rset_with_multiple_theories();
+     |             ----^^
+     |             |
+     |             help: remove this `mut`
+
+warning: unused variable: `t_full`
+    --> src\tests.rs:3853:13
+     |
+3853 |         let t_full = name_theory_from_rset(&mut rs);
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_t_full`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3644:60
+     |
+3644 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3644:72
+     |
+3644 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: function `canonicalize_distinguishes_V_from_chain` should have a snake case name
+   --> src\tests.rs:669:8
+    |
+669 |     fn canonicalize_distinguishes_V_from_chain() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: convert the identifier to snake case (notice the capitalization): `canonicalize_distinguishes_v_from_chain`
+    |
+    = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: `relatum-v2` (lib test) generated 8 warnings (run `cargo fix --lib -p relatum-v2 --tests` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src\lib.rs (target\debug\deps\relatum_v2-7de71d32b53db891.exe)
+
+running 2 tests
+test tests::adr0068_d2_generate_substrate_respects_totality ... ok
+test tests::adr0068_d2_generate_substrate_respects_antisymmetry ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 545 filtered out; finished in 0.00s
+

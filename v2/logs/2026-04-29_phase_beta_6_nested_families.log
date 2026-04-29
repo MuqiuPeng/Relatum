@@ -1,0 +1,57 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:239:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+239 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3749:60
+     |
+3749 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3749:72
+     |
+3749 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_beta_6_nested_families.exe`
+=== Phase B.6 — Nested shape families ===
+
+=== Layer 1 (Beta-1): 6 shape families ===
+  shape_premise_p0-0_p1-2
+  shape_premise_p0-1
+  shape_premise_p0-1_p1-2
+  shape_conclusion_c0-2
+  shape_conclusion_c1-0
+  shape_conclusion_c2-0
+
+=== Pre-Layer-2: 0 nested families (expected 0) ===
+
+=== Layer 2 (B.6): 2 nested families ===
+  meta_premise_p0-1
+    contains shape_premise_p0-1
+    contains shape_premise_p0-1_p1-2
+  meta_premise_p1-2
+    contains shape_premise_p0-0_p1-2
+    contains shape_premise_p0-1_p1-2
+
+=== Constitutional check ===
+  R(META_SHAPE_FAMILY_MARKER, ?) → 2 entries: ["meta_premise_p0-1", "meta_premise_p1-2"]
+
+=== Verdict ===
+  → POSITIVE — 2 nested family minted; second-order structural abstraction works.
+    Layer 1: 6 families (axioms grouped by structure)
+    Layer 2: 2 meta-families (families grouped by shared structure)
+
+--- end ---

@@ -43,6 +43,14 @@ pub enum ActionKind {
     /// constant — sequences are minted at runtime via H1.1's
     /// promotion sweep, then dispatched here.
     ExecuteComposite,
+    /// Run `RSet::discover_axiom_shape_families(min_members)`. ADR
+    /// 0068 / Phase Beta-1.5 (Direction B.5). Mints new
+    /// `R(SHAPE_FAMILY_MARKER, shape_id)` plus member edges when ≥ N
+    /// registered axioms share a structural sub-component. Episode
+    /// delta is the count of newly-minted families (0 when nothing
+    /// new). Pure structural derivation; no rset mutation outside
+    /// the meta-R additions for the family registrations.
+    DiscoverAxiomShapeFamilies,
 }
 
 /// Where (in the RSet) the action should apply. ADR 0052 / A1.

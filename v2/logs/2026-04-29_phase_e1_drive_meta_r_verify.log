@@ -1,0 +1,59 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:239:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+239 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3644:60
+     |
+3644 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3644:72
+     |
+3644 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.13s
+     Running `target\release\examples\phase_e1_drive_meta_r_verify.exe`
+=== Phase E.1 — H2.1.0 drive-as-meta-R verification ===
+
+=== 1. Drives registered under DRIVE_MARKER ===
+  count: 3
+    drive_compression
+    drive_mode_thrash
+    drive_prediction_error
+  expected: {"drive_prediction_error", "drive_mode_thrash", "drive_compression"}
+  match: ✓
+
+=== 2. Penalty drives under PENALTY_MARKER ===
+  count: 1
+    drive_mode_thrash
+  expected: {"drive_mode_thrash"}
+  match: ✓
+
+=== 3. EP path runs (no shadow-mode breakage) ===
+  total episodes: 34
+  EvaluatePredictions episodes: 14
+  EP path runs: ✓
+
+=== 4. meta-R query consistency (rset.contains() matches Drive trait) ===
+    drive_compression: trait.is_penalty()=false, meta-R says=false, match=✓
+    drive_mode_thrash: trait.is_penalty()=true, meta-R says=true, match=✓
+    drive_prediction_error: trait.is_penalty()=false, meta-R says=false, match=✓
+
+=== Verdict ===
+  → POSITIVE — H2.1.0 verified: drives + penalties registered as meta-R, EP path intact, trait/meta-R consistent.
+
+--- end ---

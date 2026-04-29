@@ -3025,6 +3025,68 @@
     }
 
     #[test]
+    fn adr0068_b6_nested_family_groups_premise_families_by_shared_edge() {
+        // 4 axioms forming 2 premise families that share `p1-2`.
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1", // family A
+            "ax_tpl_v3_p0-0_p1-2_c0-2", // family A
+            "ax_tpl_v3_p0-1_p1-2_c0-2", // family B
+            "ax_tpl_v3_p0-1_p1-2_c2-0", // family B
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let nested = rs.discover_nested_shape_families(2);
+        // p1-2 appears in both A and B → 1 nested family.
+        // p0-0 only in A. p0-1 only in B. So just 1 minted.
+        assert_eq!(
+            nested.len(),
+            1,
+            "expected 1 nested family; got {:?}",
+            nested,
+        );
+        assert!(rs.is_nested_shape_family("meta_premise_p1-2"));
+        let members = rs.nested_shape_family_members("meta_premise_p1-2");
+        assert_eq!(members.len(), 2);
+    }
+
+    #[test]
+    fn adr0068_b6_nested_family_idempotent() {
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let first = rs.discover_nested_shape_families(2);
+        let second = rs.discover_nested_shape_families(2);
+        assert_eq!(first.len(), 1);
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn adr0068_b6_nested_family_respects_min_member_families() {
+        // Only one premise family → can't form a nested family.
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let nested = rs.discover_nested_shape_families(2);
+        // Even though both p0-0 and p1-2 appear in this family, no
+        // OTHER family contains them → nothing meta to abstract.
+        assert!(nested.is_empty());
+    }
+
+    #[test]
     fn adr0066_generate_substrate_satisfies_transitivity() {
         // Build an RSet with transitivity holding (poset). Name a
         // theory containing transitivity. Then generate a substrate
@@ -3063,6 +3125,75 @@
                 "transitivity violated on generated substrate: {:?}",
                 r,
             );
+        }
+    }
+
+    #[test]
+    fn adr0068_d2_generate_substrate_respects_antisymmetry() {
+        // Theory with antisymmetry + transitivity. Generated
+        // substrate's data edges should never include both R(a,b)
+        // and R(b,a).
+        let mut rs = RSet::new();
+        rs.extend([
+            R::new("a", "b"), R::new("b", "c"), R::new("a", "c"),
+        ]);
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        let t_id = rs
+            .name_theory(&[trans_id, AX_ANTISYMMETRY])
+            .unwrap();
+        let gen = rs
+            .generate_substrate_from_theory(&t_id, 6, 0.40, 7777)
+            .unwrap();
+        let meta = gen.collect_meta_ids();
+        let data_ids = gen.compute_data_ids(&meta);
+        for x in &data_ids {
+            for y in &data_ids {
+                if x == y {
+                    continue;
+                }
+                let fwd = gen.contains(&R::new(x.clone(), y.clone()));
+                let rev = gen.contains(&R::new(y.clone(), x.clone()));
+                assert!(
+                    !(fwd && rev),
+                    "antisymmetry violated: both R({}, {}) and reverse",
+                    x, y,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn adr0068_d2_generate_substrate_respects_totality() {
+        // Theory with totality + transitivity (= total order).
+        // Every unordered pair must have at least one direction.
+        let mut rs = RSet::new();
+        let nodes = ["a", "b", "c"];
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                rs.add(R::new(nodes[i], nodes[j]));
+            }
+        }
+        let trans_id = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        let t_id = rs
+            .name_theory(&[trans_id, AX_TOTALITY])
+            .unwrap();
+        let gen = rs
+            .generate_substrate_from_theory(&t_id, 5, 0.0, 1)
+            .unwrap();
+        let meta = gen.collect_meta_ids();
+        let data_ids = gen.compute_data_ids(&meta);
+        for i in 0..data_ids.len() {
+            for j in (i + 1)..data_ids.len() {
+                let x = &data_ids[i];
+                let y = &data_ids[j];
+                let fwd = gen.contains(&R::new(x.clone(), y.clone()));
+                let rev = gen.contains(&R::new(y.clone(), x.clone()));
+                assert!(
+                    fwd || rev,
+                    "totality violated: neither R({}, {}) nor reverse",
+                    x, y,
+                );
+            }
         }
     }
 

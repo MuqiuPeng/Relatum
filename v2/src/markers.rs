@@ -205,3 +205,25 @@ pub const PENALTY_MARKER: &str = "__penalty__";
 /// meta-R) gets a richer realization here than for previous
 /// markers: the type itself is discovered, not declared.
 pub const SHAPE_FAMILY_MARKER: &str = "__shape_family__";
+
+/// Marker for **nested** axiom shape families — meta-families
+/// whose members are themselves shape families (B.1) that share a
+/// structural sub-component. ADR 0068 / Phase Beta-1.6 (Direction
+/// B.6).
+///
+/// `R(META_SHAPE_FAMILY_MARKER, meta_X)` declares `meta_X` as a
+/// nested family. Members are stored as `R(meta_X, shape_id)` for
+/// each shape family that shares the relevant sub-component.
+///
+/// First nested family kind: **shared premise edge across premise
+/// families**. When two or more `shape_premise_*` families have
+/// premise edge sets that share an individual edge (e.g., both
+/// contain `p1-2`), they form a meta-family
+/// `meta_premise_p1-2`.
+///
+/// This is a second-order abstraction: Layer 1 is "axioms grouped
+/// by structure" (Beta-1); Layer 2 is "structures grouped by
+/// commonality" (Beta-1.6). Type instances at this layer are
+/// derived from rset's *existing meta-R structure*, not from raw
+/// axioms — recursive structural abstraction.
+pub const META_SHAPE_FAMILY_MARKER: &str = "__meta_shape_family__";

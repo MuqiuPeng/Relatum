@@ -830,7 +830,7 @@ impl AutonomousRuntime {
     /// computes its own episode delta (e.g. ADR 0059 G1.5
     /// `EvaluatePredictions`); otherwise `None` and the caller uses
     /// the standard `abstraction_score` diff.
-    pub(crate) fn execute_action(&mut self, plan: &ActionPlan) -> Option<f64> {
+    pub fn execute_action(&mut self, plan: &ActionPlan) -> Option<f64> {
         match plan.action_kind {
             ActionKind::DiscoverTheory => {
                 let cfg = AxiomDiscoveryConfig::default();
@@ -1155,6 +1155,16 @@ impl AutonomousRuntime {
                 }
                 let after = self.rset.abstraction_score();
                 return Some(after - before);
+            }
+            ActionKind::DiscoverAxiomShapeFamilies => {
+                // ADR 0068 / Phase Beta-1.5 (Direction B.5).
+                // Mint shape families from registered axioms. Pure
+                // structural derivation — predicate axioms ignored,
+                // empty-premise families excluded, idempotent on
+                // already-named families. Episode delta = count of
+                // newly minted families.
+                let minted = self.rset.discover_axiom_shape_families(2);
+                return Some(minted.len() as f64);
             }
         }
         None
