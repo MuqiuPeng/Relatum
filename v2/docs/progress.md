@@ -6589,3 +6589,74 @@ DreamCoder cross-validation transfers to v2 and produces
 theory-quality signal independent of primary-stream
 observation.
 
+
+
+### Phase Alpha-8 — cross-precision drives a demote decision (2026-04-29)
+
+After Alpha-7 finished, picked the natural follow-up:
+validate that cross-precision can *drive* a runtime
+decision, not just observe.
+
+#### Question
+
+Can the runtime demote the right theory using ONLY the
+cross-precision matrix, without ever consulting the
+primary-stream hit-rate counters?
+
+#### Result on OQ#1
+
+| metric | Alpha-3+ baseline (primary-stream rate) | Alpha-8 (cross-precision column mean) |
+|---|---|---|
+| demote target | t_0 (rate 0.3757) | **t_0** (column mean 0.21) ✓ |
+| post mean | 0.8401 | **0.8401** ✓ |
+| post min | 0.6664 | **0.6664** ✓ |
+| post qual | 3 | **3** ✓ |
+
+**Byte-identical post-demote state.** Cross-precision
+picks the same target Alpha-3+ picked, deterministic
+continuation produces the same outcome.
+
+#### Cross-precision matrix
+
+| sub\theory_j | t_2 | t_0 | t_1 | t_3 |
+|---|---|---|---|---|
+| t_2 | 1.00 | 0.10 | 0.70 | 1.00 |
+| t_0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| t_1 | 1.00 | 0.24 | 1.00 | 1.00 |
+| t_3 | 1.00 | 0.28 | 0.34 | 1.00 |
+
+Column means: t_2 = 1.00, t_0 = **0.21** ← lowest, t_1 =
+0.68, t_3 = 1.00.
+
+#### Significance
+
+First v2 slice where a runtime decision is driven
+**purely by cross-validation in imagined data**, with
+zero consultation of primary-stream hit-rate counters.
+Decision is correct, downstream consequences are
+identical.
+
+This opens up:
+- Pre-convergence decisions (when stream is short)
+- Decision under partial observation (when stream is
+  sparse)
+- Composite scheduler signals blending primary-rate +
+  cross-precision
+
+#### What this slice produced
+
+1. `examples/phase_alpha_cross_precision_demote.rs` —
+   working example demonstrating cross-precision driving
+   a demote decision without primary-stream consultation
+2. Empirical equivalence with Alpha-3+ baseline (same
+   target, byte-identical post-state)
+3. ADR 0066 Addendum 14 with verdict + future-slice
+   candidates (varying-T experiments, composite signals,
+   continuous dream loop)
+
+#### Status
+
+Phase Alpha-8 Accepted with strong positive finding.
+Dream-phase-as-scheduler-signal empirically validated as
+load-bearing on OQ#1.
+

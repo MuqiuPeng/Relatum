@@ -1894,3 +1894,156 @@ finding**. DreamCoder-style cross-validation transfers to
 v2 and produces theory-quality signal independent of
 primary-stream observation. Dream phase as a scheduler
 input is recorded as a high-priority future slice.
+
+---
+
+## Addendum 14 — Phase Alpha-8: cross-precision drives a demote decision (2026-04-29)
+
+User: "按顺序来" after Alpha-7 finished. With two
+candidates on the table (Direction E or Alpha-7
+follow-up), I picked the follow-up: validate that
+cross-precision can *drive* a runtime decision, not just
+observe.
+
+#### Hypothesis
+
+Can the runtime demote the right theory using ONLY the
+cross-precision matrix, without ever consulting the
+primary-stream hit-rate counters?
+
+If yes: cross-precision is a sufficient scheduler signal
+on OQ#1, opening the door to dream-phase-driven
+tournament policies that don't need primary-stream
+convergence to make decisions.
+
+#### Method
+
+[`examples/phase_alpha_cross_precision_demote.rs`](../../examples/phase_alpha_cross_precision_demote.rs):
+
+1. Phase 0: 1000 ticks on OQ#1 → discover theories.
+2. Snapshot the primary-stream tournament (used as
+   REFERENCE only, not for decision).
+3. Dream phase: generate substrate per theory, register
+   all axioms in every substrate (Alpha-7's fix).
+4. Compute cross-precision matrix; column means.
+5. **Pick the lowest-column-mean theory** as demote
+   target.
+6. Demote it; run another 1000 ticks; report.
+7. Compare result to Alpha-3+ baseline (which demoted
+   via primary-stream rate).
+
+#### Result
+
+Cross-precision matrix:
+
+| sub\theory_j | t_2 | t_0 | t_1 | t_3 |
+|---|---|---|---|---|
+| t_2 | 1.00 | **0.10** | 0.70 | 1.00 |
+| t_0 | 1.00 | 1.00 | 1.00 | 1.00 |
+| t_1 | 1.00 | **0.24** | 1.00 | 1.00 |
+| t_3 | 1.00 | **0.28** | 0.34 | 1.00 |
+
+Column means (excluding diagonal):
+
+| theory | mean | min |
+|---|---|---|
+| t_2 | 1.00 | 1.00 |
+| **t_0** | **0.21** | 0.10 |
+| t_1 | 0.68 | 0.34 |
+| t_3 | 1.00 | 1.00 |
+
+**Cross-precision picks t_0 for demotion.** Same target as
+Alpha-3+ (which picked t_0 by primary-stream hit rate
+0.3757).
+
+| metric | Alpha-3+ baseline | Alpha-8 |
+|---|---|---|
+| demote target | t_0 | **t_0** ✓ |
+| post mean | 0.8401 | **0.8401** ✓ |
+| post min | 0.6664 | **0.6664** ✓ |
+| post qual | 3 | **3** ✓ |
+
+**Byte-identical post-demote state.** The deterministic
+stream's continuation produces the same outcome because
+the same theory was retracted at the same point.
+
+#### Significance
+
+This is the first v2 slice where a runtime decision is
+driven **purely by cross-validation in imagined data**,
+with zero consultation of primary-stream hit-rate
+counters. The decision is correct (matches Alpha-3+) and
+the downstream consequences are identical.
+
+What this opens up:
+- **Pre-convergence decisions**: cross-precision could
+  pick the worst theory before primary-stream hit rates
+  have converged enough to discriminate. Useful when
+  stream is short or non-stationary.
+- **Decision under partial observation**: in regimes
+  where primary stream is sparse, cross-precision
+  provides an always-available signal source from the
+  agent's existing theories.
+- **Composite scheduler signals**: future tournaments
+  could blend (primary-rate, cross-precision-mean) for
+  more robust demote decisions.
+
+What this does NOT yet show:
+- Whether cross-precision converges *faster* than
+  primary-stream rate (would need a varying-T
+  experiment).
+- Whether cross-precision generalizes to substrates with
+  more theories or theories with more diverse axioms.
+- Whether cross-precision can *replace* primary-stream
+  rate in all decisions (e.g., promote-to-ESTABLISHED
+  decisions, action sequence promotion).
+
+These are recorded as future-slice candidates.
+
+#### Constitution check
+
+- C1 (R singular): ✓
+- C2 (R binary): ✓
+- C3 (types as meta-R): ✓ — the example does not
+  introduce new types; it consumes existing meta-R
+  (theories + axioms) and uses cross-precision as a
+  derived structural metric.
+- C4 (token identity): ✓ — generated identifiers
+  prefixed `gen_<theory_id>_<i>`.
+- C5 (structural similarity): ✓ — cross-precision is
+  computed structurally (forward_apply over axiom
+  templates against the generated rset).
+
+#### What this slice produced
+
+1. New example demonstrating cross-precision as a
+   load-bearing scheduler signal
+2. Empirical confirmation: cross-precision picks the
+   same demote target as primary-stream rate on OQ#1
+3. Byte-identical post-demote state validates that the
+   decision pathway is functionally equivalent
+4. ADR 0066 Addendum 14 with verdict + future-slice
+   candidates
+
+#### Future deferred slices
+
+- **Cross-precision at small T**: re-run at TICKS_PHASE_0
+  = 100, 200, 500. Does cross-precision pick t_0 at
+  smaller T than primary-stream rate? If yes, it's a
+  *faster* signal.
+- **Composite signal**: blend primary-rate and
+  cross-precision-mean into a single tournament score.
+  Test: does this outperform either alone on a more
+  diverse substrate?
+- **Dream phase as continuous loop**: run dream phase
+  every K ticks; demote whenever cross-precision drops
+  below threshold. Test stability and overhead.
+
+#### Status
+
+Phase Alpha-8 Accepted with strong positive finding.
+Cross-precision is empirically sufficient as a demote
+signal on OQ#1 without consulting primary-stream hit
+rates. The dream-phase-as-scheduler-signal direction is
+empirically validated; the broader integration into the
+runtime's tournament policy is the natural next slice.

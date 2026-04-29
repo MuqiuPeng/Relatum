@@ -1,0 +1,159 @@
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4648:9
+     |
+4648 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5301:9
+     |
+5301 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5305:9
+     |
+5305 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3440:60
+     |
+3440 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3440:72
+     |
+3440 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_alpha_cross_precision_demote.exe`
+=== ADR 0066 Phase Alpha-8 — Cross-precision-driven demote (1000 ticks Phase 0 + 1000 after) ===
+NUM_GEN_IDS=15, SEED_DENSITY=0.05
+
+=== Tournament: Phase 0 (primary-stream view, REFERENCE ONLY) ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+=== Dream phase: generate substrate per theory + register all axioms ===
+  t_2 → substrate with 220 edges, 94 identifiers
+  t_0 → substrate with 429 edges, 94 identifiers
+  t_1 → substrate with 253 edges, 94 identifiers
+  t_3 → substrate with 240 edges, 90 identifiers
+
+=== Cross-precision matrix (rows: substrate; cols: forward-applying theory) ===
+                 t_2       t_0       t_1       t_3
+       t_2    1.0000    0.1022    0.6970    1.0000
+       t_0    1.0000    1.0000    1.0000    1.0000
+       t_1    1.0000    0.2356    1.0000    1.0000
+       t_3    1.0000    0.2781    0.3431    1.0000
+
+=== Per-theory generality (column means, excluding diagonal) ===
+    theory  mean_precision   min_precision
+       t_2          1.0000          1.0000
+       t_0          0.2053          0.1022
+       t_1          0.6800          0.3431
+       t_3          1.0000          1.0000
+
+--- Cross-precision demote pick: 't_0' (column mean=0.2053) ---
+
+  Primary-stream bottom (REFERENCE): 't_0' (rate 0.3757)
+  ✓ AGREE: cross-precision and primary-stream pick the same theory
+
+--- Retracted 't_0' — 16 edges removed ---
+
+=== Tournament: After cross-precision demote + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9992
+   2                            t_3     4          3          0.8545
+   3                            t_1     6          5          0.6664
+
+=== Comparison vs Alpha-3+ baseline (primary-stream demote) ===
+  Phase 0:                  mean=0.7188 min=0.3757 qual=4
+  Alpha-3+ post-demote:     mean=0.8401 min=0.6664 qual=3 (reference)
+  Alpha-8 post-demote:      mean=0.8401 min=0.6664 qual=3
+
+=== Verdict ===
+  → POSITIVE — cross-precision picked the same target as primary-stream rate AND the resulting state matches Alpha-3+ baseline byte-identically. Cross-precision is a sufficient demote signal on OQ#1 without consulting primary-stream hit rates.
+
+--- end ---
