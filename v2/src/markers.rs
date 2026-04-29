@@ -183,3 +183,25 @@ pub const DRIVE_MARKER: &str = "__drive__";
 /// Marker for penalty drives. Penalty drives register under both
 /// `DRIVE_MARKER` and this marker. ADR 0064 / Phase H2.1.0.
 pub const PENALTY_MARKER: &str = "__penalty__";
+
+/// Marker for axiom shape families — sets of registered axioms that
+/// share a structural sub-component. ADR 0068 / Phase Beta-1.
+///
+/// `R(SHAPE_FAMILY_MARKER, shape_N)` declares `shape_N` as a named
+/// shape family. The family's members (the axioms sharing the
+/// structure) are stored as `R(shape_N, ax_id)` for each member.
+///
+/// The first family kind discovered is **shared premise**: axioms
+/// with byte-identical premise edge sets (after canonicalization)
+/// but possibly different conclusions. On OQ#1, the 4 noise axioms
+/// `ax_tpl_v3_p0-0_p1-2_c{0-1, 0-2, 1-0, 2-0}` all share premise
+/// `[p0-0, p1-2]`; this marker lets the system *name* that shared
+/// structure as a first-class meta-R object.
+///
+/// This is the first marker that lets the system extend its
+/// structural vocabulary beyond template instances — a `shape_N`
+/// is a structurally-derived ABSTRACTION over axioms, not an
+/// instance of any pre-defined shape. Commitment 3 (types as
+/// meta-R) gets a richer realization here than for previous
+/// markers: the type itself is discovered, not declared.
+pub const SHAPE_FAMILY_MARKER: &str = "__shape_family__";

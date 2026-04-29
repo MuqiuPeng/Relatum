@@ -2680,6 +2680,125 @@ impl RSet {
         Ok(out)
     }
 
+    /// Discover and name **axiom shape families** — sets of
+    /// registered axioms that share a structural sub-component
+    /// (initially: identical premise edge sets after
+    /// canonicalization). ADR 0068 / Phase Beta-1.
+    ///
+    /// Each discovered family with at least `min_members` axioms
+    /// gets a fresh meta-R object minted as
+    /// `R(SHAPE_FAMILY_MARKER, shape_premise_<canonical>)` plus
+    /// membership edges `R(shape_id, ax_id)` for each member.
+    ///
+    /// Returns the list of newly-minted shape ids (empty if no
+    /// family met the threshold or if all candidate families were
+    /// already named). Idempotent: re-running with the same axiom
+    /// set produces no duplicates.
+    ///
+    /// This is the first v2 mechanism that lets the structural
+    /// vocabulary itself extend at runtime: before this call the
+    /// rset has no `SHAPE_FAMILY_MARKER` instances; after the
+    /// call it has one for each discovered family. The families
+    /// are derived purely from axiom template structure
+    /// (commitment 5).
+    pub fn discover_axiom_shape_families(
+        &mut self,
+        min_members: usize,
+    ) -> Vec<String> {
+        if min_members < 2 {
+            // A "family" with 1 member is just an axiom; no
+            // abstraction work to do.
+            return Vec::new();
+        }
+
+        // Bucket registered template axioms by their canonicalized
+        // premise edge set. Predicate axioms (no template) are
+        // ignored — they have no premise structure to share.
+        let mut buckets: std::collections::BTreeMap<
+            Vec<(usize, usize)>,
+            Vec<String>,
+        > = std::collections::BTreeMap::new();
+        for ax_id in self.axioms() {
+            let template = match axiom_id_to_template(ax_id) {
+                Some(t) => t,
+                None => continue,
+            };
+            let canon = canonicalize_template(template);
+            let mut premise_key: Vec<(usize, usize)> = canon
+                .premise
+                .iter()
+                .map(|e| (e.x_var, e.y_var))
+                .collect();
+            premise_key.sort();
+            buckets
+                .entry(premise_key)
+                .or_default()
+                .push(ax_id.to_string());
+        }
+
+        let mut minted: Vec<String> = Vec::new();
+        for (premise_key, members) in buckets {
+            if members.len() < min_members {
+                continue;
+            }
+            // Skip empty-premise families: every conclusion-only
+            // axiom would group together which is not a useful
+            // abstraction (it's just the catalogue of conclusions).
+            if premise_key.is_empty() {
+                continue;
+            }
+            // Canonical id from premise key.
+            let key_str: Vec<String> = premise_key
+                .iter()
+                .map(|(x, y)| format!("p{}-{}", x, y))
+                .collect();
+            let shape_id = format!("shape_premise_{}", key_str.join("_"));
+            // Idempotent: skip if already named.
+            if self.is_axiom_shape_family(&shape_id) {
+                continue;
+            }
+            self.add(R::new(SHAPE_FAMILY_MARKER, shape_id.clone()));
+            for m in &members {
+                self.add(R::new(shape_id.clone(), m.clone()));
+            }
+            minted.push(shape_id);
+        }
+        minted
+    }
+
+    /// Is `id` a registered axiom shape family? ADR 0068.
+    pub fn is_axiom_shape_family(&self, id: &str) -> bool {
+        self.instances.contains(&R::new(SHAPE_FAMILY_MARKER, id))
+    }
+
+    /// All registered axiom shape family ids. ADR 0068.
+    pub fn axiom_shape_families(&self) -> Vec<&str> {
+        self.left_of(SHAPE_FAMILY_MARKER)
+            .iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Member axiom ids of the given shape family, sorted. ADR 0068.
+    pub fn shape_family_members(&self, shape_id: &str) -> Vec<&str> {
+        let axiom_set: std::collections::HashSet<&str> =
+            self.axioms().into_iter().collect();
+        let mut out: Vec<&str> = self
+            .left_of(shape_id)
+            .into_iter()
+            .filter_map(|r| {
+                let y = r.y.as_str();
+                if axiom_set.contains(y) {
+                    Some(y)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
     fn mint_theory_id(&self) -> String {
         let existing = self.identifiers();
         let mut n = self.theories().len();

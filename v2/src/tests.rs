@@ -2846,6 +2846,108 @@
     }
 
     #[test]
+    fn adr0068_shape_family_groups_axioms_with_same_premise() {
+        // Register 3 axioms that share premise [p0-0, p1-2] but
+        // differ in conclusion. Discover families with min=2.
+        // Expect: 1 family minted; all 3 axioms members; family
+        // queryable via the new API.
+        let mut rs = RSet::new();
+        // Need a substrate where all three axioms hold at rate 1.0
+        // for register_axiom_with_intension to be meaningful — but
+        // the discover function uses register state not validity,
+        // so we can register manually.
+        let ids = [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+            "ax_tpl_v3_p0-0_p1-2_c1-0",
+        ];
+        for id in &ids {
+            rs.register_axiom_with_intension(id);
+        }
+        let minted = rs.discover_axiom_shape_families(2);
+        assert_eq!(
+            minted.len(),
+            1,
+            "expected exactly one shape family; got {:?}",
+            minted,
+        );
+        let shape = &minted[0];
+        assert!(rs.is_axiom_shape_family(shape));
+        let members = rs.shape_family_members(shape);
+        assert_eq!(members.len(), 3);
+        for id in &ids {
+            assert!(members.contains(id), "missing member {}", id);
+        }
+    }
+
+    #[test]
+    fn adr0068_shape_family_respects_min_members() {
+        // Two axioms sharing premise — min_members=3 should yield
+        // no family.
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let minted = rs.discover_axiom_shape_families(3);
+        assert!(minted.is_empty());
+        assert!(rs.axiom_shape_families().is_empty());
+    }
+
+    #[test]
+    fn adr0068_shape_family_distinguishes_different_premises() {
+        // Two pairs with different premises → 2 families if
+        // min=2.
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+            // Different premise (transitivity-shaped)
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let minted = rs.discover_axiom_shape_families(2);
+        assert_eq!(minted.len(), 2);
+        let families = rs.axiom_shape_families();
+        assert_eq!(families.len(), 2);
+        // Each family should have exactly 2 members.
+        for f in &families {
+            assert_eq!(rs.shape_family_members(f).len(), 2);
+        }
+    }
+
+    #[test]
+    fn adr0068_shape_family_idempotent() {
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let first = rs.discover_axiom_shape_families(2);
+        let second = rs.discover_axiom_shape_families(2);
+        assert_eq!(first.len(), 1);
+        assert!(second.is_empty(), "second call must not duplicate");
+        assert_eq!(rs.axiom_shape_families().len(), 1);
+    }
+
+    #[test]
+    fn adr0068_shape_family_skips_predicate_axioms() {
+        let mut rs = RSet::new();
+        rs.register_axiom_with_intension(AX_REFLEXIVITY);
+        rs.register_axiom_with_intension(AX_ANTISYMMETRY);
+        rs.register_axiom_with_intension(AX_TOTALITY);
+        let minted = rs.discover_axiom_shape_families(2);
+        // Predicate axioms have no template → no premise → no family.
+        assert!(minted.is_empty());
+    }
+
+    #[test]
     fn adr0066_generate_substrate_satisfies_transitivity() {
         // Build an RSet with transitivity holding (poset). Name a
         // theory containing transitivity. Then generate a substrate

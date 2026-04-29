@@ -6757,3 +6757,113 @@ Phase Alpha-9 Accepted with positive empirical finding +
 methodological correction. Cross-precision is operationally
 faster than primary-rate at threshold-crossing on OQ#1.
 
+
+
+### Phase Beta-1 — first runtime extension of structural vocabulary since H1 (2026-04-29)
+
+User reframed the project goal after Alpha-9: pointed out
+that 9 Alpha phases produced positive empirical findings
+on meta-mechanisms (tournament, dream phase, cross-
+precision) but **none of them extended what kinds of
+structures the system could spontaneously identify**.
+
+> "Alpha 系列像在打磨一个望远镜，但望远镜对准的范围（系统能感知
+> 的结构空间）没变。"
+
+Last vocabulary extension before this slice was H1
+(action sequence promotion, 4-27). 8 days of subsequent
+work polished meta-machinery without expanding what the
+system can ever discover.
+
+#### Beta-1: axiom shape families
+
+ADR 0068. Introduces `SHAPE_FAMILY_MARKER` as a meta-class
+whose **instances are discovered structurally**, not
+declared.
+
+First family kind: **shared canonicalized premise**.
+Axioms with byte-identical premise edge sets but possibly
+different conclusions form a family. Family is named
+`shape_premise_<canonical>` and registered as
+`R(SHAPE_FAMILY_MARKER, shape_id)`. Membership recorded
+as `R(shape_id, ax_id)`.
+
+New API: `RSet::discover_axiom_shape_families(min_members)`.
+5 unit tests; 541 lib tests pass.
+
+#### Empirical result on OQ#1
+
+Pre-Beta-1 rset state: 0 instances of SHAPE_FAMILY_MARKER
+(type unrealized).
+
+Post-Beta-1: **3 families minted**:
+
+| family | members | mean xprec | variance | verdict |
+|---|---|---|---|---|
+| **shape_premise_p0-0_p1-2** | 4 | 0.4162 | **0.000000** | STRUCTURAL NOISE FAMILY |
+| shape_premise_p0-1 | 3 | 0.9016 | 0.019367 | MIXED |
+| shape_premise_p0-1_p1-2 | 2 | 0.8524 | 0.021788 | MIXED |
+
+The first family captures the noise cluster identified
+by Alpha-7's cross-precision: 4 distinct axiom IDs that
+share `[p0-0, p1-2]` premise behave identically in
+cross-validation (variance EXACTLY zero — same shared
+premise → same binding set → conclusions span the same
+identifier space → identical precision profile).
+
+**The system has spontaneously named "structural noise"
+as a first-class meta-R object** — without me telling it
+that p0-0-prefix axioms are noise.
+
+#### Why this is real auto-extension
+
+Pre-Beta-1: `rset.right_of(SHAPE_FAMILY_MARKER) = ∅`
+Post-Beta-1: 3 new structural abstractions in rset
+
+The structural vocabulary (set of available type
+instances) grew at runtime as a function of data.
+Constitutional commitment 3 (types as meta-R) realized
+at a new level: previously declared types found
+instances; now type-instances are data-derived.
+
+#### What this is NOT
+
+- The TYPE itself (`SHAPE_FAMILY_MARKER`) is still
+  source-declared. Deeper extension would need the
+  system to discover "shape family" as a useful category.
+- Only one family kind (shared premise). Future
+  Beta-1.X: shared conclusion, shared variable arity,
+  compositions.
+- No DRIVE consumes the families yet. They are inert
+  observations until wired into runtime.
+
+#### Significance vs Alpha series
+
+| Phase | Extended vocabulary? |
+|---|---|
+| Alpha-1..9 | No (meta-mechanism polish) |
+| **Beta-1** | **Yes — first since H1** |
+
+Pre-Beta-1, system had 13 axiom instances + 4 theory
+instances + 0 shape-family instances.
+Post-Beta-1, the vocabulary includes shape-family
+instances derived from data.
+
+#### Future deferred slices
+
+- Beta-1.1: shared-conclusion families
+- Beta-2: family-level demote (drop low-xprec families
+  wholesale)
+- Beta-3: family-aware template enumeration (skip
+  noise-prefix premises in future axiom search)
+- Beta-1 runtime integration: `DiscoverAxiomShapeFamilies`
+  ActionKind running periodically
+- Family of families (nested abstraction)
+
+#### Status
+
+Beta-1 Accepted with strong empirical evidence. First
+post-H1 auto-extension of structural vocabulary.
+SHAPE_FAMILY_MARKER meta-class added; instance population
+data-driven.
+
