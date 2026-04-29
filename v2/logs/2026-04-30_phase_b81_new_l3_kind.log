@@ -1,0 +1,71 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.30s
+     Running `target\release\examples\phase_b81_new_l3_kind.exe`
+=== Phase B.8.1 — New L3 kind to lift L5 ceiling ===
+
+L2 families: 6
+L3 (existing kind, premise-edge-shared): 2
+  meta_premise_p1-2 → members: ["shape_premise_p0-0_p1-2", "shape_premise_p0-1_p1-2"]
+  meta_premise_p0-1 → members: ["shape_premise_p0-1", "shape_premise_p0-1_p1-2"]
+
+=== Proposed: NEW L3 kind — family-overlap-by-shared-member ===
+L3 (new kind, count): 6
+  meta_via_ax_tpl_v2_p0-1_c1-0 → families: {"shape_premise_p0-1", "shape_conclusion_c1-0"}
+  meta_via_ax_tpl_v3_p0-0_p1-2_c0-2 → families: {"shape_premise_p0-0_p1-2", "shape_conclusion_c0-2"}
+  meta_via_ax_tpl_v3_p0-0_p1-2_c1-0 → families: {"shape_premise_p0-0_p1-2", "shape_conclusion_c1-0"}
+  meta_via_ax_tpl_v3_p0-0_p1-2_c2-0 → families: {"shape_premise_p0-0_p1-2", "shape_conclusion_c2-0"}
+  meta_via_ax_tpl_v3_p0-1_p1-2_c0-2 → families: {"shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"}
+  meta_via_ax_tpl_v3_p0-1_p1-2_c2-0 → families: {"shape_conclusion_c2-0", "shape_premise_p0-1_p1-2"}
+
+Combined L3 set: 8
+
+=== L4 candidates (L2 families in ≥ 2 L3s) ===
+  shape_conclusion_c0-2 appears in L3s: ["meta_via_ax_tpl_v3_p0-0_p1-2_c0-2", "meta_via_ax_tpl_v3_p0-1_p1-2_c0-2"]
+  shape_conclusion_c1-0 appears in L3s: ["meta_via_ax_tpl_v2_p0-1_c1-0", "meta_via_ax_tpl_v3_p0-0_p1-2_c1-0"]
+  shape_conclusion_c2-0 appears in L3s: ["meta_via_ax_tpl_v3_p0-0_p1-2_c2-0", "meta_via_ax_tpl_v3_p0-1_p1-2_c2-0"]
+  shape_premise_p0-0_p1-2 appears in L3s: ["meta_premise_p1-2", "meta_via_ax_tpl_v3_p0-0_p1-2_c0-2", "meta_via_ax_tpl_v3_p0-0_p1-2_c1-0", "meta_via_ax_tpl_v3_p0-0_p1-2_c2-0"]
+  shape_premise_p0-1 appears in L3s: ["meta_premise_p0-1", "meta_via_ax_tpl_v2_p0-1_c1-0"]
+  shape_premise_p0-1_p1-2 appears in L3s: ["meta_premise_p1-2", "meta_premise_p0-1", "meta_via_ax_tpl_v3_p0-1_p1-2_c0-2", "meta_via_ax_tpl_v3_p0-1_p1-2_c2-0"]
+  total L4 candidates: 6
+
+=== L5 prerequisite check ===
+  meta_premise_p0-1 appears in L4s: ["super_via_shape_premise_p0-1", "super_via_shape_premise_p0-1_p1-2"]
+  meta_premise_p1-2 appears in L4s: ["super_via_shape_premise_p0-0_p1-2", "super_via_shape_premise_p0-1_p1-2"]
+  meta_via_ax_tpl_v2_p0-1_c1-0 appears in L4s: ["super_via_shape_conclusion_c1-0", "super_via_shape_premise_p0-1"]
+  meta_via_ax_tpl_v3_p0-0_p1-2_c0-2 appears in L4s: ["super_via_shape_conclusion_c0-2", "super_via_shape_premise_p0-0_p1-2"]
+  meta_via_ax_tpl_v3_p0-0_p1-2_c1-0 appears in L4s: ["super_via_shape_conclusion_c1-0", "super_via_shape_premise_p0-0_p1-2"]
+  meta_via_ax_tpl_v3_p0-0_p1-2_c2-0 appears in L4s: ["super_via_shape_conclusion_c2-0", "super_via_shape_premise_p0-0_p1-2"]
+  meta_via_ax_tpl_v3_p0-1_p1-2_c0-2 appears in L4s: ["super_via_shape_conclusion_c0-2", "super_via_shape_premise_p0-1_p1-2"]
+  meta_via_ax_tpl_v3_p0-1_p1-2_c2-0 appears in L4s: ["super_via_shape_conclusion_c2-0", "super_via_shape_premise_p0-1_p1-2"]
+  L5-eligible L3s: 8
+
+=== Verdict ===
+  POSITIVE — new L3 kind lifts the ceiling: 8 L5 candidates
+
+--- end ---

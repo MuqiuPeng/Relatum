@@ -174,6 +174,52 @@ Both OQ#1 and long5k saturate at L4 with 1 super-meta family each. **L5 = 0** be
 **POSITIVE — 7 of 11 axioms (64%) show |primary − cross| ≥ 0.30 on OQ#1.** Noise family `shape_premise_p0-0_p1-2` systematically: primary ≈ 0.11, cross ≈ 0.49. Pearson r=0.9776 (high but not perfect). Resolution of D.3.1's NULL — composite arbitration is real at axiom layer, just hidden at theory aggregation. Bonus: didn't need to engineer a stream — OQ#1 already contains the disagreement at fine granularity. [Result](results/D.5_engineered_disagreement.md).
 **Goal**: D.3.1 NULL: signals correlate too strongly on OQ#1/narrow_a. Engineer a substrate where primary-rate (axiom predicts ground stream) and cross-precision (axiom predicts imagined substrates) genuinely diverge. E.g., a stream where the dominant pattern is non-extrapolable to other substrates — primary high, cross low. Tests composite arbitration.
 
+### Round 4 — appended 2026-04-30 (Constructive cognition + merge safety + cleanup)
+
+After G.1-G.4 established that v2 can grow its identifier space, Round 4 pushes toward concrete arithmetic via multi-arity recipes (addition), integer order, and the autonomy loop (drive that demands creation). Plus three open follow-ups (F.5 merge safety, B.8.1 L5 ceiling, I.2 transfer ceiling).
+
+### G.5 — Drive for identifier creation (design) | ✓ done (design)
+Design doc for `structural_growth_drive`. Signal = counterfactual `prediction_error - estimated_after_minting`. Saturation when prediction_error < EPS. Anti-rapacity via K_MAX cap. Sits in productive tension with compression — composite scheduler arbitrates. Identifies the "missing piece" for G-series autonomy: generative recipes are working mechanically but no drive triggers them. Implementation deferred. [Result](results/G.5_creation_drive_design.md).
+**Goal**: Design a Drive that rewards minting fresh identifiers. Currently no drive triggers G-series generation; without one G.1-G.4 are inert. Sketch the drive surface (counterfactual signal, satiation curve, anti-rapacity guard) without full runtime integration.
+
+### G.6 — Addition recipe (multi-arity generative) | ✓ done
+Binary recipe `mint_add(a, b) := format!("add({}, {})", a, b)`. 5 mints, all 5 ADR-0069 properties verified for multi-arity (determinism, freshness, anti-collision, materializability with 2 edges/mint, persistence). R primitive's natural dedup correctly handles `add(x, x)` cases. Recipe is NOT commutative at the recipe layer — commutativity, if desired, requires separate equality axiom (right separation between recipe layer and semantic-equivalence layer). [Result](results/G.6_addition_recipe.md).
+**Goal**: Extend G.1's single-arity successor to a binary recipe `mint_add(a, b) := format!("add({}, {})", a, b)`. Verify ADR 0069's contract holds for multi-arity recipes. Materialize as `R(add(a,b), a)` + `R(add(a,b), b)` (binary edges to operands).
+
+### G.7 — Integer arithmetic embedding | ✓ done (scaffold)
+**POSITIVE on scaffold; open on full arithmetic.** Successor chain (Ply A) + transitivity → 15 directed pairs = strict total order on chain (Ply B) = **Peano "<" relation materialized**. Addition mints (Ply C) integrate as new identifiers but `add(succ(0), succ(0))` and `succ(succ(0))` are NOT structurally equivalent (neighborhoods 2 vs 8). Closing requires equality axiom (ADR 0044/0047). **Concrete answer to user's "距离整数有多久": order is here NOW, equality closure is 1 slice away, full arithmetic 2 slices.** [Result](results/G.7_integer_embedding.md).
+**Goal**: Combine G.1 (successor) + G.6 (addition) + transitivity to express Peano arithmetic. Verify: `add(succ(0), succ(0)) == succ(succ(0))` reachable via forward-chaining rules over the recipes' output edges. First constructive integer concept inside v2.
+
+### G.8 — ActionKind::ApplyGenerativeRule (sketch) | ✓ done (sketch)
+Architectural sketch with 5 integration points: ActionKind variant, FrontierKind variant, refresh_generative_candidates method, execute_action arm, persistence round-trip. Plus markers (GENERATIVE_AXIOM_MARKER, GENERATIVE_DERIVED_MARKER), recipe registry design (Rust fn table + rset registry edges), end-to-end execution path. Together G.5 + G.8 = the autonomy bridge for G-series. Estimated 2-3 medium slices to land. [Result](results/G.8_generative_action_sketch.md).
+**Goal**: Spec for a new ActionKind that lets the scheduler trigger generative axiom application. Analog of B.5.1's wiring of Beta-1 into the runtime. Sketch: action variant + frontier item kind + execute_action arm. Don't ship full lib code; document the surface.
+
+### F.5 — Empirical merge safety test | ✓ done
+**STRONGLY POSITIVE.** F.4's pick `(t_2, t_3)` actually merged → t_4 with 5 axioms (union). Cross-precision: t_2=1.0, t_3=1.0, t_4=1.0 — **delta 0.0000**, exactly lossless. Theories 4→3 with zero quality cost. F.4's 66.7% confidence pick empirically VALIDATED. First end-to-end merge in F-family lifecycle (Rounds 1-3 stayed at proposal layer). Confirms F.3's profile-equivalence prediction (max_diff=0 → lossless merge). [Result](results/F.5_merge_safety.md).
+**Goal**: F-series picks merge candidates; nothing yet executes. F.5 actually merges F.4's pick `(t_2, t_3)` and re-evaluates cross-precision and family stats. Does the merged theory's quality survive? Falsifies/confirms F.4's confidence claim.
+
+### B.8.1 — New L3 kind lifts L5 ceiling | ✓ done
+**STRONGLY POSITIVE — 0 → 8 L5 candidates with ONE new L3 axis.** New kind: "L2 families sharing a member axiom" — captures cross-cutting overlap (e.g., conclusion families overlap with premise families on individual axioms). Layer cascade: L2=6 → L3=2+6=8 → L4=1+5=6 → **L5=8**. Confirms B.8's diagnosis: L5 ceiling was a property of L3 vocabulary, not substrate. Methodology: structural-limit findings need re-test with vocabulary expansion before being treated as fundamental. [Result](results/B.8.1_new_l3_kind.md).
+**Goal**: B.8 found L5 = 0 because only 1 L4 super-meta exists. Adding a new L2 discovery kind (e.g., shared-conclusion-orientation = R(x,y) vs R(y,x)) should produce more L2 families, hence more L3 nested, hence possibly more L4 super-metas. Test: does L5 mint?
+
+### I.2 — Transfer ceiling test | ✓ done
+PARTIAL TRANSFER (ratio 0.7488) on OQ#1 → OQ#2 — **more nuanced than C.2.1's catastrophic-failure prediction**. Bimodal: signal/universal axioms collapse (−0.42 to −0.22); noise axioms stay flat (−0.04); some mid-range axioms IMPROVE (+0.06 to +0.14, accidental alignment with OQ#2 structure). Refines C.2.1's verdict — catastrophic for DISCOVERY, partial for TRANSFER. Establishes transfer spectrum: same regimes → 1.0, different regimes → 0.75. [Result](results/I.2_transfer_ceiling.md).
+**Goal**: I.1 showed strong transfer between same-regime substrates (OQ#1 ↔ long5k). C.2.1 predicted catastrophic transfer failure on tournament-substrate (different regime types). I.2 confirms: train on OQ#1, evaluate axioms on an OQ#2-style substrate.
+
+### H.1 — Semantic axiom label utility | ✓ done
+`human_label(axiom_id)` recognizes 8 patterns (reflexivity/antisymmetry/totality, transitivity/reverse-transitivity, left/right-self-loop, symmetry, trivial-identity, self-loop-with-witness-edge) + structural fallback. 11/13 of OQ#1 axioms get human labels. **Notable**: all 4 noise-family members share label `self-loop-with-witness-edge` — structural amplification. Quality-of-life only; no behavioral change. [Result](results/H.1_axiom_labels.md).
+**Goal**: Currently axiom ids are like `ax_tpl_v3_p0-1_p1-2_c0-2` — informative but cryptic. Add `RSet::axiom_human_label(ax)` that produces readable names like "transitivity" or "asymmetric step". Quality-of-life only.
+
+### D.6 — Engineered cross-precision-only signal substrate | ✓ done (NULL)
+NEGATIVE — engineered sparse-chain stream did not produce strong cross-only signal (cross ≥ 0.7 AND primary ≤ 0.3). 3 diagnosed structural reasons: (1) substrate generation is symmetric to training, (2) discovery selects against low-primary axioms, (3) sparse streams insufficient for prediction-state samples. Honest synthesis with D.3.1 + D.5: composite is a **smoothing mechanism** more than an arbitrator. D.5's noise-family asymmetry remains v2's best cross-vs-primary evidence. [Result](results/D.6_cross_only_signal.md).
+**Goal**: D.5 found per-axiom disagreement on existing substrate. D.6 attempts the harder version: engineer a stream where some axiom has LOW primary rate but HIGH cross-precision (so cross alone would keep it; primary alone would demote it).
+
+### E.3 — Drive synthesis sketch (H2.2) | ✓ done (sketch)
+Concrete H2.2 design supplementing ADR 0063: 12 primitive metrics + 6 combinator grammar (mean/variance/ratio/lag_diff/clamped/scaled), bounded-depth ≤ 3 propose-score-refine search, 3 plausible synthesized candidates (stability-of-improvement, growth-saturation-gradient, axiom-efficiency-ratio), reuses H2.1 ESTABLISHED lifecycle, deterministic hash-based identifier naming for commitment 4. 5 named risks with mitigations. Honest assessment: most speculative v2 direction; recommend ship H2.1 fully first. [Result](results/E.3_drive_synthesis_sketch.md).
+**Goal**: H2.2 still proposed. Sketch a single-page proposal for runtime composition of new drives from existing ones (parametric blends, conjunctions). Document, no code.
+
+---
+
 ### I.1 — Cross-substrate theory transfer | ✓ done
 **STRONG TRANSFER — avg ratio 1.0040 between OQ#1 and long5k.** Signal axioms gain precision going to longer stream (+0.13-0.16); noise axioms lose slightly (-0.02-0.03); universal axioms identical (1.0 both). Caveat — first attempt was degenerate (identical theories + identical seeds → identical substrates); methodological note added. Transfer is essentially free when substrates share regime types. Bonus method-of-method finding: evaluation substrates must be independent of trained state. [Result](results/I.1_cross_substrate_transfer.md).
 **Goal**: Train on OQ#1 to convergence; freeze theories; evaluate cross-precision against long5k substrates (instead of OQ#1-imagined ones). C.2 showed independently-trained runtimes converge to same shape families. I.1 asks the stronger question: does a single trained state TRANSFER, or does it need re-derivation per stream?

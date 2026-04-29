@@ -1,0 +1,66 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.70s
+     Running `target\release\examples\phase_g6_addition_recipe.exe`
+=== Phase G.6 — Multi-arity generative recipe (addition) ===
+
+[1] determinism: mint_add("0", "0") == "add(0, 0)" (3/3 calls match)
+    mint_add NOT symmetric: "add(0, succ(0))" != "add(succ(0), 0)" — orientation preserved
+
+seed RSet: 3 edges, 3 identifiers
+
+=== Minting via addition recipe ===
+  mint_add(seed_0, seed_1) = add(seed_0, seed_1)
+  mint_add(seed_0, seed_2) = add(seed_0, seed_2)
+  mint_add(seed_1, seed_2) = add(seed_1, seed_2)
+  mint_add(seed_0, seed_0) = add(seed_0, seed_0)
+  mint_add(seed_1, seed_1) = add(seed_1, seed_1)
+
+[2] freshness: 5/5 minted ids absent from seed RSet
+[3] anti-collision: all 5 mints distinct AND disjoint from input space
+[4] materializability: 10/10 edges present in RSet (2 per mint × 5 mints)
+[5] persistence: round-trip 398 bytes; restored == original; minted ids preserved byte-for-byte
+
+=== Backwards walk: from minted id to operands ===
+  add(seed_0, seed_1) → operands ["seed_1", "seed_0"]
+  add(seed_0, seed_2) → operands ["seed_0", "seed_2"]
+  add(seed_1, seed_2) → operands ["seed_2", "seed_1"]
+  add(seed_0, seed_0) → operands ["seed_0"]
+  add(seed_1, seed_1) → operands ["seed_1"]
+
+=== Verdict ===
+  POSITIVE — multi-arity recipe satisfies all 5 ADR-0069 properties:
+    1. determinism (binary)        ✓
+    2. freshness                    ✓
+    3. anti-collision               ✓
+    4. materializability (2 edges)  ✓
+    5. persistence safety           ✓
+
+Final RSet: 16 edges (3 seed loops + 10 chain edges + 5 marker = 18)
+
+--- end ---

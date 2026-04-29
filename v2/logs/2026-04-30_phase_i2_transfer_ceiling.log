@@ -1,0 +1,62 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.23s
+     Running `target\release\examples\phase_i2_transfer_ceiling.exe`
+=== Phase I.2 — Transfer ceiling test (OQ#1 axioms → OQ#2 rset) ===
+
+[OQ#1] trained: 13 axioms, 4 theories
+
+[OQ#2] stream events: 164 (will replay 4500 ticks)
+[OQ#2] raw rset: 164 edges
+
+=== Per-axiom transfer ===
+axiom                                     OQ#1       OQ#2      delta
+ax_tpl_v2_p0-1_c1-1                     0.5714     0.3472    -0.2242
+ax_tpl_v3_p0-1_p2-1_c0-2                0.4500     0.4202    -0.0298
+ax_tpl_v3_p0-0_p1-2_c0-1                0.0750     0.0389    -0.0361
+ax_tpl_v3_p0-1_p0-2_c1-2                0.3600     0.4202     0.0602
+ax_tpl_v3_p0-1_p1-2_c0-2                1.0000     0.5756    -0.4244
+ax_antisymmetry                              —          —          —
+ax_tpl_v3_p0-0_p1-2_c0-2                0.0643     0.0389    -0.0254
+ax_tpl_v2_p0-1_c1-0                     0.2667     0.4085     0.1419
+ax_tpl_v3_p0-0_p1-2_c1-0                0.0750     0.0389    -0.0361
+ax_reflexivity                               —          —          —
+ax_tpl_v3_p0-1_p1-2_c2-0                0.4444     0.3487    -0.0957
+ax_tpl_v3_p0-0_p1-2_c2-0                0.0643     0.0389    -0.0254
+ax_tpl_v2_p0-1_c0-0                     0.6667     0.3472    -0.3194
+
+=== Aggregate ===
+  OQ#1 within precision (mean):  0.3671
+  OQ#2 across precision (mean):  0.2749
+  ratio:                         0.7488
+  catastrophic-drop axioms:      0 / 13 (precision halved or vanished)
+
+=== Verdict ===
+  PARTIAL TRANSFER — ratio 0.7488, some axioms generalize
+
+--- end ---

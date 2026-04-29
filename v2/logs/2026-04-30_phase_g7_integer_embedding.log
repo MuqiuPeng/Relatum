@@ -1,0 +1,73 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.00s
+     Running `target\release\examples\phase_g7_integer_embedding.exe`
+=== Phase G.7 — Integer arithmetic embedding ===
+
+--- Ply A: successor chain (Peano natural numbers) ---
+  chain ids: ["0", "succ(0)", "succ(succ(0))", "succ(succ(succ(0)))", "succ(succ(succ(succ(0))))", "succ(succ(succ(succ(succ(0)))))"]
+  chain edges (R(succⁿ, succⁿ⁻¹)): 5
+
+--- Ply B: transitivity closure → strict total order on chain ---
+  directed chain pairs after closure: 15
+  expected: C(6, 2) = 15 (full transitive order)
+  strict total order on chain: ✓
+  semantic reading: R(succⁿ(0), succᵏ(0)) ↔ "n is greater than k"
+
+--- Ply C: addition mints + arithmetic boundary ---
+  add(succ(0), succ(0)) = add(succ(0), succ(0))
+  add(succ(0), succ(succ(0))) = add(succ(0), succ(succ(0)))
+  add(succ(succ(0)), succ(succ(0))) = add(succ(succ(0)), succ(succ(0)))
+  add(0, succ(succ(0))) = add(0, succ(succ(0)))
+  transitivity re-closed after addition mints
+
+=== Boundary observation ===
+  add(succ(0), succ(0)) and succ(succ(0)) — same equivalence class?
+    structural neighborhood equal: false
+    add(1, 1) neighbors: 2 edges
+    succ²(0) neighbors:  8 edges
+
+  → They are NOT structurally equivalent under the current axiom set.
+    Resolution requires an EQUALITY axiom asserting
+    `add(x, y) = z when chain-position(x) + chain-position(y) = chain-position(z)`.
+    This is the existing v2 equality-axiom layer (ADR 0044/0047) —
+    G.7 establishes the SCAFFOLDING; full arithmetic closure is the next step.
+
+=== Verdict ===
+  POSITIVE on the scaffold:
+    Ply A — successor chain materializes ✓
+    Ply B — transitivity yields Peano "<" relation ✓
+    Ply C — addition mints integrate as new identifiers ✓
+
+  OPEN on full arithmetic:
+    `add(N_a, N_b) ≡ N_(a+b)` requires equality axiom.
+    G.7 = scaffold; closing the equivalence is G.8/G.9 territory.
+
+Final RSet: 45 edges total
+
+--- end ---
