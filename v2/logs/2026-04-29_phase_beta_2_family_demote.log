@@ -1,0 +1,159 @@
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4767:9
+     |
+4767 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5420:9
+     |
+5420 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5424:9
+     |
+5424 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3559:60
+     |
+3559 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3559:72
+     |
+3559 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_beta_2_family_demote.exe`
+=== Phase Beta-2 — Family-level demote (mean<0.65 AND var<0.0500) ===
+
+=== Tournament: Phase 0 (primary stream) ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          1.0000
+   2                            t_3     4          3          0.9136
+   3                            t_1     6          5          0.5861
+   4                            t_0    10          9          0.3757
+
+=== Beta-1 step: discovered 3 shape families ===
+  shape_premise_p0-0_p1-2: 4 members
+  shape_premise_p0-1: 3 members
+  shape_premise_p0-1_p1-2: 2 members
+
+=== Family cross-precision ===
+                          family     n       mean        var       flag
+         shape_premise_p0-0_p1-2     4     0.5140   0.000000   ← DEMOTE
+              shape_premise_p0-1     3     0.9080   0.016926           
+         shape_premise_p0-1_p1-2     2     0.8620   0.019042           
+
+=== Beta-2: family-level demote ===
+
+  Family shape_premise_p0-0_p1-2 (mean=0.5140 var=0.000000, 4 members):
+    detach ax_tpl_v3_p0-0_p1-2_c0-1 from t_0 (1 edges)
+    retract ax_tpl_v3_p0-0_p1-2_c0-1 globally (19 meta-R edges)
+    detach ax_tpl_v3_p0-0_p1-2_c0-2 from t_0 (1 edges)
+    retract ax_tpl_v3_p0-0_p1-2_c0-2 globally (19 meta-R edges)
+    detach ax_tpl_v3_p0-0_p1-2_c1-0 from t_0 (1 edges)
+    retract ax_tpl_v3_p0-0_p1-2_c1-0 globally (19 meta-R edges)
+    detach ax_tpl_v3_p0-0_p1-2_c2-0 from t_0 (1 edges)
+    retract ax_tpl_v3_p0-0_p1-2_c2-0 globally (19 meta-R edges)
+
+  Detached 4 (theory, axiom) memberships; globally retracted 4 axioms.
+
+=== Tournament: After family-level demote + 1000 ticks ===
+rank                      theory_id   axs qualifying    agg_hit_rate
+   1                            t_2     3          1          0.9682
+   2                            t_3     4          3          0.8125
+   3                            t_0     6          5          0.6391
+   4                            t_1     6          5          0.6391
+
+=== Comparison vs prior baselines ===
+  Phase 0:                          mean=0.7188 min=0.3757 qual=4
+  Alpha-3+ (whole t_0 demote):      mean=0.8401 min=0.6664 qual=3 (reference)
+  Alpha-3+++ (4-axiom repair):      mean=0.7967 min=0.6664 qual=4 (reference)
+  Beta-2 (family demote):           mean=0.7647 min=0.6391 qual=4
+  Beta-2 axioms remaining:          9 (was 13 pre-Beta-2)
+
+=== Verdict ===
+  → POSITIVE-NEW — different end state from prior baselines, but all theories above threshold; structurally distinct intervention
+
+--- end ---

@@ -2898,26 +2898,103 @@
 
     #[test]
     fn adr0068_shape_family_distinguishes_different_premises() {
-        // Two pairs with different premises → 2 families if
-        // min=2.
+        // Two premise groups (2 members each) PLUS one conclusion
+        // group (c0-2 shared by 2 axioms, one from each premise
+        // group). With B.3 (shared-conclusion families), total
+        // families = 3.
         let mut rs = RSet::new();
         for id in [
             "ax_tpl_v3_p0-0_p1-2_c0-1",
             "ax_tpl_v3_p0-0_p1-2_c0-2",
-            // Different premise (transitivity-shaped)
             "ax_tpl_v3_p0-1_p1-2_c0-2",
             "ax_tpl_v3_p0-1_p1-2_c2-0",
         ] {
             rs.register_axiom_with_intension(id);
         }
         let minted = rs.discover_axiom_shape_families(2);
-        assert_eq!(minted.len(), 2);
+        // 2 premise families + 1 conclusion family (c0-2 shared).
+        assert_eq!(minted.len(), 3);
         let families = rs.axiom_shape_families();
-        assert_eq!(families.len(), 2);
-        // Each family should have exactly 2 members.
+        assert_eq!(families.len(), 3);
+        // Premise families have 2 members each; the conclusion
+        // family has 2 members (the two c0-2 axioms).
         for f in &families {
             assert_eq!(rs.shape_family_members(f).len(), 2);
         }
+        // Verify conclusion family is named correctly.
+        assert!(rs.is_axiom_shape_family("shape_conclusion_c0-2"));
+    }
+
+    #[test]
+    fn adr0068_b4_filtered_enumerate_skips_blocked_premise() {
+        // Blocked premise [p0-0, p1-2] should suppress all 4
+        // conclusion variants.
+        let config = AxiomDiscoveryConfig::default();
+        let baseline =
+            crate::enumerate_axiom_templates(&config);
+        let mut blocked: HashSet<Vec<(usize, usize)>> = HashSet::new();
+        let mut key = vec![(0, 0), (1, 2)];
+        key.sort();
+        blocked.insert(key);
+        let filtered = crate::enumerate_axiom_templates_filtered(
+            &config, &blocked,
+        );
+        // Filtered should have STRICTLY fewer templates.
+        assert!(
+            filtered.len() < baseline.len(),
+            "filtered ({}) should be < baseline ({})",
+            filtered.len(), baseline.len(),
+        );
+        // No template in filtered should have premise [p0-0, p1-2].
+        for tpl in &filtered {
+            let mut k: Vec<(usize, usize)> =
+                tpl.premise.iter().map(|e| (e.x_var, e.y_var)).collect();
+            k.sort();
+            assert_ne!(k, vec![(0, 0), (1, 2)]);
+        }
+    }
+
+    #[test]
+    fn adr0068_b4_filtered_with_empty_blocked_equals_baseline() {
+        let config = AxiomDiscoveryConfig::default();
+        let baseline =
+            crate::enumerate_axiom_templates(&config);
+        let blocked: HashSet<Vec<(usize, usize)>> = HashSet::new();
+        let filtered = crate::enumerate_axiom_templates_filtered(
+            &config, &blocked,
+        );
+        assert_eq!(baseline.len(), filtered.len());
+    }
+
+    #[test]
+    fn adr0068_b4_shape_premise_key_round_trip() {
+        let rs = RSet::new();
+        let key = rs.shape_premise_key("shape_premise_p0-0_p1-2");
+        assert_eq!(key, Some(vec![(0, 0), (1, 2)]));
+        // Conclusion-shape family returns None.
+        assert!(rs.shape_premise_key("shape_conclusion_c0-2").is_none());
+        // Unknown prefix returns None.
+        assert!(rs.shape_premise_key("not_a_shape").is_none());
+    }
+
+    #[test]
+    fn adr0068_shape_family_conclusion_kind() {
+        // Three axioms with different premises but shared conclusion.
+        // Should mint exactly one family (conclusion) — no premise
+        // family qualifies (each premise unique).
+        let mut rs = RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let minted = rs.discover_axiom_shape_families(2);
+        assert_eq!(minted.len(), 1);
+        assert!(rs.is_axiom_shape_family("shape_conclusion_c0-2"));
+        let members = rs.shape_family_members("shape_conclusion_c0-2");
+        assert_eq!(members.len(), 3);
     }
 
     #[test]

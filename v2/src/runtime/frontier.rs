@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+    AxiomDiscoveryConfig, RSet, ESTABLISHED_MARKER, R,
     SHARED_AXIOM_MARKER,
 };
 use super::action::{ActionKind, FrontierTarget};
@@ -583,7 +583,7 @@ impl Frontier {
             .collect();
         kinds_present.insert(ActionKind::EvaluatePredictions);
         let mut added = false;
-        let mut try_add = |seq_id: &str,
+        let try_add = |seq_id: &str,
                            kinds: Vec<ActionKind>,
                            items: &mut Vec<FrontierItem>,
                            added: &mut bool| {

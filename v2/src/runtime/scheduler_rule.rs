@@ -1,15 +1,14 @@
 //! Rule-based scheduler with mode-aware filtering and Expand /
 //! Consolidate / Reflect transitions. ADR 0052 / A1 + A2.
 
-use crate::{RSet, R};
+use crate::R;
 use std::collections::HashSet;
 
 use super::action::{ActionKind, ActionPlan, FrontierTarget, SchedulerDecision};
 use super::lifecycle::RuntimeMode;
 use super::scheduler::{Scheduler, SchedulerContext};
 use super::{
-    action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
-    Memory, PolicyStats,
+    action_kind_to_str, parse_action_kind, FrontierItem, FrontierKind, PolicyStats,
 };
 
 /// Rule-based scheduler with mode-aware filtering and Expand /

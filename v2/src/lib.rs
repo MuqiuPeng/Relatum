@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 pub mod runtime;
+pub mod test_substrates;
 
 mod axiom_ids;
 mod markers;
@@ -2711,13 +2712,19 @@ impl RSet {
             return Vec::new();
         }
 
-        // Bucket registered template axioms by their canonicalized
-        // premise edge set. Predicate axioms (no template) are
-        // ignored — they have no premise structure to share.
-        let mut buckets: std::collections::BTreeMap<
+        let mut minted: Vec<String> = Vec::new();
+
+        // ── Family kind 1: shared canonicalized premise ─────────
+        let mut premise_buckets: std::collections::BTreeMap<
             Vec<(usize, usize)>,
             Vec<String>,
         > = std::collections::BTreeMap::new();
+        // ── Family kind 2: shared canonicalized conclusion (B.3) ─
+        let mut conclusion_buckets: std::collections::BTreeMap<
+            (usize, usize),
+            Vec<String>,
+        > = std::collections::BTreeMap::new();
+
         for ax_id in self.axioms() {
             let template = match axiom_id_to_template(ax_id) {
                 Some(t) => t,
@@ -2730,30 +2737,31 @@ impl RSet {
                 .map(|e| (e.x_var, e.y_var))
                 .collect();
             premise_key.sort();
-            buckets
+            premise_buckets
                 .entry(premise_key)
+                .or_default()
+                .push(ax_id.to_string());
+
+            let conclusion_key = (canon.conclusion.x_var, canon.conclusion.y_var);
+            conclusion_buckets
+                .entry(conclusion_key)
                 .or_default()
                 .push(ax_id.to_string());
         }
 
-        let mut minted: Vec<String> = Vec::new();
-        for (premise_key, members) in buckets {
+        // Mint premise families.
+        for (premise_key, members) in premise_buckets {
             if members.len() < min_members {
                 continue;
             }
-            // Skip empty-premise families: every conclusion-only
-            // axiom would group together which is not a useful
-            // abstraction (it's just the catalogue of conclusions).
             if premise_key.is_empty() {
                 continue;
             }
-            // Canonical id from premise key.
             let key_str: Vec<String> = premise_key
                 .iter()
                 .map(|(x, y)| format!("p{}-{}", x, y))
                 .collect();
             let shape_id = format!("shape_premise_{}", key_str.join("_"));
-            // Idempotent: skip if already named.
             if self.is_axiom_shape_family(&shape_id) {
                 continue;
             }
@@ -2763,6 +2771,29 @@ impl RSet {
             }
             minted.push(shape_id);
         }
+
+        // Mint conclusion families. ADR 0068 / B.3.
+        for (conclusion_key, members) in conclusion_buckets {
+            if members.len() < min_members {
+                continue;
+            }
+            // Conclusion-only families are useful — they capture
+            // "what does this axiom predict?" regardless of premise
+            // structure.
+            let shape_id = format!(
+                "shape_conclusion_c{}-{}",
+                conclusion_key.0, conclusion_key.1,
+            );
+            if self.is_axiom_shape_family(&shape_id) {
+                continue;
+            }
+            self.add(R::new(SHAPE_FAMILY_MARKER, shape_id.clone()));
+            for m in &members {
+                self.add(R::new(shape_id.clone(), m.clone()));
+            }
+            minted.push(shape_id);
+        }
+
         minted
     }
 
@@ -2777,6 +2808,24 @@ impl RSet {
             .iter()
             .map(|r| r.y.as_str())
             .collect()
+    }
+
+    /// Parse a `shape_premise_<...>` family id back to its
+    /// `Vec<(x_var, y_var)>` canonical premise key. Returns `None`
+    /// for non-premise families (e.g., `shape_conclusion_*`).
+    /// ADR 0068 / B.4.
+    pub fn shape_premise_key(&self, shape_id: &str) -> Option<Vec<(usize, usize)>> {
+        let rest = shape_id.strip_prefix("shape_premise_")?;
+        let mut key: Vec<(usize, usize)> = Vec::new();
+        for tok in rest.split('_') {
+            let body = tok.strip_prefix('p')?;
+            let mut split = body.split('-');
+            let x: usize = split.next()?.parse().ok()?;
+            let y: usize = split.next()?.parse().ok()?;
+            key.push((x, y));
+        }
+        key.sort();
+        Some(key)
     }
 
     /// Member axiom ids of the given shape family, sorted. ADR 0068.
@@ -4718,6 +4767,41 @@ fn enumerate_axiom_templates(config: &AxiomDiscoveryConfig) -> Vec<AxiomTemplate
     templates
 }
 
+/// Family-aware variant of `enumerate_axiom_templates`. Skips any
+/// template whose canonicalized premise edge set matches a member
+/// of `blocked_premise_keys` (each key is a sorted
+/// `Vec<(x_var, y_var)>` matching `shape_premise_*` family keys).
+///
+/// ADR 0068 / B.4. Use case: after `discover_axiom_shape_families`
+/// surfaces a uniform-low-cross-precision premise family (variance
+/// near zero), future template discovery should not waste cycles
+/// re-finding axioms with that premise — they will all be noise
+/// variants of conclusion shape.
+///
+/// Returns the same templates as `enumerate_axiom_templates` minus
+/// those with blocked premises. With empty `blocked_premise_keys`,
+/// behaves identically to `enumerate_axiom_templates`.
+pub fn enumerate_axiom_templates_filtered(
+    config: &AxiomDiscoveryConfig,
+    blocked_premise_keys: &HashSet<Vec<(usize, usize)>>,
+) -> Vec<AxiomTemplate> {
+    if blocked_premise_keys.is_empty() {
+        return enumerate_axiom_templates(config);
+    }
+    enumerate_axiom_templates(config)
+        .into_iter()
+        .filter(|tpl| {
+            let mut premise_key: Vec<(usize, usize)> = tpl
+                .premise
+                .iter()
+                .map(|e| (e.x_var, e.y_var))
+                .collect();
+            premise_key.sort();
+            !blocked_premise_keys.contains(&premise_key)
+        })
+        .collect()
+}
+
 /// Canonicalize an axiom template to a structural canonical form:
 /// minimum over all variable permutations of the first-use-normalized
 /// form. ADR 0027 / ADR 0028.
@@ -4764,7 +4848,7 @@ fn canonicalize_template_first_use(mut tpl: AxiomTemplate) -> AxiomTemplate {
     tpl.premise.sort_by(|a, b| (a.x_var, a.y_var).cmp(&(b.x_var, b.y_var)));
     let mut remap: HashMap<usize, usize> = HashMap::new();
     let mut next: usize = 0;
-    let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+    let assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
         if let Some(&m) = remap.get(&v) {
             m
         } else {
@@ -5417,11 +5501,11 @@ fn signature_hash(sig: &(u32, Vec<u32>, Vec<u32>)) -> u64 {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
     const FNV_PRIME: u64 = 0x100000001b3;
     let mut h: u64 = FNV_OFFSET;
-    let mut update = |byte: u8, h: &mut u64| {
+    let update = |byte: u8, h: &mut u64| {
         *h ^= byte as u64;
         *h = h.wrapping_mul(FNV_PRIME);
     };
-    let mut hash_u32 = |v: u32, h: &mut u64| {
+    let hash_u32 = |v: u32, h: &mut u64| {
         for b in v.to_le_bytes() {
             update(b, h);
         }

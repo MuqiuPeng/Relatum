@@ -23,10 +23,9 @@ use super::memory::{
     ObjectHistoryStore, PolicyStats, PredictionState, SequenceStats,
 };
 use super::persistence::{
-    action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
-    format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+    action_kind_to_str, check_no_tab_or_newline, check_reason, lifecycle_to_str, mode_to_str, pair_to_target,
     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
-    parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+    parse_lifecycle, parse_mode, parse_u32,
     parse_u64, parse_usize, target_to_pair, write_history_section,
 };
 use super::scheduler::{Scheduler, SchedulerContext, StubScheduler};

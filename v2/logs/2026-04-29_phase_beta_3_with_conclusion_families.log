@@ -1,0 +1,206 @@
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4797:9
+     |
+4797 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5450:9
+     |
+5450 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5454:9
+     |
+5454 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3589:60
+     |
+3589 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3589:72
+     |
+3589 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 10.93s
+     Running `target\release\examples\phase_beta_1_shape_families.exe`
+=== ADR 0068 Phase Beta-1 — Axiom shape family discovery (1000 ticks Phase 0) ===
+SHAPE_MIN_MEMBERS=2, NUM_GEN_IDS=15, SEED_DENSITY=0.05
+
+=== Pre-Beta-1 state ===
+  axioms registered  : 13
+  theories registered: 4
+  shape families     : 0 (expected 0 — type not yet realized)
+
+=== Beta-1: discover_axiom_shape_families(2) ===
+  minted 6 new shape families: ["shape_premise_p0-0_p1-2", "shape_premise_p0-1", "shape_premise_p0-1_p1-2", "shape_conclusion_c0-2", "shape_conclusion_c1-0", "shape_conclusion_c2-0"]
+
+=== Family membership ===
+  shape_premise_p0-0_p1-2 (4 members):
+    - ax_tpl_v3_p0-0_p1-2_c0-1
+    - ax_tpl_v3_p0-0_p1-2_c0-2
+    - ax_tpl_v3_p0-0_p1-2_c1-0
+    - ax_tpl_v3_p0-0_p1-2_c2-0
+  shape_premise_p0-1 (3 members):
+    - ax_tpl_v2_p0-1_c0-0
+    - ax_tpl_v2_p0-1_c1-0
+    - ax_tpl_v2_p0-1_c1-1
+  shape_premise_p0-1_p1-2 (2 members):
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+    - ax_tpl_v3_p0-1_p1-2_c2-0
+  shape_conclusion_c0-2 (3 members):
+    - ax_tpl_v3_p0-0_p1-2_c0-2
+    - ax_tpl_v3_p0-1_p1-2_c0-2
+    - ax_tpl_v3_p0-1_p2-1_c0-2
+  shape_conclusion_c1-0 (2 members):
+    - ax_tpl_v2_p0-1_c1-0
+    - ax_tpl_v3_p0-0_p1-2_c1-0
+  shape_conclusion_c2-0 (2 members):
+    - ax_tpl_v3_p0-0_p1-2_c2-0
+    - ax_tpl_v3_p0-1_p1-2_c2-0
+
+=== Per-axiom cross-precision (for shape family analysis) ===
+  Generating substrates per theory...
+  Substrates ready: 4
+
+=== Family member cross-precision profiles ===
+
+  Family shape_premise_p0-0_p1-2 (4 members):
+                                              axiom_id      mean_xprec
+                              ax_tpl_v3_p0-0_p1-2_c0-1          0.5099
+                              ax_tpl_v3_p0-0_p1-2_c0-2          0.5099
+                              ax_tpl_v3_p0-0_p1-2_c1-0          0.5099
+                              ax_tpl_v3_p0-0_p1-2_c2-0          0.5099
+    family stats: mean=0.5099 var=0.000000 min=0.5099 max=0.5099 spread=0.0000
+    → STRUCTURAL FAMILY (mid-range, consistent profile)
+
+  Family shape_premise_p0-1 (3 members):
+                                              axiom_id      mean_xprec
+                                   ax_tpl_v2_p0-1_c0-0          1.0000
+                                   ax_tpl_v2_p0-1_c1-0          0.7172
+                                   ax_tpl_v2_p0-1_c1-1          1.0000
+    family stats: mean=0.9057 var=0.017776 min=0.7172 max=1.0000 spread=0.2828
+    → MIXED — members have divergent profiles; family may not capture quality dimension
+
+  Family shape_premise_p0-1_p1-2 (2 members):
+                                              axiom_id      mean_xprec
+                              ax_tpl_v3_p0-1_p1-2_c0-2          1.0000
+                              ax_tpl_v3_p0-1_p1-2_c2-0          0.7172
+    family stats: mean=0.8586 var=0.019998 min=0.7172 max=1.0000 spread=0.2828
+    → MIXED — members have divergent profiles; family may not capture quality dimension
+
+  Family shape_conclusion_c0-2 (3 members):
+                                              axiom_id      mean_xprec
+                              ax_tpl_v3_p0-0_p1-2_c0-2          0.5099
+                              ax_tpl_v3_p0-1_p1-2_c0-2          1.0000
+                              ax_tpl_v3_p0-1_p2-1_c0-2          0.7354
+    family stats: mean=0.7484 var=0.040113 min=0.5099 max=1.0000 spread=0.4901
+    → MIXED — members have divergent profiles; family may not capture quality dimension
+
+  Family shape_conclusion_c1-0 (2 members):
+                                              axiom_id      mean_xprec
+                                   ax_tpl_v2_p0-1_c1-0          0.7172
+                              ax_tpl_v3_p0-0_p1-2_c1-0          0.5099
+    family stats: mean=0.6136 var=0.010737 min=0.5099 max=0.7172 spread=0.2072
+    → MIXED — members have divergent profiles; family may not capture quality dimension
+
+  Family shape_conclusion_c2-0 (2 members):
+                                              axiom_id      mean_xprec
+                              ax_tpl_v3_p0-0_p1-2_c2-0          0.5099
+                              ax_tpl_v3_p0-1_p1-2_c2-0          0.7172
+    family stats: mean=0.6136 var=0.010737 min=0.5099 max=0.7172 spread=0.2072
+    → MIXED — members have divergent profiles; family may not capture quality dimension
+
+=== Constitutional check ===
+  R(SHAPE_FAMILY_MARKER, ?) → 6 entries: ["shape_premise_p0-1_p1-2", "shape_premise_p0-1", "shape_conclusion_c2-0", "shape_conclusion_c0-2", "shape_conclusion_c1-0", "shape_premise_p0-0_p1-2"]
+  ✓ All membership edges R(shape_id, ax_id) present in rset
+  ✓ R(SHAPE_FAMILY_MARKER, shape_premise_p0-0_p1-2) present — meta-R class instantiated
+
+=== Verdict ===
+  Beta-1 minted 6 new meta-R object(s) under SHAPE_FAMILY_MARKER
+  These are 6 kind(s) of structural abstraction that did not exist in the rset before this call.
+  Constitutional commitment 3 (types as meta-R) realized at a new level: the TYPE itself was discovered structurally, not declared.
+
+--- end ---

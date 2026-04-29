@@ -5,7 +5,7 @@
 
 use super::action::{ActionKind, ActionPlan, FrontierTarget, SchedulerDecision};
 use super::scheduler::{Scheduler, SchedulerContext};
-use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+use super::{FrontierItem, FrontierKind, Memory};
 
 // ─── ADR 0065 / Phase Alpha-1 — UCB1 composite selection ──────────
 //
