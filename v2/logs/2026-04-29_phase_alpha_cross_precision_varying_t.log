@@ -1,0 +1,156 @@
+warning: unused imports: `format_opt_f64`, `format_opt_u64`, `parse_opt_f64`, and `parse_opt_u64`
+  --> src\runtime\autonomous.rs:26:64
+   |
+26 |     action_kind_to_str, check_no_tab_or_newline, check_reason, format_opt_f64,
+   |                                                                ^^^^^^^^^^^^^^
+27 |     format_opt_u64, lifecycle_to_str, mode_to_str, pair_to_target,
+   |     ^^^^^^^^^^^^^^
+28 |     parse_action_kind, parse_checkpoint, parse_f64, parse_history_lines,
+29 |     parse_lifecycle, parse_mode, parse_opt_f64, parse_opt_u64, parse_u32,
+   |                                  ^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ACTION_SEQ_MARKER`
+ --> src\runtime\frontier.rs:7:33
+  |
+7 |     AxiomDiscoveryConfig, RSet, ACTION_SEQ_MARKER, ESTABLISHED_MARKER, R,
+  |                                 ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::drive::DriveMix`
+ --> src\runtime\persistence.rs:7:5
+  |
+7 | use super::drive::DriveMix;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `RSet`
+ --> src\runtime\scheduler_rule.rs:4:13
+  |
+4 | use crate::{RSet, R};
+  |             ^^^^
+
+warning: unused imports: `Frontier` and `Memory`
+  --> src\runtime\scheduler_rule.rs:11:44
+   |
+11 |     action_kind_to_str, parse_action_kind, Frontier, FrontierItem, FrontierKind,
+   |                                            ^^^^^^^^
+12 |     Memory, PolicyStats,
+   |     ^^^^^^
+
+warning: unused import: `SequenceStats`
+ --> src\runtime\scheduler_ucb.rs:8:49
+  |
+8 | use super::{FrontierItem, FrontierKind, Memory, SequenceStats};
+  |                                                 ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\runtime\frontier.rs:586:13
+    |
+586 |         let mut try_add = |seq_id: &str,
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:4648:9
+     |
+4648 |     let mut assign = |v: usize, remap: &mut HashMap<usize, usize>, next: &mut usize| -> usize {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5301:9
+     |
+5301 |     let mut update = |byte: u8, h: &mut u64| {
+     |         ----^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> src\lib.rs:5305:9
+     |
+5305 |     let mut hash_u32 = |v: u32, h: &mut u64| {
+     |         ----^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:240:19
+    |
+132 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+240 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3440:60
+     |
+3440 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3440:72
+     |
+3440 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 13 warnings (run `cargo fix --lib -p relatum-v2` to apply 10 suggestions)
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_alpha_cross_precision_varying_t.exe`
+=== ADR 0066 Phase Alpha-9 — cross-precision vs primary-rate convergence speed ===
+Sweep over T ∈ {100, 200, 350, 500, 750, 1000}; ground-truth target = 't_0'
+NUM_GEN_IDS=15, SEED_DENSITY=0.05, MIN_AXIOM_PREDICTIONS=5
+
+─────────────────── T = 100 ───────────────────
+  primary    : 3 theories, 3 qualifying; bottom = t_0 (rate=0.5790, qualifying axioms=9)
+  cross-prec : column means t_2=1.0000, t_1=0.7653, t_0=0.3889
+               bottom = t_0 (mean=0.3889)
+
+─────────────────── T = 200 ───────────────────
+  primary    : 4 theories, 4 qualifying; bottom = t_0 (rate=0.5064, qualifying axioms=9)
+  cross-prec : column means t_2=1.0000, t_3=1.0000, t_1=0.5988, t_0=0.1920
+               bottom = t_0 (mean=0.1920)
+
+─────────────────── T = 350 ───────────────────
+  primary    : 4 theories, 4 qualifying; bottom = t_0 (rate=0.4267, qualifying axioms=9)
+  cross-prec : column means t_3=1.0000, t_2=1.0000, t_1=0.6175, t_0=0.1747
+               bottom = t_0 (mean=0.1747)
+
+─────────────────── T = 500 ───────────────────
+  primary    : 4 theories, 4 qualifying; bottom = t_0 (rate=0.4129, qualifying axioms=9)
+  cross-prec : column means t_3=1.0000, t_2=1.0000, t_1=0.6607, t_0=0.2211
+               bottom = t_0 (mean=0.2211)
+
+─────────────────── T = 750 ───────────────────
+  primary    : 4 theories, 4 qualifying; bottom = t_0 (rate=0.3916, qualifying axioms=9)
+  cross-prec : column means t_2=1.0000, t_3=1.0000, t_1=0.6511, t_0=0.3569
+               bottom = t_0 (mean=0.3569)
+
+─────────────────── T = 1000 ───────────────────
+  primary    : 4 theories, 4 qualifying; bottom = t_0 (rate=0.3757, qualifying axioms=9)
+  cross-prec : column means t_2=1.0000, t_3=1.0000, t_1=0.6511, t_0=0.3569
+               bottom = t_0 (mean=0.3569)
+
+=== Summary: who picks the ground-truth target 't_0'? ===
+    T   primary?   primary_rate     p_qual     cross?     cross_mean     agree?       n_th
+  100          ✓         0.5790          9          ✓         0.3889        yes          3
+  200          ✓         0.5064          9          ✓         0.1920        yes          4
+  350          ✓         0.4267          9          ✓         0.1747        yes          4
+  500          ✓         0.4129          9          ✓         0.2211        yes          4
+  750          ✓         0.3916          9          ✓         0.3569        yes          4
+ 1000          ✓         0.3757          9          ✓         0.3569        yes          4
+
+=== Verdict ===
+  primary-rate first picks 't_0' at T = 100
+  cross-precision first picks 't_0' at T = 100
+  → TIE — both signals converge at the same T
+
+--- end ---
