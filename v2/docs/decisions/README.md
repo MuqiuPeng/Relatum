@@ -96,3 +96,6 @@ Commit hash(es), file pointers.
 - [0064](0064-drives-as-meta-r.md) — Drives as meta-R objects (Phase H2.1, Proposed)
 - [0065](0065-ucb-composite-selection.md) — UCB1 composite selection (Phase Alpha-1, Accepted with negative empirical finding)
 - [0066](0066-theory-tournament.md) — Theory self-play tournament (Phase Alpha-3, Accepted with strong positive empirical finding)
+- [0067](0067-source-tree-refactor.md) — Source tree refactor (Phase Alpha-9 cleanup)
+- [0068](0068-axiom-shape-families.md) — Axiom shape families (Phase Beta-1, first runtime extension of structural vocabulary post-H1)
+- [0069](0069-identifier-minting.md) — Identifier minting / generative axioms (Phase G, contract for growing the identifier space)

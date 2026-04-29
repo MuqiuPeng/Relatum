@@ -1,0 +1,109 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: constant `NUM_GEN_IDS` is never used
+  --> examples\phase_i1_cross_substrate_transfer.rs:33:7
+   |
+33 | const NUM_GEN_IDS: usize = 15;
+   |       ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `SEED_DENSITY` is never used
+  --> examples\phase_i1_cross_substrate_transfer.rs:34:7
+   |
+34 | const SEED_DENSITY: f64 = 0.05;
+   |       ^^^^^^^^^^^^
+
+warning: constant `RNG_SEED_BASE` is never used
+  --> examples\phase_i1_cross_substrate_transfer.rs:35:7
+   |
+35 | const RNG_SEED_BASE: u64 = 0xC0FFEE_DEADBEEF;
+   |       ^^^^^^^^^^^^^
+
+warning: function `build_substrates` is never used
+  --> examples\phase_i1_cross_substrate_transfer.rs:37:4
+   |
+37 | fn build_substrates(rt: &AutonomousRuntime, theories: &[String]) -> Vec<RSet> {
+   |    ^^^^^^^^^^^^^^^^
+
+warning: function `axiom_cross_precision_on_subs` is never used
+  --> examples\phase_i1_cross_substrate_transfer.rs:54:4
+   |
+54 | fn axiom_cross_precision_on_subs(
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `relatum-v2` (example "phase_i1_cross_substrate_transfer") generated 5 warnings
+    Finished `release` profile [optimized] target(s) in 1.11s
+     Running `target\release\examples\phase_i1_cross_substrate_transfer.exe`
+=== Phase I.1 — Cross-substrate theory transfer ===
+
+--- Training ---
+[OQ#1] axioms=13 theories=4
+[long5k] axioms=13 theories=4
+
+=== OQ#1 axioms: precision on OQ#1 rset (within) vs long5k rset (transfer) ===
+axiom                                     within       across        delta
+ax_tpl_v3_p0-0_p1-2_c1-0                  0.0750       0.0450      -0.0300
+ax_tpl_v3_p0-0_p1-2_c2-0                  0.0643       0.0409      -0.0234
+ax_tpl_v2_p0-1_c0-0                       0.6667       0.8000       0.1333
+ax_tpl_v3_p0-0_p1-2_c0-1                  0.0750       0.0450      -0.0300
+ax_tpl_v3_p0-1_p0-2_c1-2                  0.3600       0.4390       0.0790
+ax_tpl_v3_p0-1_p1-2_c0-2                  1.0000       1.0000       0.0000
+ax_tpl_v2_p0-1_c1-1                       0.5714       0.7273       0.1558
+ax_tpl_v3_p0-1_p1-2_c2-0                  0.4444       0.4444       0.0000
+ax_tpl_v2_p0-1_c1-0                       0.2667       0.3333       0.0667
+ax_tpl_v3_p0-0_p1-2_c0-2                  0.0643       0.0409      -0.0234
+ax_tpl_v3_p0-1_p2-1_c0-2                  0.4500       0.5000       0.0500
+
+=== long5k axioms: precision on long5k rset (within) vs OQ#1 rset (transfer) ===
+axiom                                     within       across        delta
+ax_tpl_v3_p0-0_p1-2_c2-0                  0.0409       0.0643       0.0234
+ax_tpl_v3_p0-0_p1-2_c0-2                  0.0409       0.0643       0.0234
+ax_tpl_v2_p0-1_c1-1                       0.7273       0.5714      -0.1558
+ax_tpl_v3_p0-0_p1-2_c1-0                  0.0450       0.0750       0.0300
+ax_tpl_v2_p0-1_c0-0                       0.8000       0.6667      -0.1333
+ax_tpl_v3_p0-0_p1-2_c0-1                  0.0450       0.0750       0.0300
+ax_tpl_v3_p0-1_p2-1_c0-2                  0.5000       0.4500      -0.0500
+ax_tpl_v3_p0-1_p1-2_c0-2                  1.0000       1.0000       0.0000
+ax_tpl_v3_p0-1_p0-2_c1-2                  0.4390       0.3600      -0.0790
+ax_tpl_v3_p0-1_p1-2_c2-0                  0.4444       0.4444       0.0000
+ax_tpl_v2_p0-1_c1-0                       0.3333       0.2667      -0.0667
+
+=== Aggregate transfer ===
+  OQ#1 axioms on OQ#1 rset (within):   mean = 0.3671
+  OQ#1 axioms on long5k rset (across): mean = 0.4014
+    ratio = 1.0936
+
+  long5k axioms on long5k rset (within):   mean = 0.4014
+  long5k axioms on OQ#1 rset (across):     mean = 0.3671
+    ratio = 0.9144
+
+=== Verdict ===
+  STRONG TRANSFER (avg ratio 1.0040) — axioms transfer cleanly to the other rset
+
+--- end ---

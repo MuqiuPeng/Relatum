@@ -127,3 +127,53 @@ STRONGLY POSITIVE convergent finding. (t_2, t_3) max_diff = **0.0000** — ident
 
 ### A.1 — ILP premise reordering by selectivity | ✓ verified deferred
 Audit confirms Alpha-6's diminishing-returns finding. forward_apply leaf-check already short-circuits. Catch-22: selectivity-aware reorder needs neighbor-set sizes, but computing those IS the work. Bottleneck has moved elsewhere per Alpha-6. **No code change**. Closes the last item from the original scout-framework backlog. [Result](results/A.1_premise_reorder.md).
+
+### Round 3 — appended 2026-04-29 (Generative track + signal composition)
+
+User's invariant critique: "v2 is supposed to auto-extend." Round 3 prioritizes the **G series** — first concrete steps toward constructive (not just descriptive) cognition. Secondary cluster: composing the multiple merge / quality signals built up in Rounds 1-2.
+
+### G.1 — Identifier minting proof-of-concept | ✓ done
+First runtime extension of v2's *identifier space* (not just structure space). 5-step Peano-style chain `0 → succ(0) → succ(succ(0)) → ...` materialized as R edges via deterministic `mint_successor` recipe. All 4 properties verified: determinism (commitment 4), freshness, anti-collision, materializability. Backwards walk via `right_of` works on minted ids without special-casing. [Result](results/G.1_identifier_mint.md).
+**Goal**: Smallest mechanism that derives a NEW identifier from existing ones via R-pattern application. Define a `mint_successor(token) → token'` function (deterministic, token-identity preserving), then trace 5 successive mints starting from `"0"`: `"0" → "succ(0)" → "succ(succ(0))" → ...`. Verify each minted identifier is a fresh token (not in initial RSet) and externally reproducible (same input → same output, like an axiom).
+
+**Falsifiable**: if minting is non-deterministic or collides with existing identifiers, mechanism is broken.
+
+**Significance**: first runtime extension of v2's *identifier* space (not just structure space). Bridges Beta-1 (new structures over existing identifiers) toward integer construction.
+
+### G.2 — Generative rule integrated with R primitive | ✓ done
+STRONGLY POSITIVE. Minted chain + registered transitivity axiom → fixpoint reached in 4 rounds, full 15-pair closure of the 6-id chain materializes. Critical edge `R(succ⁵(0), 0)` present. Round-trip serialization preserves all 5 minted ids byte-identical. **No lib code change** — generative output is already first-class data under existing axiom processor + persistence. Three properties pay off: data-id classification, shape-agnostic variable binding, byte-equality persistence. [Result](results/G.2_generative_with_axiom.md).
+**Goal**: Express the successor mint as a **forward-applicable R structure**: register the successor rule itself as edges in RSet, trace closure via existing forward_apply machinery (or document why a new code path is needed). Aim: keep generative work expressible as R(x,y) per commitment 1.
+
+**Falsifiable**: a 5-step chain materializes in RSet via `forward_apply_axiom` (or close adaptation) without needing a parallel evaluation engine.
+
+### G.3 — ADR on identifier minting (commitment 4 compliance) | ✓ done
+ADR 0069 written: 4-property contract (determinism, anti-collision, materializability, persistence safety) + lifecycle/tagging conventions + explicit cross-precision asymmetry. Forward-binds future generative work to a checklist. README.md backfilled with 0067/0068/0069 entries (0067/0068 were missing from index). [Result](results/G.3_identifier_minting_adr.md). [ADR](../decisions/0069-identifier-minting.md).
+**Goal**: Document constitutional check. Commitment 4 = "Identity is token-based; no implicit dedup." Minting must be deterministic (same input → same token) so external code reproducing the recipe gets token-equal identifiers. ADR specifies: minting function signature, determinism guarantee, anti-collision (mint output disjoint from input space), and lifecycle (when does an axiom become "generative" vs "predicate" vs "template"?).
+
+### G.4 — Cross-precision adaptation for generative axioms | ✓ done
+**Predicate compliance** metric specified: panel of 5 structural predicates (acyclic, injective predecessor, irreflexive, transitive total order, freshness) → per-recipe rate in [0,1]. **Successor: 1.00, constant: 0.00, dbl_prefix: 1.00.** Discriminates broken recipes from well-behaved ones. Bimodal vs cross-precision's continuous gradient — a methodological note. Closes ADR 0069's promised alternative metric. [Result](results/G.4_generative_quality.md).
+**Goal**: Existing cross-precision validates predictions of edges that exist on a substrate. Generative axioms PRODUCE identifiers — cross-precision as defined doesn't apply. Either: (a) define a new metric (e.g., "do imagined substrates contain the minted chain?"), (b) restrict cross-precision to non-generative axioms and route generative through a different gate.
+
+### F.2.1 — Quality-aware merge selector | ✓ done
+F.2 raw complementarity × cross-precision quality floor (0.50). On OQ#1 t_0 fails floor (0.3248) → all (t_0, *) pairs rejected. Among eligible: **(t_1, t_2) at complementarity 0.60** — distinct from all 4 prior selectors. F.2.1 occupies a unique slot in the merge-selector family. Methodological: codifies "complementarity consolidation" as distinct from "equivalence consolidation" (Alpha-5/F.3). [Result](results/F.2.1_quality_aware_merge.md).
+**Goal**: Combine F.2 family-signature complementarity with both-above-quality-threshold. On OQ#1 should reject (t_0, t_2) (t_0 below quality floor) — this is F.2's known caveat made into a gate.
+
+### F.4 — Multi-signal composite merge picker | ✓ done
+Borda aggregation across 3 selectors (Alpha-5, F.3, F.2.1). On OQ#1: **(t_2, t_3) at 4/6 points = 66.7% confidence** (Alpha-5 top-1 + F.3 top-1). Runner-up (t_1, t_2) at 3/6 (F.2.1 top-1 + Alpha-5 top-2). Reveals two coherent merge targets — equivalence merge vs complementarity merge — neither contradictory. Method-of-method: convergence-of-signals reasoning systematized into numerical confidence. [Result](results/F.4_multi_signal_merge.md).
+**Goal**: Intersect Alpha-5's non-subset Jaccard pick with F.3's cross-precision profile pick (and optionally F.2's complementarity). Highest confidence merges = pairs where multiple independent signals agree. On OQ#1 expected: `(t_2, t_3)` from Alpha-5 ∩ F.3 convergence shown in F.3.
+
+### F.1.1 — Per-axiom cross-precision in family discovery | ✓ done
+Per-family quality summary (mean, std, min, max) using F.1's `axiom_cross_precision`. On OQ#1: 2 signal families (mean ≥ 0.80), 1 noise family (`shape_premise_p0-0_p1-2`, mean=0.4936, **std=0.0000**), 1 uniform family (same one). Independent computation path reproduces Beta-1's variance-zero finding. Classification scheme: signal/noise/uniform — gives families a quality dimension on top of the structural one. Confirms B.3's verdict that conclusion structure ≠ quality dimension on OQ#1. [Result](results/F.1.1_family_quality.md).
+**Goal**: F.1 produces axiom-level cross-precision; family discovery currently groups by structural shape only. Add a "family quality summary" using F.1: per family, mean cross-precision across members. Gives families a quality dimension on top of structure.
+
+### B.8 — Layer 5 super-super-meta audit | ✓ done (structural-limit)
+Both OQ#1 and long5k saturate at L4 with 1 super-meta family each. **L5 = 0** because no L3 nested family appears in ≥ 2 L4 super-metas. Three paths to lift the ceiling specified: (a) more diverse premise shapes, (b) additional L2/L3 discovery kinds, (c) multi-substrate aggregation. Parallels C.2.1's verdict: v2's mechanisms are bounded by structural diversity of inputs. Methodology: deeper recursion adds nothing if data doesn't support it. [Result](results/B.8_l5_audit.md).
+**Goal**: B.7 mints 1 super-meta family (Layer 4) on OQ#1. To produce Layer 5 we'd need ≥2 super-metas sharing structure. Audit: what substrate properties would yield ≥2 super-metas? OQ#1 might be too narrow. Either find/construct one, or document the structural-limit (analog to C.2.1 finding).
+
+### D.5 — Per-axiom primary/cross disagreement on OQ#1 | ✓ done
+**POSITIVE — 7 of 11 axioms (64%) show |primary − cross| ≥ 0.30 on OQ#1.** Noise family `shape_premise_p0-0_p1-2` systematically: primary ≈ 0.11, cross ≈ 0.49. Pearson r=0.9776 (high but not perfect). Resolution of D.3.1's NULL — composite arbitration is real at axiom layer, just hidden at theory aggregation. Bonus: didn't need to engineer a stream — OQ#1 already contains the disagreement at fine granularity. [Result](results/D.5_engineered_disagreement.md).
+**Goal**: D.3.1 NULL: signals correlate too strongly on OQ#1/narrow_a. Engineer a substrate where primary-rate (axiom predicts ground stream) and cross-precision (axiom predicts imagined substrates) genuinely diverge. E.g., a stream where the dominant pattern is non-extrapolable to other substrates — primary high, cross low. Tests composite arbitration.
+
+### I.1 — Cross-substrate theory transfer | ✓ done
+**STRONG TRANSFER — avg ratio 1.0040 between OQ#1 and long5k.** Signal axioms gain precision going to longer stream (+0.13-0.16); noise axioms lose slightly (-0.02-0.03); universal axioms identical (1.0 both). Caveat — first attempt was degenerate (identical theories + identical seeds → identical substrates); methodological note added. Transfer is essentially free when substrates share regime types. Bonus method-of-method finding: evaluation substrates must be independent of trained state. [Result](results/I.1_cross_substrate_transfer.md).
+**Goal**: Train on OQ#1 to convergence; freeze theories; evaluate cross-precision against long5k substrates (instead of OQ#1-imagined ones). C.2 showed independently-trained runtimes converge to same shape families. I.1 asks the stronger question: does a single trained state TRANSFER, or does it need re-derivation per stream?

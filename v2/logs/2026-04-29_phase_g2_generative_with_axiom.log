@@ -1,0 +1,58 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:60
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:3882:72
+     |
+3882 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 0.95s
+     Running `target\release\examples\phase_g2_generative_with_axiom.exe`
+=== Phase G.2 — Generative output × existing axiom system ===
+
+chain ids: ["0", "succ(0)", "succ(succ(0))", "succ(succ(succ(0)))", "succ(succ(succ(succ(0))))", "succ(succ(succ(succ(succ(0)))))"]
+seed rset: 5 edges
+transitivity axiom id: ax_tpl_v3_p0-1_p1-2_c0-2
+  round 1: +4 edges (rset = 28)
+  round 2: +5 edges (rset = 33)
+  round 3: +1 edges (rset = 34)
+  round 4: +0 edges (rset = 34)
+
+fixpoint reached after 4 rounds (rset 24 → 34, +10 inferred)
+expected closure pairs: 15
+  missing from final rset: 0
+
+=== Critical edge ===
+  R(succ(succ(succ(succ(succ(0))))), 0) ∈ rset: true
+
+=== Round-trip via to_text / from_text ===
+  serialized 1525 bytes
+  restored == original: true
+  identifier set identical: true
+  minted ids preserved through serialization: 5
+
+=== Verdict ===
+  POSITIVE — generative output integrates with existing axiom processing.
+  Transitivity closes the chain; persistence preserves minted ids byte-for-byte.
+  No new code path required; commitment 4 holds end-to-end.
+
+--- end ---
