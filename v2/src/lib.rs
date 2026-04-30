@@ -3423,6 +3423,36 @@ impl RSet {
         Ok(summary)
     }
 
+    /// ADR 0070 Step 3 — Run all shape-family discovery kinds across
+    /// L2/L3/L4 in one call. Convenience wrapper that chains the
+    /// individual `discover_*` methods.
+    ///
+    /// `min_members` applies uniformly: L2 needs ≥ `min_members`
+    /// axioms per family; L3 needs ≥ `min_members` member L2
+    /// families (or ≥ `min_members` containing L2 families for the
+    /// member-overlap kind); L4 needs ≥ `min_members` member L3
+    /// families.
+    ///
+    /// Returns a per-layer breakdown of newly-minted family ids.
+    /// Idempotent — calling repeatedly with no new axioms returns
+    /// empty vectors.
+    pub fn discover_shape_family_layer(
+        &mut self,
+        min_members: usize,
+    ) -> ShapeFamilyDiscoverySummary {
+        let l2 = self.discover_axiom_shape_families(min_members);
+        let mut l3_premise = self.discover_nested_shape_families(min_members);
+        let l3_member_overlap =
+            self.discover_nested_shape_families_by_member_overlap(min_members);
+        l3_premise.extend(l3_member_overlap);
+        let l4 = self.discover_super_meta_shape_families(min_members);
+        ShapeFamilyDiscoverySummary {
+            l2_minted: l2,
+            l3_minted: l3_premise,
+            l4_minted: l4,
+        }
+    }
+
     /// ADR 0070 Step 2 — Discover nested shape families by
     /// **member-overlap** (B.8.1's L3 kind, promoted to lib).
     ///
@@ -6380,6 +6410,17 @@ pub enum FamilyQualityClass {
     Uniform,
     /// Neither signal nor noise nor uniform.
     Mixed,
+}
+
+/// ADR 0070 Step 3 — Per-layer breakdown of a `discover_shape_family_layer`
+/// call. Each Vec contains the family ids newly minted at that layer.
+/// Empty vectors mean either the layer found no qualifying groupings
+/// or all candidates were already named (idempotent re-mint).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapeFamilyDiscoverySummary {
+    pub l2_minted: Vec<String>,
+    pub l3_minted: Vec<String>,
+    pub l4_minted: Vec<String>,
 }
 
 impl FamilyQuality {

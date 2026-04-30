@@ -2,12 +2,23 @@
 
 ## Status
 
-Proposed. Supersedes ADR 0068's narrower scope. Ships as a
-consolidation slice; no new mechanism is introduced — every
-behavior described here already exists somewhere in the
-codebase, but scattered across `lib.rs` API, individual
-examples, and `markers.rs` declarations. ADR 0070 elevates
-those into an explicit cognitive layer.
+**Accepted.** All three implementation steps shipped:
+- Step 1 (commit `3e5f5e4`) — schema unification + types + query
+  methods + kind-tag edge emission. 6 unit tests, 560 lib tests
+  pass.
+- Step 2 (commit `3011514`) — operation lift: `retract_shape_family`,
+  `discover_nested_shape_families_by_member_overlap`,
+  `ActionKind::RetractShapeFamily`, `FrontierTarget::ShapeFamily`,
+  full persistence round-trip. B.2 + B.8.1 examples migrated. 7
+  more unit tests, 567 lib tests pass.
+- Step 3 (this commit) — convenience `discover_shape_family_layer`
+  + `ShapeFamilyDiscoverySummary` + doc-comment cross-references.
+  1 more unit test, 568 lib tests pass.
+
+Supersedes ADR 0068's narrower scope. The layer is now a
+documented, queryable, intervenable cognitive abstraction.
+Future ADRs (0071 quality report, 0072 intervention classifier)
+treat ADR 0070 as a stable platform.
 
 ## Context
 

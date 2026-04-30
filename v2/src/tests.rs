@@ -3468,6 +3468,29 @@
     }
 
     #[test]
+    fn adr0070_discover_shape_family_layer_chains_all_kinds() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let summary = rs.discover_shape_family_layer(2);
+        assert!(!summary.l2_minted.is_empty(), "L2 must mint");
+        assert!(!summary.l3_minted.is_empty(), "L3 should mint (premise + overlap)");
+        // L4 may or may not mint depending on whether L3 has overlapping members.
+        // Idempotency: second call mints nothing new.
+        let again = rs.discover_shape_family_layer(2);
+        assert!(again.l2_minted.is_empty());
+        assert!(again.l3_minted.is_empty());
+        assert!(again.l4_minted.is_empty());
+    }
+
+    #[test]
     fn adr0070_member_overlap_l3_kind_idempotent() {
         let mut rs = crate::RSet::new();
         for id in [
