@@ -478,3 +478,128 @@ paths" requirement is fully satisfied. H2.1.1 + H2.1.2 remain
 Proposed — they're separate slices about *lifecycle*
 (promotion / demotion) and *coupling* (weights tied to
 ESTABLISHED), not about query routing.
+
+---
+
+## Addendum 3 — H2.1.1 shadow cleanup (2026-05-01)
+
+H2.1.0 (registration) + H2.1.0+ (query rewire) shipped the
+constitutional shift "drives are meta-R objects". Addendum 2's
+lock-in tests verified meta-R is the live source of truth for
+the production decision paths (`combined_drive_signal`,
+`normalized_drive_signal`).
+
+This addendum closes a remaining gap surfaced during the
+"按顺序来" cleanup pass: **manual penalty-marker retractions did
+not survive checkpoint round-trip.**
+
+#### The bug
+
+`register_drives_in_rset()` ran on every `AutonomousRuntime::new`
+AND `from_checkpoint_text`. Per H2.1.0 design it called
+`drive.is_penalty()` to decide whether to write the
+PENALTY_MARKER edge. `RSet::add` is set-semantic so re-running
+was idempotent for the EXISTING-state case — but for the
+RETRACTED-state case, it would re-add a previously-retracted
+edge.
+
+Concretely: if a future H2.1.2 demotion retracts
+`R(PENALTY_MARKER, drive_X)` to flip drive X's role, saves a
+checkpoint, and the runtime restarts → on restore,
+`from_checkpoint_text` calls `register_drives_in_rset` which
+sees `drive.is_penalty()` is still true (it's a compile-time
+fact, not a runtime fact) → re-asserts the PENALTY_MARKER edge
+→ the retraction is silently undone.
+
+Lifecycle slices (H2.1.1 / H2.1.2) need retractions to STICK
+across checkpoints. This is the load-bearing fix.
+
+#### Decision
+
+Add an idempotency guard to `register_drives_in_rset()`: if
+the DRIVE_MARKER edge for a drive ALREADY exists in the rset,
+the function is a no-op for that drive (including its
+PENALTY_MARKER edge).
+
+```rust
+pub(crate) fn register_drives_in_rset(&mut self) {
+    for drive in &self.drives {
+        let drive_id = format!("drive_{}", drive.id());
+        let drive_marker_edge = R::new(DRIVE_MARKER, drive_id.as_str());
+        if self.rset.contains(&drive_marker_edge) {
+            // Already registered — rset is the source of
+            // truth. Do not re-assert PENALTY_MARKER.
+            continue;
+        }
+        self.rset.add(drive_marker_edge);
+        if drive.is_penalty() {
+            self.rset.add(R::new(PENALTY_MARKER, drive_id.as_str()));
+        }
+    }
+}
+```
+
+The semantics shift: previously the function ASSERTED a
+specific (drive, penalty) configuration on every call;
+now it ESTABLISHES the boot-default configuration ONCE
+(when the rset has no DRIVE_MARKER for that drive) and
+otherwise defers to the rset.
+
+#### Why this is "shadow cleanup"
+
+The fix preserves all existing behavior for the
+straightforward case (boot-with-empty-rset). It only changes
+behavior in the edge case where the rset ALREADY contains
+DRIVE_MARKER edges — i.e., checkpoint restore. And in that
+case, the new behavior matches the user's intent (retraction
+survives) instead of silently overriding it.
+
+The `Drive::is_penalty()` trait method's role is now precisely
+documented: BOOT-ONLY default. Production decision paths and
+checkpoint restore both treat the rset edge as the live source
+of truth.
+
+#### Tests added
+
+- `h2_1_1_penalty_retraction_survives_checkpoint_round_trip`:
+  retract PENALTY_MARKER manually → save → restore → verify
+  retraction still in effect.
+- `h2_1_1_re_register_no_op_when_drive_marker_present`:
+  direct test of the idempotency guard.
+
+#### Documentation
+
+`Drive::is_penalty()` doc updated to mark the method as
+BOOT-ONLY scope, with explicit warning that production
+decision paths must query meta-R, not this method.
+
+#### Empirical verification
+
+- 591 → 593 lib tests pass (+2 H2.1.1 lock-in tests).
+- F0 / long-run / multi-substrate diagnostics: unchanged
+  (the bug only manifests on retraction-then-restore, which
+  no current substrate exercises).
+- Addendum 2's lock-in tests still pass (meta-R query path
+  unchanged).
+
+#### Constitutional implications
+
+H2.1.0 satisfied commitment 3 by registering drives in meta-R.
+H2.1.0+ took the next step — runtime queries meta-R, not
+trait, for live decisions. **Addendum 3 closes the loop:
+manually-edited meta-R now survives the runtime's
+serialize-restore lifecycle**, making rset the authoritative
+source-of-truth in all timing windows.
+
+This unblocks H2.1.1 / H2.1.2: any lifecycle that retracts
+penalty status (or other drive properties) can rely on those
+retractions persisting. Without Addendum 3, H2.1.1 would have
+needed its own retraction-survival mechanism.
+
+#### Status
+
+H2.1.0 + H2.1.0+ + H2.1.1 (shadow cleanup) implemented.
+H2.1.2 (DriveMix weights tied to drive ESTABLISHED status)
+remains Proposed. The constitutional shift "drives are meta-R
+objects" is now load-bearing across registration, query, AND
+persistence.

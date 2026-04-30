@@ -42,6 +42,23 @@ pub trait Drive {
     /// implementation treated all drives as positive,
     /// causing step 3b's gate to fail on real substrates
     /// (long-run regression: 268 → 1000+ episodes).
+    ///
+    /// **BOOT-ONLY scope (ADR 0064 H2.1.1 cleanup):** This method
+    /// is consulted ONLY at runtime construction time, inside
+    /// `register_drives_in_rset()`, to decide whether to write
+    /// the `R(PENALTY_MARKER, drive_<id>)` edge. After boot, the
+    /// canonical source of penalty status is meta-R itself —
+    /// `is_drive_penalty_via_meta_r()` queries the rset edge,
+    /// not this method. This means **penalty status is mutable at
+    /// runtime**: retracting the PENALTY_MARKER edge converts a
+    /// drive from penalty to positive contribution, even though
+    /// the trait method still returns `true`. The `Drive` trait
+    /// provides the BOOT default; meta-R holds the LIVE state.
+    ///
+    /// Tests in `runtime::tests` exercise the trait directly to
+    /// verify the boot default; production decision paths
+    /// (`combined_drive_signal`, `normalized_drive_signal`) MUST
+    /// query meta-R, not this method, for runtime correctness.
     fn is_penalty(&self) -> bool {
         false
     }

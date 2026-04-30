@@ -123,17 +123,34 @@ impl AutonomousRuntime {
     }
 
     /// Register each drive as `R(DRIVE_MARKER, drive_<id>)` and,
-    /// if penalty, also `R(PENALTY_MARKER, drive_<id>)`. Idempotent —
-    /// `RSet::add` is a no-op if the edge exists, so repeat calls
-    /// (e.g., from `from_checkpoint_text` after restoring a
-    /// checkpoint that already contains these edges) are safe.
-    /// ADR 0064 / Phase H2.1.0 — registration only, no behaviour
-    /// change beyond rset content.
+    /// if penalty, also `R(PENALTY_MARKER, drive_<id>)`.
+    ///
+    /// **rset-as-source-of-truth (ADR 0064 H2.1.1 cleanup):**
+    /// If the DRIVE_MARKER edge for a drive already exists, this
+    /// function is a no-op for that drive — including the
+    /// PENALTY_MARKER edge. This guarantees that manual edge
+    /// retractions (e.g., a future H2.1.2 demotion that retracts
+    /// `R(PENALTY_MARKER, drive_X)` to flip the drive's role)
+    /// SURVIVE checkpoint round-trip. Without this guard,
+    /// `from_checkpoint_text` would re-assert the PENALTY_MARKER
+    /// edge on every restore, undoing intentional retractions.
+    ///
+    /// On first call (empty rset, before any DRIVE_MARKER edges)
+    /// the behavior is the original H2.1.0 specification: write
+    /// DRIVE_MARKER + (if penalty) PENALTY_MARKER per
+    /// `Drive::is_penalty()` boot default.
     pub(crate) fn register_drives_in_rset(&mut self) {
         for drive in &self.drives {
             let drive_id = format!("drive_{}", drive.id());
-            self.rset
-                .add(R::new(DRIVE_MARKER, drive_id.as_str()));
+            let drive_marker_edge =
+                R::new(DRIVE_MARKER, drive_id.as_str());
+            if self.rset.contains(&drive_marker_edge) {
+                // Already registered — rset is the source of
+                // truth. Do not re-assert the (possibly retracted)
+                // PENALTY_MARKER edge.
+                continue;
+            }
+            self.rset.add(drive_marker_edge);
             if drive.is_penalty() {
                 self.rset
                     .add(R::new(PENALTY_MARKER, drive_id.as_str()));

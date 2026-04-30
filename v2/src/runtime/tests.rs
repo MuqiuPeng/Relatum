@@ -4552,6 +4552,78 @@
         );
     }
 
+    // ─── ADR 0064 H2.1.1 — shadow-cleanup lock-in tests ─────────
+
+    #[test]
+    fn h2_1_1_penalty_retraction_survives_checkpoint_round_trip() {
+        // Pre-cleanup bug: register_drives_in_rset re-asserted
+        // PENALTY_MARKER edges on every call (no idempotency
+        // guard against retractions). After checkpoint restore,
+        // a manually-retracted PENALTY_MARKER would be re-added
+        // — silently undoing a future H2.1.2 demotion.
+        //
+        // Post-cleanup: register_drives_in_rset skips drives
+        // whose DRIVE_MARKER edge already exists in the rset,
+        // treating rset as the source of truth.
+        //
+        // This test serializes a runtime with a manually-retracted
+        // PENALTY_MARKER, restores it, and verifies the retraction
+        // survives.
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        let penalty_edge = R::new(
+            crate::PENALTY_MARKER,
+            "drive_mode_thrash",
+        );
+        // Boot state: PENALTY_MARKER present.
+        assert!(rt.rset.contains(&penalty_edge));
+        // Retract.
+        rt.rset.remove(&penalty_edge);
+        assert!(!rt.rset.contains(&penalty_edge));
+
+        // Round-trip via checkpoint.
+        let text = rt.checkpoint_text().expect("checkpoint serialize");
+        let restored =
+            AutonomousRuntime::from_checkpoint_text(&text)
+                .expect("checkpoint round-trip");
+
+        // Post-restore: PENALTY_MARKER STILL retracted (the fix).
+        assert!(
+            !restored.rset.contains(&penalty_edge),
+            "PENALTY_MARKER was incorrectly re-asserted on restore. \
+             register_drives_in_rset must respect existing rset state.",
+        );
+
+        // Sanity: DRIVE_MARKER for mode_thrash still present
+        // (only the PENALTY classification changed, not existence).
+        let drive_edge = R::new(
+            crate::DRIVE_MARKER,
+            "drive_mode_thrash",
+        );
+        assert!(restored.rset.contains(&drive_edge));
+    }
+
+    #[test]
+    fn h2_1_1_re_register_no_op_when_drive_marker_present() {
+        // Direct test of the rset-as-source-of-truth guard:
+        // if DRIVE_MARKER for a drive already exists, calling
+        // register_drives_in_rset is a no-op for that drive
+        // (including the PENALTY_MARKER edge).
+        let mut rt = AutonomousRuntime::new(RSet::new());
+        let penalty_edge = R::new(
+            crate::PENALTY_MARKER,
+            "drive_mode_thrash",
+        );
+        // Manually retract.
+        rt.rset.remove(&penalty_edge);
+        // Re-call registration. Should NOT re-assert the penalty
+        // edge because DRIVE_MARKER for mode_thrash already exists.
+        rt.register_drives_in_rset();
+        assert!(
+            !rt.rset.contains(&penalty_edge),
+            "register_drives_in_rset re-asserted a retracted PENALTY_MARKER",
+        );
+    }
+
     #[test]
     fn h2_0_drive_ids_are_stable_and_distinct() {
         // Stable id contract — these ids are the keys DriveMix
