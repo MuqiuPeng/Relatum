@@ -1,0 +1,54 @@
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:4653:60
+     |
+4653 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:4653:72
+     |
+4653 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 12.55s
+     Running `target\release\examples\phase_alpha_baseline_timed.exe`
+=== Phase Alpha — baseline timed run (HORIZON=2000, 100-tick chunks, no intervention) ===
+  chunk  1/20: tick= 100 episodes= 22 axioms=11 theories=3 elapsed=  0.16s (  1.6ms/tick)
+  chunk  2/20: tick= 200 episodes= 34 axioms=13 theories=4 elapsed=  0.12s (  1.2ms/tick)
+  chunk  3/20: tick= 300 episodes= 46 axioms=13 theories=4 elapsed=  0.41s (  4.1ms/tick)
+  chunk  4/20: tick= 400 episodes= 66 axioms=13 theories=4 elapsed=  0.70s (  7.0ms/tick)
+  chunk  5/20: tick= 500 episodes= 81 axioms=13 theories=4 elapsed=  0.84s (  8.4ms/tick)
+  chunk  6/20: tick= 600 episodes= 87 axioms=13 theories=4 elapsed=  0.84s (  8.4ms/tick)
+  chunk  7/20: tick= 700 episodes= 93 axioms=13 theories=4 elapsed=  1.26s ( 12.6ms/tick)
+  chunk  8/20: tick= 800 episodes= 99 axioms=13 theories=4 elapsed=  1.88s ( 18.8ms/tick)
+  chunk  9/20: tick= 900 episodes=105 axioms=13 theories=4 elapsed=  2.70s ( 27.0ms/tick)
+  chunk 10/20: tick=1000 episodes=111 axioms=13 theories=4 elapsed=  3.72s ( 37.2ms/tick)
+  chunk 11/20: tick=1100 episodes=127 axioms=13 theories=4 elapsed=  7.43s ( 74.3ms/tick)
+  chunk 12/20: tick=1200 episodes=143 axioms=13 theories=4 elapsed= 10.29s (102.9ms/tick)
+  chunk 13/20: tick=1300 episodes=160 axioms=13 theories=4 elapsed= 13.89s (138.9ms/tick)
+  chunk 14/20: tick=1400 episodes=177 axioms=13 theories=4 elapsed= 17.59s (175.9ms/tick)
+  chunk 15/20: tick=1500 episodes=194 axioms=13 theories=4 elapsed= 22.00s (220.0ms/tick)
+  chunk 16/20: tick=1600 episodes=209 axioms=13 theories=4 elapsed= 27.67s (276.7ms/tick)
+  chunk 17/20: tick=1700 episodes=224 axioms=13 theories=4 elapsed= 32.26s (322.6ms/tick)
+  chunk 18/20: tick=1800 episodes=239 axioms=13 theories=4 elapsed= 37.21s (372.1ms/tick)
+  chunk 19/20: tick=1900 episodes=254 axioms=13 theories=4 elapsed= 43.11s (431.1ms/tick)
+  chunk 20/20: tick=2000 episodes=269 axioms=13 theories=4 elapsed= 48.86s (488.6ms/tick)
+
+Total: tick=2000 episodes=269 axioms=13 theories=4 elapsed=272.95s (136.5ms/tick avg)
+
+--- end ---

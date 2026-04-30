@@ -5163,15 +5163,40 @@ impl RSet {
         // ADR 0066 Phase Alpha-6: route through indexed-join enumerator
         // for O(d^k) instead of O(N^k) on sparse graphs. Build a borrow-
         // based string→index lookup once per call (no String cloning).
+        //
+        // ADR 0066 Phase Alpha-6 Addendum (2026-05-01) — premise
+        // scheduling: precompute per-depth the indices of premise
+        // edges that need explicit verification at that depth (i.e.,
+        // self-loops `R(d, d)` which the candidate filter cannot
+        // express via neighbor-set intersection). Other premises are
+        // already structurally satisfied when the candidate filter at
+        // depth max(e.x, e.y) constrains the iteration; verifying them
+        // again at the leaf was redundant work.
         let id_index: HashMap<&str, usize> = data_ids
             .iter()
             .enumerate()
             .map(|(i, s)| (s.as_str(), i))
             .collect();
+        let n = template.num_vars;
+        let mut self_loop_at_depth: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for (idx, e) in template.premise.iter().enumerate() {
+            // Self-loop: both endpoints same var. Check at the depth
+            // where that var is bound.
+            if e.x_var == e.y_var && e.x_var < n {
+                self_loop_at_depth[e.x_var].push(idx);
+            }
+        }
         let mut binding: Vec<usize> = vec![0; template.num_vars];
         let mut out: HashSet<R> = HashSet::new();
         forward_apply_recursive_indexed(
-            self, template, data_ids, &id_index, &mut binding, 0, &mut out,
+            self,
+            template,
+            data_ids,
+            &id_index,
+            &self_loop_at_depth,
+            &mut binding,
+            0,
+            &mut out,
         );
         out
     }
@@ -6297,22 +6322,19 @@ fn forward_apply_recursive_indexed(
     template: &AxiomTemplate,
     ids: &[String],
     id_index: &HashMap<&str, usize>,
+    self_loop_at_depth: &[Vec<usize>],
     binding: &mut [usize],
     depth: usize,
     out: &mut HashSet<R>,
 ) {
     if depth == binding.len() {
-        // All variables bound; final premise verification (catches
-        // premises whose vars span both `<depth` only — those weren't
-        // touched by the candidate filter, since the filter only
-        // constrains premises that *involve* the current depth).
-        for e in &template.premise {
-            let x = &ids[binding[e.x_var]];
-            let y = &ids[binding[e.y_var]];
-            if !rs.instances.contains(&R::new(x.clone(), y.clone())) {
-                return;
-            }
-        }
+        // ADR 0066 Phase Alpha-6 Addendum (premise scheduling):
+        // The leaf no longer re-verifies premises. Cross-variable
+        // premise constraints are enforced by the candidate filter
+        // at the depth where their highest variable is bound.
+        // Self-loop premises are verified at their own depth's
+        // verification block (below). At the leaf, the binding is
+        // already known to satisfy every premise.
         let cx = &ids[binding[template.conclusion.x_var]];
         let cy = &ids[binding[template.conclusion.y_var]];
         out.insert(R::new(cx.clone(), cy.clone()));
@@ -6355,28 +6377,44 @@ fn forward_apply_recursive_indexed(
     }
 
     // Iterate over the candidate set (or all ids if no constraint).
-    // The candidate filter already encodes the depth-involving
-    // premise constraints structurally, so no per-iteration premise
-    // recheck is needed. The leaf check at depth == num_vars handles
-    // the residual case (premises with vars strictly < depth, which
-    // were already validated when those vars were bound).
+    // The candidate filter already encodes the cross-variable
+    // depth-involving premise constraints structurally. Self-loop
+    // premises (both endpoints == depth) are handled per-iteration
+    // below — they can't be expressed via neighbor-set intersection.
+    let self_loops = &self_loop_at_depth[depth];
+    let try_with_binding =
+        |binding: &mut [usize], out: &mut HashSet<R>, i: usize| {
+            binding[depth] = i;
+            // Verify self-loop premises at the current depth.
+            for &prem_idx in self_loops {
+                let e = &template.premise[prem_idx];
+                let id = &ids[binding[e.x_var]];
+                if !rs.instances.contains(&R::new(id.clone(), id.clone())) {
+                    return;
+                }
+            }
+            forward_apply_recursive_indexed(
+                rs,
+                template,
+                ids,
+                id_index,
+                self_loop_at_depth,
+                binding,
+                depth + 1,
+                out,
+            );
+        };
     match candidates {
         Some(set) => {
             let mut v: Vec<usize> = set.into_iter().collect();
             v.sort_unstable();
             for i in v {
-                binding[depth] = i;
-                forward_apply_recursive_indexed(
-                    rs, template, ids, id_index, binding, depth + 1, out,
-                );
+                try_with_binding(binding, out, i);
             }
         }
         None => {
             for i in 0..ids.len() {
-                binding[depth] = i;
-                forward_apply_recursive_indexed(
-                    rs, template, ids, id_index, binding, depth + 1, out,
-                );
+                try_with_binding(binding, out, i);
             }
         }
     }
@@ -6413,6 +6451,14 @@ fn saturate_under_axioms(rs: &mut RSet, templates: &[AxiomTemplate]) {
             if tpl.num_vars == 0 {
                 continue;
             }
+            // Premise scheduling — see forward_apply_axiom_with_data_ids_inner.
+            let n = tpl.num_vars;
+            let mut self_loop_at_depth: Vec<Vec<usize>> = vec![Vec::new(); n];
+            for (idx, e) in tpl.premise.iter().enumerate() {
+                if e.x_var == e.y_var && e.x_var < n {
+                    self_loop_at_depth[e.x_var].push(idx);
+                }
+            }
             let mut binding: Vec<usize> = vec![0; tpl.num_vars];
             let mut predicted: HashSet<R> = HashSet::new();
             forward_apply_recursive_indexed(
@@ -6420,6 +6466,7 @@ fn saturate_under_axioms(rs: &mut RSet, templates: &[AxiomTemplate]) {
                 tpl,
                 &data_ids,
                 &id_index,
+                &self_loop_at_depth,
                 &mut binding,
                 0,
                 &mut predicted,
