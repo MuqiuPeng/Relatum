@@ -4378,8 +4378,28 @@ impl RSet {
             };
         }
 
-        // Step 1: theory healthy → no action
+        // Step 1: theory healthy → check Signal-Signal merge first
+        // (ADR 0072 Addendum 1), else no action.
         if report.summary_class == TheoryQualityClass::Signal {
+            // Step 5.5 — HighQualityBoth merge: both theories
+            // Signal-class with cross-precision means ≥ 0.95.
+            // F.5 verified empirically that merging is lossless.
+            const HQB_CROSS_FLOOR: f64 = 0.95;
+            if report.cross_precision_mean.unwrap_or(0.0) >= HQB_CROSS_FLOOR {
+                for other in other_reports {
+                    if other.summary_class != TheoryQualityClass::Signal {
+                        continue;
+                    }
+                    if other.cross_precision_mean.unwrap_or(0.0)
+                        >= HQB_CROSS_FLOOR
+                    {
+                        return RecommendedIntervention::Merge {
+                            partner_theory: other.theory_id.clone(),
+                            rationale: MergeRationale::HighQualityBoth,
+                        };
+                    }
+                }
+            }
             return RecommendedIntervention::None;
         }
 
@@ -4459,8 +4479,11 @@ impl RSet {
         }
 
         // Step 5: complementary merge candidate (Mixed focal,
-        // Signal partner with disjoint family signature).
+        // Signal partner with NEAR-DISJOINT family signature per
+        // ADR 0072 Addendum 2 — Jaccard ≤ 0.50, i.e. signatures
+        // more disjoint than shared).
         if report.summary_class == TheoryQualityClass::Mixed {
+            const NEAR_DISJOINT_JACCARD: f64 = 0.50;
             let focal_fams: HashSet<&str> = report
                 .family_memberships
                 .iter()
@@ -4475,7 +4498,14 @@ impl RSet {
                     .iter()
                     .map(|m| m.family_id.as_str())
                     .collect();
-                if focal_fams.is_disjoint(&other_fams) {
+                let inter = focal_fams.intersection(&other_fams).count();
+                let union = focal_fams.union(&other_fams).count();
+                let jaccard = if union == 0 {
+                    0.0
+                } else {
+                    inter as f64 / union as f64
+                };
+                if jaccard <= NEAR_DISJOINT_JACCARD {
                     return RecommendedIntervention::Merge {
                         partner_theory: other.theory_id.clone(),
                         rationale: MergeRationale::Complementary,

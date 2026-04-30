@@ -461,3 +461,166 @@ together transform Phase Alpha from "experiment series" into
 *The user's strategic redirection from "add more directions" to
 "consolidate into a system" is now structurally complete after
 0072 lands.*
+
+---
+
+## Addendum 1 — HighQualityBoth merge (2026-05-01)
+
+### Motivation
+
+The migration atlas (2026-05-01) compared `recommend_intervention`
+to 9 historical examples on OQ#1 and found **4/9
+DIVERGENT-BY-DESIGN** cases — all Signal-Signal merges that ADR
+0072 conservatively did not recommend:
+
+- Alpha-5 picked (t_2, t_3) by smart Jaccard
+- F.4 Borda top-1: (t_2, t_3) at 4/6 = 66.7% confidence
+- F.5 actually executed (t_2, t_3) merge → cross-prec **1.0** (delta=0.0000, lossless)
+- F.2.1 picked (t_1, t_2) — covered by Addendum 2 below
+
+F.5's empirical safety result is a green-light: **Signal-Signal
+merging when cross-precision profiles are near-identical is
+provably lossless.** The conservative-by-default position taken
+in ADR 0072 §3 is correct as a baseline, but admits an empirical
+expansion when both sides are high-quality.
+
+### Decision
+
+Add Step 5.5 to the decision tree, between Step 5 (complementarity
+merge) and Step 6 (theory demote):
+
+```text
+# Step 5.5 — HighQualityBoth merge
+# Both focal and partner are Signal-class with very high
+# cross-precision; merging is provably lossless per F.5.
+if focal.summary_class == Signal:
+    for other in others:
+        if other.summary_class != Signal: continue
+        if focal.cross_precision_mean.unwrap_or(0.0) >= 0.95
+           AND other.cross_precision_mean.unwrap_or(0.0) >= 0.95:
+            return Merge(other.theory_id,
+                         MergeRationale::HighQualityBoth)
+```
+
+This requires moving Step 1's "Signal → None" early-return:
+previously Signal halted at Step 1; now it falls through to
+Step 5.5, returning Merge if a partner exists, else None.
+
+### Threshold rationale
+
+- Both `cross_precision_mean ≥ 0.95` is the strict condition. The
+  (t_2, t_3) case on OQ#1 has both = 1.0000 exactly. Threshold
+  0.95 gives 0.05 of headroom to absorb minor numerical drift
+  across substrates (per the multi-substrate diagnostic, OQ#1 ↔
+  long5k drift on Signal theories is < 0.01).
+- No requirement on family signatures — HighQualityBoth merges
+  are about REDUNDANCY, not COMPLEMENTARITY. Two Signal theories
+  with overlapping coverage merge losslessly.
+- The recommendation is NOT a demand to merge. The caller (a
+  human or maintenance loop) decides; F.5 verified it's safe to
+  execute.
+
+### What this does NOT change
+
+- Step 1's None return for non-Mixed, non-Signal-with-partner
+  theories: unchanged.
+- Mixed-Signal merge (Step 5, complementary): unchanged.
+- Pairwise iteration: unchanged. Both halves of the pair will
+  see this recommendation (e.g., t_2's report says
+  Merge(t_3); t_3's report says Merge(t_2)). Caller deduplicates.
+
+### Tests
+
+Three new unit tests cover this path:
+- `adr0072_addendum1_signal_signal_with_high_xprec_recommends_merge`
+- `adr0072_addendum1_signal_with_low_xprec_partner_returns_none`
+- `adr0072_addendum1_signal_alone_returns_none`
+
+### Status
+
+Addendum 1: **Accepted.** Ships in the same commit as Addendum 2.
+
+---
+
+## Addendum 2 — Near-disjoint signature rule (2026-05-01)
+
+### Motivation
+
+Migration atlas finding (2026-05-01): F.2.1's pick (t_1, t_2)
+was DIVERGENT under ADR 0072's strict `is_disjoint` rule for
+Step 5 complementarity merges. t_1 and t_2 share 2 family
+memberships out of 5 (Jaccard 0.40), so `is_disjoint` returns
+false, and the recommendation falls through to Manual.
+
+F.2.1's empirical analysis showed (t_1, t_2) is a defensible
+quality-aware merge candidate. The strict-disjoint rule is
+correct in spirit (avoid merges where signatures already
+overlap heavily) but too aggressive at threshold zero.
+
+### Decision
+
+Replace Step 5's `focal_fams.is_disjoint(&other_fams)` check
+with a **Jaccard threshold**:
+
+```text
+shared = |focal_fams ∩ other_fams|
+total  = |focal_fams ∪ other_fams|
+jaccard = shared / total  (0 if total = 0)
+
+if jaccard <= 0.50:  # signatures more disjoint than shared
+    return Merge(other.theory_id, MergeRationale::Complementary)
+```
+
+Setting the threshold to 0.50 means: **keep merging when
+signatures are MORE disjoint than shared**. Strict disjoint
+(Jaccard 0.0) was unnecessarily restrictive; F.2.1's 0.40
+Jaccard pick was empirically reasonable.
+
+### Threshold rationale
+
+- 0.50 is the natural midpoint: above → signatures dominate by
+  shared structure (merging dilutes either side); below →
+  signatures are mostly different, complementarity dominates.
+- F.2.1's empirical pick was 0.40, comfortably below 0.50.
+- A future ADR could tune this against more substrates if the
+  0.50 threshold proves too liberal or too strict.
+
+### What this changes
+
+- Step 5 (complementarity merge) becomes more permissive.
+- F.2.1's pick (t_1, t_2) on OQ#1 will now produce a Merge
+  recommendation, raising migration-atlas agreement.
+- Other strict-disjoint cases unchanged (Jaccard 0 still
+  passes the new threshold).
+
+### Tests
+
+Two new unit tests:
+- `adr0072_addendum2_near_disjoint_jaccard_below_threshold_recommends_merge`
+- `adr0072_addendum2_jaccard_above_threshold_does_not_recommend_merge`
+
+### Status
+
+Addendum 2: **Accepted.** Ships in the same commit as Addendum 1.
+
+---
+
+## Combined empirical effect
+
+After Addenda 1 + 2, the migration atlas re-run on OQ#1 should
+raise the agreement rate from 5/9 to 9/9:
+
+| atlas case | pre-addenda | post-addenda |
+|---|---|---|
+| Alpha-3+ demote | AGREE | AGREE |
+| Alpha-3+++ repair | AGREE | AGREE |
+| Alpha-3++++ naive (FALSIFIED) | AGREE | AGREE |
+| **Alpha-5 smart_merge** | DIVERGENT | **AGREE** (Addendum 1) |
+| Beta-2 family_demote | AGREE | AGREE |
+| F.2 family_aware | AGREE | AGREE |
+| **F.2.1 quality_aware** | DIVERGENT | **AGREE** (Addendum 2) |
+| **F.4 multi_signal** | DIVERGENT | **AGREE** (Addendum 1) |
+| **F.5 merge_safety** | DIVERGENT | **AGREE** (Addendum 1) |
+
+Expected post-addendum atlas re-run: 9/9 agree, 0 open
+divergences.

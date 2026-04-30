@@ -3979,6 +3979,241 @@
         ));
     }
 
+    // ── ADR 0072 Addendum 1 — HighQualityBoth merge ─────────────
+
+    #[test]
+    fn adr0072_addendum1_signal_signal_with_high_xprec_recommends_merge() {
+        // Two Signal-class theories, both with cross_precision_mean
+        // ≥ 0.95 → recommend Merge with HighQualityBoth rationale.
+        let focal = synth_report(
+            "t_2",
+            vec!["ax_a".to_string()],
+            Some(1.0),
+            Some(1.0),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let partner = synth_report(
+            "t_3",
+            vec!["ax_b".to_string()],
+            Some(0.95),
+            Some(0.98),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        match rec {
+            crate::RecommendedIntervention::Merge {
+                partner_theory,
+                rationale,
+            } => {
+                assert_eq!(partner_theory, "t_3");
+                assert_eq!(
+                    rationale,
+                    crate::MergeRationale::HighQualityBoth
+                );
+            }
+            other => panic!("expected Merge(HighQualityBoth), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn adr0072_addendum1_signal_with_low_xprec_partner_returns_none() {
+        // Focal Signal but partner's cross-prec below 0.95 floor →
+        // no HighQualityBoth merge → falls through to None.
+        let focal = synth_report(
+            "t_x",
+            vec!["ax_a".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let partner = synth_report(
+            "t_y",
+            vec!["ax_b".to_string()],
+            Some(0.85),
+            Some(0.85), // Signal but below 0.95 floor
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        assert_eq!(rec, crate::RecommendedIntervention::None);
+    }
+
+    #[test]
+    fn adr0072_addendum1_signal_alone_returns_none() {
+        // Signal-class theory with no partners → None.
+        let focal = synth_report(
+            "t_x",
+            vec!["ax_a".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[]);
+        assert_eq!(rec, crate::RecommendedIntervention::None);
+    }
+
+    // ── ADR 0072 Addendum 2 — near-disjoint signature rule ──────
+
+    #[test]
+    fn adr0072_addendum2_near_disjoint_jaccard_below_threshold_recommends_merge() {
+        // F.2.1's pattern: focal Mixed, partner Signal, signatures
+        // share 2 of 5 families (Jaccard 0.40) → Merge(Complementary).
+        let focal_fams: Vec<crate::TheoryFamilyMembership> = vec![
+            "shape_premise_p0-1",
+            "shape_premise_p0-1_p1-2",
+            "shape_conclusion_c0-2",
+            "shape_conclusion_c1-0",
+            "shape_conclusion_c2-0",
+        ]
+        .into_iter()
+        .map(|f| crate::TheoryFamilyMembership {
+            family_id: f.to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        })
+        .collect();
+        let other_fams: Vec<crate::TheoryFamilyMembership> = vec![
+            "shape_premise_p0-1_p1-2",
+            "shape_conclusion_c0-2",
+        ]
+        .into_iter()
+        .map(|f| crate::TheoryFamilyMembership {
+            family_id: f.to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        })
+        .collect();
+        let focal = synth_report(
+            "t_focal",
+            vec!["ax_a".to_string()],
+            Some(0.55),
+            Some(0.55),
+            0,
+            focal_fams,
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.55),
+                cross_precision: Some(0.55),
+                family_ids: vec![],
+            }],
+        );
+        let partner = synth_report(
+            "t_partner",
+            vec!["ax_p".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            other_fams,
+            vec![],
+            vec![],
+        );
+        // Focal must be Mixed (force the class via field tweak).
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        match rec {
+            crate::RecommendedIntervention::Merge {
+                partner_theory,
+                rationale,
+            } => {
+                assert_eq!(partner_theory, "t_partner");
+                assert_eq!(
+                    rationale,
+                    crate::MergeRationale::Complementary
+                );
+            }
+            other => panic!(
+                "expected Merge(Complementary), got {:?}",
+                other,
+            ),
+        }
+    }
+
+    #[test]
+    fn adr0072_addendum2_jaccard_above_threshold_does_not_recommend_merge() {
+        // Focal & partner share 3 of 4 families (Jaccard 0.75) →
+        // ABOVE 0.50 threshold → no Merge; falls through.
+        let shared: Vec<crate::TheoryFamilyMembership> = vec![
+            "shape_a", "shape_b", "shape_c",
+        ]
+        .into_iter()
+        .map(|f| crate::TheoryFamilyMembership {
+            family_id: f.to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        })
+        .collect();
+        let mut focal_fams = shared.clone();
+        focal_fams.push(crate::TheoryFamilyMembership {
+            family_id: "shape_d".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        });
+        // focal: {a, b, c, d}; partner: {a, b, c} → union {a,b,c,d}=4, intersection {a,b,c}=3 → Jaccard = 0.75
+        let focal = synth_report(
+            "t_focal",
+            vec!["ax_a".to_string()],
+            Some(0.55),
+            Some(0.55),
+            0,
+            focal_fams,
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.55),
+                cross_precision: Some(0.55),
+                family_ids: vec![],
+            }],
+        );
+        let partner = synth_report(
+            "t_partner",
+            vec!["ax_p".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            shared,
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        // With Jaccard 0.75 > 0.50, no Merge. Should fall through
+        // to Step 6 (Noise check fails since summary is Mixed) →
+        // Step 7 Manual.
+        assert!(matches!(
+            rec,
+            crate::RecommendedIntervention::Manual { .. }
+        ));
+    }
+
     #[test]
     fn adr0072_per_axiom_stats_populated_in_report() {
         // Smoke test: theory_quality_report() now includes

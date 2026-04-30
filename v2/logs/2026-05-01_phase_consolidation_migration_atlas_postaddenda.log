@@ -1,0 +1,117 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:243:19
+    |
+131 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:4653:60
+     |
+4653 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:4653:72
+     |
+4653 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 1.50s
+     Running `target\release\examples\phase_consolidation_migration_atlas.exe`
+=== Migration atlas: 9 historical examples → modern API ===
+
+Modern recommendations on OQ#1 @ 1000 ticks:
+  t_0    → FamilyDemote(shape_premise_p0-0_p1-2)
+  t_1    → Merge(t_2, Complementary)
+  t_2    → Merge(t_3, HighQualityBoth)
+  t_3    → Merge(t_2, HighQualityBoth)
+
+════════════════════════════════════════════════════════════════════
+ Historical decision  vs  Modern recommendation
+════════════════════════════════════════════════════════════════════
+
+[1] Alpha-3+ theory_demote_loop
+    Historical: demote t_0 (lowest primary hit rate)
+    Modern:     FamilyDemote(shape_premise_p0-0_p1-2) on t_0
+    → AGREE: modern targets t_0 with a (more precise) intervention
+
+[2] Alpha-3+++ theory_repair
+    Historical: repair t_0's 4 noise axioms (detach from t_0)
+    Modern:     FamilyDemote(shape_premise_p0-0_p1-2) on t_0
+    → AGREE: modern targets the same noise; FamilyDemote is
+      the cleaner generalization of "detach noise axioms"
+
+[3] Alpha-3++++ naive theory_merge
+    Historical (FALSIFIED): naive Jaccard picked (t_0, t_1)
+    Modern:     does NOT recommend (t_0, t_1) merge
+      t_0 → FamilyDemote(shape_premise_p0-0_p1-2)
+      t_1 → Merge(t_2, Complementary)
+    → AGREE WITH FALSIFICATION: priority order skips bad merge
+
+[4] Alpha-5 smart_merge
+    Historical: smart Jaccard picked (t_2, t_3)
+    Modern:     t_2 → Merge(t_3, HighQualityBoth), t_3 → Merge(t_2, HighQualityBoth)
+    → AGREE (post-Addendum 1): both Signal-class with
+      cross-prec ≥ 0.95 → HighQualityBoth merge (t_2, t_3).
+
+[5] Beta-2 family_demote
+    Historical: family demote shape_premise_p0-0_p1-2 (variance-zero)
+    Modern:     FamilyDemote(shape_premise_p0-0_p1-2) on t_0
+    → STRONG AGREE: modern API surfaces the same family directly
+
+[6] F.2 family_aware_merge
+    Historical: F.2 picked (t_0, t_2) by family-signature complementarity
+    Modern:     does NOT recommend (t_0, t_2) merge
+      t_0 → FamilyDemote(shape_premise_p0-0_p1-2) (FamilyDemote first, before considering merge)
+    → AGREE WITH F.2's CAVEAT: F.2 itself flagged this merge as risky
+      (would dilute t_2's quality with t_0's noise). Modern API
+      handles t_0's noise via FamilyDemote, leaving t_2 intact.
+
+[7] F.2.1 quality_aware_merge
+    Historical: F.2.1 picked (t_1, t_2) by quality-floor + complementarity
+    Modern:     Merge(t_2, Complementary) on t_1
+    → AGREE (post-Addendum 2): near-disjoint Jaccard ≤ 0.50
+      relaxes the strict-disjoint rule; (t_1, t_2)'s 0.40
+      Jaccard now triggers Step 5 Merge.
+
+[8] F.4 multi_signal_merge
+    Historical: F.4 Borda top-1 = (t_2, t_3) at 4/6 = 66.7% confidence
+    Modern:     t_2 → Merge(t_3, HighQualityBoth), t_3 → Merge(t_2, HighQualityBoth)
+    → AGREE (post-Addendum 1): same HighQualityBoth merge
+      as Alpha-5; F.4's Borda aggregation reproduces here.
+
+[9] F.5 merge_safety
+    Historical: ACTUALLY merged (t_2, t_3) → t_4 with cross-prec 1.0
+    Modern:     t_2 → Merge(t_3, HighQualityBoth), t_3 → Merge(t_2, HighQualityBoth)
+    → AGREE (post-Addendum 1): the very merge F.5 verified
+      lossless (delta=0) is now what the modern API recommends.
+      Empirical safety + classifier recommendation are aligned.
+
+════════════════════════════════════════════════════════════════════
+ Migration verdict
+════════════════════════════════════════════════════════════════════
+  Agreement: 8/9
+  Modern correctly disagrees with FALSIFIED historical: 1
+  Open divergences (Signal-Signal merge): 0
+
+  Code: 2699 lines of inline classification logic across 9 examples
+  → ~30 lines of pipeline code in this atlas (above)
+  → ~90× compression ratio for the classification core
+
+  → STRONGLY POSITIVE: modern API reproduces the empirically-correct
+    historical decisions (8/9 agree on intervention-class scenarios),
+    correctly disagrees with FALSIFIED naive merge,
+    and the open divergences are conservative-by-design merge cases
+    that F.5 already verified safe. Migration is loss-free for the
+    intervention-recommendation core.
+
+--- end ---

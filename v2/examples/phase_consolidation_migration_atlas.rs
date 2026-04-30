@@ -213,15 +213,16 @@ fn main() {
     println!("    Historical: smart Jaccard picked (t_2, t_3)");
     println!("    Modern:     t_2 → {}, t_3 → {}",
              rec_label(&recs["t_2"]), rec_label(&recs["t_3"]));
-    let t2_t3_signal = matches!(recs["t_2"], RecommendedIntervention::None)
-        && matches!(recs["t_3"], RecommendedIntervention::None);
-    if t2_t3_signal {
-        println!("    → DIVERGENT (open): both Signal-class so modern says None.");
-        println!("      Alpha-5's merge was a CONSOLIDATION optimization, not");
-        println!("      an intervention. ADR 0072 only recommends merge when");
-        println!("      one side is Mixed and the other Signal+complementary.");
-        println!("      F.5 verified the merge is lossless; recommending it");
-        println!("      automatically is a future enhancement (HighQualityBoth merge).");
+    let t2_merges_t3 = merge_partner(&recs["t_2"]) == Some("t_3");
+    let t3_merges_t2 = merge_partner(&recs["t_3"]) == Some("t_2");
+    if t2_merges_t3 || t3_merges_t2 {
+        println!("    → AGREE (post-Addendum 1): both Signal-class with");
+        println!("      cross-prec ≥ 0.95 → HighQualityBoth merge (t_2, t_3).");
+        agree += 1;
+    } else if matches!(recs["t_2"], RecommendedIntervention::None)
+        && matches!(recs["t_3"], RecommendedIntervention::None)
+    {
+        println!("    → DIVERGENT (open, pre-addendum behavior detected)");
         disagree_open += 1;
     } else {
         println!("    → unexpected; see per-theory output");
@@ -262,15 +263,13 @@ fn main() {
     println!("    Historical: F.2.1 picked (t_1, t_2) by quality-floor + complementarity");
     if merge_partner(&recs["t_1"]) == Some("t_2") {
         println!("    Modern:     {} on t_1", rec_label(&recs["t_1"]));
-        println!("    → AGREE");
+        println!("    → AGREE (post-Addendum 2): near-disjoint Jaccard ≤ 0.50");
+        println!("      relaxes the strict-disjoint rule; (t_1, t_2)'s 0.40");
+        println!("      Jaccard now triggers Step 5 Merge.");
         agree += 1;
     } else {
         println!("    Modern:     t_1 → {}", rec_label(&recs["t_1"]));
-        println!("    → DIVERGENT (open): t_1 and t_2 share family memberships");
-        println!("      (shape_premise_p0-1_p1-2, shape_conclusion_c0-2), so the");
-        println!("      complementarity check (Step 5) requires DISJOINT signatures.");
-        println!("      F.2.1's threshold was looser; ADR 0072's stricter rule");
-        println!("      surfaces them as Manual instead.");
+        println!("    → DIVERGENT (open, pre-addendum behavior detected)");
         disagree_open += 1;
     }
 
@@ -279,27 +278,29 @@ fn main() {
     println!("    Historical: F.4 Borda top-1 = (t_2, t_3) at 4/6 = 66.7% confidence");
     println!("    Modern:     t_2 → {}, t_3 → {}",
              rec_label(&recs["t_2"]), rec_label(&recs["t_3"]));
-    if t2_t3_signal {
-        println!("    → DIVERGENT (open): same as Alpha-5 — Signal-Signal merge");
-        println!("      is a CONSOLIDATION optimization, not an intervention.");
-        println!("      Future ADR could add HighQualityBoth merge recommendation.");
-        disagree_open += 1;
+    if t2_merges_t3 || t3_merges_t2 {
+        println!("    → AGREE (post-Addendum 1): same HighQualityBoth merge");
+        println!("      as Alpha-5; F.4's Borda aggregation reproduces here.");
+        agree += 1;
     } else {
+        println!("    → DIVERGENT (open, pre-addendum behavior detected)");
         disagree_open += 1;
     }
 
     println!();
     println!("[9] F.5 merge_safety");
     println!("    Historical: ACTUALLY merged (t_2, t_3) → t_4 with cross-prec 1.0");
-    println!("    Modern:     does not yet recommend the consolidation merge,");
-    println!("                but the empirical safety result (delta=0.0000)");
-    println!("                stands. F.5's verification IS the empirical");
-    println!("                green-light for adding HighQualityBoth merge");
-    println!("                recommendations to ADR 0072 as a future step.");
-    println!("    → DIVERGENT-BY-DESIGN: ADR 0072 chose conservative-by-default");
-    println!("      (Mixed+Signal merge yes, Signal+Signal merge no). F.5's data");
-    println!("      gives empirical permission to expand later.");
-    disagree_open += 1;
+    println!("    Modern:     t_2 → {}, t_3 → {}",
+             rec_label(&recs["t_2"]), rec_label(&recs["t_3"]));
+    if t2_merges_t3 || t3_merges_t2 {
+        println!("    → AGREE (post-Addendum 1): the very merge F.5 verified");
+        println!("      lossless (delta=0) is now what the modern API recommends.");
+        println!("      Empirical safety + classifier recommendation are aligned.");
+        agree += 1;
+    } else {
+        println!("    → DIVERGENT-BY-DESIGN (pre-addendum)");
+        disagree_open += 1;
+    }
 
     total = 9;
 
