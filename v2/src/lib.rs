@@ -4304,6 +4304,13 @@ impl RSet {
             axiom_count,
         );
 
+        // ── Per-axiom stats (ADR 0072) ───────────────────────
+        // Build BEFORE the struct construction so axiom_ids
+        // (which is moved into the struct) is still borrowed
+        // here. Same vector is referenced — no extra clone.
+        let per_axiom_stats =
+            build_per_axiom_stats(self, &axiom_ids, substrates, primary_rates);
+
         Some(TheoryQualityReport {
             theory_id: theory_id.to_string(),
             axiom_ids,
@@ -4320,6 +4327,7 @@ impl RSet {
             signal_family_axiom_count,
             neighborhood,
             summary_class,
+            per_axiom_stats,
         })
     }
 
@@ -4339,6 +4347,169 @@ impl RSet {
                 self.theory_quality_report(&t, substrates, primary_rates)
             })
             .collect()
+    }
+
+    /// ADR 0072 — Recommend an intervention for a struggling
+    /// theory based on its quality report and the broader theory
+    /// landscape.
+    ///
+    /// **Pure function: no side effects.** The caller decides
+    /// whether to act on the recommendation, and which API to
+    /// invoke. Each enum variant maps to a single existing
+    /// intervention API (see ADR 0072 §1 table).
+    ///
+    /// `report`: ADR 0071 quality report for the focal theory.
+    /// `other_reports`: quality reports for OTHER theories (not
+    ///   the focal). Used for subset/superset and merge analysis.
+    ///   Empty slice degrades gracefully — DemoteSuperset and
+    ///   complementarity-Merge cases collapse into TheoryDemote /
+    ///   Manual.
+    ///
+    /// Decision-tree priority order (top-to-bottom; first match
+    /// wins). See ADR 0072 §3 for full pseudocode.
+    pub fn recommend_intervention(
+        report: &TheoryQualityReport,
+        other_reports: &[TheoryQualityReport],
+    ) -> RecommendedIntervention {
+        // Step 0: data sufficiency
+        if report.summary_class == TheoryQualityClass::Indeterminate {
+            return RecommendedIntervention::ShadowMonitor {
+                reason: "no data on any quality dimension".to_string(),
+            };
+        }
+
+        // Step 1: theory healthy → no action
+        if report.summary_class == TheoryQualityClass::Signal {
+            return RecommendedIntervention::None;
+        }
+
+        // Step 2: subset+noise pattern — focal theory extends a
+        // Signal-class subset (focal's `extends` field lists
+        // theories whose member set is a STRICT SUBSET of focal's
+        // per ADR 0049). Demoting the noisy superset preserves
+        // the cleaner explanation.
+        if let Some(neigh) = &report.neighborhood {
+            for sub in &neigh.extends {
+                if let Some(sub_report) =
+                    other_reports.iter().find(|r| &r.theory_id == sub)
+                {
+                    if sub_report.summary_class == TheoryQualityClass::Signal
+                    {
+                        return RecommendedIntervention::DemoteSuperset {
+                            cleaner_subset_theory: sub.clone(),
+                        };
+                    }
+                }
+            }
+        }
+
+        // Step 3: noise-family contamination → targeted family demote
+        let mut noise_families: Vec<&TheoryFamilyMembership> = report
+            .family_memberships
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.class,
+                    Some(FamilyQualityClass::Noise)
+                        | Some(FamilyQualityClass::Uniform)
+                )
+            })
+            .collect();
+        if !noise_families.is_empty() {
+            // Pick the family with the most theory members,
+            // tiebreak by family_id ascending for determinism.
+            noise_families.sort_by(|a, b| {
+                b.members_in_theory
+                    .cmp(&a.members_in_theory)
+                    .then_with(|| a.family_id.cmp(&b.family_id))
+            });
+            let target = noise_families[0];
+            return RecommendedIntervention::FamilyDemote {
+                family_id: target.family_id.clone(),
+                family_class: target
+                    .class
+                    .unwrap_or(FamilyQualityClass::Mixed),
+            };
+        }
+
+        // Step 4: theory mostly OK but a few axioms drag it down
+        // (Mixed only; primary mean ≥ 0.60; identifiable weak
+        // axioms via per-axiom stats).
+        if report.summary_class == TheoryQualityClass::Mixed
+            && report.primary_rate_mean.unwrap_or(0.0) >= 0.60
+        {
+            const REPAIR_WEAK_THRESHOLD: f64 = 0.30;
+            let weak: Vec<String> = report
+                .per_axiom_stats
+                .iter()
+                .filter(|s| {
+                    s.primary_rate.unwrap_or(1.0) < REPAIR_WEAK_THRESHOLD
+                        || s.cross_precision.unwrap_or(1.0)
+                            < REPAIR_WEAK_THRESHOLD
+                })
+                .map(|s| s.axiom_id.clone())
+                .collect();
+            if !weak.is_empty()
+                && weak.len() <= report.axiom_count / 2
+            {
+                return RecommendedIntervention::AxiomRepair {
+                    axiom_ids: weak,
+                };
+            }
+        }
+
+        // Step 5: complementary merge candidate (Mixed focal,
+        // Signal partner with disjoint family signature).
+        if report.summary_class == TheoryQualityClass::Mixed {
+            let focal_fams: HashSet<&str> = report
+                .family_memberships
+                .iter()
+                .map(|m| m.family_id.as_str())
+                .collect();
+            for other in other_reports {
+                if other.summary_class != TheoryQualityClass::Signal {
+                    continue;
+                }
+                let other_fams: HashSet<&str> = other
+                    .family_memberships
+                    .iter()
+                    .map(|m| m.family_id.as_str())
+                    .collect();
+                if focal_fams.is_disjoint(&other_fams) {
+                    return RecommendedIntervention::Merge {
+                        partner_theory: other.theory_id.clone(),
+                        rationale: MergeRationale::Complementary,
+                    };
+                }
+            }
+        }
+
+        // Step 6: noise-class theory with no targeted intervention
+        if report.summary_class == TheoryQualityClass::Noise {
+            if report.axiom_count > 0
+                && report.noise_family_axiom_count * 2
+                    >= report.axiom_count
+            {
+                return RecommendedIntervention::TheoryDemote {
+                    reason: TheoryDemoteReason::NoiseDominated,
+                };
+            }
+            let p = report.primary_rate_mean.unwrap_or(0.0);
+            let c = report.cross_precision_mean.unwrap_or(0.0);
+            if p < 0.50 && c < 0.50 {
+                return RecommendedIntervention::TheoryDemote {
+                    reason: TheoryDemoteReason::BothDimensionsLow,
+                };
+            }
+        }
+
+        // Step 7: heuristics inconclusive
+        RecommendedIntervention::Manual {
+            reason: format!(
+                "{:?} theory; no specific intervention pattern matched",
+                report.summary_class,
+            ),
+        }
     }
 
     /// Retract an extension-relation edge. ADR 0034 / 0035.
@@ -6618,6 +6789,46 @@ impl FamilyQuality {
 
 // ─── ADR 0071: unified theory-quality report ──────────────────────
 
+/// ADR 0072 — Build the per-axiom stats vector for a
+/// `TheoryQualityReport`. Index-aligned with `axiom_ids`.
+/// Each stat carries primary rate (caller-supplied),
+/// cross-precision (computed via F.1's
+/// `axiom_cross_precision`), and the L2 family ids the axiom
+/// participates in.
+pub(crate) fn build_per_axiom_stats(
+    rset: &RSet,
+    axiom_ids: &[String],
+    substrates: &[RSet],
+    primary_rates: &HashMap<String, f64>,
+) -> Vec<AxiomQualityStats> {
+    // Pre-compute axiom → family ids map once.
+    let mut axiom_to_families: HashMap<String, Vec<String>> = HashMap::new();
+    for fam in rset.axiom_shape_families() {
+        for m in rset.shape_family_members(fam) {
+            axiom_to_families
+                .entry(m.to_string())
+                .or_default()
+                .push(fam.to_string());
+        }
+    }
+    axiom_ids
+        .iter()
+        .map(|ax| {
+            let mut family_ids = axiom_to_families
+                .get(ax)
+                .cloned()
+                .unwrap_or_default();
+            family_ids.sort();
+            AxiomQualityStats {
+                axiom_id: ax.clone(),
+                primary_rate: primary_rates.get(ax).copied(),
+                cross_precision: rset.axiom_cross_precision(ax, substrates),
+                family_ids,
+            }
+        })
+        .collect()
+}
+
 /// ADR 0071 §3 — Compose a theory-level quality class from the
 /// primary / cross / noise-family dimensions. Pure function;
 /// thresholds are constants reviewable in a future ADR.
@@ -6702,6 +6913,22 @@ pub enum TheoryQualityClass {
     Indeterminate,
 }
 
+/// ADR 0072 — Per-axiom quality stats, included in
+/// `TheoryQualityReport`. Each entry corresponds 1:1 with
+/// `axiom_ids[i]`. Useful for ADR 0072's intervention
+/// classifier to identify specific weak axioms for
+/// `AxiomRepair` recommendations.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AxiomQualityStats {
+    pub axiom_id: String,
+    /// Per-axiom primary hit rate, sourced from caller.
+    pub primary_rate: Option<f64>,
+    /// Per-axiom cross-precision (F.1).
+    pub cross_precision: Option<f64>,
+    /// L2 shape family ids this axiom is a member of.
+    pub family_ids: Vec<String>,
+}
+
 /// ADR 0071 — Unified theory-quality facts surface.
 ///
 /// Aggregates seven previously-scattered signals (primary hit
@@ -6713,6 +6940,9 @@ pub enum TheoryQualityClass {
 /// **Read-only.** Building a report does not mutate rset or
 /// memory; calling `theory_quality_report` is safe to invoke
 /// repeatedly without side effects.
+///
+/// Schema extended additively by ADR 0072 with `per_axiom_stats`.
+/// Existing aggregate fields unchanged.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TheoryQualityReport {
     pub theory_id: String,
@@ -6735,6 +6965,80 @@ pub struct TheoryQualityReport {
     pub neighborhood: Option<TheoryNeighborhood>,
 
     pub summary_class: TheoryQualityClass,
+
+    /// ADR 0072 — Per-axiom stats. Index-aligned with
+    /// `axiom_ids`. Empty only when `axiom_count == 0`.
+    pub per_axiom_stats: Vec<AxiomQualityStats>,
+}
+
+// ─── ADR 0072: intervention policy classifier ─────────────────────
+
+/// ADR 0072 — Reason for recommending whole-theory demotion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheoryDemoteReason {
+    /// Both primary AND cross-precision below 0.50 — theory
+    /// underperforms on every observable dimension.
+    BothDimensionsLow,
+    /// Theory dominated (≥ 50% of axioms) by noise-family members
+    /// AND no targeted family demote would suffice (e.g., the
+    /// noise is spread across multiple families).
+    NoiseDominated,
+}
+
+/// ADR 0072 — Reason a merge is recommended. Records the
+/// structural property motivating the recommendation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeRationale {
+    /// Identical / near-identical column profiles (F.3 max_diff ≈ 0).
+    Equivalent,
+    /// Disjoint family signatures, both quality-passing (F.2.1).
+    Complementary,
+    /// Both theories Signal-class with overlapping membership.
+    HighQualityBoth,
+}
+
+/// ADR 0072 — Output of the intervention policy classifier.
+///
+/// Read-only recommendation. The caller decides whether to act
+/// on it. Each variant maps to an existing intervention API:
+///
+/// | variant | action API |
+/// |---|---|
+/// | None | (no-op) |
+/// | ShadowMonitor | observation-only; record reason in logs |
+/// | FamilyDemote | `RSet::retract_shape_family(family_id)` |
+/// | AxiomRepair | `RSet::retract_theory_member(theory, ax)` per axiom |
+/// | TheoryDemote | `RSet::retract_theory(theory_id)` |
+/// | DemoteSuperset | same as TheoryDemote, but the reason is structural |
+/// | Merge | `RSet::merge_theories(theory_id, partner_theory)` |
+/// | Manual | flag for human review |
+#[derive(Debug, Clone, PartialEq)]
+pub enum RecommendedIntervention {
+    /// Theory is healthy; no intervention recommended.
+    None,
+    /// Insufficient data to act safely. `reason` is a short
+    /// human-readable note for logging.
+    ShadowMonitor { reason: String },
+    /// Retract a specific shape family (cross-cutting noise).
+    FamilyDemote {
+        family_id: String,
+        family_class: FamilyQualityClass,
+    },
+    /// Detach specific axioms from this theory.
+    AxiomRepair { axiom_ids: Vec<String> },
+    /// Retract the entire theory + cascade.
+    TheoryDemote { reason: TheoryDemoteReason },
+    /// Theory is a noisy superset of a Signal-class subset
+    /// theory; demoting this theory preserves the cleaner
+    /// explanation.
+    DemoteSuperset { cleaner_subset_theory: String },
+    /// Merge with a complementary partner.
+    Merge {
+        partner_theory: String,
+        rationale: MergeRationale,
+    },
+    /// All heuristics inconclusive; flag for manual review.
+    Manual { reason: String },
 }
 
 #[cfg(test)]

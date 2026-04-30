@@ -3627,6 +3627,377 @@
         assert_eq!(reports[1].theory_id, "t_b");
     }
 
+    // ─── ADR 0072 — intervention policy classifier ───────────────
+
+    /// Helper: build a synthetic TheoryQualityReport for testing
+    /// the classifier's decision tree without a full RSet setup.
+    fn synth_report(
+        theory_id: &str,
+        axiom_ids: Vec<String>,
+        primary_mean: Option<f64>,
+        cross_mean: Option<f64>,
+        noise_axiom_count: usize,
+        family_memberships: Vec<crate::TheoryFamilyMembership>,
+        neighborhood_extends: Vec<String>,
+        per_axiom_stats: Vec<crate::AxiomQualityStats>,
+    ) -> crate::TheoryQualityReport {
+        let summary_class = crate::compute_theory_summary_class(
+            primary_mean,
+            cross_mean,
+            noise_axiom_count,
+            axiom_ids.len(),
+        );
+        crate::TheoryQualityReport {
+            theory_id: theory_id.to_string(),
+            axiom_count: axiom_ids.len(),
+            axiom_ids,
+            primary_rate_mean: primary_mean,
+            primary_rate_min: primary_mean,
+            primary_rate_qualifying: 1,
+            cross_precision_mean: cross_mean,
+            cross_precision_min: cross_mean,
+            cross_precision_max: cross_mean,
+            cross_precision_qualifying: 1,
+            family_memberships,
+            noise_family_axiom_count: noise_axiom_count,
+            signal_family_axiom_count: 0,
+            neighborhood: Some(crate::TheoryNeighborhood {
+                equal: Vec::new(),
+                extends: neighborhood_extends,
+                extended_by: Vec::new(),
+                independent: Vec::new(),
+                parallel: Vec::new(),
+            }),
+            summary_class,
+            per_axiom_stats,
+        }
+    }
+
+    #[test]
+    fn adr0072_indeterminate_returns_shadow_monitor() {
+        let r = synth_report("t_x", vec![], None, None, 0, vec![], vec![], vec![]);
+        let rec = crate::RSet::recommend_intervention(&r, &[]);
+        assert!(matches!(
+            rec,
+            crate::RecommendedIntervention::ShadowMonitor { .. }
+        ));
+    }
+
+    #[test]
+    fn adr0072_signal_returns_none() {
+        let r = synth_report(
+            "t_x",
+            vec!["ax_a".to_string()],
+            Some(0.95),
+            Some(0.92),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&r, &[]);
+        assert_eq!(rec, crate::RecommendedIntervention::None);
+    }
+
+    #[test]
+    fn adr0072_demote_superset_when_extending_signal_subset() {
+        // focal is Mixed and extends a Signal subset → DemoteSuperset.
+        let focal = synth_report(
+            "t_super",
+            vec!["ax_a".to_string(), "ax_b".to_string()],
+            Some(0.55), // Mixed
+            Some(0.55),
+            0,
+            vec![],
+            vec!["t_sub".to_string()], // focal extends t_sub
+            vec![],
+        );
+        let sub = synth_report(
+            "t_sub",
+            vec!["ax_a".to_string()],
+            Some(0.95),
+            Some(0.92),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[sub]);
+        match rec {
+            crate::RecommendedIntervention::DemoteSuperset {
+                cleaner_subset_theory,
+            } => {
+                assert_eq!(cleaner_subset_theory, "t_sub");
+            }
+            other => panic!("expected DemoteSuperset, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn adr0072_family_demote_when_noise_family_present() {
+        // focal is Mixed (not Indeterminate, not Signal); has a
+        // noise-class family → FamilyDemote.
+        let noise_member = crate::TheoryFamilyMembership {
+            family_id: "shape_premise_p0-0_p1-2".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: Some(crate::KIND_PREMISE_SHARED),
+            quality: Some(crate::FamilyQuality {
+                mean: 0.40,
+                std: 0.0,
+                min: 0.40,
+                max: 0.40,
+                n_members: 4,
+            }),
+            class: Some(crate::FamilyQualityClass::Uniform),
+            members_in_theory: 3,
+            family_total_members: 4,
+        };
+        let focal = synth_report(
+            "t_x",
+            vec!["ax_a".to_string(), "ax_b".to_string(), "ax_c".to_string(), "ax_d".to_string()],
+            Some(0.55),
+            Some(0.55),
+            0, // not noise-dominated by axiom count, but family is noise-class
+            vec![noise_member],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[]);
+        match rec {
+            crate::RecommendedIntervention::FamilyDemote {
+                family_id,
+                family_class,
+            } => {
+                assert_eq!(family_id, "shape_premise_p0-0_p1-2");
+                assert_eq!(family_class, crate::FamilyQualityClass::Uniform);
+            }
+            other => panic!("expected FamilyDemote, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn adr0072_axiom_repair_when_few_weak_axioms() {
+        // focal is Mixed, primary_mean ≥ 0.60, no noise families.
+        // Per-axiom stats: 4 axioms; one has primary 0.10 (weak),
+        // others healthy → AxiomRepair.
+        let stats = vec![
+            crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.95),
+                cross_precision: Some(0.90),
+                family_ids: vec![],
+            },
+            crate::AxiomQualityStats {
+                axiom_id: "ax_b".to_string(),
+                primary_rate: Some(0.90),
+                cross_precision: Some(0.85),
+                family_ids: vec![],
+            },
+            crate::AxiomQualityStats {
+                axiom_id: "ax_weak".to_string(),
+                primary_rate: Some(0.10), // ← weak
+                cross_precision: Some(0.20),
+                family_ids: vec![],
+            },
+            crate::AxiomQualityStats {
+                axiom_id: "ax_d".to_string(),
+                primary_rate: Some(0.85),
+                cross_precision: Some(0.80),
+                family_ids: vec![],
+            },
+        ];
+        let focal = synth_report(
+            "t_x",
+            vec![
+                "ax_a".to_string(),
+                "ax_b".to_string(),
+                "ax_weak".to_string(),
+                "ax_d".to_string(),
+            ],
+            Some(0.70), // Mixed (high enough for repair eligibility)
+            Some(0.70),
+            0,
+            vec![],
+            vec![],
+            stats,
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[]);
+        match rec {
+            crate::RecommendedIntervention::AxiomRepair { axiom_ids } => {
+                assert_eq!(axiom_ids, vec!["ax_weak".to_string()]);
+            }
+            other => panic!("expected AxiomRepair, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn adr0072_merge_when_complementary_signal_partner_exists() {
+        // focal is Mixed, no noise families, no weak axioms.
+        // Partner is Signal with disjoint family signature.
+        let focal_fam = crate::TheoryFamilyMembership {
+            family_id: "shape_premise_p0-1".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: Some(crate::KIND_PREMISE_SHARED),
+            quality: None,
+            class: None, // not noise (not covered in step 3)
+            members_in_theory: 1,
+            family_total_members: 2,
+        };
+        let other_fam = crate::TheoryFamilyMembership {
+            family_id: "shape_conclusion_c0-0".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: Some(crate::KIND_CONCLUSION_SHARED),
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        };
+        let focal = synth_report(
+            "t_focal",
+            vec!["ax_a".to_string()],
+            Some(0.70),
+            Some(0.55),
+            0,
+            vec![focal_fam],
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.70),
+                cross_precision: Some(0.55),
+                family_ids: vec!["shape_premise_p0-1".to_string()],
+            }],
+        );
+        let partner = synth_report(
+            "t_partner",
+            vec!["ax_p".to_string()],
+            Some(0.95),
+            Some(0.92),
+            0,
+            vec![other_fam],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        match rec {
+            crate::RecommendedIntervention::Merge {
+                partner_theory,
+                rationale,
+            } => {
+                assert_eq!(partner_theory, "t_partner");
+                assert_eq!(rationale, crate::MergeRationale::Complementary);
+            }
+            other => panic!("expected Merge, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn adr0072_theory_demote_when_both_dims_low() {
+        let focal = synth_report(
+            "t_x",
+            vec!["ax_a".to_string()],
+            Some(0.30),
+            Some(0.40),
+            0,
+            vec![],
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.30),
+                cross_precision: Some(0.40),
+                family_ids: vec![],
+            }],
+        );
+        // Summary should be Noise (both < 0.50).
+        assert_eq!(focal.summary_class, crate::TheoryQualityClass::Noise);
+        let rec = crate::RSet::recommend_intervention(&focal, &[]);
+        match rec {
+            crate::RecommendedIntervention::TheoryDemote { reason } => {
+                assert_eq!(reason, crate::TheoryDemoteReason::BothDimensionsLow);
+            }
+            other => panic!("expected TheoryDemote, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn adr0072_priority_demote_superset_beats_family_demote() {
+        // focal has BOTH (a) extends Signal subset AND (b) noise
+        // family. Per priority order, DemoteSuperset wins.
+        let noise_member = crate::TheoryFamilyMembership {
+            family_id: "shape_premise_p0-0_p1-2".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: Some(crate::KIND_PREMISE_SHARED),
+            quality: None,
+            class: Some(crate::FamilyQualityClass::Noise),
+            members_in_theory: 1,
+            family_total_members: 4,
+        };
+        let focal = synth_report(
+            "t_super",
+            vec!["ax_a".to_string(), "ax_b".to_string()],
+            Some(0.55),
+            Some(0.55),
+            0,
+            vec![noise_member],
+            vec!["t_sub".to_string()],
+            vec![],
+        );
+        let sub = synth_report(
+            "t_sub",
+            vec!["ax_a".to_string()],
+            Some(0.95),
+            Some(0.92),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[sub]);
+        assert!(matches!(
+            rec,
+            crate::RecommendedIntervention::DemoteSuperset { .. }
+        ));
+    }
+
+    #[test]
+    fn adr0072_manual_when_mixed_with_no_pattern() {
+        // Mixed focal, no noise family, primary < 0.60 (no repair),
+        // no Signal partner → Manual.
+        let focal = synth_report(
+            "t_x",
+            vec!["ax_a".to_string(), "ax_b".to_string()],
+            Some(0.55),
+            Some(0.55),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[]);
+        assert!(matches!(
+            rec,
+            crate::RecommendedIntervention::Manual { .. }
+        ));
+    }
+
+    #[test]
+    fn adr0072_per_axiom_stats_populated_in_report() {
+        // Smoke test: theory_quality_report() now includes
+        // per_axiom_stats with one entry per axiom.
+        use crate::{R, THEORY_MARKER};
+        let mut rs = crate::RSet::new();
+        rs.register_axiom_with_intension("ax_tpl_v3_p0-1_p1-2_c0-2");
+        rs.add(R::new(THEORY_MARKER, "t_x"));
+        rs.add(R::new("t_x", "ax_tpl_v3_p0-1_p1-2_c0-2"));
+        let primary: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let report = rs.theory_quality_report("t_x", &[], &primary).unwrap();
+        assert_eq!(report.per_axiom_stats.len(), report.axiom_count);
+        assert_eq!(
+            report.per_axiom_stats[0].axiom_id,
+            "ax_tpl_v3_p0-1_p1-2_c0-2"
+        );
+    }
+
     #[test]
     fn adr0066_generate_substrate_satisfies_transitivity() {
         // Build an RSet with transitivity holding (poset). Name a
