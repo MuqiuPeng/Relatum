@@ -252,3 +252,36 @@ pub const META_SHAPE_FAMILY_MARKER: &str = "__meta_shape_family__";
 /// itself is declared (compile-time); the instance population is
 /// data-derived.
 pub const SUPER_META_SHAPE_FAMILY_MARKER: &str = "__super_meta_shape_family__";
+
+/// ADR 0070 — Family kind tag ids. Each shape family (L2/L3/L4)
+/// is tagged with a kind id describing the structural similarity
+/// predicate that grouped its members. Currently inferred from id
+/// prefix; ADR 0070 also writes the explicit edge
+/// `R(<family_id>, <kind_id>)` during discovery so the kind
+/// becomes queryable from rset rather than parsed from the id
+/// string.
+///
+/// Kinds are themselves meta-R tokens (registered in
+/// `collect_meta_ids`); they don't pollute data-id accounting.
+pub const KIND_MARKER: &str = "__family_kind__";
+
+/// L2 kind: members share the canonicalized premise edge set.
+/// Beta-1 / ADR 0068 introduction.
+pub const KIND_PREMISE_SHARED: &str = "kind_premise_shared";
+
+/// L2 kind: members share the canonicalized conclusion edge.
+/// B.3 introduction.
+pub const KIND_CONCLUSION_SHARED: &str = "kind_conclusion_shared";
+
+/// L3 kind: L2 families that share a single individual premise
+/// edge. B.6 introduction.
+pub const KIND_PREMISE_EDGE_SHARED: &str = "kind_premise_edge_shared";
+
+/// L3 kind: L2 families that share a member axiom (cross-cutting
+/// overlap between premise and conclusion families). B.8.1
+/// introduction; promoted to lib via ADR 0070 Step 2.
+pub const KIND_MEMBER_OVERLAP: &str = "kind_member_overlap";
+
+/// L4 kind: L3 nested families that share a member L2 family.
+/// B.7 introduction.
+pub const KIND_MEMBER_L2_SHARED: &str = "kind_member_l2_shared";

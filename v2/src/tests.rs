@@ -3161,6 +3161,161 @@
         assert!(nested.is_empty());
     }
 
+    // ─── ADR 0070 — shape-family abstraction layer (unified API) ───
+
+    #[test]
+    fn adr0070_family_layer_dispatches_correctly() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let _ = rs.discover_nested_shape_families(2);
+
+        // L2 family
+        for fid in rs.axiom_shape_families().iter().map(|s| s.to_string()).collect::<Vec<_>>() {
+            assert_eq!(rs.family_layer(&fid), Some(crate::FamilyLayer::L2));
+        }
+        // L3 family (if any)
+        for fid in rs.nested_shape_families().iter().map(|s| s.to_string()).collect::<Vec<_>>() {
+            assert_eq!(rs.family_layer(&fid), Some(crate::FamilyLayer::L3));
+        }
+        // Non-family id
+        assert_eq!(rs.family_layer("ax_tpl_v3_p0-1_p1-2_c0-2"), None);
+        assert_eq!(rs.family_layer("does_not_exist"), None);
+    }
+
+    #[test]
+    fn adr0070_family_members_dispatches_by_layer() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        // Pick an L2 family and verify members match shape_family_members.
+        let any_l2 = rs.axiom_shape_families()[0].to_string();
+        let direct = rs
+            .shape_family_members(&any_l2)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let dispatched = rs
+            .family_members(&any_l2)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(direct, dispatched);
+    }
+
+    #[test]
+    fn adr0070_family_kind_recognizes_premise_and_conclusion() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+
+        // Find a premise family and a conclusion family.
+        let mut saw_premise = false;
+        let mut saw_conclusion = false;
+        for fid in rs.axiom_shape_families() {
+            if fid.starts_with("shape_premise_") {
+                assert_eq!(
+                    rs.family_kind(fid),
+                    Some(crate::KIND_PREMISE_SHARED),
+                    "premise family kind mismatch for {}",
+                    fid,
+                );
+                saw_premise = true;
+            } else if fid.starts_with("shape_conclusion_") {
+                assert_eq!(
+                    rs.family_kind(fid),
+                    Some(crate::KIND_CONCLUSION_SHARED),
+                    "conclusion family kind mismatch for {}",
+                    fid,
+                );
+                saw_conclusion = true;
+            }
+        }
+        assert!(saw_premise || saw_conclusion);
+    }
+
+    #[test]
+    fn adr0070_kind_constants_in_collect_meta_ids() {
+        // Even with NO families minted, the kind constants must be
+        // classified as meta so they never pollute data-id accounting.
+        let rs = crate::RSet::new();
+        let meta = rs.collect_meta_ids();
+        assert!(meta.contains(crate::KIND_PREMISE_SHARED));
+        assert!(meta.contains(crate::KIND_CONCLUSION_SHARED));
+        assert!(meta.contains(crate::KIND_PREMISE_EDGE_SHARED));
+        assert!(meta.contains(crate::KIND_MEMBER_OVERLAP));
+        assert!(meta.contains(crate::KIND_MEMBER_L2_SHARED));
+        assert!(meta.contains(crate::KIND_MARKER));
+    }
+
+    #[test]
+    fn adr0070_family_quality_class_thresholds() {
+        // Sanity checks for the FamilyQuality::class() classifier.
+        let signal = crate::FamilyQuality {
+            mean: 0.92, std: 0.10, min: 0.75, max: 1.0, n_members: 3,
+        };
+        assert_eq!(signal.class(), crate::FamilyQualityClass::Signal);
+
+        let noise = crate::FamilyQuality {
+            mean: 0.40, std: 0.10, min: 0.20, max: 0.55, n_members: 3,
+        };
+        assert_eq!(noise.class(), crate::FamilyQualityClass::Noise);
+
+        let uniform = crate::FamilyQuality {
+            mean: 0.49, std: 0.0, min: 0.49, max: 0.49, n_members: 4,
+        };
+        // Uniform takes precedence over Noise even though mean < 0.50.
+        assert_eq!(uniform.class(), crate::FamilyQualityClass::Uniform);
+
+        let mixed = crate::FamilyQuality {
+            mean: 0.65, std: 0.20, min: 0.30, max: 0.95, n_members: 3,
+        };
+        assert_eq!(mixed.class(), crate::FamilyQualityClass::Mixed);
+    }
+
+    #[test]
+    fn adr0070_kind_tag_edge_emitted_during_discovery() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        // For each minted L2 family there should be an edge
+        // R(family_id, kind_id) with one of the L2 kinds.
+        for fid in rs.axiom_shape_families() {
+            let kind = rs.family_kind(fid);
+            assert!(kind.is_some(), "family {} has no kind", fid);
+            let kind_str = kind.unwrap();
+            let edge = crate::R::new(fid.to_string(), kind_str.to_string());
+            assert!(
+                rs.contains(&edge),
+                "missing kind tag edge for family {}",
+                fid,
+            );
+        }
+    }
+
     #[test]
     fn adr0066_generate_substrate_satisfies_transitivity() {
         // Build an RSet with transitivity holding (poset). Name a

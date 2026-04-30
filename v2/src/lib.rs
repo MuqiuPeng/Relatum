@@ -2802,6 +2802,8 @@ impl RSet {
                 continue;
             }
             self.add(R::new(SHAPE_FAMILY_MARKER, shape_id.clone()));
+            // ADR 0070 — kind tag edge.
+            self.add(R::new(shape_id.clone(), KIND_PREMISE_SHARED));
             for m in &members {
                 self.add(R::new(shape_id.clone(), m.clone()));
             }
@@ -2824,6 +2826,8 @@ impl RSet {
                 continue;
             }
             self.add(R::new(SHAPE_FAMILY_MARKER, shape_id.clone()));
+            // ADR 0070 — kind tag edge.
+            self.add(R::new(shape_id.clone(), KIND_CONCLUSION_SHARED));
             for m in &members {
                 self.add(R::new(shape_id.clone(), m.clone()));
             }
@@ -2946,6 +2950,8 @@ impl RSet {
                 META_SHAPE_FAMILY_MARKER,
                 meta_id.clone(),
             ));
+            // ADR 0070 — kind tag edge.
+            self.add(R::new(meta_id.clone(), KIND_PREMISE_EDGE_SHARED));
             for f in &member_families {
                 self.add(R::new(meta_id.clone(), f.clone()));
             }
@@ -3079,6 +3085,8 @@ impl RSet {
                 SUPER_META_SHAPE_FAMILY_MARKER,
                 super_id.clone(),
             ));
+            // ADR 0070 — kind tag edge.
+            self.add(R::new(super_id.clone(), KIND_MEMBER_L2_SHARED));
             for m in &member_metas {
                 self.add(R::new(super_id.clone(), m.clone()));
             }
@@ -3120,6 +3128,161 @@ impl RSet {
             .collect();
         out.sort();
         out
+    }
+
+    // ─── ADR 0070: shape-family abstraction layer (unified API) ─────
+
+    /// ADR 0070 — Layer position of a shape-family id.
+    ///
+    /// Returns `Some(L2)` for ids registered under
+    /// `SHAPE_FAMILY_MARKER`, `Some(L3)` for
+    /// `META_SHAPE_FAMILY_MARKER`, `Some(L4)` for
+    /// `SUPER_META_SHAPE_FAMILY_MARKER`, and `None` for ids that
+    /// are not registered as a family at any layer.
+    ///
+    /// O(degree of family_id) via the source index.
+    pub fn family_layer(&self, family_id: &str) -> Option<FamilyLayer> {
+        if self.is_axiom_shape_family(family_id) {
+            return Some(FamilyLayer::L2);
+        }
+        if self.is_nested_shape_family(family_id) {
+            return Some(FamilyLayer::L3);
+        }
+        if self.is_super_meta_shape_family(family_id) {
+            return Some(FamilyLayer::L4);
+        }
+        None
+    }
+
+    /// ADR 0070 — Layer-agnostic member query. Dispatches to the
+    /// appropriate per-layer member function based on which layer
+    /// the family is registered at. Returns the empty vector if
+    /// the id is not a family.
+    pub fn family_members(&self, family_id: &str) -> Vec<&str> {
+        match self.family_layer(family_id) {
+            Some(FamilyLayer::L2) => self.shape_family_members(family_id),
+            Some(FamilyLayer::L3) => self.nested_shape_family_members(family_id),
+            Some(FamilyLayer::L4) => self.super_meta_shape_family_members(family_id),
+            None => Vec::new(),
+        }
+    }
+
+    /// ADR 0070 — Family kind id. Returns the kind that grouped
+    /// this family's members. Reads the explicit kind-tag edge
+    /// `R(family_id, kind_id)` written during discovery; falls back
+    /// to id-prefix parsing if no edge is present (back-compat for
+    /// rsets serialized before ADR 0070's schema extension).
+    ///
+    /// Returns `None` for ids that are not registered families.
+    pub fn family_kind(&self, family_id: &str) -> Option<&str> {
+        if self.family_layer(family_id).is_none() {
+            return None;
+        }
+        // Prefer the explicit kind-tag edge.
+        let known_kinds: [&str; 5] = [
+            KIND_PREMISE_SHARED,
+            KIND_CONCLUSION_SHARED,
+            KIND_PREMISE_EDGE_SHARED,
+            KIND_MEMBER_OVERLAP,
+            KIND_MEMBER_L2_SHARED,
+        ];
+        for r in self.left_of(family_id) {
+            if known_kinds.contains(&r.y.as_str()) {
+                // The kind tag id is a 'static string; map back to
+                // the constant so we return a known &'static str.
+                for k in &known_kinds {
+                    if *k == r.y.as_str() {
+                        return Some(*k);
+                    }
+                }
+            }
+        }
+        // Fallback: parse from id prefix.
+        if family_id.starts_with("shape_premise_") {
+            return Some(KIND_PREMISE_SHARED);
+        }
+        if family_id.starts_with("shape_conclusion_") {
+            return Some(KIND_CONCLUSION_SHARED);
+        }
+        if family_id.starts_with("meta_premise_") {
+            return Some(KIND_PREMISE_EDGE_SHARED);
+        }
+        if family_id.starts_with("meta_via_") {
+            return Some(KIND_MEMBER_OVERLAP);
+        }
+        if family_id.starts_with("super_") {
+            return Some(KIND_MEMBER_L2_SHARED);
+        }
+        None
+    }
+
+    /// ADR 0070 — Per-family cross-precision quality summary.
+    ///
+    /// For each L2 axiom in the family's transitive member set
+    /// (L2: members directly; L3: members of member L2 families;
+    /// L4: members of L3 → L2 chain), compute axiom_cross_precision
+    /// against `substrates` and aggregate.
+    ///
+    /// Returns `None` if the family has no axioms with sufficient
+    /// data (per `axiom_cross_precision`'s gate) or if the id is
+    /// not a registered family.
+    pub fn family_quality(
+        &self,
+        family_id: &str,
+        substrates: &[RSet],
+    ) -> Option<FamilyQuality> {
+        let layer = self.family_layer(family_id)?;
+        // Resolve to L2 axiom ids.
+        let axiom_ids: Vec<String> = match layer {
+            FamilyLayer::L2 => self
+                .shape_family_members(family_id)
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            FamilyLayer::L3 => {
+                let mut s: std::collections::BTreeSet<String> =
+                    std::collections::BTreeSet::new();
+                for sf in self.nested_shape_family_members(family_id) {
+                    for m in self.shape_family_members(sf) {
+                        s.insert(m.to_string());
+                    }
+                }
+                s.into_iter().collect()
+            }
+            FamilyLayer::L4 => {
+                let mut s: std::collections::BTreeSet<String> =
+                    std::collections::BTreeSet::new();
+                for nf in self.super_meta_shape_family_members(family_id) {
+                    for sf in self.nested_shape_family_members(nf) {
+                        for m in self.shape_family_members(sf) {
+                            s.insert(m.to_string());
+                        }
+                    }
+                }
+                s.into_iter().collect()
+            }
+        };
+        let xprecs: Vec<f64> = axiom_ids
+            .iter()
+            .filter_map(|ax| self.axiom_cross_precision(ax, substrates))
+            .collect();
+        if xprecs.is_empty() {
+            return None;
+        }
+        let n = xprecs.len() as f64;
+        let mean: f64 = xprecs.iter().sum::<f64>() / n;
+        let variance: f64 =
+            xprecs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+        let std = variance.sqrt();
+        let min = xprecs.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = xprecs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        Some(FamilyQuality {
+            mean,
+            std,
+            min,
+            max,
+            n_members: xprecs.len(),
+        })
     }
 
     fn mint_theory_id(&self) -> String {
@@ -4576,6 +4739,16 @@ impl RSet {
         for smsf in self.left_of(SUPER_META_SHAPE_FAMILY_MARKER) {
             s.insert(smsf.y.to_string());
         }
+        // ADR 0070 — family kind tag tokens. Each family carries
+        // an edge `R(family_id, kind_id)` describing the structural
+        // similarity that grouped its members. Kind ids are
+        // meta-R, not data.
+        s.insert(KIND_MARKER.to_string());
+        s.insert(KIND_PREMISE_SHARED.to_string());
+        s.insert(KIND_CONCLUSION_SHARED.to_string());
+        s.insert(KIND_PREMISE_EDGE_SHARED.to_string());
+        s.insert(KIND_MEMBER_OVERLAP.to_string());
+        s.insert(KIND_MEMBER_L2_SHARED.to_string());
         for role in self.roles() {
             s.insert(role.to_string());
         }
@@ -5941,6 +6114,87 @@ pub struct IdentifierProfile {
 impl IdentifierProfile {
     pub fn total_degree(&self) -> usize {
         self.degree_out + self.degree_in
+    }
+}
+
+/// ADR 0070 — Layer position of a shape-family id within v2's
+/// abstraction lattice.
+///
+/// L0 (data) and L1 (axioms) live below the family layer; theories
+/// (L1.5) sit alongside it. Families themselves stack:
+/// L2 (axioms grouped) → L3 (L2 grouped) → L4 (L3 grouped) → L5+
+/// (recursive, deferred).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FamilyLayer {
+    /// Members are L1 axioms. Marker: `SHAPE_FAMILY_MARKER`.
+    L2,
+    /// Members are L2 shape families. Marker:
+    /// `META_SHAPE_FAMILY_MARKER`.
+    L3,
+    /// Members are L3 nested families. Marker:
+    /// `SUPER_META_SHAPE_FAMILY_MARKER`.
+    L4,
+}
+
+/// ADR 0070 — Per-family quality summary derived from per-axiom
+/// cross-precision (F.1) aggregated over family members (F.1.1).
+///
+/// `mean` and `std` are the load-bearing statistics for the
+/// signal/noise/uniform classification:
+/// - **Signal**: mean ≥ 0.80
+/// - **Noise**: mean < 0.50
+/// - **Uniform**: std < 0.05 (orthogonal to signal/noise; a
+///   variance-zero family means all members behave identically
+///   under cross-validation — Beta-1's flagship empirical finding)
+/// - **Mixed**: anything else
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FamilyQuality {
+    pub mean: f64,
+    pub std: f64,
+    pub min: f64,
+    pub max: f64,
+    pub n_members: usize,
+}
+
+/// ADR 0070 — Three-class structural classification of a family's
+/// quality, plus a `Mixed` catch-all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FamilyQualityClass {
+    /// `mean ≥ 0.80` — family members are universal predictors
+    /// across substrates.
+    Signal,
+    /// `mean < 0.50` — family members predict poorly across
+    /// substrates.
+    Noise,
+    /// `std < 0.05` — family members behave near-identically
+    /// (variance-zero = Beta-1 noise-family signature). May overlap
+    /// with Signal or Noise; reported separately because the
+    /// "uniformity" property carries diagnostic weight.
+    Uniform,
+    /// Neither signal nor noise nor uniform.
+    Mixed,
+}
+
+impl FamilyQuality {
+    /// Classify this family's quality per ADR 0070 §4.3 thresholds.
+    /// Uniform takes precedence when applicable (a variance-zero
+    /// family is reported as Uniform even if its mean places it in
+    /// Signal/Noise — the variance signature is the more diagnostic
+    /// fact).
+    pub fn class(&self) -> FamilyQualityClass {
+        const SIGNAL_THRESHOLD: f64 = 0.80;
+        const NOISE_THRESHOLD: f64 = 0.50;
+        const UNIFORM_STD_THRESHOLD: f64 = 0.05;
+        if self.std < UNIFORM_STD_THRESHOLD {
+            return FamilyQualityClass::Uniform;
+        }
+        if self.mean >= SIGNAL_THRESHOLD {
+            return FamilyQualityClass::Signal;
+        }
+        if self.mean < NOISE_THRESHOLD {
+            return FamilyQualityClass::Noise;
+        }
+        FamilyQualityClass::Mixed
     }
 }
 
