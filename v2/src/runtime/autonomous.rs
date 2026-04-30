@@ -1175,6 +1175,33 @@ impl AutonomousRuntime {
                 let minted = self.rset.discover_axiom_shape_families(2);
                 return Some(minted.len() as f64);
             }
+            ActionKind::RetractShapeFamily => {
+                // ADR 0070 Step 2. Target carries the family id.
+                // Episode delta is the count of axioms globally
+                // retracted (L2) or member links removed (L3+).
+                // Returns 0 (not None) when the family is unknown
+                // or retraction errors out — the action consumed
+                // a tick but produced no work.
+                let family_id = match &plan.target {
+                    FrontierTarget::ShapeFamily(id) => id.clone(),
+                    _ => return Some(0.0),
+                };
+                match self.rset.retract_shape_family(&family_id) {
+                    Ok(summary) => {
+                        let delta = match summary.layer {
+                            crate::FamilyLayer::L2 => {
+                                summary.axioms_globally_retracted
+                            }
+                            crate::FamilyLayer::L3
+                            | crate::FamilyLayer::L4 => {
+                                summary.member_links_removed
+                            }
+                        };
+                        return Some(delta as f64);
+                    }
+                    Err(_) => return Some(0.0),
+                }
+            }
         }
         None
     }

@@ -3285,6 +3285,213 @@ impl RSet {
         })
     }
 
+    /// ADR 0070 Step 2 — Retract a shape family wholesale.
+    ///
+    /// Promotes the inline retraction logic from the Beta-2
+    /// example to a first-class lib operation.
+    ///
+    /// Layer-dispatched semantics:
+    ///
+    /// - **L2** (axiom shape family): for each member axiom, detach
+    ///   from every theory containing it (`retract_theory_member`),
+    ///   then retract the axiom globally (`retract_axiom`). Finally
+    ///   remove the family's marker edge and kind-tag edge.
+    ///   Returns counts of theory-axiom memberships detached and
+    ///   axioms globally retracted.
+    ///
+    /// - **L3 / L4** (nested or super-meta): remove each
+    ///   `R(family_id, member_id)` link without retracting the
+    ///   underlying member family. The members remain available
+    ///   for re-aggregation under different L3+ groupings. Then
+    ///   remove the layer marker edge and kind-tag edge for the
+    ///   family being retracted.
+    ///
+    /// Idempotency: a second call after successful retraction
+    /// returns `Err(UnknownFamily)`.
+    pub fn retract_shape_family(
+        &mut self,
+        family_id: &str,
+    ) -> Result<ShapeFamilyRetractionSummary, ShapeFamilyRetractionError> {
+        let layer = self
+            .family_layer(family_id)
+            .ok_or(ShapeFamilyRetractionError::UnknownFamily)?;
+
+        let mut summary = ShapeFamilyRetractionSummary {
+            family_id: family_id.to_string(),
+            layer,
+            theory_memberships_detached: 0,
+            axioms_globally_retracted: 0,
+            member_links_removed: 0,
+            structural_edges_removed: 0,
+        };
+
+        match layer {
+            FamilyLayer::L2 => {
+                // Snapshot members before mutation.
+                let members: Vec<String> = self
+                    .shape_family_members(family_id)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                for ax in &members {
+                    // Detach from every containing theory first.
+                    let theories_with: Vec<String> = self
+                        .theories_containing(ax)
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect();
+                    for t in &theories_with {
+                        match self.retract_theory_member(t, ax) {
+                            Ok(_) => summary.theory_memberships_detached += 1,
+                            Err(e) => {
+                                return Err(
+                                    ShapeFamilyRetractionError::AxiomRetractFailed {
+                                        axiom_id: ax.clone(),
+                                        cause: format!(
+                                            "retract_theory_member({}, {}) failed: {:?}",
+                                            t, ax, e,
+                                        ),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    // Now globally retract the axiom registration.
+                    match self.retract_axiom(ax) {
+                        Ok(_) => summary.axioms_globally_retracted += 1,
+                        Err(e) => {
+                            return Err(
+                                ShapeFamilyRetractionError::AxiomRetractFailed {
+                                    axiom_id: ax.clone(),
+                                    cause: format!("retract_axiom failed: {:?}", e),
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+            FamilyLayer::L3 | FamilyLayer::L4 => {
+                // Just remove member links; do not cascade.
+                let members: Vec<String> = match layer {
+                    FamilyLayer::L3 => self
+                        .nested_shape_family_members(family_id)
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                    FamilyLayer::L4 => self
+                        .super_meta_shape_family_members(family_id)
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
+                    FamilyLayer::L2 => unreachable!(),
+                };
+                for m in &members {
+                    let edge = R::new(family_id.to_string(), m.clone());
+                    if self.remove(&edge) {
+                        summary.member_links_removed += 1;
+                    }
+                }
+            }
+        }
+
+        // Remove kind-tag edge if present.
+        let known_kinds: [&str; 5] = [
+            KIND_PREMISE_SHARED,
+            KIND_CONCLUSION_SHARED,
+            KIND_PREMISE_EDGE_SHARED,
+            KIND_MEMBER_OVERLAP,
+            KIND_MEMBER_L2_SHARED,
+        ];
+        for k in &known_kinds {
+            let edge = R::new(family_id.to_string(), (*k).to_string());
+            if self.remove(&edge) {
+                summary.structural_edges_removed += 1;
+            }
+        }
+
+        // Remove the layer marker edge.
+        let marker = match layer {
+            FamilyLayer::L2 => SHAPE_FAMILY_MARKER,
+            FamilyLayer::L3 => META_SHAPE_FAMILY_MARKER,
+            FamilyLayer::L4 => SUPER_META_SHAPE_FAMILY_MARKER,
+        };
+        let marker_edge = R::new(marker.to_string(), family_id.to_string());
+        if self.remove(&marker_edge) {
+            summary.structural_edges_removed += 1;
+        }
+
+        Ok(summary)
+    }
+
+    /// ADR 0070 Step 2 — Discover nested shape families by
+    /// **member-overlap** (B.8.1's L3 kind, promoted to lib).
+    ///
+    /// Existing L3 kind (`discover_nested_shape_families`):
+    ///   "L2 families that share an individual premise edge".
+    ///
+    /// New L3 kind (this method):
+    ///   "L2 families that share a member axiom" — captures
+    ///   cross-cutting overlap (e.g., a single axiom appearing in
+    ///   both `shape_premise_*` and `shape_conclusion_*` families).
+    ///
+    /// For each axiom that appears in `>= min_overlap` registered
+    /// L2 families, mints
+    /// `R(META_SHAPE_FAMILY_MARKER, meta_via_<axiom_id>)`,
+    /// `R(meta_via_<axiom_id>, <l2_family_id>)` per containing L2,
+    /// and the kind-tag edge
+    /// `R(meta_via_<axiom_id>, KIND_MEMBER_OVERLAP)`. Idempotent.
+    ///
+    /// Returns the list of newly-minted L3 family ids.
+    pub fn discover_nested_shape_families_by_member_overlap(
+        &mut self,
+        min_overlap: usize,
+    ) -> Vec<String> {
+        if min_overlap < 2 {
+            return Vec::new();
+        }
+        // Build map: axiom_id → list of L2 families containing it.
+        let l2_families: Vec<String> = self
+            .axiom_shape_families()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let mut axiom_to_families: std::collections::BTreeMap<
+            String,
+            Vec<String>,
+        > = std::collections::BTreeMap::new();
+        for fam in &l2_families {
+            for m in self.shape_family_members(fam) {
+                axiom_to_families
+                    .entry(m.to_string())
+                    .or_default()
+                    .push(fam.clone());
+            }
+        }
+        let mut minted: Vec<String> = Vec::new();
+        for (axiom_id, mut families) in axiom_to_families {
+            // Dedup defensively (an axiom shouldn't appear twice
+            // in the same L2 family, but the input is a Vec, not a
+            // Set — be safe).
+            families.sort();
+            families.dedup();
+            if families.len() < min_overlap {
+                continue;
+            }
+            let meta_id = format!("meta_via_{}", axiom_id);
+            if self.is_nested_shape_family(&meta_id) {
+                continue;
+            }
+            self.add(R::new(META_SHAPE_FAMILY_MARKER, meta_id.clone()));
+            // Kind-tag edge.
+            self.add(R::new(meta_id.clone(), KIND_MEMBER_OVERLAP));
+            for f in &families {
+                self.add(R::new(meta_id.clone(), f.clone()));
+            }
+            minted.push(meta_id);
+        }
+        minted
+    }
+
     fn mint_theory_id(&self) -> String {
         let existing = self.identifiers();
         let mut n = self.theories().len();

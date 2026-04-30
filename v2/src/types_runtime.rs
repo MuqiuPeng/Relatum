@@ -62,6 +62,45 @@ pub struct RetractionSummary {
     pub meta_edges_removed: usize,
 }
 
+/// ADR 0070 Step 2 — Outcome of `retract_shape_family`.
+///
+/// Field semantics differ by layer (per ADR 0070 §4.4):
+/// - **L2**: retraction cascades into axiom-level cleanup
+///   (`theory_memberships_detached` + `axioms_globally_retracted`).
+/// - **L3+**: retraction removes the family's own meta-R but does
+///   NOT cascade into member families (`member_links_removed`
+///   counts the per-member edges severed). Underlying L2 / L3
+///   abstractions remain available for re-aggregation.
+///
+/// `structural_edges_removed` counts the family's own marker +
+/// kind-tag edges (always 1 + (1 if kind tag was present)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapeFamilyRetractionSummary {
+    pub family_id: String,
+    pub layer: crate::FamilyLayer,
+    /// L2 only: number of (theory, axiom) membership edges removed.
+    pub theory_memberships_detached: usize,
+    /// L2 only: number of axioms whose registration was retracted.
+    pub axioms_globally_retracted: usize,
+    /// L3+ only: number of `R(family_id, member_id)` edges removed.
+    pub member_links_removed: usize,
+    /// All layers: marker + kind-tag edges removed for the family
+    /// itself.
+    pub structural_edges_removed: usize,
+}
+
+/// ADR 0070 Step 2 — Errors from `retract_shape_family`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShapeFamilyRetractionError {
+    /// The id is not registered as a family at any layer.
+    UnknownFamily,
+    /// L2 retraction failed mid-cascade because a member axiom
+    /// could not be retracted (e.g., still referenced by an
+    /// unrelated theory or registry inconsistency). Contains the
+    /// axiom id and the upstream error message.
+    AxiomRetractFailed { axiom_id: String, cause: String },
+}
+
 /// Combined outcome of `autonomous_and_attach`. ADR 0022.
 #[derive(Debug, Clone)]
 pub struct AutonomousAndAttachSummary {

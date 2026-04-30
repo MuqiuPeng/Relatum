@@ -191,18 +191,24 @@ fn main() {
     let (init_q, init_m, init_n) = aggregate_stats(&pre);
 
     // ── Beta-1: discover families ────────────────────────────────
+    // Idempotent call — runtime may have already auto-dispatched
+    // DiscoverAxiomShapeFamilies via the scheduler (B.5.1 wiring).
+    let _ = rt.rset.discover_axiom_shape_families(SHAPE_MIN_MEMBERS);
     let minted: Vec<String> = rt
         .rset
-        .discover_axiom_shape_families(SHAPE_MIN_MEMBERS);
+        .axiom_shape_families()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
     println!();
-    println!("=== Beta-1 step: discovered {} shape families ===", minted.len());
+    println!("=== Beta-1 step: {} shape families present ===", minted.len());
     for shape in &minted {
         let members = rt.rset.shape_family_members(shape);
         println!("  {}: {} members", shape, members.len());
     }
 
     if minted.is_empty() {
-        println!("  → INAPPLICABLE — no families discovered");
+        println!("  → INAPPLICABLE — no families present");
         return;
     }
 
@@ -294,51 +300,31 @@ fn main() {
         return;
     }
 
-    // ── Beta-2: family-level demote ─────────────────────────────
+    // ── Beta-2: family-level demote (via ADR 0070 Step 2 lib API)
     println!();
-    println!("=== Beta-2: family-level demote ===");
+    println!("=== Beta-2: family-level demote (via retract_shape_family) ===");
     let mut total_detached_memberships = 0usize;
     let mut total_retracted_axioms = 0usize;
-    let mut detached_axiom_ids: Vec<String> = Vec::new();
     for (shape, members, mean, var) in &families_to_demote {
         println!();
         println!(
             "  Family {} (mean={:.4} var={:.6}, {} members):",
             shape, mean, var, members.len(),
         );
-        for ax in members {
-            // Detach from every theory containing it.
-            let theories_with: Vec<String> = rt
-                .rset
-                .theories_containing(ax)
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            for t in &theories_with {
-                match rt.rset.retract_theory_member(t, ax) {
-                    Ok(removed) => {
-                        println!(
-                            "    detach {} from {} ({} edges)", ax, t, removed,
-                        );
-                        total_detached_memberships += 1;
-                    }
-                    Err(e) => {
-                        println!("    ✗ failed detach {} from {}: {:?}", ax, t, e);
-                    }
-                }
+        match rt.rset.retract_shape_family(shape) {
+            Ok(summary) => {
+                total_detached_memberships += summary.theory_memberships_detached;
+                total_retracted_axioms += summary.axioms_globally_retracted;
+                println!(
+                    "    layer={:?}, detached {} theory memberships, retracted {} axioms, removed {} structural edges",
+                    summary.layer,
+                    summary.theory_memberships_detached,
+                    summary.axioms_globally_retracted,
+                    summary.structural_edges_removed,
+                );
             }
-            // Now retract the axiom globally (orphan).
-            match rt.rset.retract_axiom(ax) {
-                Ok(removed) => {
-                    println!(
-                        "    retract {} globally ({} meta-R edges)", ax, removed,
-                    );
-                    total_retracted_axioms += 1;
-                    detached_axiom_ids.push(ax.clone());
-                }
-                Err(e) => {
-                    println!("    ✗ failed retract {}: {:?}", ax, e);
-                }
+            Err(e) => {
+                println!("    ✗ retract_shape_family failed: {:?}", e);
             }
         }
     }

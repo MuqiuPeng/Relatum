@@ -56,6 +56,7 @@ pub(crate) fn action_kind_to_str(a: ActionKind) -> &'static str {
         ActionKind::EvaluatePredictions => "EvaluatePredictions",
         ActionKind::ExecuteComposite => "ExecuteComposite",
         ActionKind::DiscoverAxiomShapeFamilies => "DiscoverAxiomShapeFamilies",
+        ActionKind::RetractShapeFamily => "RetractShapeFamily",
     }
 }
 
@@ -72,6 +73,7 @@ pub(crate) fn parse_action_kind(s: &str) -> Result<ActionKind, String> {
         "EvaluatePredictions" => Ok(ActionKind::EvaluatePredictions),
         "ExecuteComposite" => Ok(ActionKind::ExecuteComposite),
         "DiscoverAxiomShapeFamilies" => Ok(ActionKind::DiscoverAxiomShapeFamilies),
+        "RetractShapeFamily" => Ok(ActionKind::RetractShapeFamily),
         other => Err(format!("unknown ActionKind '{}'", other)),
     }
 }
@@ -84,6 +86,7 @@ pub(crate) fn target_to_pair(t: &FrontierTarget) -> (&'static str, String) {
         FrontierTarget::Theory(id) => ("Theory", id.clone()),
         FrontierTarget::Axiom(id) => ("Axiom", id.clone()),
         FrontierTarget::ActionSequence(id) => ("ActionSequence", id.clone()),
+        FrontierTarget::ShapeFamily(id) => ("ShapeFamily", id.clone()),
     }
 }
 
@@ -99,6 +102,7 @@ pub(crate) fn pair_to_target(kind: &str, value: &str) -> Result<FrontierTarget, 
         "ActionSequence" => {
             Ok(FrontierTarget::ActionSequence(value.to_string()))
         }
+        "ShapeFamily" => Ok(FrontierTarget::ShapeFamily(value.to_string())),
         other => Err(format!("unknown FrontierTarget kind '{}'", other)),
     }
 }
@@ -257,7 +261,8 @@ pub(crate) fn check_no_tab_or_newline(t: &FrontierTarget, ctx: &str) -> Result<(
         FrontierTarget::Pattern(s)
         | FrontierTarget::Theory(s)
         | FrontierTarget::Axiom(s)
-        | FrontierTarget::ActionSequence(s) => s,
+        | FrontierTarget::ActionSequence(s)
+        | FrontierTarget::ShapeFamily(s) => s,
     };
     if id.contains('\t') || id.contains('\n') {
         return Err(format!(

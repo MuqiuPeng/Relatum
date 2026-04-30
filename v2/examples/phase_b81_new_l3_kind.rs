@@ -50,26 +50,20 @@ fn main() {
     }
 
     // NEW L3 kind: family pairs sharing a member axiom
+    // ADR 0070 Step 2: lifted from inline code to lib API.
     println!();
-    println!("=== Proposed: NEW L3 kind — family-overlap-by-shared-member ===");
+    println!("=== ADR 0070 Step 2: discover_nested_shape_families_by_member_overlap ===");
 
-    // Build map: axiom_id → list of L2 families containing it
-    let mut axiom_to_families: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for fam in &l2 {
-        for m in rt.rset.shape_family_members(fam) {
-            axiom_to_families.entry(m.to_string()).or_default().push(fam.clone());
-        }
-    }
-
-    // Group L2 families by shared axiom
+    let new_l3_ids = rt.rset.discover_nested_shape_families_by_member_overlap(2);
     let mut new_l3: Vec<(String, HashSet<String>)> = Vec::new();
-    for (axiom, families) in &axiom_to_families {
-        if families.len() >= 2 {
-            let unique_families: HashSet<String> = families.iter().cloned().collect();
-            // Name: meta_via_<axiom>
-            let id = format!("meta_via_{}", axiom);
-            new_l3.push((id, unique_families));
-        }
+    for id in &new_l3_ids {
+        let members: HashSet<String> = rt
+            .rset
+            .nested_shape_family_members(id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        new_l3.push((id.clone(), members));
     }
     new_l3.sort_by(|a, b| a.0.cmp(&b.0));
 

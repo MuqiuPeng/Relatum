@@ -51,6 +51,23 @@ pub enum ActionKind {
     /// new). Pure structural derivation; no rset mutation outside
     /// the meta-R additions for the family registrations.
     DiscoverAxiomShapeFamilies,
+    /// ADR 0070 Step 2 — Retract a named shape family wholesale.
+    ///
+    /// The target family id is carried on the `ActionPlan` via
+    /// `FrontierTarget::ShapeFamily(id)`. ActionKind itself stays
+    /// `Copy + Hash` so it can keep participating in
+    /// `SequenceStats` HashMaps and `MetaScheduler` mutation
+    /// accounting without per-key heap data.
+    ///
+    /// Layer-dispatched: L2 cascades to axiom-level cleanup
+    /// (detach from all theories + global axiom retraction);
+    /// L3+ removes the family's own meta-R without recursing into
+    /// its members.
+    ///
+    /// Episode delta is the count of axioms globally retracted
+    /// (L2) or the count of member links removed (L3+); 0 if the
+    /// family is not registered.
+    RetractShapeFamily,
 }
 
 /// Where (in the RSet) the action should apply. ADR 0052 / A1.
@@ -66,6 +83,9 @@ pub enum FrontierTarget {
     /// ADR 0061 / Phase H1.2. Used by `ExecuteComposite` to carry
     /// the `seq_N` id of a promoted action-sequence pair.
     ActionSequence(String),
+    /// ADR 0070 Step 2. Used by `RetractShapeFamily` to carry the
+    /// family id (L2/L3/L4) being retracted.
+    ShapeFamily(String),
 }
 
 #[derive(Debug, Clone)]

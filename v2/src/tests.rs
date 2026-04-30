@@ -3316,6 +3316,174 @@
         }
     }
 
+    // ─── ADR 0070 Step 2 — operation lift ──────────────────────────
+
+    #[test]
+    fn adr0070_retract_l2_family_globally_retracts_orphan_axioms() {
+        // Build a 2-axiom L2 family with NO theory containing them
+        // (orphan-axiom case). After retract_shape_family, axioms
+        // should be globally retracted; theory-detachment count = 0.
+        let mut rs = crate::RSet::new();
+        let ax_a = "ax_tpl_v3_p0-0_p1-2_c0-1";
+        let ax_b = "ax_tpl_v3_p0-0_p1-2_c0-2";
+        for id in [ax_a, ax_b] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let l2_fams = rs.axiom_shape_families();
+        assert_eq!(l2_fams.len(), 1);
+        let fid = l2_fams[0].to_string();
+        assert_eq!(rs.shape_family_members(&fid).len(), 2);
+
+        let summary = rs.retract_shape_family(&fid).unwrap();
+        assert_eq!(summary.layer, crate::FamilyLayer::L2);
+        assert_eq!(summary.axioms_globally_retracted, 2);
+        // No theories → no detachments.
+        assert_eq!(summary.theory_memberships_detached, 0);
+        // Marker edge always removed; kind tag depends on whether
+        // it was emitted (yes, post-Step-1).
+        assert!(summary.structural_edges_removed >= 1);
+
+        assert!(!rs.is_axiom_shape_family(&fid));
+        assert!(!rs.is_axiom(ax_a));
+        assert!(!rs.is_axiom(ax_b));
+    }
+
+    #[test]
+    fn adr0070_retract_l2_family_detaches_from_theories() {
+        // Same setup as above but with a theory containing both
+        // axioms. The theory must be created via raw R edges to
+        // bypass name_theory's validation (axiom rates would
+        // require a substrate that satisfies the noise template).
+        use crate::{R, AXIOM_MARKER, THEORY_MARKER};
+        let mut rs = crate::RSet::new();
+        let ax_a = "ax_tpl_v3_p0-0_p1-2_c0-1";
+        let ax_b = "ax_tpl_v3_p0-0_p1-2_c0-2";
+        for id in [ax_a, ax_b] {
+            rs.register_axiom_with_intension(id);
+        }
+        // Manually mint a theory containing both axioms (bypasses
+        // verify_axiom_holds; the test target is retraction logic,
+        // not theory-naming validation).
+        let theory_id = "t_test";
+        rs.add(R::new(THEORY_MARKER, theory_id));
+        rs.add(R::new(theory_id, ax_a));
+        rs.add(R::new(theory_id, ax_b));
+        // Sanity: theory is recognized.
+        assert!(rs.is_theory(theory_id));
+        assert_eq!(rs.theories_containing(ax_a).len(), 1);
+        assert_eq!(rs.theories_containing(ax_b).len(), 1);
+
+        let _ = rs.discover_axiom_shape_families(2);
+        let fid = rs.axiom_shape_families()[0].to_string();
+        let summary = rs.retract_shape_family(&fid).unwrap();
+        assert_eq!(summary.theory_memberships_detached, 2);
+        assert_eq!(summary.axioms_globally_retracted, 2);
+        assert_eq!(rs.theory_axioms(theory_id).len(), 0);
+        let _ = AXIOM_MARKER; // keep import used
+    }
+
+    #[test]
+    fn adr0070_retract_l3_family_does_not_cascade_to_l2() {
+        // Build two L2 families that share a premise edge → L3 mints.
+        // Retract the L3 → both L2 stay registered.
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let _ = rs.discover_nested_shape_families(2);
+        let l2_count_before = rs.axiom_shape_families().len();
+        let l3 = rs.nested_shape_families();
+        assert!(!l3.is_empty(), "expected at least one L3 family");
+        let l3_id = l3[0].to_string();
+
+        let summary = rs.retract_shape_family(&l3_id).unwrap();
+        assert_eq!(summary.layer, crate::FamilyLayer::L3);
+        assert_eq!(summary.axioms_globally_retracted, 0);
+        assert_eq!(summary.theory_memberships_detached, 0);
+        assert!(summary.member_links_removed >= 2);
+
+        assert!(!rs.is_nested_shape_family(&l3_id));
+        // L2 families unchanged.
+        assert_eq!(rs.axiom_shape_families().len(), l2_count_before);
+    }
+
+    #[test]
+    fn adr0070_retract_unknown_family_errors() {
+        let mut rs = crate::RSet::new();
+        let err = rs.retract_shape_family("never_minted").unwrap_err();
+        assert_eq!(err, crate::ShapeFamilyRetractionError::UnknownFamily);
+    }
+
+    #[test]
+    fn adr0070_retract_idempotency_after_first_call() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let fid = rs.axiom_shape_families()[0].to_string();
+        let first = rs.retract_shape_family(&fid);
+        assert!(first.is_ok());
+        let second = rs.retract_shape_family(&fid);
+        // Second call should error: the family no longer exists.
+        assert!(second.is_err());
+    }
+
+    #[test]
+    fn adr0070_member_overlap_l3_kind_mints_when_axiom_in_two_l2() {
+        // An axiom that has both a premise group AND a conclusion
+        // group lands in 2 L2 families → member-overlap mints.
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        // The shared axiom `ax_tpl_v3_p0-1_p1-2_c0-2` is in BOTH a
+        // shape_premise_p0-1_p1-2 family AND a shape_conclusion_c0-2
+        // family.
+        let minted = rs.discover_nested_shape_families_by_member_overlap(2);
+        assert!(!minted.is_empty(), "expected member-overlap L3 to mint");
+        for id in &minted {
+            assert!(id.starts_with("meta_via_"));
+            assert!(rs.is_nested_shape_family(id));
+            assert_eq!(
+                rs.family_kind(id),
+                Some(crate::KIND_MEMBER_OVERLAP),
+            );
+        }
+    }
+
+    #[test]
+    fn adr0070_member_overlap_l3_kind_idempotent() {
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-1_p1-2_c0-2",
+            "ax_tpl_v3_p0-1_p1-2_c2-0",
+            "ax_tpl_v3_p0-1_p2-1_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        let first = rs.discover_nested_shape_families_by_member_overlap(2);
+        let second = rs.discover_nested_shape_families_by_member_overlap(2);
+        assert!(!first.is_empty());
+        assert!(second.is_empty(), "second call must not duplicate");
+    }
+
     #[test]
     fn adr0066_generate_substrate_satisfies_transitivity() {
         // Build an RSet with transitivity holding (poset). Name a
