@@ -3174,12 +3174,12 @@ impl RSet {
     /// rsets serialized before ADR 0070's schema extension).
     ///
     /// Returns `None` for ids that are not registered families.
-    pub fn family_kind(&self, family_id: &str) -> Option<&str> {
+    pub fn family_kind(&self, family_id: &str) -> Option<&'static str> {
         if self.family_layer(family_id).is_none() {
             return None;
         }
         // Prefer the explicit kind-tag edge.
-        let known_kinds: [&str; 5] = [
+        let known_kinds: [&'static str; 5] = [
             KIND_PREMISE_SHARED,
             KIND_CONCLUSION_SHARED,
             KIND_PREMISE_EDGE_SHARED,
@@ -3187,13 +3187,9 @@ impl RSet {
             KIND_MEMBER_L2_SHARED,
         ];
         for r in self.left_of(family_id) {
-            if known_kinds.contains(&r.y.as_str()) {
-                // The kind tag id is a 'static string; map back to
-                // the constant so we return a known &'static str.
-                for k in &known_kinds {
-                    if *k == r.y.as_str() {
-                        return Some(*k);
-                    }
+            for k in &known_kinds {
+                if *k == r.y.as_str() {
+                    return Some(*k);
                 }
             }
         }
@@ -4169,6 +4165,180 @@ impl RSet {
         out.independent.sort();
         out.parallel.sort();
         Some(out)
+    }
+
+    // ─── ADR 0071: unified theory-quality report ─────────────────
+
+    /// ADR 0071 — Build a unified theory-quality report.
+    ///
+    /// Aggregates the seven scattered theory-quality signals into
+    /// a single read-only struct. Pure read; no rset / memory
+    /// mutation.
+    ///
+    /// `substrates`: imagined-substrate set for cross-precision
+    /// (per F.1 / Alpha-7+). Pass empty slice to skip
+    /// cross-precision (the report's `cross_precision_*` fields
+    /// will be `None`).
+    ///
+    /// `primary_rates`: caller-supplied per-axiom primary hit
+    /// rates. Sourced from `Memory::prediction_state.hit_rate`
+    /// (G1.5 / ADR 0059). Axioms missing from the map contribute
+    /// `None` to primary stats.
+    ///
+    /// Returns `None` if `theory_id` is not a registered theory.
+    pub fn theory_quality_report(
+        &self,
+        theory_id: &str,
+        substrates: &[RSet],
+        primary_rates: &HashMap<String, f64>,
+    ) -> Option<TheoryQualityReport> {
+        if !self.is_theory(theory_id) {
+            return None;
+        }
+        let mut axiom_ids: Vec<String> = self
+            .theory_axioms(theory_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        axiom_ids.sort();
+        let axiom_count = axiom_ids.len();
+
+        // ── Primary stats ───────────────────────────────────
+        let primary_vec: Vec<f64> = axiom_ids
+            .iter()
+            .filter_map(|ax| primary_rates.get(ax).copied())
+            .collect();
+        let primary_qual = primary_vec.len();
+        let primary_mean = if primary_qual > 0 {
+            Some(primary_vec.iter().sum::<f64>() / primary_qual as f64)
+        } else {
+            None
+        };
+        let primary_min = if primary_qual > 0 {
+            Some(primary_vec.iter().cloned().fold(f64::INFINITY, f64::min))
+        } else {
+            None
+        };
+
+        // ── Cross-precision stats (per-axiom aggregate) ─────
+        let cross_vec: Vec<f64> = axiom_ids
+            .iter()
+            .filter_map(|ax| self.axiom_cross_precision(ax, substrates))
+            .collect();
+        let cross_qual = cross_vec.len();
+        let cross_mean = if cross_qual > 0 {
+            Some(cross_vec.iter().sum::<f64>() / cross_qual as f64)
+        } else {
+            None
+        };
+        let cross_min = if cross_qual > 0 {
+            Some(cross_vec.iter().cloned().fold(f64::INFINITY, f64::min))
+        } else {
+            None
+        };
+        let cross_max = if cross_qual > 0 {
+            Some(cross_vec.iter().cloned().fold(f64::NEG_INFINITY, f64::max))
+        } else {
+            None
+        };
+
+        // ── Family memberships ──────────────────────────────
+        let axiom_set: HashSet<String> =
+            axiom_ids.iter().cloned().collect();
+        let mut family_memberships: Vec<TheoryFamilyMembership> = Vec::new();
+        // L2 families
+        for fam in self.axiom_shape_families() {
+            let members: Vec<String> = self
+                .shape_family_members(fam)
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+            let in_theory = members
+                .iter()
+                .filter(|m| axiom_set.contains(*m))
+                .count();
+            if in_theory == 0 {
+                continue;
+            }
+            let quality = self.family_quality(fam, substrates);
+            let class = quality.as_ref().map(|q| q.class());
+            family_memberships.push(TheoryFamilyMembership {
+                family_id: fam.to_string(),
+                layer: FamilyLayer::L2,
+                kind: self.family_kind(fam),
+                quality,
+                class,
+                members_in_theory: in_theory,
+                family_total_members: members.len(),
+            });
+        }
+        // Sort for deterministic output.
+        family_memberships
+            .sort_by(|a, b| a.family_id.cmp(&b.family_id));
+
+        let noise_family_axiom_count: usize = family_memberships
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.class,
+                    Some(FamilyQualityClass::Noise)
+                        | Some(FamilyQualityClass::Uniform)
+                )
+            })
+            .map(|m| m.members_in_theory)
+            .sum();
+        let signal_family_axiom_count: usize = family_memberships
+            .iter()
+            .filter(|m| matches!(m.class, Some(FamilyQualityClass::Signal)))
+            .map(|m| m.members_in_theory)
+            .sum();
+
+        // ── Neighborhood ────────────────────────────────────
+        let neighborhood = self.theory_neighborhood(theory_id);
+
+        // ── Summary class ───────────────────────────────────
+        let summary_class = compute_theory_summary_class(
+            primary_mean,
+            cross_mean,
+            noise_family_axiom_count,
+            axiom_count,
+        );
+
+        Some(TheoryQualityReport {
+            theory_id: theory_id.to_string(),
+            axiom_ids,
+            axiom_count,
+            primary_rate_mean: primary_mean,
+            primary_rate_min: primary_min,
+            primary_rate_qualifying: primary_qual,
+            cross_precision_mean: cross_mean,
+            cross_precision_min: cross_min,
+            cross_precision_max: cross_max,
+            cross_precision_qualifying: cross_qual,
+            family_memberships,
+            noise_family_axiom_count,
+            signal_family_axiom_count,
+            neighborhood,
+            summary_class,
+        })
+    }
+
+    /// ADR 0071 — Convenience: build reports for all registered
+    /// theories. Sorted by theory id for deterministic output.
+    pub fn theory_quality_report_all(
+        &self,
+        substrates: &[RSet],
+        primary_rates: &HashMap<String, f64>,
+    ) -> Vec<TheoryQualityReport> {
+        let mut theories: Vec<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        theories.sort();
+        theories
+            .into_iter()
+            .filter_map(|t| {
+                self.theory_quality_report(&t, substrates, primary_rates)
+            })
+            .collect()
     }
 
     /// Retract an extension-relation edge. ADR 0034 / 0035.
@@ -6444,6 +6614,127 @@ impl FamilyQuality {
         }
         FamilyQualityClass::Mixed
     }
+}
+
+// ─── ADR 0071: unified theory-quality report ──────────────────────
+
+/// ADR 0071 §3 — Compose a theory-level quality class from the
+/// primary / cross / noise-family dimensions. Pure function;
+/// thresholds are constants reviewable in a future ADR.
+pub(crate) fn compute_theory_summary_class(
+    primary_mean: Option<f64>,
+    cross_mean: Option<f64>,
+    noise_family_axiom_count: usize,
+    axiom_count: usize,
+) -> TheoryQualityClass {
+    const SIGNAL_FLOOR: f64 = 0.80;
+    const NOISE_CEIL: f64 = 0.50;
+
+    // Indeterminate: no data on any of the three dimensions.
+    if primary_mean.is_none()
+        && cross_mean.is_none()
+        && noise_family_axiom_count == 0
+    {
+        return TheoryQualityClass::Indeterminate;
+    }
+    // Theory dominated by noise families → Noise.
+    if axiom_count > 0
+        && noise_family_axiom_count * 2 >= axiom_count
+    {
+        return TheoryQualityClass::Noise;
+    }
+    // Both observation and imagination signals failing → Noise.
+    let p = primary_mean.unwrap_or(0.0);
+    let c = cross_mean.unwrap_or(0.0);
+    if p < NOISE_CEIL && c < NOISE_CEIL {
+        return TheoryQualityClass::Noise;
+    }
+    // Both signals strong AND no noise contamination → Signal.
+    if p >= SIGNAL_FLOOR
+        && c >= SIGNAL_FLOOR
+        && noise_family_axiom_count == 0
+    {
+        return TheoryQualityClass::Signal;
+    }
+    TheoryQualityClass::Mixed
+}
+
+/// ADR 0071 — Per-family entry inside a `TheoryQualityReport`.
+///
+/// Captures a shape-family that contains at least one of the
+/// theory's axioms, plus the family's quality classification (when
+/// substrate data is provided).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TheoryFamilyMembership {
+    pub family_id: String,
+    pub layer: FamilyLayer,
+    /// One of the `KIND_*` constants, or `None` if the family is
+    /// unrecognized (shouldn't happen for runtime-minted families
+    /// post-ADR 0070 Step 1).
+    pub kind: Option<&'static str>,
+    /// Family-level cross-precision quality. `None` when no
+    /// substrates were provided or no axiom in the family had
+    /// sufficient data.
+    pub quality: Option<FamilyQuality>,
+    /// Family quality classification (Signal/Noise/Uniform/Mixed)
+    /// derived from `quality`. `None` if `quality` is `None`.
+    pub class: Option<FamilyQualityClass>,
+    /// How many of *this theory's* axioms are members of this
+    /// family.
+    pub members_in_theory: usize,
+    /// How many total members the family has across all theories.
+    pub family_total_members: usize,
+}
+
+/// ADR 0071 — Theory-level quality classification.
+///
+/// Composed from per-axiom primary hit rate, per-axiom cross-precision,
+/// and family-membership noise count via the rule documented in
+/// ADR 0071 §3. `Indeterminate` distinguishes "no data" from
+/// "data but mixed" — an important distinction for downstream
+/// classifiers (ADR 0072) that should NOT treat data-absence as
+/// signal-absence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TheoryQualityClass {
+    Signal,
+    Mixed,
+    Noise,
+    Indeterminate,
+}
+
+/// ADR 0071 — Unified theory-quality facts surface.
+///
+/// Aggregates seven previously-scattered signals (primary hit
+/// rate, cross-precision, family quality, family kind, theory
+/// neighborhood, noise-family contamination, signal-family
+/// participation) into one read-only struct. Consumed by ADR
+/// 0072's intervention classifier.
+///
+/// **Read-only.** Building a report does not mutate rset or
+/// memory; calling `theory_quality_report` is safe to invoke
+/// repeatedly without side effects.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TheoryQualityReport {
+    pub theory_id: String,
+    pub axiom_ids: Vec<String>,
+    pub axiom_count: usize,
+
+    pub primary_rate_mean: Option<f64>,
+    pub primary_rate_min: Option<f64>,
+    pub primary_rate_qualifying: usize,
+
+    pub cross_precision_mean: Option<f64>,
+    pub cross_precision_min: Option<f64>,
+    pub cross_precision_max: Option<f64>,
+    pub cross_precision_qualifying: usize,
+
+    pub family_memberships: Vec<TheoryFamilyMembership>,
+    pub noise_family_axiom_count: usize,
+    pub signal_family_axiom_count: usize,
+
+    pub neighborhood: Option<TheoryNeighborhood>,
+
+    pub summary_class: TheoryQualityClass,
 }
 
 #[cfg(test)]

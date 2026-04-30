@@ -3507,6 +3507,126 @@
         assert!(second.is_empty(), "second call must not duplicate");
     }
 
+    // ─── ADR 0071 — unified theory-quality report ──────────────────
+
+    #[test]
+    fn adr0071_unknown_theory_returns_none() {
+        let rs = crate::RSet::new();
+        let primary: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let report = rs.theory_quality_report("does_not_exist", &[], &primary);
+        assert!(report.is_none());
+    }
+
+    #[test]
+    fn adr0071_indeterminate_when_no_data() {
+        // A theory with no primary data, no substrates, no families
+        // → Indeterminate.
+        use crate::{R, THEORY_MARKER};
+        let mut rs = crate::RSet::new();
+        let ax = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        rs.register_axiom_with_intension(ax);
+        // Manually mint a theory containing the axiom.
+        rs.add(R::new(THEORY_MARKER, "t_x"));
+        rs.add(R::new("t_x", ax));
+        let primary: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let report = rs.theory_quality_report("t_x", &[], &primary).unwrap();
+        assert_eq!(report.theory_id, "t_x");
+        assert_eq!(report.axiom_count, 1);
+        assert!(report.primary_rate_mean.is_none());
+        assert!(report.cross_precision_mean.is_none());
+        assert_eq!(report.noise_family_axiom_count, 0);
+        assert_eq!(report.summary_class, crate::TheoryQualityClass::Indeterminate);
+    }
+
+    #[test]
+    fn adr0071_signal_when_both_dims_high_and_no_noise() {
+        // Use the theory_summary_class composition rule directly.
+        let cls = crate::compute_theory_summary_class(
+            Some(0.95), Some(0.92), 0, 4,
+        );
+        assert_eq!(cls, crate::TheoryQualityClass::Signal);
+    }
+
+    #[test]
+    fn adr0071_noise_when_both_dims_low() {
+        let cls = crate::compute_theory_summary_class(
+            Some(0.20), Some(0.30), 0, 4,
+        );
+        assert_eq!(cls, crate::TheoryQualityClass::Noise);
+    }
+
+    #[test]
+    fn adr0071_noise_when_dominated_by_noise_families() {
+        // axiom_count=4, noise_family_axiom_count=2 → 2*2 >= 4 → Noise.
+        let cls = crate::compute_theory_summary_class(
+            Some(0.85), Some(0.90), 2, 4,
+        );
+        assert_eq!(cls, crate::TheoryQualityClass::Noise);
+    }
+
+    #[test]
+    fn adr0071_mixed_when_one_dim_low() {
+        let cls = crate::compute_theory_summary_class(
+            Some(0.85), Some(0.40), 0, 4,
+        );
+        assert_eq!(cls, crate::TheoryQualityClass::Mixed);
+    }
+
+    #[test]
+    fn adr0071_family_memberships_listed_correctly() {
+        // Build a theory whose axioms participate in shape families.
+        // Verify each family appears as a TheoryFamilyMembership entry
+        // with correct kind and member counts.
+        use crate::{R, THEORY_MARKER, FamilyLayer};
+        let mut rs = crate::RSet::new();
+        for id in [
+            "ax_tpl_v3_p0-0_p1-2_c0-1",
+            "ax_tpl_v3_p0-0_p1-2_c0-2",
+        ] {
+            rs.register_axiom_with_intension(id);
+        }
+        let _ = rs.discover_axiom_shape_families(2);
+        // Mint theory containing both axioms.
+        rs.add(R::new(THEORY_MARKER, "t_x"));
+        rs.add(R::new("t_x", "ax_tpl_v3_p0-0_p1-2_c0-1"));
+        rs.add(R::new("t_x", "ax_tpl_v3_p0-0_p1-2_c0-2"));
+
+        let primary: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let report = rs.theory_quality_report("t_x", &[], &primary).unwrap();
+        assert!(!report.family_memberships.is_empty());
+        for m in &report.family_memberships {
+            assert_eq!(m.layer, FamilyLayer::L2);
+            assert!(m.kind.is_some(), "family {} kind should be set", m.family_id);
+            // Both members are in this theory.
+            assert_eq!(m.members_in_theory, 2);
+            assert_eq!(m.family_total_members, 2);
+        }
+    }
+
+    #[test]
+    fn adr0071_report_all_sorted_and_complete() {
+        use crate::{R, THEORY_MARKER};
+        let mut rs = crate::RSet::new();
+        let ax = "ax_tpl_v3_p0-1_p1-2_c0-2";
+        rs.register_axiom_with_intension(ax);
+        // Mint two theories in arbitrary insertion order.
+        rs.add(R::new(THEORY_MARKER, "t_b"));
+        rs.add(R::new("t_b", ax));
+        rs.add(R::new(THEORY_MARKER, "t_a"));
+        rs.add(R::new("t_a", ax));
+
+        let primary: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        let reports = rs.theory_quality_report_all(&[], &primary);
+        assert_eq!(reports.len(), 2);
+        // Sorted by id.
+        assert_eq!(reports[0].theory_id, "t_a");
+        assert_eq!(reports[1].theory_id, "t_b");
+    }
+
     #[test]
     fn adr0066_generate_substrate_satisfies_transitivity() {
         // Build an RSet with transitivity holding (poset). Name a

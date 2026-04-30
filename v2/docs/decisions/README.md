@@ -100,3 +100,4 @@ Commit hash(es), file pointers.
 - [0068](0068-axiom-shape-families.md) — Axiom shape families (Phase Beta-1, first runtime extension of structural vocabulary post-H1)
 - [0069](0069-identifier-minting.md) — Identifier minting / generative axioms (Phase G, contract for growing the identifier space)
 - [0070](0070-shape-family-abstraction-layer.md) — Shape-family abstraction layer (consolidation of B.2-B.8.1 + F.1.1 into a formal cognitive layer; supersedes 0068's narrower scope)
+- [0071](0071-unified-theory-quality-report.md) — Unified theory-quality report (Level 1.5 — facts surface; consolidates primary + cross + family + neighborhood signals; gates ADR 0072's intervention classifier)
