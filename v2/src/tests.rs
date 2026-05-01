@@ -4214,6 +4214,92 @@
         ));
     }
 
+    // ── ADR 0072 — visualization helpers ────────────────────────
+
+    #[test]
+    fn adr0072_viz_quality_report_not_empty_for_indeterminate() {
+        let r = synth_report(
+            "t_x",
+            vec![],
+            None,
+            None,
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let s = crate::RSet::format_quality_report(&r);
+        assert!(s.contains("t_x"));
+        assert!(s.contains("Indeterminate"));
+    }
+
+    #[test]
+    fn adr0072_viz_decision_trace_matches_recommendation_signal() {
+        let r = synth_report(
+            "t_x",
+            vec!["ax_a".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let trace = crate::RSet::format_decision_trace(&r, &[]);
+        let rec = crate::RSet::recommend_intervention(&r, &[]);
+        assert_eq!(rec, crate::RecommendedIntervention::None);
+        assert!(trace.contains("Step 1 (Signal class?):   yes"));
+        assert!(trace.contains("→ None"));
+    }
+
+    #[test]
+    fn adr0072_viz_decision_trace_matches_recommendation_family_demote() {
+        let noise_member = crate::TheoryFamilyMembership {
+            family_id: "shape_premise_p0-0_p1-2".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: Some(crate::KIND_PREMISE_SHARED),
+            quality: None,
+            class: Some(crate::FamilyQualityClass::Uniform),
+            members_in_theory: 4,
+            family_total_members: 4,
+        };
+        let r = synth_report(
+            "t_x",
+            vec!["ax_a".to_string(), "ax_b".to_string(), "ax_c".to_string(), "ax_d".to_string()],
+            Some(0.55),
+            Some(0.55),
+            0,
+            vec![noise_member],
+            vec![],
+            vec![],
+        );
+        let trace = crate::RSet::format_decision_trace(&r, &[]);
+        let rec = crate::RSet::recommend_intervention(&r, &[]);
+        assert!(matches!(
+            rec,
+            crate::RecommendedIntervention::FamilyDemote { .. }
+        ));
+        assert!(trace.contains("Step 3 (noise/uniform family?):  yes"));
+        assert!(trace.contains("→ FamilyDemote"));
+    }
+
+    #[test]
+    fn adr0072_viz_decision_trace_explains_indeterminate_path() {
+        let r = synth_report(
+            "t_x",
+            vec![],
+            None,
+            None,
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let trace = crate::RSet::format_decision_trace(&r, &[]);
+        assert!(trace.contains("Step 0 (Indeterminate?):  ✓ FIRES"));
+        assert!(trace.contains("→ ShadowMonitor"));
+    }
+
     #[test]
     fn adr0072_per_axiom_stats_populated_in_report() {
         // Smoke test: theory_quality_report() now includes

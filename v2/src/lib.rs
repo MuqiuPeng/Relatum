@@ -4542,6 +4542,440 @@ impl RSet {
         }
     }
 
+    /// Visualization — render a `TheoryQualityReport` as a
+    /// human-readable text block. Useful for debugging /
+    /// inspecting / sharing what the runtime "thinks" about a
+    /// theory.
+    ///
+    /// Self-contained: caller passes the report; no rset / runtime
+    /// access required. Output is a single multi-line String.
+    pub fn format_quality_report(report: &TheoryQualityReport) -> String {
+        let mut out = String::new();
+        let cls_label = match report.summary_class {
+            TheoryQualityClass::Signal => "Signal",
+            TheoryQualityClass::Mixed => "Mixed",
+            TheoryQualityClass::Noise => "Noise",
+            TheoryQualityClass::Indeterminate => "Indeterminate",
+        };
+        out.push_str(&format!(
+            "──── Quality report: {} ────\n",
+            report.theory_id,
+        ));
+        out.push_str(&format!(
+            "  axioms: {} ({} qualifying primary, {} qualifying cross)\n",
+            report.axiom_count,
+            report.primary_rate_qualifying,
+            report.cross_precision_qualifying,
+        ));
+        out.push_str(&format!(
+            "  primary rate:   mean={}  min={}\n",
+            fmt_opt(report.primary_rate_mean),
+            fmt_opt(report.primary_rate_min),
+        ));
+        out.push_str(&format!(
+            "  cross-precision: mean={}  min={}  max={}\n",
+            fmt_opt(report.cross_precision_mean),
+            fmt_opt(report.cross_precision_min),
+            fmt_opt(report.cross_precision_max),
+        ));
+        out.push_str(&format!(
+            "  noise-family axioms: {}/{}\n",
+            report.noise_family_axiom_count, report.axiom_count,
+        ));
+        out.push_str(&format!(
+            "  signal-family axioms: {}/{}\n",
+            report.signal_family_axiom_count, report.axiom_count,
+        ));
+        out.push_str(&format!("  summary: {}\n", cls_label));
+        if !report.family_memberships.is_empty() {
+            out.push_str("  family memberships:\n");
+            for m in &report.family_memberships {
+                let kind = m.kind.unwrap_or("?");
+                let cls = match m.class {
+                    Some(FamilyQualityClass::Signal) => "Signal",
+                    Some(FamilyQualityClass::Noise) => "Noise",
+                    Some(FamilyQualityClass::Uniform) => "Uniform",
+                    Some(FamilyQualityClass::Mixed) => "Mixed",
+                    None => "—",
+                };
+                out.push_str(&format!(
+                    "    {} [{}] {}/{} class={}\n",
+                    m.family_id,
+                    kind,
+                    m.members_in_theory,
+                    m.family_total_members,
+                    cls,
+                ));
+            }
+        }
+        if let Some(n) = &report.neighborhood {
+            let any = !n.equal.is_empty()
+                || !n.extends.is_empty()
+                || !n.extended_by.is_empty()
+                || !n.parallel.is_empty()
+                || !n.independent.is_empty();
+            if any {
+                out.push_str("  neighborhood:");
+                if !n.equal.is_empty() {
+                    out.push_str(&format!(" equal={:?}", n.equal));
+                }
+                if !n.extends.is_empty() {
+                    out.push_str(&format!(" extends={:?}", n.extends));
+                }
+                if !n.extended_by.is_empty() {
+                    out.push_str(&format!(" extended_by={:?}", n.extended_by));
+                }
+                if !n.parallel.is_empty() {
+                    out.push_str(&format!(" parallel={:?}", n.parallel));
+                }
+                if !n.independent.is_empty() {
+                    out.push_str(&format!(" independent={:?}", n.independent));
+                }
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    /// Visualization — walk the ADR 0072 decision tree explaining
+    /// WHY each step fires or doesn't, ending in the final
+    /// recommendation.
+    ///
+    /// Output is a multi-line String suitable for terminal /
+    /// log printing. The trace mirrors the priority order in
+    /// `recommend_intervention` and reproduces its result; if
+    /// the two diverge, this function's text wins as
+    /// documentation (and the divergence is a bug).
+    pub fn format_decision_trace(
+        report: &TheoryQualityReport,
+        other_reports: &[TheoryQualityReport],
+    ) -> String {
+        let mut out = String::new();
+        out.push_str(&format!(
+            "──── Decision trace: {} ────\n",
+            report.theory_id,
+        ));
+
+        // Step 0
+        if report.summary_class == TheoryQualityClass::Indeterminate {
+            out.push_str("  Step 0 (Indeterminate?):  ✓ FIRES\n");
+            out.push_str("    summary_class is Indeterminate; no data on any dimension.\n");
+            out.push_str("  → ShadowMonitor(\"no data on any quality dimension\")\n");
+            return out;
+        }
+        out.push_str("  Step 0 (Indeterminate?):  no\n");
+
+        // Step 1
+        if report.summary_class == TheoryQualityClass::Signal {
+            const HQB_FLOOR: f64 = 0.95;
+            let focal_cross = report.cross_precision_mean.unwrap_or(0.0);
+            out.push_str("  Step 1 (Signal class?):   yes\n");
+            if focal_cross >= HQB_FLOOR {
+                out.push_str(&format!(
+                    "    cross_precision_mean = {} ≥ {} → check HighQualityBoth merge candidates\n",
+                    fmt_opt(report.cross_precision_mean),
+                    HQB_FLOOR,
+                ));
+                for other in other_reports {
+                    if other.summary_class != TheoryQualityClass::Signal {
+                        continue;
+                    }
+                    let other_cross = other.cross_precision_mean.unwrap_or(0.0);
+                    if other_cross >= HQB_FLOOR {
+                        out.push_str(&format!(
+                            "    partner {} is Signal-class with cross_mean={} ≥ {} → MATCH\n",
+                            other.theory_id,
+                            fmt_opt(other.cross_precision_mean),
+                            HQB_FLOOR,
+                        ));
+                        out.push_str(&format!(
+                            "  → Merge({}, HighQualityBoth) [Step 5.5 / Addendum 1]\n",
+                            other.theory_id,
+                        ));
+                        return out;
+                    } else {
+                        out.push_str(&format!(
+                            "    partner {} is Signal but cross_mean={} < {} → skip\n",
+                            other.theory_id,
+                            fmt_opt(other.cross_precision_mean),
+                            HQB_FLOOR,
+                        ));
+                    }
+                }
+                out.push_str("    no eligible HighQualityBoth partner\n");
+            } else {
+                out.push_str(&format!(
+                    "    cross_precision_mean = {} < {} → skip HighQualityBoth check\n",
+                    fmt_opt(report.cross_precision_mean),
+                    HQB_FLOOR,
+                ));
+            }
+            out.push_str("  → None (theory healthy)\n");
+            return out;
+        }
+        out.push_str("  Step 1 (Signal class?):   no\n");
+
+        // Step 2 — DemoteSuperset
+        let mut step2_fired = false;
+        if let Some(neigh) = &report.neighborhood {
+            out.push_str("  Step 2 (extends Signal subset?):");
+            if neigh.extends.is_empty() {
+                out.push_str(" no (focal extends no theory)\n");
+            } else {
+                out.push('\n');
+                for sub in &neigh.extends {
+                    let sub_report =
+                        other_reports.iter().find(|r| &r.theory_id == sub);
+                    match sub_report {
+                        Some(sr) => {
+                            let cls = match sr.summary_class {
+                                TheoryQualityClass::Signal => "Signal",
+                                TheoryQualityClass::Mixed => "Mixed",
+                                TheoryQualityClass::Noise => "Noise",
+                                TheoryQualityClass::Indeterminate => {
+                                    "Indeterminate"
+                                }
+                            };
+                            out.push_str(&format!(
+                                "    extends [{}] which is {} → {}\n",
+                                sub,
+                                cls,
+                                if sr.summary_class
+                                    == TheoryQualityClass::Signal
+                                {
+                                    "MATCH"
+                                } else {
+                                    "skip"
+                                },
+                            ));
+                            if sr.summary_class
+                                == TheoryQualityClass::Signal
+                            {
+                                out.push_str(&format!(
+                                    "  → DemoteSuperset(of {}) [Step 2]\n",
+                                    sub,
+                                ));
+                                step2_fired = true;
+                                break;
+                            }
+                        }
+                        None => {
+                            out.push_str(&format!(
+                                "    extends [{}] but report not in others → skip\n",
+                                sub,
+                            ));
+                        }
+                    }
+                }
+            }
+        } else {
+            out.push_str(
+                "  Step 2 (extends Signal subset?):  no (no neighborhood data)\n",
+            );
+        }
+        if step2_fired {
+            return out;
+        }
+
+        // Step 3 — FamilyDemote
+        let noise_fams: Vec<&TheoryFamilyMembership> = report
+            .family_memberships
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.class,
+                    Some(FamilyQualityClass::Noise)
+                        | Some(FamilyQualityClass::Uniform)
+                )
+            })
+            .collect();
+        out.push_str(&format!(
+            "  Step 3 (noise/uniform family?):  {}\n",
+            if noise_fams.is_empty() { "no" } else { "yes" },
+        ));
+        if !noise_fams.is_empty() {
+            let mut sorted = noise_fams.clone();
+            sorted.sort_by(|a, b| {
+                b.members_in_theory
+                    .cmp(&a.members_in_theory)
+                    .then_with(|| a.family_id.cmp(&b.family_id))
+            });
+            for m in &sorted {
+                let cls = match m.class {
+                    Some(FamilyQualityClass::Noise) => "Noise",
+                    Some(FamilyQualityClass::Uniform) => "Uniform",
+                    _ => "?",
+                };
+                out.push_str(&format!(
+                    "    {} ({}, {} members in theory)\n",
+                    m.family_id, cls, m.members_in_theory,
+                ));
+            }
+            let target = sorted[0];
+            let target_cls = target
+                .class
+                .unwrap_or(FamilyQualityClass::Mixed);
+            out.push_str(&format!(
+                "  → FamilyDemote({}, {:?}) [Step 3, target = max(members_in_theory) tiebreak by id]\n",
+                target.family_id, target_cls,
+            ));
+            return out;
+        }
+
+        // Step 4 — AxiomRepair
+        out.push_str("  Step 4 (Mixed + few weak axioms?):");
+        if report.summary_class == TheoryQualityClass::Mixed
+            && report.primary_rate_mean.unwrap_or(0.0) >= 0.60
+        {
+            const REPAIR_WEAK_THRESHOLD: f64 = 0.30;
+            let weak: Vec<&AxiomQualityStats> = report
+                .per_axiom_stats
+                .iter()
+                .filter(|s| {
+                    s.primary_rate.unwrap_or(1.0) < REPAIR_WEAK_THRESHOLD
+                        || s.cross_precision.unwrap_or(1.0)
+                            < REPAIR_WEAK_THRESHOLD
+                })
+                .collect();
+            out.push_str(&format!(
+                " Mixed + primary={} ≥ 0.60; checking per-axiom...\n",
+                fmt_opt(report.primary_rate_mean),
+            ));
+            if !weak.is_empty() && weak.len() <= report.axiom_count / 2 {
+                let weak_ids: Vec<String> =
+                    weak.iter().map(|s| s.axiom_id.clone()).collect();
+                out.push_str(&format!(
+                    "    {} weak axioms (≤ axiom_count/2 = {}); fires\n",
+                    weak.len(),
+                    report.axiom_count / 2,
+                ));
+                out.push_str(&format!(
+                    "  → AxiomRepair({:?}) [Step 4]\n",
+                    weak_ids,
+                ));
+                return out;
+            } else {
+                out.push_str(&format!(
+                    "    {} weak axioms; need 1..={} → skip\n",
+                    weak.len(),
+                    report.axiom_count / 2,
+                ));
+            }
+        } else if report.summary_class != TheoryQualityClass::Mixed {
+            out.push_str(" no (summary != Mixed)\n");
+        } else {
+            out.push_str(&format!(
+                " no (primary={} < 0.60 repair gate)\n",
+                fmt_opt(report.primary_rate_mean),
+            ));
+        }
+
+        // Step 5 — Complementary merge (with near-disjoint Jaccard)
+        out.push_str("  Step 5 (Mixed + Signal partner with near-disjoint signature?):");
+        if report.summary_class == TheoryQualityClass::Mixed {
+            const NEAR_DISJOINT: f64 = 0.50;
+            let focal_fams: HashSet<&str> = report
+                .family_memberships
+                .iter()
+                .map(|m| m.family_id.as_str())
+                .collect();
+            let mut found_partner: Option<String> = None;
+            out.push('\n');
+            for other in other_reports {
+                if other.summary_class != TheoryQualityClass::Signal {
+                    continue;
+                }
+                let other_fams: HashSet<&str> = other
+                    .family_memberships
+                    .iter()
+                    .map(|m| m.family_id.as_str())
+                    .collect();
+                let inter = focal_fams.intersection(&other_fams).count();
+                let union = focal_fams.union(&other_fams).count();
+                let jaccard = if union == 0 {
+                    0.0
+                } else {
+                    inter as f64 / union as f64
+                };
+                let verdict = if jaccard <= NEAR_DISJOINT {
+                    "MATCH"
+                } else {
+                    "skip"
+                };
+                out.push_str(&format!(
+                    "    partner {} (Signal): Jaccard = {}/{} = {:.4} {} {} → {}\n",
+                    other.theory_id,
+                    inter,
+                    union,
+                    jaccard,
+                    if jaccard <= NEAR_DISJOINT {
+                        "≤"
+                    } else {
+                        ">"
+                    },
+                    NEAR_DISJOINT,
+                    verdict,
+                ));
+                if jaccard <= NEAR_DISJOINT {
+                    found_partner = Some(other.theory_id.clone());
+                    break;
+                }
+            }
+            if let Some(p) = found_partner {
+                out.push_str(&format!(
+                    "  → Merge({}, Complementary) [Step 5 / Addendum 2 near-disjoint]\n",
+                    p,
+                ));
+                return out;
+            }
+            out.push_str("    no eligible Signal partner\n");
+        } else {
+            out.push_str(" no (summary != Mixed)\n");
+        }
+
+        // Step 6 — TheoryDemote
+        out.push_str(&format!(
+            "  Step 6 (Noise class?):  {}\n",
+            if report.summary_class == TheoryQualityClass::Noise {
+                "yes"
+            } else {
+                "no"
+            },
+        ));
+        if report.summary_class == TheoryQualityClass::Noise {
+            if report.axiom_count > 0
+                && report.noise_family_axiom_count * 2
+                    >= report.axiom_count
+            {
+                out.push_str(&format!(
+                    "    noise_family_axiom_count {} × 2 ≥ axiom_count {} → fires\n",
+                    report.noise_family_axiom_count, report.axiom_count,
+                ));
+                out.push_str("  → TheoryDemote(NoiseDominated) [Step 6]\n");
+                return out;
+            }
+            let p = report.primary_rate_mean.unwrap_or(0.0);
+            let c = report.cross_precision_mean.unwrap_or(0.0);
+            if p < 0.50 && c < 0.50 {
+                out.push_str(&format!(
+                    "    primary={} < 0.50 AND cross={} < 0.50 → fires\n",
+                    fmt_opt(report.primary_rate_mean),
+                    fmt_opt(report.cross_precision_mean),
+                ));
+                out.push_str("  → TheoryDemote(BothDimensionsLow) [Step 6]\n");
+                return out;
+            }
+            out.push_str("    no Noise sub-condition matches\n");
+        }
+
+        // Step 7 — Manual
+        out.push_str(&format!(
+            "  Step 7 (fallback):  no specific pattern matched.\n  → Manual({:?})\n",
+            report.summary_class,
+        ));
+        out
+    }
+
     /// Retract an extension-relation edge. ADR 0034 / 0035.
     pub fn retract_extension(&mut self, ext_id: &str) -> Result<usize, TheoryError> {
         if !self.instances.contains(&R::new(EXTENDS_MARKER, ext_id)) {
@@ -6909,6 +7343,14 @@ pub(crate) fn build_per_axiom_stats(
 /// ADR 0071 §3 — Compose a theory-level quality class from the
 /// primary / cross / noise-family dimensions. Pure function;
 /// thresholds are constants reviewable in a future ADR.
+/// ADR 0072 visualization helper — format `Option<f64>` compactly.
+fn fmt_opt(v: Option<f64>) -> String {
+    match v {
+        Some(x) => format!("{:.4}", x),
+        None => "—".to_string(),
+    }
+}
+
 pub(crate) fn compute_theory_summary_class(
     primary_mean: Option<f64>,
     cross_mean: Option<f64>,
