@@ -745,3 +745,28 @@ Lib tests: 597 → 600.
 
 Addendum 3: **Accepted.** Ships in same commit as the test
 updates and decision-trace formatter update.
+
+### Cross-substrate confirmation (2026-05-01, post-shipping)
+
+After shipping Addendum 3, Phase 0072-A was replicated on long5k
+(5-regime, 5000-tick stream, structurally distinct from OQ#1's
+4-regime stream). See
+[`docs/results/phase_0072_a_long5k_ablation.md`](../results/phase_0072_a_long5k_ablation.md).
+
+Result: **D-condition's cross_min regression vs C reproduces at
+exact magnitude (-0.0907) on long5k**, identical to OQ#1.
+Addendum 3 is not an OQ#1 artifact.
+
+A surprise side-finding: all 8 cross-precision metrics (c_mean /
+c_min for all 5 conditions) match to 4 decimal places between
+OQ#1 and long5k, while primary_mean / primary_min differ. This
+reveals that **cross-precision is structurally determined by the
+RSet, not stream-dependent** — OQ#1 @ 1000 ticks and long5k @
+1500 ticks evidently converge to isomorphic RSets. Future
+ablation expansions should target substrates with structurally
+distinct discovered theories (different theory counts, different
+family shapes), not just different stream content. Candidates:
+narrow_a, OQ#2.
+
+Threshold sensitivity scan across substrates is open follow-up
+work; current 0.70 was chosen by hand.
