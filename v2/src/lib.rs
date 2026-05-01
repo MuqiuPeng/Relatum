@@ -4480,36 +4480,48 @@ impl RSet {
 
         // Step 5: complementary merge candidate (Mixed focal,
         // Signal partner with NEAR-DISJOINT family signature per
-        // ADR 0072 Addendum 2 — Jaccard ≤ 0.50, i.e. signatures
-        // more disjoint than shared).
+        // ADR 0072 Addendum 2 — Jaccard ≤ 0.50). Plus ADR 0072
+        // Addendum 3 quality floors: focal Mixed must be clean
+        // enough on BOTH primary and cross dimensions to avoid
+        // diluting the Signal partner. Phase 0072-A ablation
+        // empirically verified that without these gates, merging
+        // a borderline Mixed (e.g. primary 0.59) into a Signal
+        // partner regresses the merged theory's cross-precision.
         if report.summary_class == TheoryQualityClass::Mixed {
             const NEAR_DISJOINT_JACCARD: f64 = 0.50;
-            let focal_fams: HashSet<&str> = report
-                .family_memberships
-                .iter()
-                .map(|m| m.family_id.as_str())
-                .collect();
-            for other in other_reports {
-                if other.summary_class != TheoryQualityClass::Signal {
-                    continue;
-                }
-                let other_fams: HashSet<&str> = other
+            const MERGE_QUALITY_FLOOR: f64 = 0.70;
+            let focal_primary = report.primary_rate_mean.unwrap_or(0.0);
+            let focal_cross = report.cross_precision_mean.unwrap_or(0.0);
+            let quality_ok = focal_primary >= MERGE_QUALITY_FLOOR
+                && focal_cross >= MERGE_QUALITY_FLOOR;
+            if quality_ok {
+                let focal_fams: HashSet<&str> = report
                     .family_memberships
                     .iter()
                     .map(|m| m.family_id.as_str())
                     .collect();
-                let inter = focal_fams.intersection(&other_fams).count();
-                let union = focal_fams.union(&other_fams).count();
-                let jaccard = if union == 0 {
-                    0.0
-                } else {
-                    inter as f64 / union as f64
-                };
-                if jaccard <= NEAR_DISJOINT_JACCARD {
-                    return RecommendedIntervention::Merge {
-                        partner_theory: other.theory_id.clone(),
-                        rationale: MergeRationale::Complementary,
+                for other in other_reports {
+                    if other.summary_class != TheoryQualityClass::Signal {
+                        continue;
+                    }
+                    let other_fams: HashSet<&str> = other
+                        .family_memberships
+                        .iter()
+                        .map(|m| m.family_id.as_str())
+                        .collect();
+                    let inter = focal_fams.intersection(&other_fams).count();
+                    let union = focal_fams.union(&other_fams).count();
+                    let jaccard = if union == 0 {
+                        0.0
+                    } else {
+                        inter as f64 / union as f64
                     };
+                    if jaccard <= NEAR_DISJOINT_JACCARD {
+                        return RecommendedIntervention::Merge {
+                            partner_theory: other.theory_id.clone(),
+                            rationale: MergeRationale::Complementary,
+                        };
+                    }
                 }
             }
         }
@@ -4870,65 +4882,88 @@ impl RSet {
             ));
         }
 
-        // Step 5 — Complementary merge (with near-disjoint Jaccard)
-        out.push_str("  Step 5 (Mixed + Signal partner with near-disjoint signature?):");
+        // Step 5 — Complementary merge (Addendum 2 near-disjoint Jaccard
+        // + Addendum 3 quality floor on focal)
+        out.push_str("  Step 5 (Mixed + quality-floor + Signal partner with near-disjoint signature?):");
         if report.summary_class == TheoryQualityClass::Mixed {
             const NEAR_DISJOINT: f64 = 0.50;
-            let focal_fams: HashSet<&str> = report
-                .family_memberships
-                .iter()
-                .map(|m| m.family_id.as_str())
-                .collect();
-            let mut found_partner: Option<String> = None;
+            const QUALITY_FLOOR: f64 = 0.70;
+            let focal_primary = report.primary_rate_mean.unwrap_or(0.0);
+            let focal_cross = report.cross_precision_mean.unwrap_or(0.0);
             out.push('\n');
-            for other in other_reports {
-                if other.summary_class != TheoryQualityClass::Signal {
-                    continue;
-                }
-                let other_fams: HashSet<&str> = other
+            // Addendum 3 quality floor check first.
+            if focal_primary < QUALITY_FLOOR || focal_cross < QUALITY_FLOOR {
+                out.push_str(&format!(
+                    "    Addendum 3 quality floor: primary={} cross={} (need both ≥ {}) → BLOCKED\n",
+                    fmt_opt(report.primary_rate_mean),
+                    fmt_opt(report.cross_precision_mean),
+                    QUALITY_FLOOR,
+                ));
+                out.push_str(
+                    "    (focal Mixed too dirty to merge into a Signal partner — would dilute it)\n",
+                );
+            } else {
+                out.push_str(&format!(
+                    "    Addendum 3 quality floor: primary={} cross={} (need both ≥ {}) → PASS\n",
+                    fmt_opt(report.primary_rate_mean),
+                    fmt_opt(report.cross_precision_mean),
+                    QUALITY_FLOOR,
+                ));
+                let focal_fams: HashSet<&str> = report
                     .family_memberships
                     .iter()
                     .map(|m| m.family_id.as_str())
                     .collect();
-                let inter = focal_fams.intersection(&other_fams).count();
-                let union = focal_fams.union(&other_fams).count();
-                let jaccard = if union == 0 {
-                    0.0
-                } else {
-                    inter as f64 / union as f64
-                };
-                let verdict = if jaccard <= NEAR_DISJOINT {
-                    "MATCH"
-                } else {
-                    "skip"
-                };
-                out.push_str(&format!(
-                    "    partner {} (Signal): Jaccard = {}/{} = {:.4} {} {} → {}\n",
-                    other.theory_id,
-                    inter,
-                    union,
-                    jaccard,
-                    if jaccard <= NEAR_DISJOINT {
-                        "≤"
+                let mut found_partner: Option<String> = None;
+                for other in other_reports {
+                    if other.summary_class != TheoryQualityClass::Signal {
+                        continue;
+                    }
+                    let other_fams: HashSet<&str> = other
+                        .family_memberships
+                        .iter()
+                        .map(|m| m.family_id.as_str())
+                        .collect();
+                    let inter = focal_fams.intersection(&other_fams).count();
+                    let union = focal_fams.union(&other_fams).count();
+                    let jaccard = if union == 0 {
+                        0.0
                     } else {
-                        ">"
-                    },
-                    NEAR_DISJOINT,
-                    verdict,
-                ));
-                if jaccard <= NEAR_DISJOINT {
-                    found_partner = Some(other.theory_id.clone());
-                    break;
+                        inter as f64 / union as f64
+                    };
+                    let verdict = if jaccard <= NEAR_DISJOINT {
+                        "MATCH"
+                    } else {
+                        "skip"
+                    };
+                    out.push_str(&format!(
+                        "    partner {} (Signal): Jaccard = {}/{} = {:.4} {} {} → {}\n",
+                        other.theory_id,
+                        inter,
+                        union,
+                        jaccard,
+                        if jaccard <= NEAR_DISJOINT {
+                            "≤"
+                        } else {
+                            ">"
+                        },
+                        NEAR_DISJOINT,
+                        verdict,
+                    ));
+                    if jaccard <= NEAR_DISJOINT {
+                        found_partner = Some(other.theory_id.clone());
+                        break;
+                    }
                 }
+                if let Some(p) = found_partner {
+                    out.push_str(&format!(
+                        "  → Merge({}, Complementary) [Step 5 / Addenda 2 + 3]\n",
+                        p,
+                    ));
+                    return out;
+                }
+                out.push_str("    no eligible Signal partner\n");
             }
-            if let Some(p) = found_partner {
-                out.push_str(&format!(
-                    "  → Merge({}, Complementary) [Step 5 / Addendum 2 near-disjoint]\n",
-                    p,
-                ));
-                return out;
-            }
-            out.push_str("    no eligible Signal partner\n");
         } else {
             out.push_str(" no (summary != Mixed)\n");
         }

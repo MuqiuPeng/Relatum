@@ -299,41 +299,51 @@ fn main() {
     println!("════════════════════════════════════════════════════════");
 
     fn check_oq1_long5k(s: &SubstrateSummary) -> (usize, usize) {
-        // Same expectations as OQ#1: t_2 / t_3 should be None;
-        // t_0 should target noise.
+        // Post-Addenda 1+2 expectations:
+        //   t_0 → noise-targeting (FamilyDemote on noise family)
+        //   t_2 → None OR Merge(t_3, HighQualityBoth) [Addendum 1]
+        //   t_3 → None OR Merge(t_2, HighQualityBoth) [Addendum 1]
+        let signal_ok = |s: &SubstrateSummary, t: &str, partner: &str| -> bool {
+            s.recommendations.iter().any(|(name, r)| {
+                name == t
+                    && match r {
+                        RecommendedIntervention::None => true,
+                        RecommendedIntervention::Merge {
+                            partner_theory,
+                            rationale,
+                        } => {
+                            partner_theory == partner
+                                && matches!(
+                                    rationale,
+                                    crate::MergeRationale::HighQualityBoth
+                                )
+                        }
+                        _ => false,
+                    }
+            })
+        };
         let mut passed = 0;
-        let mut total = 0;
-        for (label, t, want_noise_target) in [
-            ("t_2 → None", "t_2", false),
-            ("t_3 → None", "t_3", false),
-            ("t_0 → noise-targeting", "t_0", true),
-        ] {
-            total += 1;
-            let rec = s.recommendations.iter().find(|(n, _)| n == t);
-            match (rec, want_noise_target) {
-                (Some((_, RecommendedIntervention::None)), false) => passed += 1,
-                (Some((_, r)), true)
-                    if matches!(
-                        r,
-                        RecommendedIntervention::FamilyDemote { .. }
-                            | RecommendedIntervention::TheoryDemote { .. }
-                            | RecommendedIntervention::DemoteSuperset { .. }
-                            | RecommendedIntervention::AxiomRepair { .. }
-                    ) =>
-                {
-                    passed += 1
-                }
-                _ => {}
-            }
-            let _ = label;
-        }
+        let total = 3;
+        if signal_ok(s, "t_2", "t_3") { passed += 1; }
+        if signal_ok(s, "t_3", "t_2") { passed += 1; }
+        let t0_noise_targeted = s.recommendations.iter().any(|(name, r)| {
+            name == "t_0"
+                && matches!(
+                    r,
+                    RecommendedIntervention::FamilyDemote { .. }
+                        | RecommendedIntervention::TheoryDemote { .. }
+                        | RecommendedIntervention::DemoteSuperset { .. }
+                        | RecommendedIntervention::AxiomRepair { .. }
+                )
+        });
+        if t0_noise_targeted { passed += 1; }
         (passed, total)
     }
 
     // OQ#1
     let (oq1_p, oq1_t) = check_oq1_long5k(&oq1);
     println!(
-        "  OQ#1   sanity: {}/{} (expected: t_0 noise-target; t_2/t_3 None)",
+        "  OQ#1   sanity: {}/{} (post-A1: t_2/t_3 → None or Merge HQB; t_0 → noise-target)",
         oq1_p, oq1_t,
     );
 

@@ -1,39 +1,10 @@
-warning: associated function `any_axiom_has_hit_rate` is never used
-   --> src\runtime\scheduler_rule.rs:243:19
-    |
-131 | impl RuleBasedScheduler {
-    | ----------------------- associated function in this implementation
-...
-243 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
-    |                   ^^^^^^^^^^^^^^^^^^^^^^
-    |
-    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
-    --> src\lib.rs:4623:60
-     |
-4623 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
-     |                                                            ^^^^^^^^
-     |
-     = note: `#[warn(suspicious_double_ref_op)]` on by default
-
-warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
-    --> src\lib.rs:4623:72
-     |
-4623 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
-     |                                                                        ^^^^^^^^
-
-warning: `relatum-v2` (lib) generated 3 warnings
-   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
-    Finished `release` profile [optimized] target(s) in 1.23s
-     Running `target\release\examples\phase_consolidation_migration_atlas.exe`
 === Migration atlas: 9 historical examples → modern API ===
 
 Modern recommendations on OQ#1 @ 1000 ticks:
   t_0    → FamilyDemote(shape_premise_p0-0_p1-2)
   t_1    → Manual
-  t_2    → None
-  t_3    → None
+  t_2    → Merge(t_3, HighQualityBoth)
+  t_3    → Merge(t_2, HighQualityBoth)
 
 ════════════════════════════════════════════════════════════════════
  Historical decision  vs  Modern recommendation
@@ -59,13 +30,9 @@ Modern recommendations on OQ#1 @ 1000 ticks:
 
 [4] Alpha-5 smart_merge
     Historical: smart Jaccard picked (t_2, t_3)
-    Modern:     t_2 → None, t_3 → None
-    → DIVERGENT (open): both Signal-class so modern says None.
-      Alpha-5's merge was a CONSOLIDATION optimization, not
-      an intervention. ADR 0072 only recommends merge when
-      one side is Mixed and the other Signal+complementary.
-      F.5 verified the merge is lossless; recommending it
-      automatically is a future enhancement (HighQualityBoth merge).
+    Modern:     t_2 → Merge(t_3, HighQualityBoth), t_3 → Merge(t_2, HighQualityBoth)
+    → AGREE (post-Addendum 1): both Signal-class with
+      cross-prec ≥ 0.95 → HighQualityBoth merge (t_2, t_3).
 
 [5] Beta-2 family_demote
     Historical: family demote shape_premise_p0-0_p1-2 (variance-zero)
@@ -83,43 +50,38 @@ Modern recommendations on OQ#1 @ 1000 ticks:
 [7] F.2.1 quality_aware_merge
     Historical: F.2.1 picked (t_1, t_2) by quality-floor + complementarity
     Modern:     t_1 → Manual
-    → DIVERGENT (open): t_1 and t_2 share family memberships
-      (shape_premise_p0-1_p1-2, shape_conclusion_c0-2), so the
-      complementarity check (Step 5) requires DISJOINT signatures.
-      F.2.1's threshold was looser; ADR 0072's stricter rule
-      surfaces them as Manual instead.
+    → AGREE-WITH-FALSIFICATION (post-Addendum 3): t_1's primary
+      0.5863 < 0.70 quality floor → merge blocked. Phase 0072-A
+      ablation verified D condition (t_1, t_2) merge dilutes
+      Signal partner (cross_min -0.0907 vs C). F.2.1's pick was
+      empirically harmful; modern API correctly disagrees.
 
 [8] F.4 multi_signal_merge
     Historical: F.4 Borda top-1 = (t_2, t_3) at 4/6 = 66.7% confidence
-    Modern:     t_2 → None, t_3 → None
-    → DIVERGENT (open): same as Alpha-5 — Signal-Signal merge
-      is a CONSOLIDATION optimization, not an intervention.
-      Future ADR could add HighQualityBoth merge recommendation.
+    Modern:     t_2 → Merge(t_3, HighQualityBoth), t_3 → Merge(t_2, HighQualityBoth)
+    → AGREE (post-Addendum 1): same HighQualityBoth merge
+      as Alpha-5; F.4's Borda aggregation reproduces here.
 
 [9] F.5 merge_safety
     Historical: ACTUALLY merged (t_2, t_3) → t_4 with cross-prec 1.0
-    Modern:     does not yet recommend the consolidation merge,
-                but the empirical safety result (delta=0.0000)
-                stands. F.5's verification IS the empirical
-                green-light for adding HighQualityBoth merge
-                recommendations to ADR 0072 as a future step.
-    → DIVERGENT-BY-DESIGN: ADR 0072 chose conservative-by-default
-      (Mixed+Signal merge yes, Signal+Signal merge no). F.5's data
-      gives empirical permission to expand later.
+    Modern:     t_2 → Merge(t_3, HighQualityBoth), t_3 → Merge(t_2, HighQualityBoth)
+    → AGREE (post-Addendum 1): the very merge F.5 verified
+      lossless (delta=0) is now what the modern API recommends.
+      Empirical safety + classifier recommendation are aligned.
 
 ════════════════════════════════════════════════════════════════════
  Migration verdict
 ════════════════════════════════════════════════════════════════════
-  Agreement: 4/9
-  Modern correctly disagrees with FALSIFIED historical: 1
-  Open divergences (Signal-Signal merge): 4
+  Agreement: 7/9
+  Modern correctly disagrees with FALSIFIED historical: 2
+  Open divergences (Signal-Signal merge): 0
 
   Code: 2699 lines of inline classification logic across 9 examples
   → ~30 lines of pipeline code in this atlas (above)
   → ~90× compression ratio for the classification core
 
   → STRONGLY POSITIVE: modern API reproduces the empirically-correct
-    historical decisions (4/9 agree on intervention-class scenarios),
+    historical decisions (7/9 agree on intervention-class scenarios),
     correctly disagrees with FALSIFIED naive merge,
     and the open divergences are conservative-by-design merge cases
     that F.5 already verified safe. Migration is loss-free for the

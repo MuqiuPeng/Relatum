@@ -3852,18 +3852,20 @@
             members_in_theory: 1,
             family_total_members: 2,
         };
+        // Bump primary + cross above ADR 0072 Addendum 3's 0.70
+        // quality floor so the merge passes the new gate.
         let focal = synth_report(
             "t_focal",
             vec!["ax_a".to_string()],
-            Some(0.70),
-            Some(0.55),
+            Some(0.75),
+            Some(0.75),
             0,
             vec![focal_fam],
             vec![],
             vec![crate::AxiomQualityStats {
                 axiom_id: "ax_a".to_string(),
-                primary_rate: Some(0.70),
-                cross_precision: Some(0.55),
+                primary_rate: Some(0.75),
+                cross_precision: Some(0.75),
                 family_ids: vec!["shape_premise_p0-1".to_string()],
             }],
         );
@@ -4105,18 +4107,22 @@
             family_total_members: 2,
         })
         .collect();
+        // Bump primary + cross above ADR 0072 Addendum 3's 0.70
+        // quality floor so this near-disjoint case still merges.
+        // (The point of this test is the Jaccard threshold, not
+        // the quality gate; quality is set above floor here.)
         let focal = synth_report(
             "t_focal",
             vec!["ax_a".to_string()],
-            Some(0.55),
-            Some(0.55),
+            Some(0.75),
+            Some(0.75),
             0,
             focal_fams,
             vec![],
             vec![crate::AxiomQualityStats {
                 axiom_id: "ax_a".to_string(),
-                primary_rate: Some(0.55),
-                cross_precision: Some(0.55),
+                primary_rate: Some(0.75),
+                cross_precision: Some(0.75),
                 family_ids: vec![],
             }],
         );
@@ -4130,7 +4136,6 @@
             vec![],
             vec![],
         );
-        // Focal must be Mixed (force the class via field tweak).
         let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
         match rec {
             crate::RecommendedIntervention::Merge {
@@ -4212,6 +4217,168 @@
             rec,
             crate::RecommendedIntervention::Manual { .. }
         ));
+    }
+
+    // ── ADR 0072 Addendum 3 — quality floor on Step 5 ───────────
+
+    #[test]
+    fn adr0072_addendum3_blocks_merge_when_focal_primary_below_floor() {
+        // Replicates Phase 0072-A's t_1 case on OQ#1: focal Mixed
+        // with primary 0.59 (below 0.70 floor), cross 0.84 (above
+        // floor). Pre-A3 this would Merge(t_2, Complementary) and
+        // empirically dilute t_2. Post-A3 it must NOT recommend
+        // merge.
+        let focal_fams = vec![crate::TheoryFamilyMembership {
+            family_id: "shape_premise_p0-1".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        }];
+        let other_fams = vec![crate::TheoryFamilyMembership {
+            family_id: "shape_conclusion_c0-0".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        }];
+        let focal = synth_report(
+            "t_borderline_mixed",
+            vec!["ax_a".to_string()],
+            Some(0.59),    // ← primary below 0.70 floor
+            Some(0.84),    // ← cross above floor
+            0,
+            focal_fams,
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.59),
+                cross_precision: Some(0.84),
+                family_ids: vec!["shape_premise_p0-1".to_string()],
+            }],
+        );
+        let partner = synth_report(
+            "t_signal",
+            vec!["ax_p".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            other_fams,
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        // Should fall through to Manual (no other rule matches).
+        assert!(
+            matches!(rec, crate::RecommendedIntervention::Manual { .. }),
+            "expected Manual (Addendum 3 blocked merge), got {:?}",
+            rec,
+        );
+    }
+
+    #[test]
+    fn adr0072_addendum3_blocks_merge_when_focal_cross_below_floor() {
+        // Symmetric to the above: cross below floor blocks even
+        // when primary is fine.
+        let focal = synth_report(
+            "t_x",
+            vec!["ax_a".to_string()],
+            Some(0.85),    // primary above floor
+            Some(0.65),    // ← cross below 0.70 floor
+            0,
+            vec![],
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.85),
+                cross_precision: Some(0.65),
+                family_ids: vec![],
+            }],
+        );
+        let partner = synth_report(
+            "t_signal",
+            vec!["ax_p".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            vec![],
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        // Note: Step 4 (AxiomRepair) has primary >= 0.60 + few weak
+        // axioms. Here primary=0.85 ≥ 0.60 but per_axiom doesn't
+        // identify weak axioms (single ax_a is healthy), so Step 4
+        // doesn't fire. Falls through to Step 5 (blocked by A3) →
+        // Step 7 Manual.
+        assert!(
+            matches!(rec, crate::RecommendedIntervention::Manual { .. }),
+            "expected Manual (A3 cross floor blocked), got {:?}",
+            rec,
+        );
+    }
+
+    #[test]
+    fn adr0072_addendum3_allows_merge_when_focal_passes_both_floors() {
+        // Mirror of the blocking tests: when both dims are above
+        // 0.70, the merge passes Addendum 3 and reaches Step 5's
+        // Jaccard check.
+        let focal_fams = vec![crate::TheoryFamilyMembership {
+            family_id: "shape_premise_p0-1".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        }];
+        let other_fams = vec![crate::TheoryFamilyMembership {
+            family_id: "shape_conclusion_c0-0".to_string(),
+            layer: crate::FamilyLayer::L2,
+            kind: None,
+            quality: None,
+            class: None,
+            members_in_theory: 1,
+            family_total_members: 2,
+        }];
+        let focal = synth_report(
+            "t_clean_mixed",
+            vec!["ax_a".to_string()],
+            Some(0.75),    // both ≥ 0.70
+            Some(0.75),
+            0,
+            focal_fams,
+            vec![],
+            vec![crate::AxiomQualityStats {
+                axiom_id: "ax_a".to_string(),
+                primary_rate: Some(0.75),
+                cross_precision: Some(0.75),
+                family_ids: vec!["shape_premise_p0-1".to_string()],
+            }],
+        );
+        let partner = synth_report(
+            "t_signal",
+            vec!["ax_p".to_string()],
+            Some(0.95),
+            Some(0.95),
+            0,
+            other_fams,
+            vec![],
+            vec![],
+        );
+        let rec = crate::RSet::recommend_intervention(&focal, &[partner]);
+        assert!(
+            matches!(
+                rec,
+                crate::RecommendedIntervention::Merge { rationale: crate::MergeRationale::Complementary, .. }
+            ),
+            "expected Merge(Complementary), got {:?}",
+            rec,
+        );
     }
 
     // ── ADR 0072 — visualization helpers ────────────────────────

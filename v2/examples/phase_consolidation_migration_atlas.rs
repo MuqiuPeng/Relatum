@@ -267,6 +267,17 @@ fn main() {
         println!("      relaxes the strict-disjoint rule; (t_1, t_2)'s 0.40");
         println!("      Jaccard now triggers Step 5 Merge.");
         agree += 1;
+    } else if matches!(recs["t_1"], RecommendedIntervention::Manual { .. }) {
+        // Post-Addendum 3: t_1's primary 0.5863 < 0.70 quality
+        // floor → merge correctly blocked. Phase 0072-A verified
+        // empirically that this merge dilutes t_2.
+        println!("    Modern:     t_1 → {}", rec_label(&recs["t_1"]));
+        println!("    → AGREE-WITH-FALSIFICATION (post-Addendum 3): t_1's primary");
+        println!("      0.5863 < 0.70 quality floor → merge blocked. Phase 0072-A");
+        println!("      ablation verified D condition (t_1, t_2) merge dilutes");
+        println!("      Signal partner (cross_min -0.0907 vs C). F.2.1's pick was");
+        println!("      empirically harmful; modern API correctly disagrees.");
+        disagree_correct += 1;
     } else {
         println!("    Modern:     t_1 → {}", rec_label(&recs["t_1"]));
         println!("    → DIVERGENT (open, pre-addendum behavior detected)");

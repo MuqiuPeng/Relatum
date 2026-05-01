@@ -624,3 +624,124 @@ raise the agreement rate from 5/9 to 9/9:
 
 Expected post-addendum atlas re-run: 9/9 agree, 0 open
 divergences.
+
+---
+
+## Addendum 3 — Quality floor on Step 5 (2026-05-01)
+
+### Motivation
+
+Phase 0072-A intervention ablation (2026-05-01) ran 5 conditions
+on OQ#1 (1000-tick Phase 0 + 1000-tick Phase 1) measuring
+post-intervention aggregate quality:
+
+| condition | cross_mean | cross_min | verdict |
+|---|---|---|---|
+| A baseline | 0.8797 | 0.6835 | reference |
+| B FamilyDemote | 0.9177 | 0.8354 | **+0.038** mean / **+0.152** min |
+| **C Merge(t_2, t_3) HighQualityBoth** | **0.9031** | **0.7773** | **+0.023 / +0.094** ✓ |
+| **D Merge(t_1, t_2) Complementary** | **0.8604** | **0.6866** | **−0.019 / +0.003** ✗ |
+| E B + C combined | 0.9547 | 0.9321 | optimum |
+
+Condition D — Addendum 2's recommended (t_1, t_2) merge —
+**regressed cross_mean below baseline** (-0.019). Compared to
+condition C which merges two equally-Signal theories, D's
+cross_min was 0.0907 lower. **Empirically the Complementary merge
+recommended by Addendum 2 dilutes the Signal partner's quality**.
+
+t_1 on OQ#1: primary_mean = 0.5863, cross_mean = 0.8354. Mixed
+class. The previous Addendum 2 only checked Jaccard; t_1's
+Jaccard with t_2 is 0.40 (≤ 0.50), so the merge fired without
+considering that t_1 is "borderline-clean" (primary just above
+the Noise threshold).
+
+### Decision
+
+Add **quality floors on the focal Mixed theory** as an additional
+gate before Step 5's Jaccard check:
+
+```text
+Step 5 (revised under Addendum 3):
+  if focal.summary_class == Mixed
+     AND focal.primary_rate_mean >= MERGE_QUALITY_FLOOR        ← new
+     AND focal.cross_precision_mean >= MERGE_QUALITY_FLOOR     ← new
+     AND jaccard(focal_fams, partner_fams) <= 0.50:
+       Merge(partner, Complementary)
+```
+
+`MERGE_QUALITY_FLOOR = 0.70` on BOTH dimensions.
+
+### Threshold rationale
+
+The merge rule's purpose: borderline-Mixed theories with
+complementary signature **should** merge into a Signal partner —
+the union covers ground neither side alone would.
+
+The danger: a Mixed theory whose primary rate is in the lower
+half of [0.50, 0.80) (i.e., 0.50–0.65 range) is "barely above
+noise". Merging it INTO a Signal partner pulls the partner's
+quality down toward this barely-above-noise level.
+
+0.70 is the natural midpoint of the Mixed band:
+- Below 0.70: theory's quality is closer to Noise than Signal;
+  merging is dilution.
+- Above 0.70: theory's quality is closer to Signal than Noise;
+  merging is refinement (focal's coverage adds to partner's).
+
+t_1 on OQ#1 has primary 0.5863 < 0.70 → Addendum 3 BLOCKS the
+merge. Phase 0072-A's condition D (which empirically regressed
+cross_mean) would never be recommended post-Addendum 3.
+
+The cross dimension also gets the floor: a theory whose cross
+precision is < 0.70 didn't pass the imagined-substrate check
+strongly enough to be a clean merge focal. (On OQ#1 this is
+academic — t_1's cross is 0.8354 — but the gate handles
+substrates where the asymmetry runs the other way.)
+
+### What this changes empirically
+
+On OQ#1, only one previously-firing recommendation is now blocked:
+- t_1 → Merge(t_2, Complementary) [old]
+- t_1 → Manual [new]
+
+The other 3 recommendations on OQ#1 (FamilyDemote on t_0,
+HighQualityBoth merges among t_2/t_3) are unchanged.
+
+### Migration atlas impact
+
+Re-running the migration atlas post-Addendum 3:
+
+| atlas case | pre-A3 | post-A3 |
+|---|---|---|
+| F.2.1 quality_aware (t_1, t_2) merge | AGREE (modern matched) | DIVERGENT (modern correctly rejects) |
+
+Atlas count shifts from **9/9 agree** → **8/9 agree + 1 correct
+disagreement**. F.2.1's pick was empirically harmful (Phase
+0072-A condition D), so the new disagreement is a correctness
+gain, not a regression. F.2.1's verdict was based on signal
+distinctness; Phase 0072-A measures POST-MERGE quality —
+the stricter criterion.
+
+### Tests
+
+Three new unit tests:
+
+- `adr0072_addendum3_blocks_merge_when_focal_primary_below_floor`
+  (replicates Phase 0072-A's t_1 on OQ#1: primary 0.59, cross
+  0.84 → BLOCKED)
+- `adr0072_addendum3_blocks_merge_when_focal_cross_below_floor`
+  (symmetric: primary 0.85, cross 0.65 → BLOCKED)
+- `adr0072_addendum3_allows_merge_when_focal_passes_both_floors`
+  (primary 0.75, cross 0.75 → still merges per Addendum 2's
+  Jaccard check)
+
+Two existing tests updated to use ≥ 0.70 quality (preserving
+their original intent of testing the Jaccard threshold, not the
+quality gate).
+
+Lib tests: 597 → 600.
+
+### Status
+
+Addendum 3: **Accepted.** Ships in same commit as the test
+updates and decision-trace formatter update.

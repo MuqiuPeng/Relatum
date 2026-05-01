@@ -61,9 +61,12 @@ Substrate state:
   Step 2 (extends Signal subset?): no (focal extends no theory)
   Step 3 (noise/uniform family?):  no
   Step 4 (Mixed + few weak axioms?): no (primary=0.5863 < 0.60 repair gate)
-  Step 5 (Mixed + Signal partner with near-disjoint signature?):
-    partner t_2 (Signal): Jaccard = 2/5 = 0.4000 ≤ 0.5 → MATCH
-  → Merge(t_2, Complementary) [Step 5 / Addendum 2 near-disjoint]
+  Step 5 (Mixed + quality-floor + Signal partner with near-disjoint signature?):
+    Addendum 3 quality floor: primary=0.5863 cross=0.8354 (need both ≥ 0.7) → BLOCKED
+    (focal Mixed too dirty to merge into a Signal partner — would dilute it)
+  Step 6 (Noise class?):  no
+  Step 7 (fallback):  no specific pattern matched.
+  → Manual(Mixed)
 
 ════════════════════════════════════════════════════════
  Theory: t_2
@@ -116,7 +119,7 @@ Substrate state:
  Recommendation summary
 ════════════════════════════════════════════════════════
   t_0 → FamilyDemote { family_id: "shape_premise_p0-0_p1-2", family_class: Uniform }
-  t_1 → Merge { partner_theory: "t_2", rationale: Complementary }
+  t_1 → Manual { reason: "Mixed theory; no specific intervention pattern matched" }
   t_2 → Merge { partner_theory: "t_3", rationale: HighQualityBoth }
   t_3 → Merge { partner_theory: "t_2", rationale: HighQualityBoth }
 

@@ -251,20 +251,37 @@ fn main() {
     println!();
     println!("=== Sanity verdict ===");
 
-    // Check 1: t_2 and t_3 should both be None (Signal-class universal predictors).
-    let t2_none = recommendations.iter().any(|(t, r)| {
-        t == "t_2" && matches!(r, RecommendedIntervention::None)
-    });
-    let t3_none = recommendations.iter().any(|(t, r)| {
-        t == "t_3" && matches!(r, RecommendedIntervention::None)
-    });
+    // Check 1+2: t_2 and t_3 are Signal-class. Post-Addendum 1
+    // (HighQualityBoth merge), they recommend Merge with each other.
+    // Either None or Merge(other_signal, HighQualityBoth) is correct.
+    let signal_ok = |t: &str, partner: &str| -> bool {
+        recommendations.iter().any(|(name, r)| {
+            name == t
+                && match r {
+                    RecommendedIntervention::None => true,
+                    RecommendedIntervention::Merge {
+                        partner_theory,
+                        rationale,
+                    } => {
+                        partner_theory == partner
+                            && matches!(
+                                rationale,
+                                relatum_v2::MergeRationale::HighQualityBoth
+                            )
+                    }
+                    _ => false,
+                }
+        })
+    };
+    let t2_ok = signal_ok("t_2", "t_3");
+    let t3_ok = signal_ok("t_3", "t_2");
     println!(
-        "  [1] t_2 → None (Signal-class expected): {}",
-        if t2_none { "✓" } else { "✗" },
+        "  [1] t_2 → None or Merge(t_3, HighQualityBoth): {}",
+        if t2_ok { "✓" } else { "✗" },
     );
     println!(
-        "  [2] t_3 → None (Signal-class expected): {}",
-        if t3_none { "✓" } else { "✗" },
+        "  [2] t_3 → None or Merge(t_2, HighQualityBoth): {}",
+        if t3_ok { "✓" } else { "✗" },
     );
 
     // Check 3: t_0 should target the noise family.
@@ -298,7 +315,7 @@ fn main() {
         recommendations.len(),
     );
 
-    let all_pass = t2_none && t3_none && t0_targets_noise && non_manual >= 3;
+    let all_pass = t2_ok && t3_ok && t0_targets_noise && non_manual >= 3;
     println!();
     if all_pass {
         println!("  → STRONGLY POSITIVE — classifier produces all expected recommendations on OQ#1.");
