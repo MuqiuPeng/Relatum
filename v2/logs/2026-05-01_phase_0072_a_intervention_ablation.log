@@ -1,0 +1,131 @@
+════════════════════════════════════════════════════════
+ Phase 0072-A — Intervention ablation
+════════════════════════════════════════════════════════
+ Method: 5 conditions; identical Phase 0 (1000 ticks),
+ different intervention, identical Phase 1 (1000 ticks).
+
+════════════════════════════════════════════════════════
+ Condition A: no intervention
+════════════════════════════════════════════════════════
+  Phase 0 (1000 ticks, identical baseline):
+    axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+    primary mean=0.4660 min=0.1095
+    cross   mean=0.8797 min=0.6835
+  → applying intervention: no intervention
+    post-intervention: axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+  Phase 1 (1000 more ticks):
+    axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+    primary mean=0.4612 min=0.0424
+    cross   mean=0.8797 min=0.6835
+    family-demote target rediscovered: true
+
+════════════════════════════════════════════════════════
+ Condition B: FamilyDemote(shape_premise_p0-0_p1-2)
+════════════════════════════════════════════════════════
+  Phase 0 (1000 ticks, identical baseline):
+    axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+    primary mean=0.4660 min=0.1095
+    cross   mean=0.8797 min=0.6835
+  → applying intervention: FamilyDemote(shape_premise_p0-0_p1-2)
+    retraction summary: layer=L2, axioms_retracted=4, theory_detachments=4
+    post-intervention: axioms=9  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=5
+  Phase 1 (1000 more ticks):
+    axioms=9  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=5
+    primary mean=0.6839 min=0.4992
+    cross   mean=0.9177 min=0.8354
+    family-demote target rediscovered: false
+
+════════════════════════════════════════════════════════
+ Condition C: Merge(t_2, t_3) HighQualityBoth
+════════════════════════════════════════════════════════
+  Phase 0 (1000 ticks, identical baseline):
+    axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+    primary mean=0.4660 min=0.1095
+    cross   mean=0.8797 min=0.6835
+  → applying intervention: Merge(t_2, t_3) HighQualityBoth
+    merged → t_4
+    post-intervention: axioms=13  theories=["t_0", "t_1", "t_4"]  L2 fams=6
+  Phase 1 (1000 more ticks):
+    axioms=13  theories=["t_0", "t_1", "t_4"]  L2 fams=6
+    primary mean=0.4612 min=0.0424
+    cross   mean=0.9031 min=0.7773
+    family-demote target rediscovered: true
+
+════════════════════════════════════════════════════════
+ Condition D: Merge(t_1, t_2) Complementary
+════════════════════════════════════════════════════════
+  Phase 0 (1000 ticks, identical baseline):
+    axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+    primary mean=0.4660 min=0.1095
+    cross   mean=0.8797 min=0.6835
+  → applying intervention: Merge(t_1, t_2) Complementary
+    merged → t_4
+    post-intervention: axioms=13  theories=["t_0", "t_3", "t_4"]  L2 fams=6
+  Phase 1 (1000 more ticks):
+    axioms=13  theories=["t_0", "t_3", "t_4"]  L2 fams=6
+    primary mean=0.4612 min=0.0424
+    cross   mean=0.8604 min=0.6866
+    family-demote target rediscovered: true
+
+════════════════════════════════════════════════════════
+ Condition E: FamilyDemote + Merge(t_2, t_3)
+════════════════════════════════════════════════════════
+  Phase 0 (1000 ticks, identical baseline):
+    axioms=13  theories=["t_0", "t_1", "t_2", "t_3"]  L2 fams=6
+    primary mean=0.4660 min=0.1095
+    cross   mean=0.8797 min=0.6835
+  → applying intervention: FamilyDemote + Merge(t_2, t_3)
+    retracted: 4 axioms
+    merged → t_4
+    post-intervention: axioms=9  theories=["t_0", "t_1", "t_4"]  L2 fams=5
+  Phase 1 (1000 more ticks):
+    axioms=9  theories=["t_0", "t_1", "t_4"]  L2 fams=5
+    primary mean=0.6839 min=0.4992
+    cross   mean=0.9547 min=0.9321
+    family-demote target rediscovered: false
+
+════════════════════════════════════════════════════════
+ Comparison (after Phase 1, 2000 total ticks)
+════════════════════════════════════════════════════════
+ id  intervention                              axs  ths  fam     p_mean      p_min     c_mean      c_min
+ A   no intervention                            13    4    6     0.4612     0.0424     0.8797     0.6835
+ B   FamilyDemote(noise family)                  9    4    5     0.6839     0.4992     0.9177     0.8354
+ C   Merge(t_2, t_3) HighQualityBoth            13    3    6     0.4612     0.0424     0.9031     0.7773
+ D   Merge(t_1, t_2) Complementary              13    3    6     0.4612     0.0424     0.8604     0.6866
+ E   FamilyDemote + Merge(t_2, t_3)              9    3    5     0.6839     0.4992     0.9547     0.9321
+
+ family-demote target resurrected after Phase 1?
+   A: true
+   B: false
+   C: true
+   D: true
+   E: false
+
+════════════════════════════════════════════════════════
+ Verdicts addressing the user's 4 questions
+════════════════════════════════════════════════════════
+
+ Q1: Does FamilyDemote (B) outperform Alpha-3+'s whole-theory demote?
+     B vs A on cross_mean: +0.0380 (post 0.9177 vs base 0.8797)
+     B vs A on primary_mean: +0.2228 (post 0.6839 vs base 0.4612)
+     B axiom delta: -4 (B: 9, A: 13)
+
+ Q2: Is Merge(t_2, t_3) (C) truly harmless?
+     C vs A on cross_mean: +0.0234
+     C vs A on cross_min:  +0.0938
+     C theory delta: -1 (C: 3, A: 4)
+
+ Q3: Does Merge(t_1, t_2) (D) contaminate Signal theory t_2?
+     D vs A on cross_mean: -0.0194
+     D vs A on cross_min:  +0.0031  ← min is the dilution metric
+     D vs C on cross_min:  -0.0907  ← directly compare merge targets
+
+ Q4: Does the demoted family resurrect after Phase 1?
+     B condition: target_resurrected = false
+     E condition: target_resurrected = false
+
+ Q5 (bonus): Does combined intervention E dominate B and C?
+     E vs B on cross_mean: +0.0370
+     E vs C on cross_mean: +0.0516
+
+--- end ---
