@@ -1,0 +1,82 @@
+════════════════════════════════════════════════════════
+ Phase 0072-B — MERGE_QUALITY_FLOOR threshold scan
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (1000 ticks)
+ Floor candidates: [0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+
+ Post Phase 0: 13 axioms / 4 theories (["t_0", "t_1", "t_2", "t_3"])
+
+ Per-theory quality summary:
+   theory    class     p_mean     c_mean
+   t_0       Mixed     0.3759     0.6835
+   t_1       Mixed     0.5863     0.8354
+   t_2      Signal     1.0000     1.0000
+   t_3      Signal     0.9144     1.0000
+
+ Mixed theories (subject to Step 5 quality gate):
+   t_0 primary=0.3759 cross=0.6835
+   t_1 primary=0.5863 cross=0.8354
+
+ Identifying Signal partners with near-disjoint Jaccard:
+   focal  partner    p_class     jaccard
+   t_0    t_2        Signal       0.3333
+   t_0    t_3        Signal       0.5000
+   t_1    t_2        Signal       0.4000
+   t_1    t_3        Signal       0.6000
+
+ Active (focal, partner) pairs reaching Step 5:
+   (t_0, t_2) jaccard=0.3333
+   (t_0, t_3) jaccard=0.5000
+   (t_1, t_2) jaccard=0.4000
+
+════════════════════════════════════════════════════════
+ Threshold scan — BLOCK (B) vs ALLOW (A) per (focal, floor)
+════════════════════════════════════════════════════════
+ focal      p_mean     c_mean  ≥0.55  ≥0.60  ≥0.65  ≥0.70  ≥0.75  ≥0.80  ≥0.85  ≥0.90
+ t_0        0.3759     0.6835    B      B      B      B      B      B      B      B  
+ t_1        0.5863     0.8354    A      B      B      B      B      B      B      B  
+
+════════════════════════════════════════════════════════
+ Oracle from Phase 0072-A ablation (empirical truth)
+════════════════════════════════════════════════════════
+ t_1 ALLOW (Merge with t_2):
+   - Empirical effect: cross_min -0.0907 vs C, cross_mean -0.0427 vs C
+   - Verdict: HARMFUL — t_1 should be BLOCKED
+
+ Note: t_2/t_3 are Signal-class, so they exit at Step 1 (HighQualityBoth)
+ and never reach the Step 5 gate. The floor only affects Mixed theories.
+
+════════════════════════════════════════════════════════
+ Recommended floor band
+════════════════════════════════════════════════════════
+ Lower bound (floor must EXCEED this to BLOCK harmful merges):
+   0.5863 (max over all Mixed theories of min(p_mean, c_mean))
+ Upper bound: no Mixed theory is empirically safe-to-merge yet
+   so any floor > 0.5863 is acceptable from BLOCK perspective
+
+ Currently shipped floor: 0.70
+ Within recommended band (0.5863 < floor)? ✓
+
+ Per-floor BLOCK behaviour for each focal theory:
+   focal  min(p,c)  
+   t_0    0.3759 → BLOCKED at floor > 0.3759
+   t_1    0.5863 → BLOCKED at floor > 0.5863
+
+════════════════════════════════════════════════════════
+ Verdict
+════════════════════════════════════════════════════════
+ ✓ At floor=0.70, t_1 (Phase 0072-A's known-harmful focal) is BLOCKED.
+   Addendum 3's threshold correctly excludes the empirically validated
+   pollution case.
+
+ Lowest floor that blocks t_1: > 0.5863
+
+ Caveats:
+   - This scan only covers Mixed focal theories present at this horizon.
+   - Future Mixed theories with p_mean or c_mean in the (0.55..0.84) range
+     would tighten the lower bound; structurally distinct substrates
+     (narrow_a, OQ#2 at maturity) are needed to expand sample size.
+   - The upper bound on the floor is currently unconstrained — no Mixed
+     theory is empirically safe-to-merge yet.
+
+--- end ---
