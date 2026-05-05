@@ -6020,6 +6020,188 @@ impl RSet {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// ADR 0075 — Pattern shape rendering.
+//
+// `format_pattern_shape` returns a human-readable text rendering of
+// a registered pattern's intension. Roles are renamed r0..rN in
+// canonical order; role-role edges are listed; a coarse shape
+// classifier emits a one-line shape name when the structure matches
+// a known small motif.
+//
+// Pure read-only helper. No rset mutation, no token-signature use.
+// ─────────────────────────────────────────────────────────────────
+
+impl RSet {
+    /// Render a registered pattern's structure as readable text.
+    /// ADR 0075.
+    ///
+    /// Output:
+    /// ```text
+    /// p_3 (4 roles, 5 edges, shape: triangle+pendant)
+    ///   r0 → r1
+    ///   r0 → r2
+    ///   r1 → r2
+    ///   r0 → r3
+    ///   ...
+    /// ```
+    /// Returns an error message string if the pattern doesn't
+    /// exist or has no intension recorded (legacy patterns
+    /// pre-ADR 0029).
+    pub fn format_pattern_shape(&self, pattern_id: &str) -> String {
+        let roles = self.pattern_roles(pattern_id);
+        if roles.is_empty() {
+            return format!("{}: <no intension recorded>", pattern_id);
+        }
+        let role_set: HashSet<&str> = roles.iter().copied().collect();
+        let mut role_to_short: HashMap<&str, String> = HashMap::new();
+        for (i, r) in roles.iter().enumerate() {
+            role_to_short.insert(*r, format!("r{}", i));
+        }
+        let mut edges: Vec<(String, String)> = self
+            .instances
+            .iter()
+            .filter(|r| {
+                role_set.contains(r.x.as_str())
+                    && role_set.contains(r.y.as_str())
+            })
+            .map(|r| {
+                (
+                    role_to_short[r.x.as_str()].clone(),
+                    role_to_short[r.y.as_str()].clone(),
+                )
+            })
+            .collect();
+        edges.sort();
+
+        let shape = classify_pattern_shape(roles.len(), &edges);
+        let mut out = format!(
+            "{} ({} role{}, {} edge{}, shape: {})\n",
+            pattern_id,
+            roles.len(),
+            if roles.len() == 1 { "" } else { "s" },
+            edges.len(),
+            if edges.len() == 1 { "" } else { "s" },
+            shape,
+        );
+        for (a, b) in edges {
+            out.push_str(&format!("  {} → {}\n", a, b));
+        }
+        out
+    }
+}
+
+/// Coarse shape classifier. Used by `format_pattern_shape` only.
+/// Recognizes a small set of common motifs and falls back to a
+/// generic descriptor.
+fn classify_pattern_shape(n_roles: usize, edges: &[(String, String)]) -> String {
+    let n_edges = edges.len();
+    let self_loops = edges.iter().filter(|(a, b)| a == b).count();
+    let non_loop_edges = n_edges - self_loops;
+
+    // Single-role cases.
+    if n_roles == 1 {
+        if self_loops > 0 {
+            return "self-loop".to_string();
+        }
+        return "isolated".to_string();
+    }
+
+    // Two-role cases.
+    if n_roles == 2 && self_loops == 0 {
+        if non_loop_edges == 1 {
+            return "directed edge".to_string();
+        }
+        if non_loop_edges == 2 {
+            // Either two parallel directions (a→b, b→a) or
+            // multi-edge same direction (only possible if rset
+            // permits, which it doesn't — no parallel duplicates).
+            return "bidirectional pair".to_string();
+        }
+    }
+
+    // Three-role, no-self-loop, 2-edge cases.
+    if n_roles == 3 && self_loops == 0 && non_loop_edges == 2 {
+        // Compute in/out degrees.
+        let (in_deg, out_deg) = degree_map(n_roles, edges);
+        let max_out = *out_deg.iter().max().unwrap_or(&0);
+        let max_in = *in_deg.iter().max().unwrap_or(&0);
+        if max_out == 2 {
+            return "fork (one source, two targets)".to_string();
+        }
+        if max_in == 2 {
+            return "merge (two sources, one target)".to_string();
+        }
+        // Otherwise: chain a→b, b→c.
+        return "chain (length 2)".to_string();
+    }
+
+    // Three-role, 3-edge cases.
+    if n_roles == 3 && self_loops == 0 && non_loop_edges == 3 {
+        // Could be triangle or transitive triple or cycle.
+        let (in_deg, out_deg) = degree_map(n_roles, edges);
+        let total: Vec<usize> = (0..n_roles).map(|i| in_deg[i] + out_deg[i]).collect();
+        if total.iter().all(|&d| d == 2) {
+            // 3-cycle (each node has 1 in, 1 out)
+            return "3-cycle".to_string();
+        }
+        // Otherwise: transitive triple or other 3-edge variant.
+        return "3-edge triple".to_string();
+    }
+
+    // Star / hub detection: one node connected to many.
+    if self_loops == 0 {
+        let (in_deg, out_deg) = degree_map(n_roles, edges);
+        let total: Vec<usize> = (0..n_roles).map(|i| in_deg[i] + out_deg[i]).collect();
+        if let Some(max) = total.iter().max().copied() {
+            if max + 1 == n_roles && non_loop_edges == n_roles - 1 {
+                return format!("star (hub of degree {})", max);
+            }
+        }
+    }
+
+    // Self-loops with structure.
+    if self_loops > 0 && non_loop_edges > 0 {
+        return format!(
+            "{} self-loop{} + {} cross-edge{}",
+            self_loops,
+            if self_loops == 1 { "" } else { "s" },
+            non_loop_edges,
+            if non_loop_edges == 1 { "" } else { "s" },
+        );
+    }
+    if self_loops > 0 {
+        return format!(
+            "{} self-loop{}",
+            self_loops,
+            if self_loops == 1 { "" } else { "s" },
+        );
+    }
+
+    // Generic fallback.
+    format!("{}-edge graph on {} nodes", non_loop_edges, n_roles)
+}
+
+fn degree_map(
+    n_roles: usize,
+    edges: &[(String, String)],
+) -> (Vec<usize>, Vec<usize>) {
+    // Map role short-names rN back to indices 0..n_roles.
+    let mut in_deg = vec![0usize; n_roles];
+    let mut out_deg = vec![0usize; n_roles];
+    for (a, b) in edges {
+        let ai: usize = a.trim_start_matches('r').parse().unwrap_or(0);
+        let bi: usize = b.trim_start_matches('r').parse().unwrap_or(0);
+        if ai < n_roles {
+            out_deg[ai] += 1;
+        }
+        if bi < n_roles {
+            in_deg[bi] += 1;
+        }
+    }
+    (in_deg, out_deg)
+}
+
+// ─────────────────────────────────────────────────────────────────
 // ADR 0074 — Phase Emergence-1: shape co-occurrence concepts.
 //
 // A concept is a second-order abstraction: a subset of shape

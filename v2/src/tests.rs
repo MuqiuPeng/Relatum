@@ -7043,6 +7043,64 @@
         assert_eq!(rs.concept_status(&id), crate::ConceptStatus::Live);
     }
 
+    // ── ADR 0075 — Pattern shape rendering ──────────────────────
+
+    #[test]
+    fn adr0075_format_pattern_shape_renders_chain() {
+        // Two-edge chain: a → b → c. Mint a pattern, render shape.
+        use crate::Subgraph;
+        let mut rs = crate::RSet::new();
+        let sg = Subgraph::from_edges(vec![
+            crate::R::new("a", "b"),
+            crate::R::new("b", "c"),
+        ]);
+        let pid = rs.name_pattern_instances(&[sg]).expect("named");
+        let s = rs.format_pattern_shape(&pid);
+        assert!(s.contains(&pid));
+        assert!(s.contains("3 roles"));
+        assert!(s.contains("2 edges"));
+        assert!(
+            s.contains("chain") || s.contains("fork") || s.contains("merge"),
+            "expected chain-like shape; got:\n{}",
+            s,
+        );
+    }
+
+    #[test]
+    fn adr0075_format_pattern_shape_renders_self_loop() {
+        use crate::Subgraph;
+        let mut rs = crate::RSet::new();
+        let sg = Subgraph::from_edges(vec![crate::R::new("a", "a")]);
+        let pid = rs.name_pattern_instances(&[sg]).expect("named");
+        let s = rs.format_pattern_shape(&pid);
+        assert!(s.contains("self-loop"));
+        assert!(s.contains("1 role"));
+        assert!(s.contains("1 edge"));
+    }
+
+    #[test]
+    fn adr0075_format_pattern_shape_handles_unknown_pattern() {
+        let rs = crate::RSet::new();
+        let s = rs.format_pattern_shape("p_does_not_exist");
+        assert!(s.contains("no intension recorded"));
+    }
+
+    #[test]
+    fn adr0075_format_pattern_shape_renders_3_cycle() {
+        use crate::Subgraph;
+        let mut rs = crate::RSet::new();
+        let sg = Subgraph::from_edges(vec![
+            crate::R::new("a", "b"),
+            crate::R::new("b", "c"),
+            crate::R::new("c", "a"),
+        ]);
+        let pid = rs.name_pattern_instances(&[sg]).expect("named");
+        let s = rs.format_pattern_shape(&pid);
+        assert!(s.contains("3-cycle") || s.contains("3-edge"));
+        assert!(s.contains("3 roles"));
+        assert!(s.contains("3 edges"));
+    }
+
     #[test]
     fn adr0074_concept_status_stale_after_constituent_retracted() {
         let (mut rs, t_alpha, t_beta, families) = build_concept_test_rset();
