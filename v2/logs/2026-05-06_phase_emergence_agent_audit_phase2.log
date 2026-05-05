@@ -1,0 +1,79 @@
+════════════════════════════════════════════════════════
+ ADR 0076 phase 2 — Episode-log enrichments audit
+════════════════════════════════════════════════════════
+ Three richer queries over the same Memory::episodes:
+   - Outcome distribution: per-class delta histogram
+   - Temporal density: when did each class fire?
+   - Target overlap: which specific instances did the
+     class act on (for id-bearing target kinds)?
+
+ All read-only; no new state. Continues path C of
+ ADR 0076 — no agent token registered, no agent attribute
+ named.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (1000 ticks, 5 temporal windows)
+════════════════════════════════════════════════════════
+
+ === Outcome distribution per agent class ===
+ agent class                         eps  neg  zer  pos    min Δ    med Δ    max Δ
+ EvaluatePredictions/WholeRSet        71   62    0    9   -0.487   -0.042    6.000
+ DiscoverPatterns/PatternSize(2)      18    0   18    0    0.000    0.000    0.000
+ Declarativize/Axiom                   7    7    0    0   -0.100   -0.100   -0.100
+ DiscoverTheory/WholeRSet              4    0    0    4    2.300    5.200   11.300
+ UpdateTheoryRelations/WholeRSet       3    2    0    1   -0.900   -0.600    0.700
+ Declarativize/Theory                  3    3    0    0   -0.100   -0.100   -0.100
+
+ === Temporal density (peak window per class) ===
+ agent class                       total    peak window peak count
+ EvaluatePredictions/WholeRSet        71   201-400              18
+ DiscoverPatterns/PatternSize(2)      18     1-200               9
+ Declarativize/Axiom                   7     1-200               7
+ DiscoverTheory/WholeRSet              4     1-200               4
+ UpdateTheoryRelations/WholeRSet       3     1-200               3
+ Declarativize/Theory                  3   401-600               3
+
+ === Target overlap (kinds with id-bearing targets) ===
+
+   Declarativize: 10 episodes over 10 distinct targets
+     modal: Axiom("ax_antisymmetry")
+     top entries (descending count):
+          1 × Axiom("ax_antisymmetry")
+          1 × Axiom("ax_reflexivity")
+          1 × Axiom("ax_tpl_v2_p0-1_c1-0")
+          1 × Axiom("ax_tpl_v3_p0-1_p0-2_c1-2")
+          1 × Axiom("ax_tpl_v3_p0-1_p1-2_c0-2")
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 (4500 ticks, 5 temporal windows)
+════════════════════════════════════════════════════════
+
+ === Outcome distribution per agent class ===
+ agent class                         eps  neg  zer  pos    min Δ    med Δ    max Δ
+ DiscoverPatterns/PatternSize(2)       5    0    3    2    0.000    0.000    2.000
+ DiscoverTheory/WholeRSet              2    0    0    2    1.800    2.650    3.500
+ PruneLowValueObjects/Pattern          1    0    0    1    1.300    1.300    1.300
+ UpdateTheoryRelations/WholeRSet       1    0    0    1    0.700    0.700    0.700
+ Declarativize/Axiom                   1    1    0    0   -0.100   -0.100   -0.100
+
+ === Temporal density (peak window per class) ===
+ agent class                       total    peak window peak count
+ DiscoverPatterns/PatternSize(2)       5     1-900               5
+ DiscoverTheory/WholeRSet              2     1-900               2
+ PruneLowValueObjects/Pattern          1     1-900               1
+ UpdateTheoryRelations/WholeRSet       1     1-900               1
+ Declarativize/Axiom                   1     1-900               1
+
+ === Target overlap (kinds with id-bearing targets) ===
+
+   PruneLowValueObjects: 1 episodes over 1 distinct targets
+     modal: Pattern("p_1")
+     top entries (descending count):
+          1 × Pattern("p_1")
+
+   Declarativize: 1 episodes over 1 distinct targets
+     modal: Axiom("ax_antisymmetry")
+     top entries (descending count):
+          1 × Axiom("ax_antisymmetry")
+
+--- end ---

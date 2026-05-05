@@ -6901,6 +6901,133 @@
     }
 
     #[test]
+    fn adr0076_outcome_distribution_buckets_by_sign() {
+        use crate::runtime::{
+            agent_outcome_distribution, ActionKind, Episode,
+            FrontierTarget, RuntimeMode,
+        };
+        let eps: Vec<Episode> = vec![1.0, -0.5, 0.0, 2.0, -1.0]
+            .into_iter()
+            .enumerate()
+            .map(|(i, d)| Episode {
+                id: i as u64 + 1, tick: i as u64 + 1, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: d, delta: d,
+            })
+            .collect();
+        let dist = agent_outcome_distribution(
+            &eps, ActionKind::DiscoverPatterns, "PatternSize(3)",
+        );
+        assert_eq!(dist.episode_count, 5);
+        assert_eq!(dist.positive_count, 2);
+        assert_eq!(dist.negative_count, 2);
+        assert_eq!(dist.zero_count, 1);
+        assert_eq!(dist.min_delta, -1.0);
+        assert_eq!(dist.max_delta, 2.0);
+        // Sorted: [-1.0, -0.5, 0.0, 1.0, 2.0]; median = 0.0
+        assert_eq!(dist.median_delta, 0.0);
+    }
+
+    #[test]
+    fn adr0076_outcome_distribution_empty_when_no_match() {
+        use crate::runtime::{
+            agent_outcome_distribution, ActionKind, Episode,
+            FrontierTarget, RuntimeMode,
+        };
+        let eps = vec![Episode {
+            id: 1, tick: 1, mode: RuntimeMode::Expand,
+            action_kind: ActionKind::DiscoverPatterns,
+            target: FrontierTarget::PatternSize(3),
+            score_before: 0.0, score_after: 1.0, delta: 1.0,
+        }];
+        let dist = agent_outcome_distribution(
+            &eps, ActionKind::DiscoverTheory, "WholeRSet",
+        );
+        assert_eq!(dist.episode_count, 0);
+    }
+
+    #[test]
+    fn adr0076_temporal_density_finds_peak_window() {
+        use crate::runtime::{
+            agent_temporal_density, ActionKind, Episode, FrontierTarget,
+            RuntimeMode,
+        };
+        // Runtime horizon 100, 4 windows of size 25.
+        // Episodes at ticks 5, 30, 35, 40, 90.
+        // window 0 (1-25): 1 episode
+        // window 1 (26-50): 3 episodes (peak)
+        // window 2 (51-75): 0
+        // window 3 (76-100): 1
+        let eps: Vec<Episode> = [5u64, 30, 35, 40, 90]
+            .into_iter()
+            .enumerate()
+            .map(|(i, t)| Episode {
+                id: i as u64 + 1, tick: t, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: 0.0, delta: 0.0,
+            })
+            .collect();
+        let dens = agent_temporal_density(
+            &eps, ActionKind::DiscoverPatterns, "PatternSize(3)", 4, 100,
+        );
+        assert_eq!(dens.windows.len(), 4);
+        assert_eq!(dens.windows[0].2, 1);
+        assert_eq!(dens.windows[1].2, 3);
+        assert_eq!(dens.windows[2].2, 0);
+        assert_eq!(dens.windows[3].2, 1);
+        assert_eq!(dens.peak_window_idx, Some(1));
+        assert_eq!(dens.total_episodes, 5);
+    }
+
+    #[test]
+    fn adr0076_temporal_density_empty_with_no_episodes() {
+        use crate::runtime::{
+            agent_temporal_density, ActionKind, Episode,
+        };
+        let eps: Vec<Episode> = Vec::new();
+        let dens = agent_temporal_density(
+            &eps, ActionKind::DiscoverPatterns, "PatternSize(3)", 4, 100,
+        );
+        assert_eq!(dens.peak_window_idx, None);
+        assert_eq!(dens.total_episodes, 0);
+    }
+
+    #[test]
+    fn adr0076_target_overlap_groups_by_specific_id() {
+        use crate::runtime::{
+            agent_target_overlap, ActionKind, Episode, FrontierTarget,
+            RuntimeMode,
+        };
+        let eps: Vec<Episode> = vec![
+            FrontierTarget::Pattern("p_0".to_string()),
+            FrontierTarget::Pattern("p_0".to_string()),
+            FrontierTarget::Pattern("p_3".to_string()),
+            FrontierTarget::Pattern("p_0".to_string()),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, target)| Episode {
+            id: i as u64 + 1, tick: i as u64 + 1, mode: RuntimeMode::Expand,
+            action_kind: ActionKind::PruneLowValueObjects,
+            target,
+            score_before: 0.0, score_after: 0.0, delta: 0.0,
+        })
+        .collect();
+        let overlap = agent_target_overlap(
+            &eps, ActionKind::PruneLowValueObjects,
+        );
+        assert_eq!(overlap.distinct_targets, 2);
+        assert_eq!(overlap.total_episodes, 4);
+        // Modal target is "Pattern(\"p_0\")" — 3 of 4.
+        assert!(overlap.modal_target.as_deref().unwrap().contains("p_0"));
+        // First entry by descending count.
+        assert_eq!(overlap.target_counts[0].1, 3);
+        assert_eq!(overlap.target_counts[1].1, 1);
+    }
+
+    #[test]
     fn adr0076_attention_share_recent() {
         use crate::runtime::{
             agent_attention_share_recent, ActionKind, Episode, FrontierTarget,

@@ -43,7 +43,9 @@ mod scheduler_ucb;
 pub use action::{ActionKind, ActionPlan, FrontierTarget, SchedulerDecision};
 pub use agent_view::{
     agent_attention_share_recent, agent_classes, agent_episodes,
-    target_kind_label, AgentClassSummary,
+    agent_outcome_distribution, agent_target_overlap,
+    agent_temporal_density, target_kind_label, AgentClassSummary,
+    AgentOutcomeDistribution, AgentTargetOverlap, AgentTemporalDensity,
 };
 pub use autonomous::AutonomousRuntime;
 pub(crate) use autonomous::theory_pair_has_relation;

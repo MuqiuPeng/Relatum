@@ -138,3 +138,213 @@ where
     let count = window.iter().filter(|e| e.action_kind == kind).count();
     count as f64 / window.len() as f64
 }
+
+// ─────────────────────────────────────────────────────────────────
+// ADR 0076 phase 2 — episode-log enrichments. Three query helpers
+// surfacing finer-grained behaviour patterns over the same log:
+//  - outcome distribution (delta histogram per agent class)
+//  - temporal density (when did the class fire?)
+//  - target overlap (which specific instances did the class act on?)
+// All read-only; no new state.
+// ─────────────────────────────────────────────────────────────────
+
+/// Outcome distribution for one agent class. Buckets the
+/// per-episode deltas into negative / zero / positive,
+/// reports min / max / mean / median. ADR 0076 phase 2.
+#[derive(Debug, Clone)]
+pub struct AgentOutcomeDistribution {
+    pub episode_count: usize,
+    pub negative_count: usize,
+    pub zero_count: usize,
+    pub positive_count: usize,
+    pub min_delta: f64,
+    pub max_delta: f64,
+    pub mean_delta: f64,
+    pub median_delta: f64,
+}
+
+impl AgentOutcomeDistribution {
+    /// Empty distribution — used when no episodes match.
+    pub fn empty() -> Self {
+        Self {
+            episode_count: 0,
+            negative_count: 0,
+            zero_count: 0,
+            positive_count: 0,
+            min_delta: 0.0,
+            max_delta: 0.0,
+            mean_delta: 0.0,
+            median_delta: 0.0,
+        }
+    }
+}
+
+/// Compute the outcome-distribution profile for an agent class.
+pub fn agent_outcome_distribution<'a, I>(
+    episodes: I,
+    kind: ActionKind,
+    target_label: &str,
+) -> AgentOutcomeDistribution
+where
+    I: IntoIterator<Item = &'a Episode>,
+{
+    let mut deltas: Vec<f64> = episodes
+        .into_iter()
+        .filter(|e| {
+            e.action_kind == kind
+                && target_kind_label(&e.target) == target_label
+        })
+        .map(|e| e.delta)
+        .collect();
+    if deltas.is_empty() {
+        return AgentOutcomeDistribution::empty();
+    }
+    let count = deltas.len();
+    let negative = deltas.iter().filter(|d| **d < 0.0).count();
+    let zero = deltas.iter().filter(|d| **d == 0.0).count();
+    let positive = deltas.iter().filter(|d| **d > 0.0).count();
+    let total: f64 = deltas.iter().sum();
+    let mean = total / count as f64;
+    let min = deltas.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = deltas.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    deltas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = if count % 2 == 1 {
+        deltas[count / 2]
+    } else {
+        (deltas[count / 2 - 1] + deltas[count / 2]) / 2.0
+    };
+    AgentOutcomeDistribution {
+        episode_count: count,
+        negative_count: negative,
+        zero_count: zero,
+        positive_count: positive,
+        min_delta: min,
+        max_delta: max,
+        mean_delta: mean,
+        median_delta: median,
+    }
+}
+
+/// Temporal density of one agent class — how its dispatch
+/// frequency varies across `n_windows` equal-width tick
+/// windows up to `runtime_horizon`. Returns the
+/// (start_tick, end_tick, count) per window plus the index of
+/// the densest window. ADR 0076 phase 2.
+#[derive(Debug, Clone)]
+pub struct AgentTemporalDensity {
+    pub windows: Vec<(u64, u64, usize)>,
+    pub peak_window_idx: Option<usize>,
+    pub total_episodes: usize,
+}
+
+/// Compute the temporal density for an agent class.
+pub fn agent_temporal_density<'a, I>(
+    episodes: I,
+    kind: ActionKind,
+    target_label: &str,
+    n_windows: usize,
+    runtime_horizon: u64,
+) -> AgentTemporalDensity
+where
+    I: IntoIterator<Item = &'a Episode>,
+{
+    if n_windows == 0 || runtime_horizon == 0 {
+        return AgentTemporalDensity {
+            windows: Vec::new(),
+            peak_window_idx: None,
+            total_episodes: 0,
+        };
+    }
+    let window_size = runtime_horizon.div_ceil(n_windows as u64).max(1);
+    let mut counts = vec![0usize; n_windows];
+    let mut total = 0usize;
+    for ep in episodes {
+        if ep.action_kind != kind
+            || target_kind_label(&ep.target) != target_label
+        {
+            continue;
+        }
+        total += 1;
+        if ep.tick == 0 {
+            counts[0] += 1;
+            continue;
+        }
+        let idx = ((ep.tick.saturating_sub(1)) / window_size) as usize;
+        if idx < n_windows {
+            counts[idx] += 1;
+        } else {
+            counts[n_windows - 1] += 1;
+        }
+    }
+    let windows: Vec<(u64, u64, usize)> = (0..n_windows)
+        .map(|i| {
+            let start = (i as u64) * window_size + 1;
+            let end = ((i as u64) + 1) * window_size;
+            (start, end, counts[i])
+        })
+        .collect();
+    let peak_idx = if total == 0 {
+        None
+    } else {
+        Some(
+            counts
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, c)| *c)
+                .map(|(i, _)| i)
+                .unwrap_or(0),
+        )
+    };
+    AgentTemporalDensity {
+        windows,
+        peak_window_idx: peak_idx,
+        total_episodes: total,
+    }
+}
+
+/// Target-overlap profile for an agent class: which specific
+/// target ids did this class act on, and how often. Useful for
+/// agent classes whose target type carries an id (Pattern,
+/// Theory, Axiom, ActionSequence, ShapeFamily). For
+/// id-less target types (WholeRSet, PatternSize) the profile
+/// will collapse to a single bucket. ADR 0076 phase 2.
+#[derive(Debug, Clone)]
+pub struct AgentTargetOverlap {
+    pub target_counts: Vec<(String, usize)>,
+    pub distinct_targets: usize,
+    pub modal_target: Option<String>,
+    pub total_episodes: usize,
+}
+
+/// Compute target-overlap for an agent class. The string keys
+/// are the targets' `Debug`-formatted strings so id-bearing
+/// variants (`Pattern("p_3")`) become distinct entries while
+/// id-less variants share a single key.
+pub fn agent_target_overlap<'a, I>(
+    episodes: I,
+    kind: ActionKind,
+) -> AgentTargetOverlap
+where
+    I: IntoIterator<Item = &'a Episode>,
+{
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut total = 0usize;
+    for ep in episodes {
+        if ep.action_kind != kind {
+            continue;
+        }
+        total += 1;
+        let key = format!("{:?}", ep.target);
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    let mut sorted: Vec<(String, usize)> = counts.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let distinct = sorted.len();
+    let modal = sorted.first().map(|(k, _)| k.clone());
+    AgentTargetOverlap {
+        target_counts: sorted,
+        distinct_targets: distinct,
+        modal_target: modal,
+        total_episodes: total,
+    }
+}
