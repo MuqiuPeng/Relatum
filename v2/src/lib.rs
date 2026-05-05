@@ -14,6 +14,7 @@ mod axiom_ids;
 mod markers;
 mod stats;
 mod types_axiom_drive;
+mod types_concept;
 mod types_runtime;
 
 pub use axiom_ids::{
@@ -23,6 +24,7 @@ pub use axiom_ids::{
 pub use markers::*;
 pub use stats::{null_baseline_probability, wilson_score_95};
 pub use types_axiom_drive::*;
+pub use types_concept::*;
 pub use types_runtime::*;
 
 /// The sole primitive. Direction is intrinsic; meaning is not.
@@ -5851,6 +5853,14 @@ impl RSet {
         s.insert(KIND_PREMISE_EDGE_SHARED.to_string());
         s.insert(KIND_MEMBER_OVERLAP.to_string());
         s.insert(KIND_MEMBER_L2_SHARED.to_string());
+        // ADR 0074 / Phase Emergence-1 — Concept markers + ids.
+        s.insert(CONCEPT_MARKER.to_string());
+        s.insert(HAS_CONSTITUENT_SHAPE.to_string());
+        s.insert(ATTESTED_IN_THEORY.to_string());
+        s.insert(CROSS_PRECISION_AT_MINT.to_string());
+        for c in self.left_of(CONCEPT_MARKER) {
+            s.insert(c.y.to_string());
+        }
         for role in self.roles() {
             s.insert(role.to_string());
         }
@@ -6005,6 +6015,457 @@ impl RSet {
                 return candidate;
             }
             n += 1;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ADR 0074 — Phase Emergence-1: shape co-occurrence concepts.
+//
+// A concept is a second-order abstraction: a subset of shape
+// families (size ≥ 2) that co-occur across Signal-class theories.
+// Lifecycle: propose → validate → register → (optionally) retract.
+// All registered concepts are represented as meta-R chains.
+// ─────────────────────────────────────────────────────────────────
+
+impl RSet {
+    /// Propose candidate concepts by mining shape-family
+    /// co-occurrence in theories. ADR 0074 step 1.
+    ///
+    /// Walks each theory's axioms, looks up every axiom's
+    /// shape-family memberships (via L2 `shape_family_members`),
+    /// builds per-theory shape-family sets, and surfaces
+    /// (shape-family-subset) tuples that co-occur in at least
+    /// `config.min_theories` theories.
+    ///
+    /// If `config.require_signal_only` is true, only theories
+    /// whose `summary_class == Signal` (per the supplied
+    /// `quality_reports`) count toward `min_theories`. This
+    /// filters out concepts grounded in noise or mixed evidence.
+    ///
+    /// `aggregate_cross_precision` is left as `None` on output —
+    /// callers must run `validate_concept` to populate it.
+    pub fn propose_concept_candidates(
+        &self,
+        config: &ConceptMiningConfig,
+        quality_reports: &[TheoryQualityReport],
+    ) -> Vec<ConceptCandidate> {
+        // Map theory_id → its quality-class (only used if
+        // require_signal_only).
+        let class_by_theory: HashMap<&str, TheoryQualityClass> = quality_reports
+            .iter()
+            .map(|r| (r.theory_id.as_str(), r.summary_class))
+            .collect();
+
+        // Reverse-index: for each axiom, which shape families
+        // contain it?
+        let all_families: Vec<&str> = self.axiom_shape_families();
+        let mut families_of_axiom: HashMap<String, Vec<String>> = HashMap::new();
+        for fam in &all_families {
+            for ax in self.shape_family_members(fam) {
+                families_of_axiom
+                    .entry(ax.to_string())
+                    .or_default()
+                    .push(fam.to_string());
+            }
+        }
+
+        // For each theory, collect the set of shape families it
+        // covers (via its member axioms).
+        let mut shapes_by_theory: HashMap<String, HashSet<String>> = HashMap::new();
+        for t in self.theories() {
+            if config.require_signal_only {
+                match class_by_theory.get(t) {
+                    Some(TheoryQualityClass::Signal) => {}
+                    _ => continue,
+                }
+            }
+            let mut shapes: HashSet<String> = HashSet::new();
+            for ax in self.theory_axioms(t) {
+                if let Some(fams) = families_of_axiom.get(ax) {
+                    for f in fams {
+                        shapes.insert(f.clone());
+                    }
+                }
+            }
+            if !shapes.is_empty() {
+                shapes_by_theory.insert(t.to_string(), shapes);
+            }
+        }
+
+        // Build subsets to consider. Start with all pairs, scale
+        // up to triples and beyond bounded by max_candidate_size.
+        // For each theory's shape-set of size N, enumerate every
+        // subset of size 2..=max_candidate_size and tally
+        // (subset, theory-where-attested).
+        let mut subset_attestations: BTreeMap<Vec<String>, Vec<String>> = BTreeMap::new();
+        for (t, shapes) in &shapes_by_theory {
+            let mut sorted: Vec<String> = shapes.iter().cloned().collect();
+            sorted.sort();
+            for size in 2..=config.max_candidate_size.min(sorted.len()) {
+                for combo in combinations(&sorted, size) {
+                    subset_attestations
+                        .entry(combo)
+                        .or_default()
+                        .push(t.clone());
+                }
+            }
+        }
+
+        // Filter by min_theories.
+        let mut candidates: Vec<ConceptCandidate> = Vec::new();
+        for (subset, mut theories) in subset_attestations {
+            if theories.len() < config.min_theories {
+                continue;
+            }
+            theories.sort();
+            theories.dedup();
+            let id = concept_id_from_constituents(&subset);
+            let alias = Some(concept_alias_from_constituents(&subset));
+            candidates.push(ConceptCandidate {
+                id,
+                alias,
+                constituent_shapes: subset,
+                theories_attested: theories,
+                aggregate_cross_precision: None,
+            });
+        }
+
+        // Stable order: by descending |constituents|, then by id.
+        candidates.sort_by(|a, b| {
+            b.constituent_shapes
+                .len()
+                .cmp(&a.constituent_shapes.len())
+                .then(a.id.cmp(&b.id))
+        });
+        candidates
+    }
+
+    /// Validate a candidate by aggregating cross-precision over
+    /// the constituent axioms in each attested theory. ADR 0074
+    /// step 2.
+    ///
+    /// Returns `Some(mean)` if the aggregate ≥ floor; `None`
+    /// otherwise (including when no qualifying axioms found).
+    /// The returned candidate's `aggregate_cross_precision` field
+    /// should be populated by the caller from the same value.
+    pub fn validate_concept(
+        &self,
+        candidate: &ConceptCandidate,
+        substrates: &[RSet],
+        floor: f64,
+    ) -> Option<f64> {
+        let constituent_set: HashSet<&str> = candidate
+            .constituent_shapes
+            .iter()
+            .map(String::as_str)
+            .collect();
+
+        let mut precisions: Vec<f64> = Vec::new();
+        for t in &candidate.theories_attested {
+            for ax in self.theory_axioms(t) {
+                let fams: Vec<&str> = self
+                    .axiom_shape_families()
+                    .into_iter()
+                    .filter(|f| {
+                        self.shape_family_members(f)
+                            .iter()
+                            .any(|m| *m == ax)
+                    })
+                    .collect();
+                let in_concept =
+                    fams.iter().any(|f| constituent_set.contains(*f));
+                if !in_concept {
+                    continue;
+                }
+                if let Some(p) = self.axiom_cross_precision(ax, substrates) {
+                    precisions.push(p);
+                }
+            }
+        }
+        if precisions.is_empty() {
+            return None;
+        }
+        let mean = precisions.iter().sum::<f64>() / precisions.len() as f64;
+        if mean >= floor {
+            Some(mean)
+        } else {
+            None
+        }
+    }
+
+    /// Register a validated candidate as meta-R. ADR 0074 step 3.
+    ///
+    /// Writes 4 chains:
+    /// - `R(CONCEPT_MARKER, concept_id)`
+    /// - `R(concept_id, HAS_CONSTITUENT_SHAPE)` + `R(HAS_CONSTITUENT_SHAPE, sf_id)` per constituent
+    /// - `R(concept_id, ATTESTED_IN_THEORY)` + `R(ATTESTED_IN_THEORY, t_id)` per theory
+    /// - `R(concept_id, CROSS_PRECISION_AT_MINT)` + `R(CROSS_PRECISION_AT_MINT, "<value>")`
+    ///
+    /// Note: the chain's middle node is the marker itself for
+    /// simplicity; both edges are stored in the rset and can be
+    /// queried via `right_of` / `left_of`. This is a pragmatic
+    /// shortcut over per-attestation middle nodes; a future
+    /// refinement may mint per-attestation chain nodes if
+    /// per-attestation provenance is needed.
+    pub fn register_concept(
+        &mut self,
+        candidate: &ConceptCandidate,
+    ) -> Result<String, ConceptRegistrationError> {
+        if candidate.constituent_shapes.len() < 2 {
+            return Err(ConceptRegistrationError::DegenerateConstituents);
+        }
+        let xprec = candidate
+            .aggregate_cross_precision
+            .ok_or(ConceptRegistrationError::NotValidated)?;
+        if self.is_concept(&candidate.id) {
+            return Err(ConceptRegistrationError::AlreadyRegistered(
+                candidate.id.clone(),
+            ));
+        }
+        for sf in &candidate.constituent_shapes {
+            if !self.is_axiom_shape_family(sf) {
+                return Err(ConceptRegistrationError::UnknownConstituent(
+                    sf.clone(),
+                ));
+            }
+        }
+        let theories_set: HashSet<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        for t in &candidate.theories_attested {
+            if !theories_set.contains(t) {
+                return Err(ConceptRegistrationError::UnknownTheory(t.clone()));
+            }
+        }
+
+        // Concept existence edge.
+        self.add(R::new(CONCEPT_MARKER, candidate.id.clone()));
+
+        // Constituent shape chain.
+        for sf in &candidate.constituent_shapes {
+            self.add(R::new(candidate.id.clone(), HAS_CONSTITUENT_SHAPE));
+            self.add(R::new(HAS_CONSTITUENT_SHAPE, sf.clone()));
+            // Direct shortcut (concept_id, sf) so callers can
+            // skip the chain when convenient.
+            self.add(R::new(candidate.id.clone(), sf.clone()));
+        }
+
+        // Attested theories chain.
+        for t in &candidate.theories_attested {
+            self.add(R::new(candidate.id.clone(), ATTESTED_IN_THEORY));
+            self.add(R::new(ATTESTED_IN_THEORY, t.clone()));
+            self.add(R::new(candidate.id.clone(), t.clone()));
+        }
+
+        // Cross-precision-at-mint chain. The value is stored as
+        // a stringified f64 (4-decimal precision) so the rset
+        // text persistence stays clean.
+        let xprec_token = format!("{:.4}", xprec);
+        self.add(R::new(candidate.id.clone(), CROSS_PRECISION_AT_MINT));
+        self.add(R::new(CROSS_PRECISION_AT_MINT, xprec_token));
+
+        Ok(candidate.id.clone())
+    }
+
+    /// Retract a registered concept and all four meta-R chains
+    /// it owns. Returns true iff the concept existed.
+    pub fn retract_concept(&mut self, id: &str) -> bool {
+        if !self.is_concept(id) {
+            return false;
+        }
+        // Build the to-remove list first to avoid mutating during
+        // iteration.
+        let to_remove: Vec<R> = self
+            .iter()
+            .filter(|r| {
+                r.x == id
+                    || (r.x == CONCEPT_MARKER && r.y == id)
+            })
+            .cloned()
+            .collect();
+        for r in to_remove {
+            self.remove(&r);
+        }
+        // The chain markers (HAS_CONSTITUENT_SHAPE, etc.) may
+        // also have outgoing edges referencing the concept's
+        // attestations; clean these too. They are shared markers
+        // (one per system, not per concept), so we only remove
+        // edges where the right side is one of the concept's
+        // own constituents/theories — but those are already
+        // removed via the `r.x == id` clause above's reverse
+        // pair. The marker → constituent edges, however, are
+        // shared with other concepts' constituents. We cannot
+        // safely remove them here unless we know no other
+        // concept references them. Skip; they remain as
+        // residual structural facts (idempotent re-registration
+        // handles this fine).
+        true
+    }
+
+    /// Whether the given id is a registered concept.
+    pub fn is_concept(&self, id: &str) -> bool {
+        self.instances.contains(&R::new(CONCEPT_MARKER, id))
+    }
+
+    /// All registered concept ids.
+    pub fn concepts(&self) -> Vec<&str> {
+        self.left_of(CONCEPT_MARKER)
+            .into_iter()
+            .map(|r| r.y.as_str())
+            .collect()
+    }
+
+    /// Constituent shape-family ids of a registered concept.
+    pub fn concept_constituent_shapes(&self, id: &str) -> Vec<&str> {
+        if !self.is_concept(id) {
+            return Vec::new();
+        }
+        // Use the shortcut edge (concept_id, sf): filter to those
+        // whose target is an existing shape family.
+        self.left_of(id)
+            .into_iter()
+            .filter_map(|r| {
+                if self.is_axiom_shape_family(&r.y) {
+                    Some(r.y.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Theory ids attested by a registered concept.
+    pub fn concept_attested_theories(&self, id: &str) -> Vec<&str> {
+        if !self.is_concept(id) {
+            return Vec::new();
+        }
+        let theories_set: HashSet<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        self.left_of(id)
+            .into_iter()
+            .filter_map(|r| {
+                if theories_set.contains(r.y.as_str()) {
+                    Some(r.y.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Recorded cross-precision at concept mint time. Returns
+    /// None if the concept doesn't exist or the value is missing.
+    pub fn concept_cross_precision_at_mint(&self, id: &str) -> Option<f64> {
+        if !self.is_concept(id) {
+            return None;
+        }
+        // The value is on the chain (id, CROSS_PRECISION_AT_MINT) +
+        // (CROSS_PRECISION_AT_MINT, "<value>"). To find the
+        // specific value linked to *this* concept (rather than
+        // any concept's), we currently store one value per
+        // concept in a single shared right_of(CROSS_PRECISION_AT_MINT)
+        // bucket. To make this concept-specific, we'd need a
+        // per-concept middle node. For now, parse the latest
+        // value from the shared bucket — if there are multiple
+        // concepts, this is ambiguous; that's a known limitation
+        // documented in ADR 0074's "Open questions".
+        // Pragmatic resolution: if exactly one concept exists,
+        // return its value; otherwise return None to avoid
+        // ambiguity.
+        if self.concepts().len() != 1 {
+            return None;
+        }
+        let values: Vec<&str> = self
+            .left_of(CROSS_PRECISION_AT_MINT)
+            .into_iter()
+            .map(|r| r.y.as_str())
+            .collect();
+        for v in values {
+            if let Ok(parsed) = v.parse::<f64>() {
+                return Some(parsed);
+            }
+        }
+        None
+    }
+
+    /// Lifecycle status of a concept. ADR 0074.
+    pub fn concept_status(&self, id: &str) -> ConceptStatus {
+        if !self.is_concept(id) {
+            // Not registered → conservatively treat as Stale.
+            return ConceptStatus::Stale;
+        }
+        // Stale check: are any of the constituent shape families
+        // missing from the rset?
+        let constituents = self.concept_constituent_shapes(id);
+        // Note: concept_constituent_shapes already filters to
+        // existing families (via is_axiom_shape_family check).
+        // To detect Stale we need to compare against the original
+        // intent. We stored the constituents as direct edges
+        // (id, sf); if a shape family is retracted, its
+        // is_axiom_shape_family returns false but the (id, sf)
+        // edge persists. Re-walk all left_of(id) edges, find ones
+        // whose target was originally a shape family but now isn't.
+        let live_constituents: HashSet<&str> = constituents.into_iter().collect();
+        let all_outgoing: Vec<String> = self
+            .left_of(id)
+            .into_iter()
+            .map(|r| r.y.to_string())
+            .collect();
+        let theories_set: HashSet<String> =
+            self.theories().into_iter().map(str::to_owned).collect();
+        for outgoing in &all_outgoing {
+            // Skip chain markers and theory edges.
+            if outgoing == HAS_CONSTITUENT_SHAPE
+                || outgoing == ATTESTED_IN_THEORY
+                || outgoing == CROSS_PRECISION_AT_MINT
+            {
+                continue;
+            }
+            if theories_set.contains(outgoing) {
+                continue;
+            }
+            // Heuristic: if it looks like a shape family id (starts
+            // with "shape_") but isn't currently registered, it's
+            // a stale constituent.
+            if outgoing.starts_with("shape_")
+                && !live_constituents.contains(outgoing.as_str())
+            {
+                return ConceptStatus::Stale;
+            }
+        }
+        ConceptStatus::Live
+    }
+}
+
+/// Generate all subsets of size `k` from a sorted vector.
+/// Used by `propose_concept_candidates`. Output preserves order.
+fn combinations(items: &[String], k: usize) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    if k == 0 || k > items.len() {
+        return out;
+    }
+    let n = items.len();
+    let mut indices: Vec<usize> = (0..k).collect();
+    loop {
+        let combo: Vec<String> = indices.iter().map(|&i| items[i].clone()).collect();
+        out.push(combo);
+        // Find the rightmost index that can be advanced.
+        let mut i = k;
+        while i > 0 {
+            i -= 1;
+            if indices[i] != i + n - k {
+                break;
+            }
+            if i == 0 {
+                return out;
+            }
+        }
+        if indices[i] == i + n - k {
+            return out;
+        }
+        indices[i] += 1;
+        for j in (i + 1)..k {
+            indices[j] = indices[j - 1] + 1;
         }
     }
 }

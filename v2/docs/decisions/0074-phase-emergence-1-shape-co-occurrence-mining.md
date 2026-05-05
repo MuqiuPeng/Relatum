@@ -1,7 +1,7 @@
 # 0074: Phase Emergence-1 — shape co-occurrence mining (concept lifting)
 
-Status: Proposed
-Date: 2026-05-05
+Status: Accepted
+Date: 2026-05-05 (specified) / 2026-05-06 (shipped)
 
 Parent: [0073 — phase pivot to concept emergence](0073-phase-pivot-concept-emergence.md)
 
@@ -362,8 +362,23 @@ These are decided in implementation, not in this ADR.
 
 ## Implementation
 
-Pending. ADR records the design only. Initial implementation
-target: separate commit referencing this ADR by number.
+Shipped 2026-05-06. See
+[`docs/results/phase_emergence_1_concept_mining.md`](../results/phase_emergence_1_concept_mining.md)
+for full result document.
+
+Summary:
+- 4 new markers in `src/markers.rs`
+- New module `src/types_concept.rs` (~120 lines)
+- 9 new methods on `RSet` in `src/lib.rs` (~340 lines)
+- 13 new unit tests in `src/tests.rs` (lib tests 600 → 613)
+- 1 example: `examples/phase_emergence_1_concept_mining.rs`
+
+Empirical outcome: concept `concept_4c2d2fde3b2d8360` (alias
+`concept_alias_conclusion-c0-2__premise-p0-1-p1-2`) minted on
+OQ#1 with cross_precision_mean = 1.0000; same id minted on
+long5k with same cross_precision; identity portable across
+substrates. First capability for second-order abstraction is
+production-ready.
 
 ## Success criteria
 

@@ -285,3 +285,42 @@ pub const KIND_MEMBER_OVERLAP: &str = "kind_member_overlap";
 /// L4 kind: L3 nested families that share a member L2 family.
 /// B.7 introduction.
 pub const KIND_MEMBER_L2_SHARED: &str = "kind_member_l2_shared";
+
+/// ADR 0074 / Phase Emergence-1 — Concept marker.
+///
+/// `R(CONCEPT_MARKER, concept_X)` declares `concept_X` as a
+/// **second-order abstraction** over shape families: a named
+/// pattern of *which shape-families co-occur* across Signal-class
+/// theories. This is the first marker that lets the system mint
+/// a noun for "shape-shape co-occurrence" — distinct from a
+/// theory (instance-bound axiom collection) and from a shape
+/// family (one canonicalized shape, ADR 0068/0070).
+///
+/// Companion edges (all written by `register_concept`):
+/// - `R(concept_X, HAS_CONSTITUENT_SHAPE) + R(HAS_CONSTITUENT_SHAPE, sf_Y)`
+///   for each constituent shape family
+/// - `R(concept_X, ATTESTED_IN_THEORY) + R(ATTESTED_IN_THEORY, t_Z)`
+///   for each theory the concept fired in at mint time
+/// - `R(concept_X, CROSS_PRECISION_AT_MINT) + R(CROSS_PRECISION_AT_MINT, "<value>")`
+///   recording the cross-precision aggregate at mint time
+///
+/// Concepts are retractable; lifecycle states are computed at
+/// query time (Live / Stale / Validated / Falsified).
+pub const CONCEPT_MARKER: &str = "__concept__";
+
+/// ADR 0074 — chain marker for the concept's constituent shape
+/// families. Used as the middle node in the chain
+/// `R(concept_X, HAS_CONSTITUENT_SHAPE) + R(HAS_CONSTITUENT_SHAPE, sf_Y)`.
+/// Same direction-as-role convention as PREMISE_MARKER (ADR 0032).
+pub const HAS_CONSTITUENT_SHAPE: &str = "__has_constituent_shape__";
+
+/// ADR 0074 — chain marker for theories where the concept was
+/// attested at mint time. `R(concept_X, ATTESTED_IN_THEORY) +
+/// R(ATTESTED_IN_THEORY, t_Z)`.
+pub const ATTESTED_IN_THEORY: &str = "__attested_in_theory__";
+
+/// ADR 0074 — chain marker for the cross-precision value recorded
+/// at concept-mint time. The value is encoded as a stringified f64
+/// (`"0.9421"`). `R(concept_X, CROSS_PRECISION_AT_MINT) +
+/// R(CROSS_PRECISION_AT_MINT, "<value>")`.
+pub const CROSS_PRECISION_AT_MINT: &str = "__concept_xprec_mint__";

@@ -6792,3 +6792,269 @@
         // 2000 × 2 = 4000, should clamp to 1000.
         assert_eq!(tuned.discovery_config.sample_count, 1000);
     }
+
+    // ── ADR 0074 — Phase Emergence-1: shape co-occurrence concepts ──
+
+    /// Build a small RSet with 4 axioms forming 2 shape families,
+    /// and 2 theories each containing one axiom from each family.
+    /// The setup is the canonical "(family A, family B) co-occurs
+    /// in 2 theories" pattern the concept miner is meant to detect.
+    fn build_concept_test_rset()
+    -> (crate::RSet, String, String, Vec<String>) {
+        use crate::{R, THEORY_MARKER};
+        let mut rs = crate::RSet::new();
+        // Two axioms sharing premise [(0,0), (1,2)].
+        let ax_a = "ax_tpl_v3_p0-0_p1-2_c0-1";
+        let ax_b = "ax_tpl_v3_p0-0_p1-2_c0-2";
+        // Two axioms sharing premise [(0,1), (1,2)].
+        let ax_c = "ax_tpl_v3_p0-1_p1-2_c2-0";
+        let ax_d = "ax_tpl_v3_p0-1_p1-2_c2-1";
+        for id in [ax_a, ax_b, ax_c, ax_d] {
+            rs.register_axiom_with_intension(id);
+        }
+        // Mint 2 shape families; they collect the 4 axioms.
+        let _ = rs.discover_axiom_shape_families(2);
+
+        // Build 2 theories, each with one axiom from each family.
+        // Bypass `name_theory` to avoid `verify_axiom_holds`.
+        let t_alpha = "t_alpha";
+        let t_beta = "t_beta";
+        rs.add(R::new(THEORY_MARKER, t_alpha));
+        rs.add(R::new(t_alpha, ax_a));
+        rs.add(R::new(t_alpha, ax_c));
+        rs.add(R::new(THEORY_MARKER, t_beta));
+        rs.add(R::new(t_beta, ax_b));
+        rs.add(R::new(t_beta, ax_d));
+
+        let mut families: Vec<String> = rs
+            .axiom_shape_families()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        families.sort();
+        (rs, t_alpha.to_string(), t_beta.to_string(), families)
+    }
+
+    /// Synthesize Signal-class quality reports for two theories.
+    /// Used to satisfy `require_signal_only` filter.
+    fn synth_signal_reports(t1: &str, t2: &str) -> Vec<crate::TheoryQualityReport> {
+        vec![
+            synth_report(t1, vec!["ax_a".to_string()], Some(0.95), Some(0.95), 0,
+                         vec![], vec![], vec![]),
+            synth_report(t2, vec!["ax_b".to_string()], Some(0.95), Some(0.95), 0,
+                         vec![], vec![], vec![]),
+        ]
+    }
+
+    #[test]
+    fn adr0074_concept_id_is_deterministic() {
+        let cs = vec!["shape_a".to_string(), "shape_b".to_string()];
+        let id1 = crate::concept_id_from_constituents(&cs);
+        let id2 = crate::concept_id_from_constituents(&cs);
+        assert_eq!(id1, id2);
+        assert!(id1.starts_with("concept_"));
+        assert!(id1.len() > "concept_".len());
+    }
+
+    #[test]
+    fn adr0074_concept_alias_is_human_readable() {
+        let cs = vec![
+            "shape_premise_p0-0_p1-2".to_string(),
+            "shape_premise_p0-1_p1-2".to_string(),
+        ];
+        let alias = crate::concept_alias_from_constituents(&cs);
+        assert!(alias.contains("premise"));
+        assert!(alias.starts_with("concept_alias_"));
+    }
+
+    #[test]
+    fn adr0074_propose_surfaces_pair_for_cooccurrence() {
+        let (rs, t_alpha, t_beta, families) = build_concept_test_rset();
+        assert_eq!(families.len(), 2, "expected 2 premise families");
+        let reports = synth_signal_reports(&t_alpha, &t_beta);
+        let cfg = crate::ConceptMiningConfig::default();
+        let candidates = rs.propose_concept_candidates(&cfg, &reports);
+        assert!(!candidates.is_empty(), "expected ≥1 candidate");
+        let pair = candidates
+            .iter()
+            .find(|c| c.constituent_shapes.len() == 2)
+            .expect("a 2-shape candidate");
+        let expected: std::collections::HashSet<&str> =
+            families.iter().map(String::as_str).collect();
+        let got: std::collections::HashSet<&str> =
+            pair.constituent_shapes.iter().map(String::as_str).collect();
+        assert_eq!(got, expected, "candidate constituents match the 2 minted families");
+        assert_eq!(pair.theories_attested.len(), 2);
+    }
+
+    #[test]
+    fn adr0074_propose_skips_below_min_theories() {
+        let (rs, t_alpha, t_beta, _families) = build_concept_test_rset();
+        let reports = synth_signal_reports(&t_alpha, &t_beta);
+        // Set min_theories = 3 even though only 2 attestations exist.
+        let cfg = crate::ConceptMiningConfig {
+            min_theories: 3,
+            ..Default::default()
+        };
+        let candidates = rs.propose_concept_candidates(&cfg, &reports);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn adr0074_propose_filters_noise_theories_when_signal_only() {
+        let (rs, t_alpha, t_beta, _families) = build_concept_test_rset();
+        // Mark one of the two theories Noise; with require_signal_only,
+        // only one Signal theory remains → fails min_theories=2.
+        let reports = vec![
+            synth_report(&t_alpha, vec!["ax_a".to_string()], Some(0.95), Some(0.95), 0,
+                         vec![], vec![], vec![]),
+            synth_report(&t_beta, vec!["ax_b".to_string()], Some(0.20), Some(0.20), 4,
+                         vec![], vec![], vec![]),
+        ];
+        let cfg = crate::ConceptMiningConfig::default();
+        let candidates = rs.propose_concept_candidates(&cfg, &reports);
+        assert!(
+            candidates.is_empty(),
+            "Noise filter should leave 1 Signal theory < min_theories=2"
+        );
+    }
+
+    #[test]
+    fn adr0074_propose_admits_all_classes_when_signal_only_disabled() {
+        let (rs, t_alpha, t_beta, _families) = build_concept_test_rset();
+        let reports = vec![
+            synth_report(&t_alpha, vec!["ax_a".to_string()], Some(0.95), Some(0.95), 0,
+                         vec![], vec![], vec![]),
+            synth_report(&t_beta, vec!["ax_b".to_string()], Some(0.20), Some(0.20), 4,
+                         vec![], vec![], vec![]),
+        ];
+        let cfg = crate::ConceptMiningConfig {
+            require_signal_only: false,
+            ..Default::default()
+        };
+        let candidates = rs.propose_concept_candidates(&cfg, &reports);
+        assert!(!candidates.is_empty());
+    }
+
+    #[test]
+    fn adr0074_register_creates_meta_r_chains() {
+        let (mut rs, t_alpha, t_beta, families) = build_concept_test_rset();
+        let mut candidate = crate::ConceptCandidate {
+            id: crate::concept_id_from_constituents(&families),
+            alias: Some(crate::concept_alias_from_constituents(&families)),
+            constituent_shapes: families.clone(),
+            theories_attested: vec![t_alpha.clone(), t_beta.clone()],
+            aggregate_cross_precision: Some(0.92),
+        };
+        candidate.aggregate_cross_precision = Some(0.92);
+        let id = rs.register_concept(&candidate).expect("register ok");
+        assert!(rs.is_concept(&id));
+        let concepts = rs.concepts();
+        assert_eq!(concepts.len(), 1);
+        let constituents = rs.concept_constituent_shapes(&id);
+        let cset: std::collections::HashSet<&str> = constituents.into_iter().collect();
+        for sf in &families {
+            assert!(cset.contains(sf.as_str()), "constituent {} missing", sf);
+        }
+        let theories = rs.concept_attested_theories(&id);
+        let tset: std::collections::HashSet<&str> = theories.into_iter().collect();
+        assert!(tset.contains(t_alpha.as_str()));
+        assert!(tset.contains(t_beta.as_str()));
+        let xprec = rs.concept_cross_precision_at_mint(&id);
+        assert_eq!(xprec, Some(0.9200));
+    }
+
+    #[test]
+    fn adr0074_register_rejects_unvalidated() {
+        let (mut rs, t_alpha, t_beta, families) = build_concept_test_rset();
+        let candidate = crate::ConceptCandidate {
+            id: crate::concept_id_from_constituents(&families),
+            alias: None,
+            constituent_shapes: families,
+            theories_attested: vec![t_alpha, t_beta],
+            aggregate_cross_precision: None, // not validated
+        };
+        let err = rs.register_concept(&candidate).unwrap_err();
+        assert_eq!(err, crate::ConceptRegistrationError::NotValidated);
+    }
+
+    #[test]
+    fn adr0074_register_rejects_degenerate_constituents() {
+        let (mut rs, t_alpha, t_beta, _families) = build_concept_test_rset();
+        let candidate = crate::ConceptCandidate {
+            id: "concept_singleton".to_string(),
+            alias: None,
+            constituent_shapes: vec!["shape_just_one".to_string()],
+            theories_attested: vec![t_alpha, t_beta],
+            aggregate_cross_precision: Some(0.95),
+        };
+        let err = rs.register_concept(&candidate).unwrap_err();
+        assert_eq!(err, crate::ConceptRegistrationError::DegenerateConstituents);
+    }
+
+    #[test]
+    fn adr0074_register_rejects_unknown_constituent() {
+        let (mut rs, t_alpha, t_beta, _families) = build_concept_test_rset();
+        let candidate = crate::ConceptCandidate {
+            id: "concept_unknown".to_string(),
+            alias: None,
+            constituent_shapes: vec![
+                "shape_does_not_exist_a".to_string(),
+                "shape_does_not_exist_b".to_string(),
+            ],
+            theories_attested: vec![t_alpha, t_beta],
+            aggregate_cross_precision: Some(0.95),
+        };
+        let err = rs.register_concept(&candidate).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::ConceptRegistrationError::UnknownConstituent(_)
+        ));
+    }
+
+    #[test]
+    fn adr0074_retract_removes_concept() {
+        let (mut rs, t_alpha, t_beta, families) = build_concept_test_rset();
+        let candidate = crate::ConceptCandidate {
+            id: crate::concept_id_from_constituents(&families),
+            alias: None,
+            constituent_shapes: families.clone(),
+            theories_attested: vec![t_alpha, t_beta],
+            aggregate_cross_precision: Some(0.92),
+        };
+        let id = rs.register_concept(&candidate).unwrap();
+        assert!(rs.is_concept(&id));
+        assert!(rs.retract_concept(&id));
+        assert!(!rs.is_concept(&id));
+        assert!(rs.concepts().is_empty());
+    }
+
+    #[test]
+    fn adr0074_concept_status_live_when_all_constituents_present() {
+        let (mut rs, t_alpha, t_beta, families) = build_concept_test_rset();
+        let candidate = crate::ConceptCandidate {
+            id: crate::concept_id_from_constituents(&families),
+            alias: None,
+            constituent_shapes: families,
+            theories_attested: vec![t_alpha, t_beta],
+            aggregate_cross_precision: Some(0.92),
+        };
+        let id = rs.register_concept(&candidate).unwrap();
+        assert_eq!(rs.concept_status(&id), crate::ConceptStatus::Live);
+    }
+
+    #[test]
+    fn adr0074_concept_status_stale_after_constituent_retracted() {
+        let (mut rs, t_alpha, t_beta, families) = build_concept_test_rset();
+        let candidate = crate::ConceptCandidate {
+            id: crate::concept_id_from_constituents(&families),
+            alias: None,
+            constituent_shapes: families.clone(),
+            theories_attested: vec![t_alpha, t_beta],
+            aggregate_cross_precision: Some(0.92),
+        };
+        let id = rs.register_concept(&candidate).unwrap();
+        // Retract one constituent shape family.
+        rs.retract_shape_family(&families[0]).unwrap();
+        assert_eq!(rs.concept_status(&id), crate::ConceptStatus::Stale);
+    }

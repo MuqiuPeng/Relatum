@@ -1,0 +1,84 @@
+════════════════════════════════════════════════════════
+ Phase Emergence-1 — Shape co-occurrence concept mining
+════════════════════════════════════════════════════════
+ ADR 0074 — propose / validate / register loop on
+ two structurally-isomorphic substrates (OQ#1 and long5k)
+ to demonstrate cross-substrate concept identity.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1  (ticks: 1000)
+════════════════════════════════════════════════════════
+ Phase 0: 4 theories (["t_0", "t_1", "t_2", "t_3"]); 13 axioms; 6 L2 families
+
+ Theory quality summary:
+   theory    class     p_mean     c_mean
+   t_0       Mixed     0.3759     0.6835
+   t_1       Mixed     0.5863     0.8354
+   t_2      Signal     1.0000     1.0000
+   t_3      Signal     0.9144     1.0000
+
+ Step 1 — Proposed candidates: 1
+   [0] id=concept_4c2d2fde3b2d8360
+       constituents: ["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"]
+       attested in:  ["t_2", "t_3"]
+
+ Step 2 — Validating candidates (floor = 0.80)...
+   ✓ concept_4c2d2fde3b2d8360 cross_precision_mean=1.0000 → PASS
+
+ Step 3 — Registering 1 concept(s)...
+   ✓ registered: concept_4c2d2fde3b2d8360
+     xprec_at_mint: 1.0000
+     status: Live
+
+ Concept inventory: 1 live
+   concept_4c2d2fde3b2d8360
+     constituents: ["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"]
+     attested:     ["t_2", "t_3"]
+     status:       Live
+
+════════════════════════════════════════════════════════
+ Substrate: long5k  (ticks: 1500)
+════════════════════════════════════════════════════════
+ Phase 0: 4 theories (["t_0", "t_1", "t_2", "t_3"]); 13 axioms; 6 L2 families
+
+ Theory quality summary:
+   theory    class     p_mean     c_mean
+   t_0       Mixed     0.3640     0.6835
+   t_1       Mixed     0.6017     0.8354
+   t_2      Signal     1.0000     1.0000
+   t_3      Signal     0.9673     1.0000
+
+ Step 1 — Proposed candidates: 1
+   [0] id=concept_4c2d2fde3b2d8360
+       constituents: ["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"]
+       attested in:  ["t_2", "t_3"]
+
+ Step 2 — Validating candidates (floor = 0.80)...
+   ✓ concept_4c2d2fde3b2d8360 cross_precision_mean=1.0000 → PASS
+
+ Step 3 — Registering 1 concept(s)...
+   ✓ registered: concept_4c2d2fde3b2d8360
+     xprec_at_mint: 1.0000
+     status: Live
+
+ Concept inventory: 1 live
+   concept_4c2d2fde3b2d8360
+     constituents: ["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"]
+     attested:     ["t_2", "t_3"]
+     status:       Live
+
+════════════════════════════════════════════════════════
+ Cross-substrate identity check
+════════════════════════════════════════════════════════
+ OQ#1 registered:   1
+ long5k registered: 1
+ shared concept ids: 1
+   ✓ concept_4c2d2fde3b2d8360
+
+ → POSITIVE — at least one concept identity is portable
+   across OQ#1 and long5k. Per the Phase 0072-A finding
+   that the two substrates converge to isomorphic RSets,
+   this is the expected outcome and validates the
+   propose-validate-register loop end-to-end.
+
+--- end ---
