@@ -871,79 +871,113 @@ impl AutonomousRuntime {
                 }
             }
             ActionKind::DiscoverPatterns => {
-                // ADR 0075 piece 2 — scheduler integration of the
-                // emergence kernel. Three changes from the original
-                // ADR 0018 dispatch:
+                // ADR 0075 piece 2 (revisited 2026-05-06) — scheduler
+                // integration with maturity-gated multi-size fallback.
+                //
+                // Changes from the original ADR 0018 dispatch:
                 //
                 //   1. rng_seed varies with episode_counter so
                 //      successive DP dispatches sample different
-                //      subgraphs (original fixed 2024 made every
-                //      dispatch redundant after the first).
+                //      subgraphs.
                 //
-                //   2. sample_count raised from 200 to 400 to match
-                //      the kernel audit's empirically validated
-                //      budget.
+                //   2. sample_count raised from 200 to 400.
                 //
-                //   3. Explicit positive-delta override. The standard
-                //      `abstraction_score` diff under-counts new
-                //      patterns because it credits only n>=2
-                //      instances and adds meta-R edges that subtract
-                //      from the score. When DP mints a fresh pattern
-                //      at 1 instance, the score diff is negative,
-                //      cooldown logs the dispatch as unproductive,
-                //      and after enough such dispatches DP is
-                //      suspended — even though the runtime gained
-                //      compliant emergent concepts. The override
-                //      counts newly-minted patterns directly.
+                //   3. Explicit positive-delta override (counts
+                //      newly-minted patterns rather than relying on
+                //      abstraction_score diff which under-counts
+                //      1-instance mints).
                 //
-                // Known limitation: on dense rsets (OQ#1 / long5k /
-                // narrow_a), size 2-3 sub-graphs almost never pass
-                // `is_clean_subgraph` because participant
-                // neighbourhoods induce more data edges than the
-                // sample contains. Successful mints empirically
-                // happen at sizes 4-5 (kernel audit). Fixing this
-                // requires either changing PatternCandidate
-                // priority semantics (starves TheoryCandidate at
-                // low rset density per a3_resume_runs_full_run test)
-                // or threading multi-size attempts through the
-                // dispatch path (changes runtime tick timing in
-                // ways the lifecycle tests depend on). Both are
-                // deferred to a follow-up; this dispatch keeps the
-                // single-size attempt path so existing test
-                // invariants hold.
-                let size = match plan.target {
+                //   4. Maturity-gated multi-size fallback: when the
+                //      requested size produces zero NewPattern AND
+                //      the rset is "mature" (≥ 1 axiom AND
+                //      ≥ MATURE_DATA_EDGE_FLOOR data edges), retry
+                //      with sizes 4 / 5 / 3 / 2 in order until
+                //      something mints. This addresses OQ#1-clade's
+                //      issue where dense diamond posets reject
+                //      small-size canonicals via `is_clean_subgraph`
+                //      while sizes 4-5 wrap whole clusters
+                //      successfully (kernel audit empirics).
+                //
+                //      The maturity gate preserves the
+                //      lifecycle-test invariants:
+                //      - `a3_resume_runs_full_run_to_completion`
+                //        uses a 9-data-edge diamond_poset; gate
+                //        blocks fallback so sleep timing matches
+                //      - `a1_rule_based_runs_and_sleeps` uses the
+                //        same fixture with no axioms initially;
+                //        gate blocks fallback so TheoryCandidate
+                //        gets dispatched first.
+                let initial_size = match plan.target {
                     FrontierTarget::PatternSize(s) => s,
                     _ => 3, // fallback
                 };
-                let cfg = AutonomousConfig {
-                    discovery: DiscoveryConfig {
-                        target_size: size,
-                        sample_count: 400,
-                        top_m: 10,
-                        rng_seed: 2024u64
-                            .wrapping_add(self.episode_counter
-                                .wrapping_mul(0x9E3779B97F4A7C15)),
-                        include_meta_in_discovery: false,
-                    },
-                    refinement: RefinementConfig {
-                        max_tries: 200,
-                        rng_seed: 999u64
-                            .wrapping_add(self.episode_counter
-                                .wrapping_mul(0xDEADBEEFCAFEBABE)),
-                    },
-                    naming: NamingPolicy::default(),
-                    instance_sampling: None,
-                };
-                let outcomes = self.rset.autonomous_pass(&cfg);
-                let new_patterns = outcomes
-                    .iter()
-                    .filter(|o| matches!(
-                        o,
-                        crate::AutonomousOutcome::NewPattern { .. }
-                    ))
-                    .count();
-                if new_patterns > 0 {
-                    return Some(new_patterns as f64);
+                let pattern_dispatch =
+                    |rt: &mut Self, size: usize| -> usize {
+                        let cfg = AutonomousConfig {
+                            discovery: DiscoveryConfig {
+                                target_size: size,
+                                sample_count: 400,
+                                top_m: 10,
+                                rng_seed: 2024u64
+                                    .wrapping_add(rt.episode_counter
+                                        .wrapping_mul(0x9E3779B97F4A7C15))
+                                    .wrapping_add(size as u64 * 0xCAFEBABE),
+                                include_meta_in_discovery: false,
+                            },
+                            refinement: RefinementConfig {
+                                max_tries: 200,
+                                rng_seed: 999u64
+                                    .wrapping_add(rt.episode_counter
+                                        .wrapping_mul(0xDEADBEEFCAFEBABE))
+                                    .wrapping_add(size as u64 * 0xFADE),
+                            },
+                            naming: NamingPolicy::default(),
+                            instance_sampling: None,
+                        };
+                        let outcomes = rt.rset.autonomous_pass(&cfg);
+                        outcomes
+                            .iter()
+                            .filter(|o| matches!(
+                                o,
+                                crate::AutonomousOutcome::NewPattern { .. }
+                            ))
+                            .count()
+                    };
+                let primary_new = pattern_dispatch(self, initial_size);
+
+                // Maturity gate. Empirical floor of 100 data edges
+                // matches the kernel-audit observation that mints
+                // become reliable at this density.
+                const MATURE_DATA_EDGE_FLOOR: usize = 100;
+                let mature = self.rset.axioms().len() >= 1
+                    && self.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR;
+
+                if primary_new == 0 && mature {
+                    // Try fallback sizes in order: 4, 5, 3, 2 (skip
+                    // initial). 4/5 first because they wrap whole
+                    // clusters and have highest empirical mint rate
+                    // on dense rsets.
+                    let mut total_new = 0usize;
+                    for &fallback in &[4usize, 5, 3, 2] {
+                        if fallback == initial_size {
+                            continue;
+                        }
+                        let new = pattern_dispatch(self, fallback);
+                        total_new += new;
+                        if new > 0 {
+                            // Stop scanning once any size succeeds —
+                            // bounded cost (≤ 4 sizes per dispatch
+                            // total) prevents unbounded work.
+                            break;
+                        }
+                    }
+                    if total_new > 0 {
+                        return Some(total_new as f64);
+                    }
+                }
+
+                if primary_new > 0 {
+                    return Some(primary_new as f64);
                 }
             }
             ActionKind::UpdateTheoryRelations => {
