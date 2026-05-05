@@ -1,0 +1,93 @@
+════════════════════════════════════════════════════════
+ Phase Emergence-1 — Substrate-diversity falsifiability probe
+════════════════════════════════════════════════════════
+ Tests concept identity portability across substrates with
+ structurally distinct discovered theories. The real falsifiability
+ test for ADR 0074's universality claim.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1  (ticks: 1000)
+════════════════════════════════════════════════════════
+ Phase 0: 4 theories, 13 axioms, 6 L2 families
+ theories: ["t_0", "t_1", "t_2", "t_3"]
+ propose: 1 candidate(s)
+ validate: 1 pass
+ register: 1 concept(s)
+   ✓ concept_4c2d2fde3b2d8360: constituents=["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"], attested=["t_2", "t_3"], xprec=1.0000
+
+════════════════════════════════════════════════════════
+ Substrate: long5k  (ticks: 1500)
+════════════════════════════════════════════════════════
+ Phase 0: 4 theories, 13 axioms, 6 L2 families
+ theories: ["t_0", "t_1", "t_2", "t_3"]
+ propose: 1 candidate(s)
+ validate: 1 pass
+ register: 1 concept(s)
+   ✓ concept_4c2d2fde3b2d8360: constituents=["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"], attested=["t_2", "t_3"], xprec=1.0000
+
+════════════════════════════════════════════════════════
+ Substrate: narrow_a  (ticks: 500)
+════════════════════════════════════════════════════════
+ Phase 0: 4 theories, 13 axioms, 6 L2 families
+ theories: ["t_0", "t_1", "t_2", "t_3"]
+ propose: 1 candidate(s)
+ validate: 1 pass
+ register: 1 concept(s)
+   ✓ concept_4c2d2fde3b2d8360: constituents=["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"], attested=["t_2", "t_3"], xprec=1.0000
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 @ 1500  (ticks: 1500)
+════════════════════════════════════════════════════════
+ Phase 0: 2 theories, 2 axioms, 0 L2 families
+ theories: ["t_0", "t_1"]
+ → SKIP: need ≥2 shape families and ≥1 theory; not enough
+   structure at this horizon.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 @ 3000  (ticks: 3000)
+════════════════════════════════════════════════════════
+ Phase 0: 2 theories, 2 axioms, 0 L2 families
+ theories: ["t_0", "t_1"]
+ → SKIP: need ≥2 shape families and ≥1 theory; not enough
+   structure at this horizon.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 @ 4500  (ticks: 4500)
+════════════════════════════════════════════════════════
+ Phase 0: 2 theories, 2 axioms, 0 L2 families
+ theories: ["t_0", "t_1"]
+ → SKIP: need ≥2 shape families and ≥1 theory; not enough
+   structure at this horizon.
+
+════════════════════════════════════════════════════════
+ Cross-substrate identity matrix
+════════════════════════════════════════════════════════
+
+ substrate      ticks   ths   axs   fam  prop   reg
+ OQ#1            1000     4    13     6     1     1
+ long5k          1500     4    13     6     1     1
+ narrow_a         500     4    13     6     1     1
+ OQ#2 @ 1500     1500     2     2     0     0     0
+ OQ#2 @ 3000     3000     2     2     0     0     0
+ OQ#2 @ 4500     4500     2     2     0     0     0
+
+ Concept id × substrate (✓ = registered):
+ concept id                          OQ#1           long5k         narrow_a       OQ#2 @ 1500    OQ#2 @ 3000    OQ#2 @ 4500   
+ concept_4c2d2fde3b2d8360            ✓              ✓              ✓              —              —              —             
+
+ Constituents per concept id:
+   concept_4c2d2fde3b2d8360
+     ["shape_conclusion_c0-2", "shape_premise_p0-1_p1-2"]
+
+════════════════════════════════════════════════════════
+ Universality verdict
+════════════════════════════════════════════════════════
+ Substrates that minted ≥1 concept: 3/6
+ Universal concept ids (mint on every minting substrate): 1
+   ✓ concept_4c2d2fde3b2d8360
+
+ → STRONG UNIVERSALITY — every minted concept id is universal across
+   substrates that produce concepts. The mined patterns are
+   substrate-structural, not stream-dependent.
+
+--- end ---
