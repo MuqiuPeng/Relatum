@@ -1,0 +1,85 @@
+════════════════════════════════════════════════════════
+ Cross-substrate canonical-form comparison (ADR 0075 #3)
+════════════════════════════════════════════════════════
+ Replaces the kernel audit's pattern-id comparison with
+ the canonical-form comparison: do different substrates
+ actually mint structurally-distinct emergent patterns?
+
+ Per-substrate canonical-form inventory:
+
+   OQ#1 (1000 ticks): 7 patterns minted
+     p_0 → can_faefcad1cdc772d7 (size=2, instances=30, participants=25)
+     p_1 → can_703239bca97249ae (size=2, instances=15, participants=25)
+     p_2 → can_1dcd38f6674f1878 (size=3, instances=25, participants=20)
+     p_3 → can_cb21943a71a9eb8e (size=3, instances=10, participants=25)
+     p_4 → can_3d2da53b81a90ad7 (size=4, instances=15, participants=25)
+     p_5 → can_ed6c192b563a80e3 (size=5, instances=5, participants=15)
+     p_6 → can_bf91273eb195d4e9 (size=5, instances=5, participants=15)
+
+   long5k (1500 ticks): 7 patterns minted
+     p_2 → can_1dcd38f6674f1878 (size=3, instances=50, participants=40)
+     p_0 → can_faefcad1cdc772d7 (size=2, instances=30, participants=25)
+     p_1 → can_703239bca97249ae (size=2, instances=15, participants=25)
+     p_5 → can_bf91273eb195d4e9 (size=5, instances=10, participants=30)
+     p_6 → can_ed6c192b563a80e3 (size=5, instances=10, participants=30)
+     p_4 → can_3d2da53b81a90ad7 (size=4, instances=15, participants=25)
+     p_3 → can_cb21943a71a9eb8e (size=3, instances=10, participants=25)
+
+   narrow_a (500 ticks): 3 patterns minted
+     p_0 → can_1dcd38f6674f1878 (size=3, instances=25, participants=20)
+     p_1 → can_ed6c192b563a80e3 (size=5, instances=5, participants=15)
+     p_2 → can_bf91273eb195d4e9 (size=5, instances=5, participants=15)
+
+   OQ#2 (4500 ticks): 7 patterns minted
+     p_0 → can_faefcad1cdc772d7 (size=2, instances=9, participants=6)
+     p_6 → can_d22cf47563c30091 (size=5, instances=30, participants=25)
+     p_1 → can_ff8b08ea746bf094 (size=2, instances=3, participants=5)
+     p_5 → can_a24624ecca927e67 (size=3, instances=20, participants=25)
+     p_4 → can_1dcd38f6674f1878 (size=3, instances=25, participants=20)
+     p_2 → can_356b87478aee25fa (size=2, instances=1, participants=2)
+     p_3 → can_61c89385fc0342a0 (size=3, instances=84, participants=30)
+
+════════════════════════════════════════════════════════
+ Canonical-form × substrate matrix
+════════════════════════════════════════════════════════
+ canonical             size       OQ#1     long5k   narrow_a       OQ#2
+ can_1dcd38f6674f1878     3         25         50         25         25
+ can_356b87478aee25fa     2          —          —          —          1
+ can_3d2da53b81a90ad7     4         15         15          —          —
+ can_61c89385fc0342a0     3          —          —          —         84
+ can_703239bca97249ae     2         15         15          —          —
+ can_a24624ecca927e67     3          —          —          —         20
+ can_bf91273eb195d4e9     5          5         10          5          —
+ can_cb21943a71a9eb8e     3         10         10          —          —
+ can_d22cf47563c30091     5          —          —          —         30
+ can_ed6c192b563a80e3     5          5         10          5          —
+ can_faefcad1cdc772d7     2         30         30          —          9
+ can_ff8b08ea746bf094     2          —          —          —          3
+
+════════════════════════════════════════════════════════
+ Diversity verdict
+════════════════════════════════════════════════════════
+ Total distinct canonical forms across substrates: 12
+ Universal (mint on every substrate): 1
+   can_1dcd38f6674f1878
+ Substrate-specific (mint on exactly one substrate):
+   OQ#1: 0
+   OQ#2: 5
+   long5k: 0
+   narrow_a: 0
+
+ → SUBSTRATE-DISTINCT — at least 5 canonical forms appear
+   on exactly one substrate. The pattern path produces
+   structural diversity that the axiom path collapses,
+   confirming the kernel-audit reversal: emergent
+   patterns ARE substrate-specific even when axioms
+   are not.
+
+ Pairwise overlap (canonical-form Jaccard):
+                      OQ#1     long5k   narrow_a       OQ#2
+ OQ#1                 1.00       1.00       0.43       0.17
+ long5k               1.00       1.00       0.43       0.17
+ narrow_a             0.43       0.43       1.00       0.11
+ OQ#2                 0.17       0.17       0.11       1.00
+
+--- end ---
