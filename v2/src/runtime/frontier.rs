@@ -231,14 +231,24 @@ impl Frontier {
             }
         }
 
-        // 2. PatternCandidate: for each k in [2, 3], if there are at
-        //    least k data edges, propose discovery at that size.
+        // 2. PatternCandidate: for each k in [2, 3, 4, 5], if there
+        //    are at least k data edges, propose discovery at that size.
+        //
+        //    ADR 0075 piece 2 — sizes extended from [2, 3] to
+        //    [2, 3, 4, 5]. Smaller subgraphs almost never pass
+        //    `is_clean_subgraph` on dense rsets (e.g., OQ#1's
+        //    diamond posets) because the participants' neighbourhood
+        //    induces more edges than the sample contains. Sizes 4-5
+        //    cover whole connected clusters whose induced edge count
+        //    matches the canonical, allowing autonomous_pass to mint
+        //    successfully. The kernel audit empirically validated
+        //    this — 7 patterns minted on OQ#1 across sizes 2-5.
         let meta = rset.collect_meta_ids();
         let data_edge_count = rset
             .iter()
             .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
             .count();
-        for &size in &[2usize, 3] {
+        for &size in &[2usize, 3, 4, 5] {
             if data_edge_count >= size {
                 let value = (data_edge_count as f64) / (size as f64);
                 items.push(FrontierItem {

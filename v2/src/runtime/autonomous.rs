@@ -871,6 +871,46 @@ impl AutonomousRuntime {
                 }
             }
             ActionKind::DiscoverPatterns => {
+                // ADR 0075 piece 2 — scheduler integration of the
+                // emergence kernel. Three changes from the original
+                // ADR 0018 dispatch:
+                //
+                //   1. rng_seed varies with episode_counter so
+                //      successive DP dispatches sample different
+                //      subgraphs (original fixed 2024 made every
+                //      dispatch redundant after the first).
+                //
+                //   2. sample_count raised from 200 to 400 to match
+                //      the kernel audit's empirically validated
+                //      budget.
+                //
+                //   3. Explicit positive-delta override. The standard
+                //      `abstraction_score` diff under-counts new
+                //      patterns because it credits only n>=2
+                //      instances and adds meta-R edges that subtract
+                //      from the score. When DP mints a fresh pattern
+                //      at 1 instance, the score diff is negative,
+                //      cooldown logs the dispatch as unproductive,
+                //      and after enough such dispatches DP is
+                //      suspended — even though the runtime gained
+                //      compliant emergent concepts. The override
+                //      counts newly-minted patterns directly.
+                //
+                // Known limitation: on dense rsets (OQ#1 / long5k /
+                // narrow_a), size 2-3 sub-graphs almost never pass
+                // `is_clean_subgraph` because participant
+                // neighbourhoods induce more data edges than the
+                // sample contains. Successful mints empirically
+                // happen at sizes 4-5 (kernel audit). Fixing this
+                // requires either changing PatternCandidate
+                // priority semantics (starves TheoryCandidate at
+                // low rset density per a3_resume_runs_full_run test)
+                // or threading multi-size attempts through the
+                // dispatch path (changes runtime tick timing in
+                // ways the lifecycle tests depend on). Both are
+                // deferred to a follow-up; this dispatch keeps the
+                // single-size attempt path so existing test
+                // invariants hold.
                 let size = match plan.target {
                     FrontierTarget::PatternSize(s) => s,
                     _ => 3, // fallback
@@ -878,19 +918,33 @@ impl AutonomousRuntime {
                 let cfg = AutonomousConfig {
                     discovery: DiscoveryConfig {
                         target_size: size,
-                        sample_count: 200,
+                        sample_count: 400,
                         top_m: 10,
-                        rng_seed: 2024,
+                        rng_seed: 2024u64
+                            .wrapping_add(self.episode_counter
+                                .wrapping_mul(0x9E3779B97F4A7C15)),
                         include_meta_in_discovery: false,
                     },
                     refinement: RefinementConfig {
                         max_tries: 200,
-                        rng_seed: 999,
+                        rng_seed: 999u64
+                            .wrapping_add(self.episode_counter
+                                .wrapping_mul(0xDEADBEEFCAFEBABE)),
                     },
                     naming: NamingPolicy::default(),
                     instance_sampling: None,
                 };
-                let _ = self.rset.autonomous_pass(&cfg);
+                let outcomes = self.rset.autonomous_pass(&cfg);
+                let new_patterns = outcomes
+                    .iter()
+                    .filter(|o| matches!(
+                        o,
+                        crate::AutonomousOutcome::NewPattern { .. }
+                    ))
+                    .count();
+                if new_patterns > 0 {
+                    return Some(new_patterns as f64);
+                }
             }
             ActionKind::UpdateTheoryRelations => {
                 // Snapshot ids so we can mutate self.rset inside the loop.

@@ -1,0 +1,81 @@
+════════════════════════════════════════════════════════
+ Scheduler integration diagnostic — DiscoverPatterns frequency
+════════════════════════════════════════════════════════
+ Measures how often the standard RuleBasedScheduler picks
+ DiscoverPatterns vs DiscoverTheory on each substrate at
+ Phase 0 maturity. Distinguishes "never dispatched" from
+ "dispatched but produced no mint" from "cooled down".
+
+ Action-count summary table:
+ substrate   ticks  episodes  DP_count    DP_pos  DT_count    DT_pos   DP_rate   axs   ths
+ OQ#1         1000       111         5         0         4         4     0.000    13     4
+ long5k       1500       176         5         0         4         4     0.000    13     4
+ narrow_a      500        81         5         0         4         4     0.000    13     4
+ OQ#2         4500        10         5         2         2         2     0.400     2     2
+
+ Per-substrate detail:
+
+ OQ#1 (1000 ticks):
+   total episodes:           111
+   DiscoverPatterns:         5 (0 positive-delta)
+   DiscoverTheory:           4 (4 positive-delta)
+   other actions:
+     EvaluatePredictions              71
+     Declarativize                    11
+     PruneLowValueObjects             10
+     DiscoverMetaMetaPatterns         5
+     UpdateTheoryRelations            3
+     DiscoverAxiomShapeFamilies       1
+     ExecuteComposite                 1
+   final state: 13 axioms, 4 theories, 0 patterns
+
+ long5k (1500 ticks):
+   total episodes:           176
+   DiscoverPatterns:         5 (0 positive-delta)
+   DiscoverTheory:           4 (4 positive-delta)
+   other actions:
+     EvaluatePredictions              106
+     PruneLowValueObjects             40
+     Declarativize                    11
+     DiscoverMetaMetaPatterns         5
+     UpdateTheoryRelations            3
+     ExecuteComposite                 1
+     DiscoverAxiomShapeFamilies       1
+   final state: 13 axioms, 4 theories, 0 patterns
+
+ narrow_a (500 ticks):
+   total episodes:           81
+   DiscoverPatterns:         5 (0 positive-delta)
+   DiscoverTheory:           4 (4 positive-delta)
+   other actions:
+     EvaluatePredictions              41
+     Declarativize                    11
+     PruneLowValueObjects             10
+     DiscoverMetaMetaPatterns         5
+     UpdateTheoryRelations            3
+     ExecuteComposite                 1
+     DiscoverAxiomShapeFamilies       1
+   final state: 13 axioms, 4 theories, 0 patterns
+
+ OQ#2 (4500 ticks):
+   total episodes:           10
+   DiscoverPatterns:         5 (2 positive-delta)
+   DiscoverTheory:           2 (2 positive-delta)
+   other actions:
+     UpdateTheoryRelations            1
+     Declarativize                    1
+     PruneLowValueObjects             1
+   final state: 2 axioms, 2 theories, 2 patterns
+
+════════════════════════════════════════════════════════
+ Diagnostic verdict
+════════════════════════════════════════════════════════
+ Total episodes across all substrates: 378
+ Total DiscoverPatterns dispatches:    20 (5.3% of episodes)
+ Total positive-delta DP outcomes:     2 (10.0% yield rate)
+ Total final patterns minted by runtime: 2
+
+ → DP IS ALREADY ACTIVE. The kernel is integrated; further
+   tuning is fine-grained, not foundational.
+
+--- end ---

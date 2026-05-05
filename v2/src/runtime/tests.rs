@@ -1366,7 +1366,8 @@
         // Use an empty rset so the G0 anomaly-pressure relaxation
         // (ADR 0057) doesn't apply — the test is about the base
         // 10% threshold, not the relaxed 5% threshold under
-        // pressure. 1/20 = 5% < 10% → cooled.
+        // pressure. 2/40 = 5% < 10% AND attempts ≥ 30 → cooled.
+        // (Counts updated for ADR 0075 piece 2's threshold-30 default.)
         let rs = RSet::new();
         let mut frontier = Frontier::default();
         frontier.refresh(&rs, 0);
@@ -1374,11 +1375,11 @@
         memory
             .policy_stats
             .action_counts
-            .insert(ActionKind::DiscoverPatterns, 20);
+            .insert(ActionKind::DiscoverPatterns, 40);
         memory
             .policy_stats
             .action_positive_delta_counts
-            .insert(ActionKind::DiscoverPatterns, 1);
+            .insert(ActionKind::DiscoverPatterns, 2);
         let ctx = SchedulerContext {
             rset: &rs,
             memory: &memory,
@@ -1445,10 +1446,12 @@
             },
         );
         let mut memory = Memory::default();
+        // Attempts above the ADR 0075 piece 2 threshold (30); 0
+        // positive → 0% hit rate → cooled.
         memory
             .policy_stats
             .action_counts
-            .insert(ActionKind::DiscoverPatterns, 20);
+            .insert(ActionKind::DiscoverPatterns, 40);
         memory
             .policy_stats
             .action_positive_delta_counts
@@ -1522,10 +1525,11 @@
             meta_meta: MetaMetaConfig::default(),
         };
         let mut memory = Memory::default();
+        // Attempts above ADR 0075 piece 2 threshold (30); 0 positive.
         memory
             .policy_stats
             .action_counts
-            .insert(ActionKind::DiscoverPatterns, 10);
+            .insert(ActionKind::DiscoverPatterns, 40);
         memory
             .policy_stats
             .action_positive_delta_counts
@@ -1626,9 +1630,10 @@
 
     #[test]
     fn meta_meta_cooldown_independent_of_pattern_cooldown() {
-        // PatternDiscovery cooled (20 attempts / 0 hits = 0%); meta-
-        // meta has 0 attempts → not cooled. The two counters do not
-        // bleed into each other.
+        // PatternDiscovery cooled (40 attempts / 0 hits = 0%, above
+        // ADR 0075 piece 2 threshold 30); meta-meta has 0 attempts
+        // → not cooled. The two counters do not bleed into each
+        // other.
         let rs = diamond_poset();
         let mut frontier = Frontier::default();
         frontier.refresh(&rs, 0);
@@ -1636,7 +1641,7 @@
         memory
             .policy_stats
             .action_counts
-            .insert(ActionKind::DiscoverPatterns, 20);
+            .insert(ActionKind::DiscoverPatterns, 40);
         let ctx = SchedulerContext {
             rset: &rs,
             memory: &memory,

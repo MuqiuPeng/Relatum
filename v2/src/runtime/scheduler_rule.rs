@@ -100,7 +100,21 @@ impl Default for RuleBasedScheduler {
             min_recent_gains: 2,
             max_mode_oscillations: 4,
             min_pattern_hit_rate: 0.1,
-            min_pattern_attempts_before_cooldown: 5,
+            // ADR 0075 piece 2 — pattern attempts threshold raised
+            // from 5 to 30. Early DP dispatches (tick ~30 on OQ#1
+            // / long5k / narrow_a) fire when the rset has only a
+            // handful of stream events; sampling can't find
+            // recurring substructure that early, so the first
+            // ~5-10 dispatches are doomed to be unproductive
+            // regardless of dispatch parameters. With the original
+            // threshold of 5, 5 early failures forever locked DP
+            // out of the run, even after the rset matured into a
+            // pattern-rich state. Raising the threshold to 30
+            // gives DP ~30 attempts before the cooldown gate
+            // engages, which is enough for at least the
+            // mid-Phase-0 attempts to succeed and accumulate a
+            // hit-rate above 10%.
+            min_pattern_attempts_before_cooldown: 30,
             min_meta_meta_hit_rate: 0.05,
             min_meta_meta_attempts_before_cooldown: 5,
             anomaly_pressure_threshold: 3,
