@@ -1,0 +1,115 @@
+════════════════════════════════════════════════════════
+ Emergence kernel audit
+════════════════════════════════════════════════════════
+ Audits whether autonomous_pass (ADR 0018) — discover_motifs +
+ refine_candidates + name_pattern_instances — actually mints
+ patterns when invoked on canonical substrates after Phase 0.
+
+ Compliance check (constitution heavy reading):
+  - Bucket key during discovery: subgraph canonical form (✓ not per-token)
+  - Atomic mint: PATTERN_MARKER + ROLE_MARKER + instances + participants (✓)
+
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (1000 ticks)
+════════════════════════════════════════════════════════
+ Phase 0: 0 pre-audit patterns, 375 total rset edges
+  size=2  → mint p_0 (30 instances)
+  size=2  → mint p_1 (15 instances)
+  size=3  → mint p_2 (25 instances)
+  size=3  → mint p_3 (10 instances)
+  size=4  → mint p_4 (15 instances)
+  size=5  → mint p_5 (5 instances)
+  size=5  → mint p_6 (5 instances)
+
+════════════════════════════════════════════════════════
+ Substrate: long5k (1500 ticks)
+════════════════════════════════════════════════════════
+ Phase 0: 0 pre-audit patterns, 420 total rset edges
+  size=2  → mint p_0 (30 instances)
+  size=2  → mint p_1 (15 instances)
+  size=3  → mint p_2 (50 instances)
+  size=3  → mint p_3 (10 instances)
+  size=4  → mint p_4 (15 instances)
+  size=5  → mint p_5 (10 instances)
+  size=5  → mint p_6 (10 instances)
+
+════════════════════════════════════════════════════════
+ Substrate: narrow_a (500 ticks)
+════════════════════════════════════════════════════════
+ Phase 0: 0 pre-audit patterns, 345 total rset edges
+  size=2  → no new (0 existing, 5 skipped)
+  size=3  → mint p_0 (25 instances)
+  size=4  → no new (0 existing, 20 skipped)
+  size=5  → mint p_1 (5 instances)
+  size=5  → mint p_2 (5 instances)
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 (4500 ticks)
+════════════════════════════════════════════════════════
+ Phase 0: 2 pre-audit patterns, 245 total rset edges
+  size=2  → mint p_2 (1 instances)
+  size=3  → mint p_3 (84 instances)
+  size=3  → mint p_4 (25 instances)
+  size=3  → mint p_5 (20 instances)
+  size=4  → no new (0 existing, 20 skipped)
+  size=5  → mint p_6 (30 instances)
+
+════════════════════════════════════════════════════════
+ Cross-substrate audit summary
+════════════════════════════════════════════════════════
+ substrate       ticks data_edges   pre  post        new  total_insts
+ OQ#1             1000        375     0     7          7          105
+ long5k           1500        420     0     7          7          140
+ narrow_a          500        345     0     3          3           35
+ OQ#2             4500        245     2     7          5          172
+
+ Per-substrate pattern detail:
+   OQ#1:
+     p_0 → 30 instances, 25 distinct participating tokens
+     p_1 → 15 instances, 25 distinct participating tokens
+     p_2 → 25 instances, 20 distinct participating tokens
+     p_3 → 10 instances, 25 distinct participating tokens
+     p_4 → 15 instances, 25 distinct participating tokens
+     p_5 → 5 instances, 15 distinct participating tokens
+     p_6 → 5 instances, 15 distinct participating tokens
+   long5k:
+     p_0 → 30 instances, 25 distinct participating tokens
+     p_1 → 15 instances, 25 distinct participating tokens
+     p_2 → 50 instances, 40 distinct participating tokens
+     p_3 → 10 instances, 25 distinct participating tokens
+     p_4 → 15 instances, 25 distinct participating tokens
+     p_5 → 10 instances, 30 distinct participating tokens
+     p_6 → 10 instances, 30 distinct participating tokens
+   narrow_a:
+     p_0 → 25 instances, 20 distinct participating tokens
+     p_1 → 5 instances, 15 distinct participating tokens
+     p_2 → 5 instances, 15 distinct participating tokens
+   OQ#2:
+     p_2 → 1 instances, 2 distinct participating tokens
+     p_3 → 84 instances, 30 distinct participating tokens
+     p_4 → 25 instances, 20 distinct participating tokens
+     p_5 → 20 instances, 25 distinct participating tokens
+     p_6 → 30 instances, 25 distinct participating tokens
+
+════════════════════════════════════════════════════════
+ Substrate-distinguishability check
+════════════════════════════════════════════════════════
+   p_6 shared across: ["OQ#1", "long5k", "OQ#2"]
+   p_1 shared across: ["OQ#1", "long5k", "narrow_a"]
+   p_3 shared across: ["OQ#1", "long5k", "OQ#2"]
+   p_5 shared across: ["OQ#1", "long5k", "OQ#2"]
+   p_0 shared across: ["OQ#1", "long5k", "narrow_a"]
+   p_2 shared across: ["OQ#1", "long5k", "narrow_a", "OQ#2"]
+   p_4 shared across: ["OQ#1", "long5k", "OQ#2"]
+ 0 pattern ids substrate-specific, 7 shared across substrates
+
+ Note: pattern ids are minted with `mint_pattern_id` which
+ returns `p_N` where N is the next free index in the rset.
+ Two substrates running independently both start at p_0;
+ the id-string overlap above is a counter artifact, not a
+ claim of structural identity. To check structural identity
+ across substrates we'd need to compare canonical forms,
+ not pattern ids. (Future audit.)
+
+--- end ---
