@@ -8238,5 +8238,297 @@ pub enum RecommendedIntervention {
     Manual { reason: String },
 }
 
+// ─────────────────────────────────────────────────────────────────
+// ADR 0077 — Pattern quality framework + intervention recommendations.
+//
+// Mirrors ADR 0071 (TheoryQualityReport) + ADR 0072
+// (RecommendedIntervention) but specialized to the pattern
+// extension semantics: instances + participants + canonical
+// structure. Read-only; the classifier returns advisory
+// recommendations the runtime may consume.
+// ─────────────────────────────────────────────────────────────────
+
+/// Quality classification for a registered pattern. ADR 0077.
+///
+/// Mirrors `TheoryQualityClass` (ADR 0071) but defined in terms
+/// of pattern-extension signals (instance count, participant
+/// overlap, MDL gain) rather than axiom-prediction signals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternQualityClass {
+    /// Distinctive recurring pattern with non-trivial MDL
+    /// compression and low participant overlap with peers.
+    Signal,
+    /// Mid-range across MDL / overlap / cross-substrate signals;
+    /// no single dimension dominates either way.
+    Mixed,
+    /// Heavily overlaps another pattern's participants
+    /// (`overlap_score >= REDUNDANT_OVERLAP_FLOOR`); merging or
+    /// retracting one of the pair is structurally cleaner than
+    /// keeping both.
+    Redundant,
+    /// One-instance pattern with no cross-substrate match;
+    /// likely an artifact rather than emergent structure.
+    Anomalous,
+    /// Insufficient data to classify (e.g., zero instances or
+    /// missing intension).
+    Indeterminate,
+}
+
+/// Quality report for one registered pattern. ADR 0077.
+///
+/// Read-only aggregate computed on demand; nothing is persisted.
+/// Built by `RSet::pattern_quality_report` from existing
+/// pattern / instance / participant / MDL APIs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternQualityReport {
+    pub pattern_id: String,
+    pub canonical_size: usize,
+    pub role_count: usize,
+    pub instance_count: usize,
+    pub distinct_participants: usize,
+    pub mdl_gain: usize,
+    /// `Some(N)` if at least one substrate was supplied; sums
+    /// `find_instances_of(canonical)` across all substrates.
+    /// `None` when no substrates were supplied.
+    pub cross_substrate_match_count: Option<usize>,
+    /// Maximum participant-set overlap with any other pattern's
+    /// participants. Asymmetric divisor: |this ∩ other| / |this|.
+    pub overlap_score: f64,
+    /// Pattern id achieving the maximum overlap, when overlap > 0.
+    pub overlap_partner: Option<String>,
+    pub summary_class: PatternQualityClass,
+}
+
+/// Recommended intervention for a registered pattern. ADR 0077.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RecommendedPatternIntervention {
+    /// Pattern is healthy; no intervention recommended.
+    None,
+    /// Pattern lacks evidence; do not act yet.
+    ShadowMonitor { reason: String },
+    /// Retract this pattern via `RSet::retract_pattern`.
+    PatternRetract { reason: String },
+    /// Merge this pattern with `partner` (advisory; v2 has no
+    /// `merge_patterns` API yet — recommendation only).
+    PatternMergeWith {
+        partner: String,
+        reason: String,
+    },
+    /// Mixed-signal case; flag for human review.
+    Manual { reason: String },
+}
+
+/// ADR 0077 — overlap threshold to mark a pattern as Redundant.
+pub const REDUNDANT_OVERLAP_FLOOR: f64 = 0.8;
+
+/// ADR 0077 — minimum MDL gain for the Signal classification.
+pub const SIGNAL_MDL_FLOOR: usize = 5;
+
+/// ADR 0077 — overlap ceiling for the Signal classification
+/// (Signal patterns must be reasonably distinct in participants).
+pub const SIGNAL_OVERLAP_CEILING: f64 = 0.3;
+
+/// Compute a pattern's `PatternQualityClass` from its raw
+/// numeric signals. Pure function; safe to test independently.
+/// ADR 0077.
+pub fn compute_pattern_summary_class(
+    instance_count: usize,
+    overlap_score: f64,
+    cross_substrate_match_count: Option<usize>,
+    mdl_gain: usize,
+) -> PatternQualityClass {
+    if instance_count == 0 {
+        return PatternQualityClass::Indeterminate;
+    }
+    if overlap_score >= REDUNDANT_OVERLAP_FLOOR {
+        return PatternQualityClass::Redundant;
+    }
+    if instance_count == 1
+        && cross_substrate_match_count.unwrap_or(0) == 0
+    {
+        return PatternQualityClass::Anomalous;
+    }
+    if mdl_gain >= SIGNAL_MDL_FLOOR
+        && overlap_score < SIGNAL_OVERLAP_CEILING
+    {
+        return PatternQualityClass::Signal;
+    }
+    PatternQualityClass::Mixed
+}
+
+impl RSet {
+    /// Build the `PatternQualityReport` for one pattern. ADR 0077.
+    ///
+    /// `substrates` is an optional list of imagined / generated
+    /// rsets used for cross-substrate validation (analog of
+    /// ADR 0071's cross-precision substrates). Pass an empty
+    /// slice to skip cross-substrate validation; the resulting
+    /// report's `cross_substrate_match_count` will be `None`.
+    pub fn pattern_quality_report(
+        &self,
+        pattern_id: &str,
+        substrates: &[RSet],
+    ) -> Option<PatternQualityReport> {
+        if !self.patterns().contains(&pattern_id) {
+            return None;
+        }
+        let canonical = match self.pattern_structure(pattern_id) {
+            Some(c) => c,
+            None => return None,
+        };
+        let canonical_size = canonical.len();
+        let role_count = self.pattern_roles(pattern_id).len();
+
+        let instance_ids: Vec<String> = self
+            .instances_of(pattern_id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let instance_count = instance_ids.len();
+
+        // Participant set: union over instances.
+        let mut participants: HashSet<String> = HashSet::new();
+        for inst in &instance_ids {
+            for r in self.left_of(inst) {
+                participants.insert(r.y.to_string());
+            }
+        }
+        let distinct_participants = participants.len();
+
+        // MDL gain: existing API.
+        let mdl_gain = self.mdl_gain(&canonical);
+
+        // Cross-substrate match count.
+        let cross_substrate_match_count = if substrates.is_empty() {
+            None
+        } else {
+            let mut total = 0usize;
+            for sub in substrates {
+                total += sub.find_instances_of(&canonical).len();
+            }
+            Some(total)
+        };
+
+        // Overlap with other patterns' participants.
+        let mut max_overlap = 0.0f64;
+        let mut overlap_partner: Option<String> = None;
+        if !participants.is_empty() {
+            for other_id in self.patterns() {
+                if other_id == pattern_id {
+                    continue;
+                }
+                let mut other_participants: HashSet<String> = HashSet::new();
+                for inst in self.instances_of(other_id) {
+                    for r in self.left_of(inst) {
+                        other_participants.insert(r.y.to_string());
+                    }
+                }
+                if other_participants.is_empty() {
+                    continue;
+                }
+                let intersect = participants
+                    .iter()
+                    .filter(|p| other_participants.contains(*p))
+                    .count();
+                let overlap = intersect as f64 / participants.len() as f64;
+                if overlap > max_overlap {
+                    max_overlap = overlap;
+                    overlap_partner = Some(other_id.to_string());
+                }
+            }
+        }
+
+        let summary_class = compute_pattern_summary_class(
+            instance_count,
+            max_overlap,
+            cross_substrate_match_count,
+            mdl_gain,
+        );
+
+        Some(PatternQualityReport {
+            pattern_id: pattern_id.to_string(),
+            canonical_size,
+            role_count,
+            instance_count,
+            distinct_participants,
+            mdl_gain,
+            cross_substrate_match_count,
+            overlap_score: max_overlap,
+            overlap_partner,
+            summary_class,
+        })
+    }
+
+    /// Build reports for every registered pattern. ADR 0077.
+    pub fn pattern_quality_report_all(
+        &self,
+        substrates: &[RSet],
+    ) -> Vec<PatternQualityReport> {
+        let mut out: Vec<PatternQualityReport> = Vec::new();
+        for pid in self.patterns() {
+            if let Some(r) = self.pattern_quality_report(pid, substrates) {
+                out.push(r);
+            }
+        }
+        // Stable order: pattern_id ascending.
+        out.sort_by(|a, b| a.pattern_id.cmp(&b.pattern_id));
+        out
+    }
+
+    /// Classify the recommended intervention for a pattern given
+    /// its quality report and a slice of peer reports. ADR 0077.
+    ///
+    /// Mirrors `recommend_intervention` (ADR 0072) but for the
+    /// pattern path. Conservative: only `Anomalous` triggers an
+    /// automatic retract recommendation; `Redundant` recommends
+    /// a merge but stays advisory (no `merge_patterns` API yet).
+    pub fn recommend_pattern_intervention(
+        report: &PatternQualityReport,
+        _others: &[PatternQualityReport],
+    ) -> RecommendedPatternIntervention {
+        match report.summary_class {
+            PatternQualityClass::Signal => RecommendedPatternIntervention::None,
+            PatternQualityClass::Indeterminate => {
+                RecommendedPatternIntervention::ShadowMonitor {
+                    reason: "no instance evidence yet".to_string(),
+                }
+            }
+            PatternQualityClass::Anomalous => {
+                let cross = report
+                    .cross_substrate_match_count
+                    .map(|n| format!("cross_substrate_matches={}", n))
+                    .unwrap_or_else(|| "no substrates supplied".to_string());
+                RecommendedPatternIntervention::PatternRetract {
+                    reason: format!(
+                        "singleton pattern with no cross-substrate match ({})",
+                        cross,
+                    ),
+                }
+            }
+            PatternQualityClass::Redundant => match &report.overlap_partner {
+                Some(partner) => {
+                    RecommendedPatternIntervention::PatternMergeWith {
+                        partner: partner.clone(),
+                        reason: format!(
+                            "overlap_score={:.3} with {}",
+                            report.overlap_score, partner,
+                        ),
+                    }
+                }
+                None => RecommendedPatternIntervention::Manual {
+                    reason: "Redundant class but no overlap partner identified"
+                        .to_string(),
+                },
+            },
+            PatternQualityClass::Mixed => RecommendedPatternIntervention::Manual {
+                reason: format!(
+                    "instance/overlap/MDL signals disagree (mdl={} overlap={:.3})",
+                    report.mdl_gain, report.overlap_score,
+                ),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

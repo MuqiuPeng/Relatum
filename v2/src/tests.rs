@@ -7067,6 +7067,156 @@
         assert_eq!(zero, 0.0);
     }
 
+    // ── ADR 0077 — Pattern quality framework ────────────────────
+
+    #[test]
+    fn adr0077_compute_pattern_summary_class_indeterminate_zero_instances() {
+        use crate::{compute_pattern_summary_class, PatternQualityClass};
+        let cls = compute_pattern_summary_class(0, 0.0, None, 0);
+        assert_eq!(cls, PatternQualityClass::Indeterminate);
+    }
+
+    #[test]
+    fn adr0077_compute_pattern_summary_class_redundant_high_overlap() {
+        use crate::{compute_pattern_summary_class, PatternQualityClass};
+        // Even with high MDL gain, overlap >= 0.8 → Redundant.
+        let cls = compute_pattern_summary_class(10, 0.85, Some(5), 100);
+        assert_eq!(cls, PatternQualityClass::Redundant);
+    }
+
+    #[test]
+    fn adr0077_compute_pattern_summary_class_anomalous_singleton_no_match() {
+        use crate::{compute_pattern_summary_class, PatternQualityClass};
+        // 1 instance + 0 cross-substrate matches + low overlap → Anomalous.
+        let cls = compute_pattern_summary_class(1, 0.0, Some(0), 0);
+        assert_eq!(cls, PatternQualityClass::Anomalous);
+    }
+
+    #[test]
+    fn adr0077_compute_pattern_summary_class_signal() {
+        use crate::{compute_pattern_summary_class, PatternQualityClass};
+        // High MDL, low overlap, ≥ 1 cross-substrate match → Signal.
+        let cls = compute_pattern_summary_class(5, 0.1, Some(3), 10);
+        assert_eq!(cls, PatternQualityClass::Signal);
+    }
+
+    #[test]
+    fn adr0077_compute_pattern_summary_class_mixed_default() {
+        use crate::{compute_pattern_summary_class, PatternQualityClass};
+        // 2 instances, low overlap, mid MDL — fails Signal (mdl < 5)
+        // but passes the other gates → Mixed.
+        let cls = compute_pattern_summary_class(2, 0.2, Some(1), 3);
+        assert_eq!(cls, PatternQualityClass::Mixed);
+    }
+
+    #[test]
+    fn adr0077_pattern_quality_report_returns_none_for_unknown_pattern() {
+        let rs = crate::RSet::new();
+        let report = rs.pattern_quality_report("p_does_not_exist", &[]);
+        assert!(report.is_none());
+    }
+
+    #[test]
+    fn adr0077_pattern_quality_report_simple_chain_pattern() {
+        use crate::{Subgraph, PatternQualityClass};
+        let mut rs = crate::RSet::new();
+        // Mint a 2-edge chain: a → b → c. 1 instance.
+        let sg = Subgraph::from_edges(vec![
+            crate::R::new("a", "b"),
+            crate::R::new("b", "c"),
+        ]);
+        let pid = rs.name_pattern_instances(&[sg]).expect("named");
+        let report = rs
+            .pattern_quality_report(&pid, &[])
+            .expect("report");
+        assert_eq!(report.pattern_id, pid);
+        assert_eq!(report.canonical_size, 2);
+        assert!(report.role_count >= 2);
+        assert_eq!(report.instance_count, 1);
+        assert!(report.distinct_participants >= 2);
+        // No substrates given.
+        assert_eq!(report.cross_substrate_match_count, None);
+        // Single pattern: no other to overlap with.
+        assert_eq!(report.overlap_score, 0.0);
+        assert!(report.overlap_partner.is_none());
+        // 1-instance + no cross-substrate (None treated as 0) → Anomalous.
+        assert_eq!(report.summary_class, PatternQualityClass::Anomalous);
+    }
+
+    #[test]
+    fn adr0077_recommend_intervention_signal_returns_none() {
+        use crate::{
+            PatternQualityClass, PatternQualityReport,
+            RecommendedPatternIntervention, RSet,
+        };
+        let report = PatternQualityReport {
+            pattern_id: "p_x".to_string(),
+            canonical_size: 3,
+            role_count: 3,
+            instance_count: 5,
+            distinct_participants: 12,
+            mdl_gain: 12,
+            cross_substrate_match_count: Some(3),
+            overlap_score: 0.1,
+            overlap_partner: None,
+            summary_class: PatternQualityClass::Signal,
+        };
+        let rec = RSet::recommend_pattern_intervention(&report, &[]);
+        assert_eq!(rec, RecommendedPatternIntervention::None);
+    }
+
+    #[test]
+    fn adr0077_recommend_intervention_anomalous_returns_retract() {
+        use crate::{
+            PatternQualityClass, PatternQualityReport,
+            RecommendedPatternIntervention, RSet,
+        };
+        let report = PatternQualityReport {
+            pattern_id: "p_y".to_string(),
+            canonical_size: 2,
+            role_count: 3,
+            instance_count: 1,
+            distinct_participants: 3,
+            mdl_gain: 0,
+            cross_substrate_match_count: Some(0),
+            overlap_score: 0.0,
+            overlap_partner: None,
+            summary_class: PatternQualityClass::Anomalous,
+        };
+        let rec = RSet::recommend_pattern_intervention(&report, &[]);
+        assert!(matches!(
+            rec,
+            RecommendedPatternIntervention::PatternRetract { .. }
+        ));
+    }
+
+    #[test]
+    fn adr0077_recommend_intervention_redundant_returns_merge() {
+        use crate::{
+            PatternQualityClass, PatternQualityReport,
+            RecommendedPatternIntervention, RSet,
+        };
+        let report = PatternQualityReport {
+            pattern_id: "p_a".to_string(),
+            canonical_size: 2,
+            role_count: 3,
+            instance_count: 4,
+            distinct_participants: 6,
+            mdl_gain: 6,
+            cross_substrate_match_count: Some(2),
+            overlap_score: 0.9,
+            overlap_partner: Some("p_b".to_string()),
+            summary_class: PatternQualityClass::Redundant,
+        };
+        let rec = RSet::recommend_pattern_intervention(&report, &[]);
+        match rec {
+            RecommendedPatternIntervention::PatternMergeWith { partner, .. } => {
+                assert_eq!(partner, "p_b");
+            }
+            other => panic!("expected PatternMergeWith, got {:?}", other),
+        }
+    }
+
     // ── ADR 0074 — Phase Emergence-1: shape co-occurrence concepts ──
 
     /// Build a small RSet with 4 axioms forming 2 shape families,
