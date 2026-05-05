@@ -6793,6 +6793,153 @@
         assert_eq!(tuned.discovery_config.sample_count, 1000);
     }
 
+    // ── ADR 0076 — Micro-agent reframing query helpers ──────────
+
+    #[test]
+    fn adr0076_target_kind_label_strips_per_instance_ids() {
+        use crate::runtime::{target_kind_label, FrontierTarget};
+        assert_eq!(
+            target_kind_label(&FrontierTarget::WholeRSet),
+            "WholeRSet",
+        );
+        assert_eq!(
+            target_kind_label(&FrontierTarget::PatternSize(3)),
+            "PatternSize(3)",
+        );
+        // Per-instance ids must collapse to "Pattern", "Theory" etc.
+        assert_eq!(
+            target_kind_label(&FrontierTarget::Pattern("p_3".to_string())),
+            "Pattern",
+        );
+        assert_eq!(
+            target_kind_label(&FrontierTarget::Theory("t_5".to_string())),
+            "Theory",
+        );
+        assert_eq!(
+            target_kind_label(&FrontierTarget::Axiom("ax_a".to_string())),
+            "Axiom",
+        );
+    }
+
+    #[test]
+    fn adr0076_agent_classes_groups_by_kind_and_target_kind() {
+        use crate::runtime::{
+            agent_classes, ActionKind, Episode, FrontierTarget, RuntimeMode,
+        };
+        let episodes = vec![
+            Episode {
+                id: 1, tick: 1, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: 1.0, delta: 1.0,
+            },
+            Episode {
+                id: 2, tick: 2, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 1.0, score_after: 1.0, delta: 0.0,
+            },
+            Episode {
+                id: 3, tick: 3, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverTheory,
+                target: FrontierTarget::WholeRSet,
+                score_before: 1.0, score_after: 5.0, delta: 4.0,
+            },
+            Episode {
+                id: 4, tick: 4, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(2),
+                score_before: 5.0, score_after: 5.0, delta: 0.0,
+            },
+        ];
+        let classes = agent_classes(&episodes);
+        // Expect 3 distinct classes:
+        // (DiscoverPatterns, PatternSize(3)) — 2 episodes
+        // (DiscoverPatterns, PatternSize(2)) — 1 episode
+        // (DiscoverTheory, WholeRSet) — 1 episode
+        assert_eq!(classes.len(), 3);
+        // Sorted by descending episode count.
+        assert_eq!(classes[0].episode_count, 2);
+        assert_eq!(classes[0].target_label, "PatternSize(3)");
+        // Success rate on class 0: 1 of 2 had positive delta = 50%.
+        assert!((classes[0].success_rate - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn adr0076_agent_episodes_filters_correctly() {
+        use crate::runtime::{
+            agent_episodes, ActionKind, Episode, FrontierTarget, RuntimeMode,
+        };
+        let eps = vec![
+            Episode {
+                id: 1, tick: 1, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: 1.0, delta: 1.0,
+            },
+            Episode {
+                id: 2, tick: 2, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverTheory,
+                target: FrontierTarget::WholeRSet,
+                score_before: 1.0, score_after: 1.5, delta: 0.5,
+            },
+        ];
+        let dp_size3 = agent_episodes(
+            &eps,
+            ActionKind::DiscoverPatterns,
+            "PatternSize(3)",
+        );
+        assert_eq!(dp_size3.len(), 1);
+        assert_eq!(dp_size3[0].id, 1);
+        let dt_whole = agent_episodes(
+            &eps,
+            ActionKind::DiscoverTheory,
+            "WholeRSet",
+        );
+        assert_eq!(dt_whole.len(), 1);
+        assert_eq!(dt_whole[0].id, 2);
+    }
+
+    #[test]
+    fn adr0076_attention_share_recent() {
+        use crate::runtime::{
+            agent_attention_share_recent, ActionKind, Episode, FrontierTarget,
+            RuntimeMode,
+        };
+        // 5 episodes: 3 DP, 2 DT in alternating order, with the
+        // most recent 3 being [DT, DP, DP].
+        let eps: Vec<Episode> = vec![
+            (ActionKind::DiscoverPatterns, FrontierTarget::PatternSize(2)),
+            (ActionKind::DiscoverPatterns, FrontierTarget::PatternSize(2)),
+            (ActionKind::DiscoverTheory, FrontierTarget::WholeRSet),
+            (ActionKind::DiscoverPatterns, FrontierTarget::PatternSize(3)),
+            (ActionKind::DiscoverTheory, FrontierTarget::WholeRSet),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (kind, target))| Episode {
+            id: i as u64 + 1, tick: i as u64 + 1, mode: RuntimeMode::Expand,
+            action_kind: kind, target,
+            score_before: 0.0, score_after: 0.0, delta: 0.0,
+        })
+        .collect();
+        // Last 3 episodes: indices 2, 3, 4 = DT, DP, DT → DT share = 2/3
+        let dt_share = agent_attention_share_recent(
+            &eps, ActionKind::DiscoverTheory, 3,
+        );
+        assert!((dt_share - 2.0 / 3.0).abs() < 1e-9);
+        // DP share over last 3 = 1/3
+        let dp_share = agent_attention_share_recent(
+            &eps, ActionKind::DiscoverPatterns, 3,
+        );
+        assert!((dp_share - 1.0 / 3.0).abs() < 1e-9);
+        // Empty episodes → 0 share regardless of kind.
+        let zero = agent_attention_share_recent(
+            &[], ActionKind::DiscoverPatterns, 5,
+        );
+        assert_eq!(zero, 0.0);
+    }
+
     // ── ADR 0074 — Phase Emergence-1: shape co-occurrence concepts ──
 
     /// Build a small RSet with 4 axioms forming 2 shape families,

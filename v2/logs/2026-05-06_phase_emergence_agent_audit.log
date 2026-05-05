@@ -1,0 +1,109 @@
+════════════════════════════════════════════════════════
+ ADR 0076 — Micro-agent audit of v2's dispatch log
+════════════════════════════════════════════════════════
+ Re-reads each substrate's episode log under the micro-
+ agent interpretation: each (ActionKind, target-kind) is
+ one agent class, each Episode is a transient agent's
+ complete observable existence. Demonstrates v2 is
+ already a multi-agent cognitive substrate by query.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (1000 ticks)
+════════════════════════════════════════════════════════
+ Total episodes: 106 | Distinct agent classes: 6
+
+ agent class (kind/target)       eps   succ    succ%    first     last     mean Δ
+ ────────────────────────────────────────────────────────────────────────────
+ EvaluatePredictions/WholeRS…     71      9    12.7%        7      911      0.057
+ DiscoverPatterns/PatternSiz…     18      0     0.0%       29      406      0.000
+ Declarativize/Axiom               7      0     0.0%        4      123     -0.100
+ DiscoverTheory/WholeRSet          4      4   100.0%        1      121      6.000
+ UpdateTheoryRelations/Whole…      3      1    33.3%       21      124     -0.267
+ Declarativize/Theory              3      0     0.0%      409      411     -0.100
+
+ Recent-window attention share (last 20 episodes):
+   EvaluatePredictions              100.0%
+
+════════════════════════════════════════════════════════
+ Substrate: long5k (1500 ticks)
+════════════════════════════════════════════════════════
+ Total episodes: 159 | Distinct agent classes: 7
+
+ agent class (kind/target)       eps   succ    succ%    first     last     mean Δ
+ ────────────────────────────────────────────────────────────────────────────
+ EvaluatePredictions/WholeRS…    103     16    15.5%        7     1411      0.042
+ DiscoverPatterns/PatternSiz…     30      0     0.0%       29      702      0.000
+ ExecuteComposite/ActionSequ…      8      0     0.0%      703      904      0.000
+ Declarativize/Axiom               7      0     0.0%        4      123     -0.100
+ DiscoverTheory/WholeRSet          4      4   100.0%        1      121      6.000
+ Declarativize/Theory              4      0     0.0%      409      502     -0.100
+ UpdateTheoryRelations/Whole…      3      1    33.3%       21      124     -0.267
+
+ Recent-window attention share (last 20 episodes):
+   EvaluatePredictions              100.0%
+
+════════════════════════════════════════════════════════
+ Substrate: narrow_a (500 ticks)
+════════════════════════════════════════════════════════
+ Total episodes: 76 | Distinct agent classes: 6
+
+ agent class (kind/target)       eps   succ    succ%    first     last     mean Δ
+ ────────────────────────────────────────────────────────────────────────────
+ EvaluatePredictions/WholeRS…     41      9    22.0%        7      424      0.133
+ DiscoverPatterns/PatternSiz…     18      0     0.0%       29      406      0.000
+ Declarativize/Axiom               7      0     0.0%        4      123     -0.100
+ DiscoverTheory/WholeRSet          4      4   100.0%        1      121      6.000
+ Declarativize/Theory              3      0     0.0%      409      411     -0.100
+ UpdateTheoryRelations/Whole…      3      1    33.3%       21      124     -0.267
+
+ Recent-window attention share (last 20 episodes):
+   DiscoverPatterns                  30.0%
+   EvaluatePredictions               55.0%
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 (4500 ticks)
+════════════════════════════════════════════════════════
+ Total episodes: 10 | Distinct agent classes: 5
+
+ agent class (kind/target)       eps   succ    succ%    first     last     mean Δ
+ ────────────────────────────────────────────────────────────────────────────
+ DiscoverPatterns/PatternSiz…      5      2    40.0%        8       16      0.600
+ DiscoverTheory/WholeRSet          2      2   100.0%        1        2      2.650
+ PruneLowValueObjects/Pattern      1      1   100.0%       10       10      1.300
+ Declarativize/Axiom               1      0     0.0%        4        4     -0.100
+ UpdateTheoryRelations/Whole…      1      1   100.0%        5        5      0.700
+
+ Recent-window attention share (last 10 episodes):
+   DiscoverTheory                    20.0%
+   DiscoverPatterns                  50.0%
+
+════════════════════════════════════════════════════════
+ Reading guide
+════════════════════════════════════════════════════════
+
+ Each row in the per-substrate tables is one agent class:
+ a (kind, target-kind) pair that grouped the episodes.
+ The columns describe that class's complete observable
+ behaviour over the run:
+
+   eps     — number of agent instances of this class
+             that fired (= number of dispatches)
+   succ    — agents that produced positive abstraction-
+             score delta (or returned explicit success)
+   succ%   — class-level success rate ("agent confidence
+             of this class", per ADR 0076)
+   first/last tick — temporal envelope of the class's
+             activity ("agent attention window")
+   mean Δ  — average score impact per dispatch
+
+ The recent-window attention share approximates which
+ agent class is currently "holding the floor" in the
+ global workspace.
+
+ Constitution heavy reading is preserved: nothing in
+ this output is new ontology — these are queries over
+ Memory::episodes that already exist. Agents are
+ behaviour patterns we read off the log, not entities
+ the system declares.
+
+--- end ---

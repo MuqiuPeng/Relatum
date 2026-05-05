@@ -27,6 +27,7 @@
 //! - `persistence` — A3 serialization helpers + parse_checkpoint
 
 mod action;
+mod agent_view;
 mod autonomous;
 mod drive;
 mod environment;
@@ -40,6 +41,10 @@ mod scheduler_rule;
 mod scheduler_ucb;
 
 pub use action::{ActionKind, ActionPlan, FrontierTarget, SchedulerDecision};
+pub use agent_view::{
+    agent_attention_share_recent, agent_classes, agent_episodes,
+    target_kind_label, AgentClassSummary,
+};
 pub use autonomous::AutonomousRuntime;
 pub(crate) use autonomous::theory_pair_has_relation;
 pub(crate) use persistence::{action_kind_to_str, parse_action_kind};
