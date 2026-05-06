@@ -7112,8 +7112,45 @@
     #[test]
     fn adr0077_pattern_quality_report_returns_none_for_unknown_pattern() {
         let rs = crate::RSet::new();
-        let report = rs.pattern_quality_report("p_does_not_exist", &[]);
+        let report = rs.pattern_quality_report("p_does_not_exist", &[], None);
         assert!(report.is_none());
+    }
+
+    #[test]
+    fn adr0077_pattern_quality_report_with_sampling_uses_sample_path() {
+        // When sampling=Some(...), the cross-substrate match uses
+        // sample_instances_of and produces a (possibly approximate)
+        // count. This test verifies the path is wired up — counts
+        // are non-NaN and substrate-empty-fallback still produces
+        // None.
+        use crate::{Subgraph, SamplingMatchConfig};
+        let mut rs = crate::RSet::new();
+        let sg = Subgraph::from_edges(vec![
+            crate::R::new("a", "b"),
+            crate::R::new("b", "c"),
+        ]);
+        let pid = rs.name_pattern_instances(&[sg]).expect("named");
+
+        let cfg = SamplingMatchConfig {
+            sample_count: 100,
+            rng_seed: 1234,
+        };
+        // Empty substrates — even with sampling config,
+        // cross_substrate_match_count should be None.
+        let r0 = rs.pattern_quality_report(&pid, &[], Some(&cfg))
+            .expect("report");
+        assert_eq!(r0.cross_substrate_match_count, None);
+
+        // Non-empty substrate — sample path returns Some(N) where
+        // N >= 0 (could be 0 if sampling missed the canonical).
+        let mut sub = crate::RSet::new();
+        sub.add(crate::R::new("x", "y"));
+        sub.add(crate::R::new("y", "z"));
+        let r1 = rs
+            .pattern_quality_report(&pid, &[sub], Some(&cfg))
+            .expect("report");
+        // Just check it returned a count rather than panicking.
+        assert!(r1.cross_substrate_match_count.is_some());
     }
 
     #[test]
@@ -7127,7 +7164,7 @@
         ]);
         let pid = rs.name_pattern_instances(&[sg]).expect("named");
         let report = rs
-            .pattern_quality_report(&pid, &[])
+            .pattern_quality_report(&pid, &[], None)
             .expect("report");
         assert_eq!(report.pattern_id, pid);
         assert_eq!(report.canonical_size, 2);

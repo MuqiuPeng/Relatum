@@ -8364,10 +8364,21 @@ impl RSet {
     /// ADR 0071's cross-precision substrates). Pass an empty
     /// slice to skip cross-substrate validation; the resulting
     /// report's `cross_substrate_match_count` will be `None`.
+    ///
+    /// `sampling` controls how cross-substrate matching enumerates
+    /// instances:
+    /// - `None` → use exhaustive `find_instances_of` (correct
+    ///   counts but `O(data^k)` cost; can hang on large substrates
+    ///   with size-4/5 canonicals).
+    /// - `Some(cfg)` → use `sample_instances_of` (ADR 0024) with
+    ///   the given sampling budget; faster but counts are
+    ///   approximate. Recommended for any audit on substrates of
+    ///   ≥ ~100 nodes.
     pub fn pattern_quality_report(
         &self,
         pattern_id: &str,
         substrates: &[RSet],
+        sampling: Option<&SamplingMatchConfig>,
     ) -> Option<PatternQualityReport> {
         if !self.patterns().contains(&pattern_id) {
             return None;
@@ -8404,7 +8415,11 @@ impl RSet {
         } else {
             let mut total = 0usize;
             for sub in substrates {
-                total += sub.find_instances_of(&canonical).len();
+                let matches = match sampling {
+                    Some(cfg) => sub.sample_instances_of(&canonical, cfg).len(),
+                    None => sub.find_instances_of(&canonical).len(),
+                };
+                total += matches;
             }
             Some(total)
         };
@@ -8460,13 +8475,15 @@ impl RSet {
     }
 
     /// Build reports for every registered pattern. ADR 0077.
+    /// See `pattern_quality_report` for the meaning of `sampling`.
     pub fn pattern_quality_report_all(
         &self,
         substrates: &[RSet],
+        sampling: Option<&SamplingMatchConfig>,
     ) -> Vec<PatternQualityReport> {
         let mut out: Vec<PatternQualityReport> = Vec::new();
         for pid in self.patterns() {
-            if let Some(r) = self.pattern_quality_report(pid, substrates) {
+            if let Some(r) = self.pattern_quality_report(pid, substrates, sampling) {
                 out.push(r);
             }
         }

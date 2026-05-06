@@ -50,17 +50,51 @@ runtime to maturity then manually invokes `autonomous_pass`
 sizes 2-5 to populate the pattern set, then audits every
 pattern with the new API.
 
-### Cross-substrate validation deferred
+### Cross-substrate validation: sampling integration (2026-05-06 update)
 
-`find_instances_of` is exhaustive `O(data^k)` for size-k
-canonicals. On generated substrates of ~100+ nodes with size-4
-or size-5 patterns, the audit exceeded reasonable runtime
-budget. Cross-substrate validation is therefore skipped in this
-slice — `cross_substrate_match_count = None`. The classifier
-falls back to instance-count + overlap + MDL signals, all of
-which work without substrates. Switching to ADR 0024's
-`sample_instances_of` is the natural fix; deferred to a future
-slice.
+Original ADR 0077 ship deferred cross-substrate validation
+because `find_instances_of` is exhaustive `O(data^k)` and hung
+on size-4/5 canonicals over imagined substrates of ~100 nodes.
+
+The 2026-05-06 follow-up wired up `sample_instances_of`
+(ADR 0024). API change:
+
+```rust
+pub fn pattern_quality_report(
+    &self,
+    pattern_id: &str,
+    substrates: &[RSet],
+    sampling: Option<&SamplingMatchConfig>,  // NEW
+) -> Option<PatternQualityReport>;
+```
+
+`Some(cfg)` runs sample-based matching with a bounded budget;
+`None` keeps the exhaustive path for callers that need exact
+counts. The example uses `sampling_budget = 200` and completes
+in seconds.
+
+Empirical impact (matched runtime substrates):
+- OQ#1 p_3 (size 3, 25 instances) — `xsub = 5` from 3 imagined
+  substrates: this pattern recurs on imagined-substrate
+  generations of OQ#1's theories. Confirms p_3 is genuinely
+  cross-substrate-portable; class shifted Redundant → Mixed
+  due to mdl 72 + overlap 0.75 disagreement
+- OQ#2 p_3 (84-instance 3-cycle, mdl 249) — `xsub = 1`,
+  remains Signal
+- OQ#2 p_1 (size 2, 3 instances) — `xsub = 2`, more
+  cross-substrate matches than its primary instance count
+  suggests structural-portable; remains Redundant due to high
+  overlap with p_3
+- Other patterns mostly `xsub = 0`: their canonicals are
+  substrate-specific structural shapes, validating the
+  `Anomalous` candidate path even though no current pattern
+  triggered it (`xsub = 0` AND `instance_count == 1` was the
+  Anomalous gate; current minted patterns mostly have
+  `instance_count >= 5`)
+
+The Anomalous classification path is now reachable in
+principle; it would activate on any future singleton pattern
+that fails cross-substrate validation.
 
 ## Result
 

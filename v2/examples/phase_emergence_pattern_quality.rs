@@ -20,9 +20,14 @@ use relatum_v2::{
     test_substrates::{oq1::build_long_stream, oq2::build_oq2_stream},
     AutonomousConfig, DiscoveryConfig, NamingPolicy, PatternQualityClass,
     RSet, RecommendedPatternIntervention, RefinementConfig,
+    SamplingMatchConfig,
 };
 
 const RNG_SEED: u64 = 0xC0FFEE;
+const NUM_GEN_IDS: usize = 15;
+const SEED_DENSITY: f64 = 0.05;
+const SUBSTRATE_SEED_BASE: u64 = 0xC0FFEE_DEADBEEF;
+const SAMPLING_BUDGET: usize = 200;
 
 fn run_pass_on_size(rt: &mut AutonomousRuntime, size: usize) {
     let cfg = AutonomousConfig {
@@ -94,18 +99,42 @@ fn audit(label: &str, stream: Vec<(u64, Event)>, ticks: u64) {
     }
     println!(" {} patterns minted.", pattern_count);
 
-    // Cross-substrate validation is skipped for now: the helper
-    // `find_instances_of` is exhaustive O(data^k) for size-k
-    // canonical, and on imagined substrates of ~100+ nodes with
-    // size-4/5 patterns the cost becomes prohibitive. With no
-    // substrates, `cross_substrate_match_count = None` and the
-    // classifier falls back to instance-count + MDL + overlap
-    // signals only. Future work: switch to `sample_instances_of`
-    // (ADR 0024) for cross-substrate matching.
-    let substrates: Vec<RSet> = Vec::new();
-    println!(" Cross-substrate validation: skipped (perf TBD)");
+    // Build cross-substrate validation set: generate one
+    // imagined substrate per registered theory.
+    let theories: Vec<String> = rt
+        .rset
+        .theories()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let mut substrates: Vec<RSet> = Vec::new();
+    for (i, t) in theories.iter().enumerate() {
+        let seed = SUBSTRATE_SEED_BASE
+            .wrapping_add(i as u64 * 0x9E3779B97F4A7C15);
+        if let Ok(g) = rt.rset.generate_substrate_from_theory(
+            t, NUM_GEN_IDS, SEED_DENSITY, seed,
+        ) {
+            substrates.push(g);
+        }
+    }
+    println!(
+        " Cross-substrate validation: {} substrates from {} theories (sampling budget {})",
+        substrates.len(), theories.len(), SAMPLING_BUDGET,
+    );
 
-    let reports = rt.rset.pattern_quality_report_all(&substrates);
+    // ADR 0077 originally used exhaustive find_instances_of which
+    // hung on size-4/5 canonicals over 100-node substrates. Now
+    // pass a SamplingMatchConfig so cross-substrate matching uses
+    // sample_instances_of (ADR 0024) — bounded cost, approximate
+    // counts. The Anomalous classification path is now reachable.
+    let sampling_cfg = SamplingMatchConfig {
+        sample_count: SAMPLING_BUDGET,
+        rng_seed: RNG_SEED,
+    };
+    let reports = rt.rset.pattern_quality_report_all(
+        &substrates,
+        Some(&sampling_cfg),
+    );
 
     println!();
     println!(" === Pattern quality reports ===");
