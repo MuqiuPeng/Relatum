@@ -1,0 +1,158 @@
+════════════════════════════════════════════════════════
+ v2 capability demonstration on OQ#2
+ 2026-05-07 — full stack as of ADR 0078
+════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════
+  1. Discover axioms + theories from the stream (autonomously)
+════════════════════════════════════════════════════════
+
+ After 4500 ticks of OQ#2 (tournament + lattice + star):
+   2 axioms
+   2 theories
+   0 L2 shape families
+   2 patterns (runtime auto-mint)
+   10 episodes total
+
+ Theories:
+   t_0 = {ax_antisymmetry, ax_totality}
+   t_1 = {ax_antisymmetry}
+
+════════════════════════════════════════════════════════
+  2. Assess theory quality (ADR 0071)
+════════════════════════════════════════════════════════
+
+ theory  axs     p_mean     c_mean    class
+ t_0       2          —          —   Indet.
+ t_1       1          —          —   Indet.
+
+════════════════════════════════════════════════════════
+  3. Recommend theory intervention (ADR 0072)
+════════════════════════════════════════════════════════
+
+   t_0 → ShadowMonitor: no data on any quality dimension
+   t_1 → ShadowMonitor: no data on any quality dimension
+
+════════════════════════════════════════════════════════
+  4. Mint emergent patterns (ADR 0010 / 0018)
+════════════════════════════════════════════════════════
+
+ Manually invoke autonomous_pass for sizes 2-5:
+   7 patterns now registered
+
+ Pattern instance + participant counts:
+ id      size  instances   participants
+ p_0        2          9              6
+ p_1        2          3              5
+ p_2        2          1              2
+ p_3        3         84             30
+ p_4        3         25             20
+ p_5        3         20             25
+ p_6        5         30             25
+
+════════════════════════════════════════════════════════
+  5. Render minted patterns as readable shapes (ADR 0075 b)
+════════════════════════════════════════════════════════
+
+   p_0 (3 roles, 2 edges, shape: fork (one source, two targets))
+     r0 → r1
+     r0 → r2
+
+   p_1 (3 roles, 2 edges, shape: chain (length 2))
+     r0 → r1
+     r1 → r2
+
+   p_2 (2 roles, 2 edges, shape: bidirectional pair)
+     r0 → r1
+     r1 → r0
+
+   p_3 (3 roles, 3 edges, shape: 3-cycle)
+     r0 → r1
+     r0 → r2
+     r1 → r2
+
+   p_4 (2 roles, 3 edges, shape: 2 self-loops + 1 cross-edge)
+     r0 → r0
+     r0 → r1
+     r1 → r1
+
+   p_5 (2 roles, 3 edges, shape: 1 self-loop + 2 cross-edges)
+     r0 → r0
+     r0 → r1
+     r1 → r0
+
+   p_6 (3 roles, 5 edges, shape: 1 self-loop + 4 cross-edges)
+     r0 → r0
+     r0 → r1
+     r0 → r2
+     r1 → r0
+     r2 → r0
+
+
+════════════════════════════════════════════════════════
+  6. Assess pattern quality (ADR 0077 + sampling)
+════════════════════════════════════════════════════════
+
+ id      size  inst   mdl  xsub    ovr      class
+ p_0        2     9     0     1   1.00  Redundant
+ p_1        2     3    14     2   1.00  Redundant
+ p_2        2     1     0     0   1.00  Redundant
+ p_3        3    84   249     1   0.20     Signal
+ p_4        3    25    72     0   0.00     Signal
+ p_5        3    20    57     0   1.00  Redundant
+ p_6        5    30   145     0   1.00  Redundant
+
+════════════════════════════════════════════════════════
+  7. Recommend pattern intervention (ADR 0077)
+════════════════════════════════════════════════════════
+
+   p_0 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_1 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_2 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_3 → None
+   p_4 → None
+   p_5 → PatternMergeWith(p_6): overlap_score=1.000 with p_6
+   p_6 → PatternMergeWith(p_5): overlap_score=1.000 with p_5
+
+════════════════════════════════════════════════════════
+  8. Read the runtime as a multi-agent ecosystem (ADR 0076)
+════════════════════════════════════════════════════════
+
+ 5 agent classes detected across 10 episodes:
+
+ agent class                         eps    succ% first/last tick
+ DiscoverPatterns/PatternSize(2)       5    40.0%     8-16      
+ DiscoverTheory/WholeRSet              2   100.0%     1-2       
+ Declarativize/Axiom                   1     0.0%     4-4       
+ UpdateTheoryRelations/WholeRSet       1   100.0%     5-5       
+ PruneLowValueObjects/Pattern          1   100.0%    10-10      
+
+ Detail for DiscoverPatterns/PatternSize(2):
+   episode_count: 5, neg/zer/pos: 0/3/2
+   delta range: [0.000, 2.000], median 0.000
+
+ Detail for Declarativize/* (target overlap):
+   1 episodes over 1 distinct targets
+     1 × Axiom("ax_antisymmetry")
+
+════════════════════════════════════════════════════════
+  9. Detect what's not yet learned (ADR 0078)
+════════════════════════════════════════════════════════
+
+ Total data edges: 164
+ Unexplained edges: 0 (0.0%)
+ Distinct canonical shapes of unexplained R: 0
+
+ Drive is silent — no unexplained R remains.
+
+════════════════════════════════════════════════════════
+ Capability demonstration complete.
+════════════════════════════════════════════════════════
+
+ v2 stacks 9 distinct capabilities here, all working on
+ one substrate run. Every capability is a query / mint /
+ assessment that respects the constitution heavy reading:
+ no per-token signature classification, all object
+ emergence atomic with concept registration.
+
+--- end ---
