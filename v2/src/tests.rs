@@ -7067,6 +7067,96 @@
         assert_eq!(zero, 0.0);
     }
 
+    // ── ADR 0078 — Pattern-aware drive metric ───────────────────
+
+    #[test]
+    fn adr0078_drive_signal_empty_rset_zero_signal() {
+        let rs = crate::RSet::new();
+        let signal = rs.unexplained_drive_signal();
+        assert_eq!(signal.total_data_edges, 0);
+        assert_eq!(signal.unexplained_count, 0);
+        assert_eq!(signal.unexplained_ratio, 0.0);
+        assert!(signal.canonical_buckets.is_empty());
+        assert!(signal.modal_canonical.is_none());
+        assert!(!signal.has_signal());
+    }
+
+    #[test]
+    fn adr0078_drive_signal_all_unexplained_one_bucket() {
+        // Single connected component of 2 edges: a → b → c.
+        // No axioms, no patterns, so the entire rset is unexplained.
+        let mut rs = crate::RSet::new();
+        rs.add(crate::R::new("a", "b"));
+        rs.add(crate::R::new("b", "c"));
+        let signal = rs.unexplained_drive_signal();
+        assert_eq!(signal.total_data_edges, 2);
+        assert_eq!(signal.unexplained_count, 2);
+        assert_eq!(signal.unexplained_ratio, 1.0);
+        assert_eq!(signal.canonical_buckets.len(), 1);
+        assert_eq!(signal.canonical_buckets[0].component_count, 1);
+        assert_eq!(signal.canonical_buckets[0].edge_count, 2);
+        assert!(signal.modal_canonical.is_some());
+        assert_eq!(signal.distinct_canonicals, 1);
+        assert!(signal.has_signal());
+    }
+
+    #[test]
+    fn adr0078_drive_signal_isomorphic_components_merge_buckets() {
+        // Two disjoint chains: a→b→c and x→y→z. Same canonical
+        // form (chain-of-2). Should produce 1 bucket with
+        // component_count = 2, edge_count = 4.
+        let mut rs = crate::RSet::new();
+        rs.add(crate::R::new("a", "b"));
+        rs.add(crate::R::new("b", "c"));
+        rs.add(crate::R::new("x", "y"));
+        rs.add(crate::R::new("y", "z"));
+        let signal = rs.unexplained_drive_signal();
+        assert_eq!(signal.canonical_buckets.len(), 1);
+        assert_eq!(signal.canonical_buckets[0].component_count, 2);
+        assert_eq!(signal.canonical_buckets[0].edge_count, 4);
+        assert_eq!(signal.modal_count(), 2);
+    }
+
+    #[test]
+    fn adr0078_drive_signal_distinct_shapes_separate_buckets() {
+        // Component 1: chain a→b→c (2 edges).
+        // Component 2: triangle d→e, e→f, d→f (3 edges, 3 nodes).
+        // Different canonical forms → 2 buckets.
+        let mut rs = crate::RSet::new();
+        rs.add(crate::R::new("a", "b"));
+        rs.add(crate::R::new("b", "c"));
+        rs.add(crate::R::new("d", "e"));
+        rs.add(crate::R::new("e", "f"));
+        rs.add(crate::R::new("d", "f"));
+        let signal = rs.unexplained_drive_signal();
+        assert_eq!(signal.distinct_canonicals, 2);
+        // Sorted desc by component_count, then canonical.
+        // Both components have count 1; modal is whichever sorts
+        // first by canonical bytes — verify exactly one of each.
+        let total_components: usize = signal.canonical_buckets
+            .iter().map(|b| b.component_count).sum();
+        assert_eq!(total_components, 2);
+        let total_edges: usize = signal.canonical_buckets
+            .iter().map(|b| b.edge_count).sum();
+        assert_eq!(total_edges, 5);
+    }
+
+    #[test]
+    fn adr0078_drive_signal_example_edges_capped_at_5() {
+        // Build a single component with 8 edges.
+        // a→b, b→c, c→d, d→e, e→f, f→g, g→h, h→i.
+        let mut rs = crate::RSet::new();
+        let nodes = ["a","b","c","d","e","f","g","h","i"];
+        for w in nodes.windows(2) {
+            rs.add(crate::R::new(w[0], w[1]));
+        }
+        let signal = rs.unexplained_drive_signal();
+        assert_eq!(signal.canonical_buckets.len(), 1);
+        let bucket = &signal.canonical_buckets[0];
+        assert_eq!(bucket.edge_count, 8);
+        assert!(bucket.example_edges.len() <= 5);
+    }
+
     // ── ADR 0077 — Pattern quality framework ────────────────────
 
     #[test]

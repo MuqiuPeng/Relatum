@@ -8547,5 +8547,141 @@ impl RSet {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// ADR 0078 — Pattern-aware drive metric.
+//
+// Constitution-compliant drive signal: groups unexplained R by
+// connected-component canonical form (subgraph-level, never
+// per-token). Reuses ADR 0009's canonicalize and ADR 0059's
+// unexplained_data_edges. Read-only; no rset mutation.
+//
+// Replaces the withdrawn 2026-05-06 ADR 0075 first form which
+// used per-edge fingerprints (forbidden under heavy reading).
+// ─────────────────────────────────────────────────────────────────
+
+/// One bucket in the drive signal: a canonical form and the
+/// count of unexplained connected components matching it.
+/// ADR 0078.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DriveCanonicalBucket {
+    pub canonical: CanonicalForm,
+    pub component_count: usize,
+    pub edge_count: usize,
+    pub example_edges: Vec<R>,
+}
+
+/// Drive signal: how much of the rset's data R is unexplained,
+/// and what structural shapes the unexplained edges form. ADR
+/// 0078. Read-only — computed on demand from
+/// `unexplained_data_edges` (ADR 0059).
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnexplainedDriveSignal {
+    pub total_data_edges: usize,
+    pub unexplained_count: usize,
+    pub unexplained_ratio: f64,
+    /// Buckets sorted by component_count descending.
+    pub canonical_buckets: Vec<DriveCanonicalBucket>,
+    pub modal_canonical: Option<CanonicalForm>,
+    pub distinct_canonicals: usize,
+}
+
+impl UnexplainedDriveSignal {
+    /// True iff there's any unexplained R at all.
+    pub fn has_signal(&self) -> bool {
+        self.unexplained_count > 0
+    }
+
+    /// Component count of the modal bucket, or 0 if none.
+    pub fn modal_count(&self) -> usize {
+        self.canonical_buckets
+            .first()
+            .map(|b| b.component_count)
+            .unwrap_or(0)
+    }
+}
+
+impl RSet {
+    /// Build the drive signal from current unexplained R. ADR 0078.
+    ///
+    /// Read-only: computes on demand, persists nothing. Returns
+    /// canonical buckets sorted by descending component count.
+    pub fn unexplained_drive_signal(&self) -> UnexplainedDriveSignal {
+        let unexplained: Vec<R> =
+            self.unexplained_data_edges().into_iter().collect();
+
+        // Total data edge count for the ratio denominator.
+        let meta = self.collect_meta_ids();
+        let total_data = self
+            .instances
+            .iter()
+            .filter(|r| !meta.contains(&r.x) && !meta.contains(&r.y))
+            .count();
+
+        let unexplained_count = unexplained.len();
+        let unexplained_ratio = if total_data == 0 {
+            0.0
+        } else {
+            unexplained_count as f64 / total_data as f64
+        };
+
+        if unexplained.is_empty() {
+            return UnexplainedDriveSignal {
+                total_data_edges: total_data,
+                unexplained_count: 0,
+                unexplained_ratio,
+                canonical_buckets: Vec::new(),
+                modal_canonical: None,
+                distinct_canonicals: 0,
+            };
+        }
+
+        // Partition into connected components.
+        let components = Subgraph::connected_components_of(unexplained);
+
+        // Bucket by canonical form.
+        let mut bucket_map: HashMap<CanonicalForm, DriveCanonicalBucket> =
+            HashMap::new();
+        for component in components {
+            let canonical = component.canonicalize();
+            let entry = bucket_map
+                .entry(canonical.clone())
+                .or_insert_with(|| DriveCanonicalBucket {
+                    canonical: canonical.clone(),
+                    component_count: 0,
+                    edge_count: 0,
+                    example_edges: Vec::new(),
+                });
+            entry.component_count += 1;
+            entry.edge_count += component.len();
+            // Cap example_edges at 5.
+            for edge in component.edges() {
+                if entry.example_edges.len() >= 5 {
+                    break;
+                }
+                entry.example_edges.push(edge.clone());
+            }
+        }
+
+        let mut buckets: Vec<DriveCanonicalBucket> =
+            bucket_map.into_values().collect();
+        buckets.sort_by(|a, b| {
+            b.component_count
+                .cmp(&a.component_count)
+                .then_with(|| a.canonical.cmp(&b.canonical))
+        });
+        let modal = buckets.first().map(|b| b.canonical.clone());
+        let distinct = buckets.len();
+
+        UnexplainedDriveSignal {
+            total_data_edges: total_data,
+            unexplained_count,
+            unexplained_ratio,
+            canonical_buckets: buckets,
+            modal_canonical: modal,
+            distinct_canonicals: distinct,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

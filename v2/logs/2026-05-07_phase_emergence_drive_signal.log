@@ -1,0 +1,96 @@
+════════════════════════════════════════════════════════
+ ADR 0078 — Pattern-aware drive signal audit
+════════════════════════════════════════════════════════
+ Drive = unexplained R organized by canonical-form
+ buckets. Constitution-compliant: no per-token
+ signature bucketing. Subgraph-level structural keys
+ only.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (1000 ticks to maturity)
+════════════════════════════════════════════════════════
+
+ Phase 0 state: 11 axioms, 3 theories, 1 patterns
+
+ --- Drive at maturity (post Phase 0) ---
+   total data edges: 75, unexplained: 30 (40.0%)
+   distinct canonicals: 1, modal-bucket count: 5
+   rank   components    edges canonical_size
+   #1            5       30              6
+       e.g. R(bL9, bR15)
+       e.g. R(bL10, bR14)
+       e.g. R(bL9, bR13)
+
+ --- Drive after autonomous_pass(sizes 2-5) ---
+   total data edges: 75, unexplained: 0 (0.0%)
+   distinct canonicals: 0, modal-bucket count: 0
+   (no buckets — drive is silent)
+
+ Drive delta:
+   patterns: 7 → 7
+   unexplained_count: 30 → 0 (-30)
+   distinct canonicals: 1 → 0 (-1)
+
+════════════════════════════════════════════════════════
+ Substrate: narrow_a (500 ticks to maturity)
+════════════════════════════════════════════════════════
+
+ Phase 0 state: 11 axioms, 3 theories, 1 patterns
+
+ --- Drive at maturity (post Phase 0) ---
+   total data edges: 45, unexplained: 0 (0.0%)
+   distinct canonicals: 0, modal-bucket count: 0
+   (no buckets — drive is silent)
+
+ --- Drive after autonomous_pass(sizes 2-5) ---
+   total data edges: 45, unexplained: 0 (0.0%)
+   distinct canonicals: 0, modal-bucket count: 0
+   (no buckets — drive is silent)
+
+ Drive delta:
+   patterns: 3 → 3
+   unexplained_count: 0 → 0 (+0)
+   distinct canonicals: 0 → 0 (+0)
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 (4500 ticks to maturity)
+════════════════════════════════════════════════════════
+
+ Phase 0 state: 2 axioms, 2 theories, 2 patterns
+
+ --- Drive at maturity (post Phase 0) ---
+   total data edges: 164, unexplained: 149 (90.9%)
+   distinct canonicals: 5, modal-bucket count: 5
+   rank   components    edges canonical_size
+   #1            5       45              9
+       e.g. R(s2_l3, s2_hub)
+       e.g. R(s2_l0, s2_hub)
+       e.g. R(s2_l2, s2_hub)
+   #2            5       45              9
+       e.g. R(l2_b, l2_m1)
+       e.g. R(l2_m1, l2_t)
+       e.g. R(l2_b, l2_m2)
+   #3            2       28             14
+       e.g. R(t4_1, t4_3)
+       e.g. R(t4_3, t4_4)
+       e.g. R(t4_3, t4_5)
+   #4            1       16             16
+       e.g. R(t3_4, t3_5)
+       e.g. R(t3_3, t3_5)
+       e.g. R(t3_0, t3_2)
+   #5            1       15             15
+       e.g. R(t1_1, t1_5)
+       e.g. R(t1_2, t1_5)
+       e.g. R(t1_4, t1_5)
+
+ --- Drive after autonomous_pass(sizes 2-5) ---
+   total data edges: 164, unexplained: 0 (0.0%)
+   distinct canonicals: 0, modal-bucket count: 0
+   (no buckets — drive is silent)
+
+ Drive delta:
+   patterns: 7 → 7
+   unexplained_count: 149 → 0 (-149)
+   distinct canonicals: 5 → 0 (-5)
+
+--- end ---
