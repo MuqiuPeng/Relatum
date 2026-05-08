@@ -7067,6 +7067,100 @@
         assert_eq!(zero, 0.0);
     }
 
+    // ── ADR 0079 — Drive-driven frontier candidate ──────────────
+
+    #[test]
+    fn adr0079_drive_candidate_absent_on_empty_rset() {
+        // Empty rset: no axioms, no edges. Maturity gate fails;
+        // no drive-driven candidate appears.
+        use crate::runtime::{Frontier, FrontierKind};
+        let rs = crate::RSet::new();
+        let mut fr = Frontier::default();
+        fr.refresh(&rs, 1);
+        let drive_items: Vec<_> = fr
+            .items
+            .iter()
+            .filter(|it| it.id.starts_with("drive_pattern_"))
+            .collect();
+        assert!(drive_items.is_empty());
+        // Sanity: existing PatternCandidate items also missing
+        // because data_edge_count == 0.
+        let pat_items: Vec<_> = fr
+            .items
+            .iter()
+            .filter(|it| it.kind == FrontierKind::PatternCandidate)
+            .collect();
+        assert!(pat_items.is_empty());
+    }
+
+    #[test]
+    fn adr0079_drive_candidate_absent_on_small_rset() {
+        // Small fixture (diamond_poset analog: 9 data edges, no
+        // axioms). Maturity gate fails — no drive-driven proposal.
+        use crate::runtime::Frontier;
+        let mut rs = crate::RSet::new();
+        let nodes = ["a", "b", "c", "d"];
+        for n in &nodes {
+            rs.add(crate::R::new(*n, *n));
+        }
+        rs.extend([
+            crate::R::new("a", "b"), crate::R::new("a", "c"),
+            crate::R::new("a", "d"), crate::R::new("b", "d"),
+            crate::R::new("c", "d"),
+        ]);
+        let mut fr = Frontier::default();
+        fr.refresh(&rs, 1);
+        let drive_items: Vec<_> = fr
+            .items
+            .iter()
+            .filter(|it| it.id.starts_with("drive_pattern_"))
+            .collect();
+        assert!(
+            drive_items.is_empty(),
+            "drive candidate must not appear on small rsets",
+        );
+    }
+
+    #[test]
+    fn adr0079_drive_candidate_present_on_mature_rset_with_unexplained() {
+        // Construct a rset with > 100 data edges + ≥ 1 axiom so
+        // the maturity gate passes, AND with all edges
+        // unexplained (no axioms cover any edge structurally so
+        // drive_signal is non-empty).
+        use crate::runtime::Frontier;
+        // Add 110 fresh edges with no internal structure that any
+        // axiom would recognize as covered — just chains of fresh
+        // tokens. Manually register a fake axiom marker so
+        // axioms().len() ≥ 1.
+        let mut rs = crate::RSet::new();
+        for i in 0..110 {
+            let a = format!("u{}_a", i);
+            let b = format!("u{}_b", i);
+            rs.add(crate::R::new(&a[..], &b[..]));
+        }
+        // Manually mint an axiom so the maturity gate's axioms()
+        // check passes. Use the simplest "predicate" axiom:
+        // ax_antisymmetry registers via add_predicate_axiom path
+        // -- but for test purposes we can use any registered
+        // axiom marker.
+        use crate::AXIOM_MARKER;
+        rs.add(crate::R::new(AXIOM_MARKER, "ax_dummy"));
+
+        let mut fr = Frontier::default();
+        fr.refresh(&rs, 1);
+        let drive_items: Vec<_> = fr
+            .items
+            .iter()
+            .filter(|it| it.id.starts_with("drive_pattern_"))
+            .collect();
+        assert!(
+            !drive_items.is_empty(),
+            "drive candidate must appear when mature + drive non-empty",
+        );
+        // Priority should be > 0 (modal_count * 5.0).
+        assert!(drive_items[0].priority > 0.0);
+    }
+
     // ── ADR 0078 — Pattern-aware drive metric ───────────────────
 
     #[test]

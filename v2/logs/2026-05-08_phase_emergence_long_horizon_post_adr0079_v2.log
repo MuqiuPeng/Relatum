@@ -1,0 +1,124 @@
+════════════════════════════════════════════════════════
+ Phase Emergence — long-horizon observation
+════════════════════════════════════════════════════════
+ Runtime auto-mint is enabled (ADR 0075 piece 2
+ revisited). Observe each substrate over 6000 ticks to
+ answer: does mint-and-trim equilibrate? grow? decay?
+ Snapshots every 250 ticks.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (6000 ticks horizon)
+════════════════════════════════════════════════════════
+
+   tick  axs  ths  pat   eps   DP  DPp prune
+    250   11    3   1     22    3    3     3
+    500   11    3   1     22    3    3     3
+    750   11    3   1     22    3    3     3
+   1000   11    3   1     22    3    3     3
+   1250   11    3   1     22    3    3     3
+   1500   11    3   1     22    3    3     3
+   1750   11    3   4↑    22    3    3     3
+   2000   11    3   6↑    22    3    3     3
+   2250   11    3   6     22    3    3     3
+   2500   11    3   6     22    3    3     3
+   2750   11    3   6     22    3    3     3
+   3000   11    3   6     22    3    3     3
+   3250   11    3   6     22    3    3     3
+   3500   11    3   6     22    3    3     3
+   3750   11    3   6     22    3    3     3
+   4000   11    3   6     22    3    3     3
+   4250   11    3   6     22    3    3     3
+   4500   11    3   6     22    3    3     3
+   4750   11    3   6     22    3    3     3
+   5000   11    3   6     22    3    3     3
+   5250   11    3   6     22    3    3     3
+   5500   11    3   6     22    3    3     3
+   5750   11    3   6     22    3    3     3
+   6000   11    3   6     22    3    3     3
+
+════════════════════════════════════════════════════════
+ Substrate: narrow_a (6000 ticks horizon)
+════════════════════════════════════════════════════════
+
+   tick  axs  ths  pat   eps   DP  DPp prune
+    250   11    3   1     22    3    3     3
+    500   11    3   1     22    3    3     3
+    750   11    3   1     22    3    3     3
+   1000   11    3   1     22    3    3     3
+   1250   11    3   1     22    3    3     3
+   1500   11    3   1     22    3    3     3
+   1750   11    3   1     22    3    3     3
+   2000   11    3   1     22    3    3     3
+   2250   11    3   1     22    3    3     3
+   2500   11    3   1     22    3    3     3
+   2750   11    3   1     22    3    3     3
+   3000   11    3   1     22    3    3     3
+   3250   11    3   1     22    3    3     3
+   3500   11    3   1     22    3    3     3
+   3750   11    3   1     22    3    3     3
+   4000   11    3   1     22    3    3     3
+   4250   11    3   1     22    3    3     3
+   4500   11    3   1     22    3    3     3
+   4750   11    3   1     22    3    3     3
+   5000   11    3   1     22    3    3     3
+   5250   11    3   1     22    3    3     3
+   5500   11    3   1     22    3    3     3
+   5750   11    3   1     22    3    3     3
+   6000   11    3   1     22    3    3     3
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#2 (6000 ticks horizon)
+════════════════════════════════════════════════════════
+
+   tick  axs  ths  pat   eps   DP  DPp prune
+    250    2    2   2     10    5    2     1
+    500    2    2   5↑    21   11    5     2
+    750    2    2   7↑    24   13    7     2
+   1000    2    2   7     24   13    7     2
+   1250    2    2   7     24   13    7     2
+   1500    2    2   7     24   13    7     2
+   1750    2    2   7     24   13    7     2
+   2000    2    2   7     24   13    7     2
+   2250    2    2   7     24   13    7     2
+   2500    2    2   7     24   13    7     2
+   2750    2    2   7     24   13    7     2
+   3000    2    2   7     24   13    7     2
+   3250    2    2   7     24   13    7     2
+   3500    2    2   7     24   13    7     2
+   3750    2    2   7     24   13    7     2
+   4000    2    2   7     24   13    7     2
+   4250    2    2   7     24   13    7     2
+   4500    2    2   7     24   13    7     2
+   4750    2    2   7     24   13    7     2
+   5000    2    2   7     24   13    7     2
+   5250    2    2   7     24   13    7     2
+   5500    2    2   7     24   13    7     2
+   5750    2    2   7     24   13    7     2
+   6000    2    2   7     24   13    7     2
+
+════════════════════════════════════════════════════════
+ Cross-substrate summary
+════════════════════════════════════════════════════════
+
+ Summary for OQ#1:
+   final state:  axioms=11 theories=3 patterns=6 episodes=22
+   patterns: peak=6 trough=1 final=6 (transitions: 1)
+   last axiom change at tick 250 (rest is post-discovery dynamics)
+   episodes 2nd half (tick 3250-6000): 0
+   DP total dispatches: 3, successful: 3 (100.0%), prunes: 3
+
+ Summary for narrow_a:
+   final state:  axioms=11 theories=3 patterns=1 episodes=22
+   patterns: peak=1 trough=1 final=1 (transitions: 0)
+   last axiom change at tick 250 (rest is post-discovery dynamics)
+   episodes 2nd half (tick 3250-6000): 0
+   DP total dispatches: 3, successful: 3 (100.0%), prunes: 3
+
+ Summary for OQ#2:
+   final state:  axioms=2 theories=2 patterns=7 episodes=24
+   patterns: peak=7 trough=2 final=7 (transitions: 1)
+   last axiom change at tick 250 (rest is post-discovery dynamics)
+   episodes 2nd half (tick 3250-6000): 0
+   DP total dispatches: 13, successful: 7 (53.8%), prunes: 2
+
+--- end ---

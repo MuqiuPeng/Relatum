@@ -1,0 +1,47 @@
+════════════════════════════════════════════════════════
+ Generative-stream experiment
+════════════════════════════════════════════════════════
+ Stream: fresh-token diamond poset every 100 polls,
+ indefinitely. Horizon: 5000 ticks.
+
+ Hypothesis: runtime stays active longer than on finite
+ stream but eventually saturates as canonical repertoire
+ exhausts.
+
+ Time series (every 500 ticks):
+
+   tick  axs  ths  pat  pat_inst   eps     unexpl buckets
+ ──────────────────────────────────────────────────────────────────
+    500    3    1    0      +0/0    +8     0 (0%)     0
+   1000    3    1    0      +0/0    +0     0 (0%)     0
+   1500    3    1    0      +0/0    +0     0 (0%)     0
+   2000    3    1    0      +0/0    +0     0 (0%)     0
+   2500    3    1    0      +0/0    +0     0 (0%)     0
+   3000    3    1    0      +0/0    +0     0 (0%)     0
+   3500    3    1    0      +0/0    +0     0 (0%)     0
+   4000    3    1    0      +0/0    +0     0 (0%)     0
+   4500    3    1    0      +0/0    +0     0 (0%)     0
+   5000    3    1    0      +0/0    +0     0 (0%)     0
+
+════════════════════════════════════════════════════════
+ Summary
+════════════════════════════════════════════════════════
+
+ Final state at tick 5000:
+   axioms        = 3
+   theories      = 1
+   patterns      = 0
+   pattern insts = 0
+   episodes      = 8
+   unexplained R = 0 (0%)
+
+ Second-half (tick 3000 → 5000) activity:
+   episodes added         = 0
+   pattern instances added = 0
+
+ Verdict:
+   FULLY SATURATED — runtime is in deep sleep through
+   the second half despite stream still feeding events.
+   Stream injection alone does not sustain cognition.
+
+--- end ---

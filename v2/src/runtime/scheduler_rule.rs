@@ -498,15 +498,41 @@ impl Scheduler for RuleBasedScheduler {
         // is high. Sleep semantics are unchanged here because
         // step 3b's scope is "EP anti-stagnation gate" only.
         if Self::zero_streak(ctx) >= self.max_zero_streak {
-            if !ctx.rset.axioms().is_empty()
-                && Self::predictions_have_pending_delta(ctx)
-            {
-                return SchedulerDecision::Execute(ActionPlan {
-                    action_kind: ActionKind::EvaluatePredictions,
-                    target: FrontierTarget::WholeRSet,
-                });
+            // ADR 0079 — drive bypass. The stagnation gate
+            // would normally either fire EP or sleep. But if the
+            // drive signal is non-empty on a mature rset, drive-
+            // proposed work exists in the frontier that
+            // zero_streak doesn't account for. Fall through to
+            // the frontier-selection path so the drive-driven
+            // PatternCandidate gets a chance to be picked.
+            //
+            // Without this bypass, ADR 0079's drive-driven
+            // frontier item was never reached: scheduler returned
+            // Sleep here, runtime entered LifecycleState::Sleeping,
+            // wake-on-drive logic then woke it the next tick, but
+            // scheduler again hit this gate on the same stale
+            // zero_streak and again returned Sleep — a wake/sleep
+            // ping-pong with no dispatch progress (observed in
+            // 2026-05-08 long-horizon re-run before this fix).
+            const MATURE_DATA_EDGE_FLOOR: usize = 100;
+            let drive_alive = !ctx.rset.axioms().is_empty()
+                && ctx.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
+                && ctx.rset.unexplained_drive_signal().has_signal();
+            if !drive_alive {
+                if !ctx.rset.axioms().is_empty()
+                    && Self::predictions_have_pending_delta(ctx)
+                {
+                    return SchedulerDecision::Execute(ActionPlan {
+                        action_kind: ActionKind::EvaluatePredictions,
+                        target: FrontierTarget::WholeRSet,
+                    });
+                }
+                return SchedulerDecision::Sleep;
             }
-            return SchedulerDecision::Sleep;
+            // Drive alive: do not short-circuit; fall through to
+            // mode-aware frontier selection below. Drive-driven
+            // PatternCandidate will be picked there if priority
+            // ranks it above other items.
         }
         // Shape (α) extra path — fire EP if drive signal is
         // deeply negative AND EP would have something to report.

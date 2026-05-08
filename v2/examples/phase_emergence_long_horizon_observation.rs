@@ -21,8 +21,8 @@
 
 use relatum_v2::{
     runtime::{
-        ActionKind, AutonomousRuntime, Event, RuleBasedScheduler,
-        SyntheticStreamEnvironment,
+        ActionKind, AutonomousRuntime, Event, LifecycleState,
+        RuleBasedScheduler, SyntheticStreamEnvironment,
     },
     test_substrates::{
         narrow_a::build_narrow_a_stream, oq1::build_long_stream,
@@ -92,6 +92,23 @@ fn run_substrate(label: &str, stream: Vec<(u64, Event)>) -> Vec<Snapshot> {
         let s = snapshot(&rt, current_tick);
         snapshots.push(s);
     }
+
+    // Print lifecycle transitions for debugging drive-wake.
+    let lifecycle: Vec<_> = rt.memory.lifecycle_transitions.iter()
+        .map(|t| format!("{:?}→{:?}@{}", t.from, t.to, t.tick))
+        .collect();
+    if !lifecycle.is_empty() {
+        eprintln!("[{}] lifecycle: {}", label, lifecycle.join(", "));
+    }
+    let wake_drive_count: usize = rt.memory.lifecycle_transitions.iter()
+        .filter(|t| {
+            // We can't see the reason field from here without changes,
+            // but transitions Sleeping->Running == wake events.
+            matches!(t.from, LifecycleState::Sleeping)
+                && matches!(t.to, LifecycleState::Running)
+        })
+        .count();
+    eprintln!("[{}] sleep→running transitions: {}", label, wake_drive_count);
 
     // Print compact time series.
     println!();

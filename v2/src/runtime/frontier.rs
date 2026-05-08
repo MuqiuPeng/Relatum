@@ -268,6 +268,62 @@ impl Frontier {
             }
         }
 
+        // 2.5. Drive-driven PatternCandidate. ADR 0079.
+        //
+        // When the unexplained-R drive signal has substance AND
+        // the rset is mature enough that pattern minting could
+        // succeed, propose one extra PatternCandidate at the
+        // modal canonical's edge count (clamped to [2, 5]).
+        //
+        // The maturity gate (axioms ≥ 1 AND data_edges ≥ 100)
+        // matches ADR 0075 piece 2 (revisited)'s gate, ensuring
+        // small lifecycle-test fixtures (`diamond_poset` with
+        // 9 edges + 0 axioms initially) never trigger drive-
+        // driven proposals. Without the gate, drive=100% on
+        // empty rsets would make this candidate dominate the
+        // first dispatch and starve TheoryCandidate, breaking
+        // `a1_rule_based_runs_and_sleeps`-style tests.
+        //
+        // Priority `modal_count * 5.0` gives drive-driven
+        // candidates ~25-100 typical priority — comfortably
+        // above organic PatternCandidate (~10) but well below
+        // TheoryCandidate (~axiom_count * 2 ≈ 8 in tests, but
+        // up to ~200 on real substrates). Theory discovery
+        // still wins on fresh rsets; drive wins among pattern
+        // proposals once both have matured.
+        const MATURE_DATA_EDGE_FLOOR: usize = 100;
+        let mature = rset.axioms().len() >= 1
+            && rset.iter().count() >= MATURE_DATA_EDGE_FLOOR;
+        if mature {
+            let drive = rset.unexplained_drive_signal();
+            if drive.has_signal() {
+                if let Some(canonical) = &drive.modal_canonical {
+                    let raw_size = canonical.len();
+                    if raw_size >= 1 {
+                        let size = raw_size.clamp(2, 5);
+                        let modal_count = drive.modal_count() as f64;
+                        items.push(FrontierItem {
+                            id: format!(
+                                "drive_pattern_size_{}_{}",
+                                size, tick,
+                            ),
+                            kind: FrontierKind::PatternCandidate,
+                            target: FrontierTarget::PatternSize(size),
+                            priority: modal_count * 5.0,
+                            estimated_value: modal_count,
+                            estimated_cost: size as f64,
+                            novelty_score: modal_count,
+                            first_seen_tick: tick,
+                            last_visited_tick: None,
+                            revisit_count: 0,
+                            cooldown_until_tick: None,
+                            status: FrontierStatus::Fresh,
+                        });
+                    }
+                }
+            }
+        }
+
         // 3. LowValueObjectForPrune: every named object with
         //    counterfactual value < 0.
         for (id, cv) in rset.rank_by_counterfactual() {

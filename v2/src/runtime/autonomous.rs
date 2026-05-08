@@ -296,15 +296,33 @@ impl AutonomousRuntime {
             //     current rset state. ADR 0059 / Phase G1.3.
             self.verify_predictions();
 
-            // 2. Sleeping short-circuit. Wake on any data event,
-            //    otherwise spend the tick asleep (no scheduler call,
-            //    no episode). ADR 0052 / A3.
+            // 2. Sleeping short-circuit. Wake on any data event
+            //    OR (per ADR 0079) on non-empty drive signal at
+            //    a mature rset. The drive-wake check is throttled
+            //    to once every DRIVE_WAKE_INTERVAL ticks so the
+            //    O(unexplained-count) cost of building the drive
+            //    signal doesn't dominate idle ticks. ADR 0052 / A3
+            //    + ADR 0079.
+            const DRIVE_WAKE_INTERVAL: u64 = 25;
+            const MATURE_DATA_EDGE_FLOOR: usize = 100;
+            let drive_wakes = !wake_signal
+                && self.lifecycle == LifecycleState::Sleeping
+                && self.tick % DRIVE_WAKE_INTERVAL == 0
+                && self.rset.axioms().len() >= 1
+                && self.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
+                && self.rset.unexplained_drive_signal().has_signal();
             if self.lifecycle == LifecycleState::Sleeping {
                 if wake_signal {
                     self.transition_lifecycle(
                         LifecycleState::Running,
                         "wake_on_event",
                     );
+                } else if drive_wakes {
+                    self.transition_lifecycle(
+                        LifecycleState::Running,
+                        "wake_on_drive",
+                    );
+                    self.frontier.mark_dirty();
                 } else {
                     continue;
                 }
