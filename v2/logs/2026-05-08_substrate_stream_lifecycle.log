@@ -1,0 +1,19 @@
+════════════════════════════════════════════════════════
+ Stream lifecycle — when do substrates dry up?
+════════════════════════════════════════════════════════
+
+ Each substrate has a finite, deterministic event list.
+ After the last event tick, the runtime sees nothing
+ further from the environment.
+
+ substrate    events  last tick
+ OQ#1            195 events, ticks 1..1924 (span 1924)
+ long5k          453 events, ticks 1..4912 (span 4912)
+ narrow_a         45 events, ticks 1..424 (span 424)
+ OQ#2            164 events, ticks 1..4209 (span 4209)
+
+ None of v2's canonical substrates are infinite.
+ SyntheticStreamEnvironment takes Vec<(u64, Event)> by
+ construction — once exhausted, no further events.
+
+--- end ---
