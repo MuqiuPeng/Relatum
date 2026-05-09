@@ -385,6 +385,31 @@ impl RuleBasedScheduler {
         target: RuntimeMode,
     ) -> SchedulerDecision {
         if self.would_thrash(ctx, ctx.mode, target) {
+            // ADR 0079.1 — drive-aware thrash bypass. Mirrors
+            // ADR 0079's stagnation-gate bypass: when drive is
+            // alive on a mature rset, mode oscillation is justified
+            // by structural unexplored work, not by policy
+            // thrashing. Without this, the OQ#2 long-horizon
+            // observation (`phase_emergence_oq2_equilibrium`)
+            // shows Phase 3 freeze: wake-on-drive triggers, but
+            // every dispatch attempt routes through this gate and
+            // returns Sleep because Reflect↔Expand transitions
+            // accumulated during initialization already exceed
+            // max_mode_oscillations.
+            //
+            // Pattern-cooldown remains the safety net: if DP
+            // keeps failing post-bypass, cooldown blocks
+            // PatternCandidate selection, has_expand_work returns
+            // false, no more switches happen. The bypass is
+            // therefore bounded by mintability of remaining drive
+            // canonicals.
+            const MATURE_DATA_EDGE_FLOOR: usize = 100;
+            let drive_alive = !ctx.rset.axioms().is_empty()
+                && ctx.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
+                && ctx.rset.unexplained_drive_signal().has_signal();
+            if drive_alive {
+                return SchedulerDecision::SwitchMode(target);
+            }
             SchedulerDecision::Sleep
         } else {
             SchedulerDecision::SwitchMode(target)

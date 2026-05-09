@@ -18,8 +18,8 @@ use relatum_v2::{
     RSet,
 };
 
-const HORIZON_TICKS: u64 = 15_000;
-const SNAPSHOT_INTERVAL: u64 = 250;
+const HORIZON_TICKS: u64 = 800;
+const SNAPSHOT_INTERVAL: u64 = 50;
 
 #[derive(Debug, Clone)]
 struct Snapshot {
