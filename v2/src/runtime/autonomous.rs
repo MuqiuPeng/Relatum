@@ -305,12 +305,24 @@ impl AutonomousRuntime {
             //    + ADR 0079.
             const DRIVE_WAKE_INTERVAL: u64 = 25;
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
+            const DRIVE_LP_THRESHOLD: f64 = 0.05;
+            // ADR 0080 — wake only if drive has signal AND
+            // learning progress at modal canonical is non-trivial.
+            // A bucket with no recent mint success at its size
+            // doesn't justify waking the runtime.
             let drive_wakes = !wake_signal
                 && self.lifecycle == LifecycleState::Sleeping
                 && self.tick % DRIVE_WAKE_INTERVAL == 0
                 && self.rset.axioms().len() >= 1
                 && self.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
-                && self.rset.unexplained_drive_signal().has_signal();
+                && {
+                    let drive = self.rset.unexplained_drive_signal();
+                    crate::runtime::drive_should_engage(
+                        &drive,
+                        &self.memory.episodes,
+                        DRIVE_LP_THRESHOLD,
+                    )
+                };
             if self.lifecycle == LifecycleState::Sleeping {
                 if wake_signal {
                     self.transition_lifecycle(
@@ -334,7 +346,9 @@ impl AutonomousRuntime {
             //    The promotion pass (C0) also rides the same dirty
             //    gate; it inspects rset for already-promoted ids.
             if self.frontier.dirty {
-                self.frontier.refresh(&self.rset, self.tick);
+                self.frontier.refresh_with_episodes(
+                    &self.rset, self.tick, &self.memory.episodes,
+                );
                 self.frontier.refresh_stale_prune(
                     &self.memory.object_history,
                     self.tick,

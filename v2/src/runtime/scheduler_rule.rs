@@ -404,15 +404,23 @@ impl RuleBasedScheduler {
             // therefore bounded by mintability of remaining drive
             // canonicals.
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
-            // ADR 0079 (caching, 2026-05-11) — prefer cached drive
-            // signal from SchedulerContext when available.
-            let drive_has_signal = match ctx.cached_drive {
-                Some(d) => d.has_signal(),
-                None => ctx.rset.unexplained_drive_signal().has_signal(),
-            };
+            const DRIVE_LP_THRESHOLD: f64 = 0.05;
+            // ADR 0079 (caching) + ADR 0080 (LP gating) — drive
+            // alive requires both signal AND learning progress
+            // at modal canonical's size > threshold.
             let drive_alive = !ctx.rset.axioms().is_empty()
                 && ctx.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
-                && drive_has_signal;
+                && match ctx.cached_drive {
+                    Some(d) => super::agent_view::drive_should_engage(
+                        d, &ctx.memory.episodes, DRIVE_LP_THRESHOLD,
+                    ),
+                    None => {
+                        let drive = ctx.rset.unexplained_drive_signal();
+                        super::agent_view::drive_should_engage(
+                            &drive, &ctx.memory.episodes, DRIVE_LP_THRESHOLD,
+                        )
+                    }
+                };
             if drive_alive {
                 return SchedulerDecision::SwitchMode(target);
             }
@@ -546,16 +554,26 @@ impl Scheduler for RuleBasedScheduler {
             // ping-pong with no dispatch progress (observed in
             // 2026-05-08 long-horizon re-run before this fix).
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
-            // ADR 0079 (caching, 2026-05-11) — prefer cached drive
-            // signal from SchedulerContext to avoid recomputation.
-            // Fallback path still works (legacy callers / tests).
-            let drive_has_signal = match ctx.cached_drive {
-                Some(d) => d.has_signal(),
-                None => ctx.rset.unexplained_drive_signal().has_signal(),
-            };
+            const DRIVE_LP_THRESHOLD: f64 = 0.05;
+            // ADR 0079 (caching, 2026-05-11) + ADR 0080
+            // (learning-progress gating, 2026-05-11) — prefer
+            // cached drive signal and require learning progress
+            // above threshold at the modal canonical's size.
+            // If drive alive but LP=0 at that size, bypass does
+            // not fire (treat as effectively silent).
             let drive_alive = !ctx.rset.axioms().is_empty()
                 && ctx.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
-                && drive_has_signal;
+                && match ctx.cached_drive {
+                    Some(d) => super::agent_view::drive_should_engage(
+                        d, &ctx.memory.episodes, DRIVE_LP_THRESHOLD,
+                    ),
+                    None => {
+                        let drive = ctx.rset.unexplained_drive_signal();
+                        super::agent_view::drive_should_engage(
+                            &drive, &ctx.memory.episodes, DRIVE_LP_THRESHOLD,
+                        )
+                    }
+                };
             if !drive_alive {
                 if !ctx.rset.axioms().is_empty()
                     && Self::predictions_have_pending_delta(ctx)

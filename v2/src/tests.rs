@@ -7161,6 +7161,121 @@
         assert!(drive_items[0].priority > 0.0);
     }
 
+    // ── ADR 0080 — Learning-progress-aware drive ────────────────
+
+    #[test]
+    fn adr0080_learning_progress_full_attention_no_history() {
+        // No DP episodes at the target size → LP = 1.0 (full
+        // attention for novel canonical).
+        use crate::runtime::{compute_learning_progress, ActionKind,
+            Episode, FrontierTarget, RuntimeMode};
+        let eps: std::collections::VecDeque<Episode> = vec![
+            Episode {
+                id: 1, tick: 1, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverTheory,
+                target: FrontierTarget::WholeRSet,
+                score_before: 0.0, score_after: 1.0, delta: 1.0,
+            },
+        ].into_iter().collect();
+        let lp = compute_learning_progress(&eps, 3, 30);
+        assert_eq!(lp, 1.0);
+    }
+
+    #[test]
+    fn adr0080_learning_progress_zero_when_no_mints() {
+        // All DP at target size produced 0 delta → LP = 0.
+        use crate::runtime::{compute_learning_progress, ActionKind,
+            Episode, FrontierTarget, RuntimeMode};
+        let eps: std::collections::VecDeque<Episode> = (0..5).map(|i| Episode {
+            id: i + 1, tick: i + 1, mode: RuntimeMode::Expand,
+            action_kind: ActionKind::DiscoverPatterns,
+            target: FrontierTarget::PatternSize(3),
+            score_before: 0.0, score_after: 0.0, delta: 0.0,
+        }).collect();
+        let lp = compute_learning_progress(&eps, 3, 30);
+        assert_eq!(lp, 0.0);
+    }
+
+    #[test]
+    fn adr0080_learning_progress_ratio_on_mixed_history() {
+        // 2 of 5 DP at target size produced positive delta → LP = 0.4.
+        use crate::runtime::{compute_learning_progress, ActionKind,
+            Episode, FrontierTarget, RuntimeMode};
+        let eps: std::collections::VecDeque<Episode> = (0..5).map(|i| Episode {
+            id: i + 1, tick: i + 1, mode: RuntimeMode::Expand,
+            action_kind: ActionKind::DiscoverPatterns,
+            target: FrontierTarget::PatternSize(3),
+            score_before: 0.0, score_after: 0.0,
+            delta: if i < 2 { 1.0 } else { 0.0 },
+        }).collect();
+        let lp = compute_learning_progress(&eps, 3, 30);
+        assert!((lp - 0.4).abs() < 1e-9);
+    }
+
+    #[test]
+    fn adr0080_learning_progress_only_counts_target_size() {
+        // Mix of size=3 and size=5 episodes. LP for size=3
+        // should only count size=3 attempts.
+        use crate::runtime::{compute_learning_progress, ActionKind,
+            Episode, FrontierTarget, RuntimeMode};
+        let eps: std::collections::VecDeque<Episode> = vec![
+            // size=3: 1 attempt, 1 success
+            Episode {
+                id: 1, tick: 1, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: 1.0, delta: 1.0,
+            },
+            // size=5: 3 attempts, 0 success (should not affect LP for size=3)
+            Episode {
+                id: 2, tick: 2, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(5),
+                score_before: 0.0, score_after: 0.0, delta: 0.0,
+            },
+            Episode {
+                id: 3, tick: 3, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(5),
+                score_before: 0.0, score_after: 0.0, delta: 0.0,
+            },
+        ].into_iter().collect();
+        let lp_3 = compute_learning_progress(&eps, 3, 30);
+        let lp_5 = compute_learning_progress(&eps, 5, 30);
+        assert_eq!(lp_3, 1.0);
+        assert_eq!(lp_5, 0.0);
+    }
+
+    #[test]
+    fn adr0080_learning_progress_window_limits_history() {
+        // 10 episodes, but window=3 → only most recent 3 counted.
+        // Recent 3 are all positive → LP = 1.0 even though older
+        // episodes were zero-delta.
+        use crate::runtime::{compute_learning_progress, ActionKind,
+            Episode, FrontierTarget, RuntimeMode};
+        let mut eps: std::collections::VecDeque<Episode> = std::collections::VecDeque::new();
+        // 7 older zero-delta
+        for i in 0..7 {
+            eps.push_back(Episode {
+                id: i + 1, tick: i + 1, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: 0.0, delta: 0.0,
+            });
+        }
+        // 3 recent positive-delta
+        for i in 0..3 {
+            eps.push_back(Episode {
+                id: 8 + i, tick: 8 + i, mode: RuntimeMode::Expand,
+                action_kind: ActionKind::DiscoverPatterns,
+                target: FrontierTarget::PatternSize(3),
+                score_before: 0.0, score_after: 1.0, delta: 1.0,
+            });
+        }
+        let lp = compute_learning_progress(&eps, 3, 3);
+        assert_eq!(lp, 1.0);
+    }
+
     // ── ADR 0078 — Pattern-aware drive metric ───────────────────
 
     #[test]

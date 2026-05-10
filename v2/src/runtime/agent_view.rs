@@ -302,6 +302,98 @@ where
     }
 }
 
+/// Learning-progress weight for a target size, computed from
+/// the recent episode log. ADR 0080.
+///
+/// Returns a scalar in `[0.0, 1.0]`:
+/// - `1.0` when no recent DiscoverPatterns dispatch matches the
+///   target_size (no history → no penalty; new canonical gets
+///   full priority)
+/// - `dp_positive_delta_count / dp_attempt_count` over the
+///   most recent `window` episodes that match
+///   (ActionKind::DiscoverPatterns, FrontierTarget::PatternSize(size))
+///
+/// Used by `Frontier::refresh`'s drive-driven candidate
+/// branch to downweight priorities of canonicals whose
+/// recent dispatches did not produce new mints, naturally
+/// throttling sustained-mode dispatch on already-mined
+/// canonicals.
+///
+/// `delta > 0.0` is the success criterion — ADR 0075 piece 2
+/// revisited returns `Some(new_patterns as f64)` from DP
+/// dispatch when patterns minted, so positive delta == mint
+/// happened.
+pub fn compute_learning_progress<'a, I>(
+    episodes: I,
+    target_size: usize,
+    window: usize,
+) -> f64
+where
+    I: IntoIterator<Item = &'a Episode>,
+{
+    let all: Vec<&Episode> = episodes.into_iter().collect();
+    let start = all.len().saturating_sub(window);
+    let window_slice = &all[start..];
+    let mut attempts = 0usize;
+    let mut positive = 0usize;
+    for ep in window_slice {
+        if ep.action_kind != ActionKind::DiscoverPatterns {
+            continue;
+        }
+        let matches_size = matches!(
+            ep.target,
+            super::action::FrontierTarget::PatternSize(sz) if sz == target_size
+        );
+        if !matches_size {
+            continue;
+        }
+        attempts += 1;
+        if ep.delta > 0.0 {
+            positive += 1;
+        }
+    }
+    if attempts == 0 {
+        // No history at this size — give full attention to drive
+        // candidate. ADR 0080.
+        return 1.0;
+    }
+    positive as f64 / attempts as f64
+}
+
+/// Decide whether drive should currently engage runtime
+/// (wake-on-drive, bypasses, drive-driven candidates). ADR 0080.
+///
+/// Returns `true` iff:
+/// - drive has signal (some unexplained R), AND
+/// - learning progress at the modal canonical's clamped size
+///   exceeds `lp_threshold`.
+///
+/// `lp_threshold = 0.05` (5%) is the suggested floor: lets a
+/// bucket with at least *some* mint success keep engaging,
+/// blocks buckets with 30+ consecutive zero-mint dispatches.
+///
+/// `episodes` is the runtime's episode log.
+pub fn drive_should_engage<'a, I>(
+    drive: &crate::UnexplainedDriveSignal,
+    episodes: I,
+    lp_threshold: f64,
+) -> bool
+where
+    I: IntoIterator<Item = &'a Episode>,
+{
+    if !drive.has_signal() {
+        return false;
+    }
+    let canonical = match &drive.modal_canonical {
+        Some(c) => c,
+        None => return false,
+    };
+    let size = canonical.len().clamp(2, 5);
+    let all: Vec<&Episode> = episodes.into_iter().collect();
+    let lp = compute_learning_progress(all.iter().copied(), size, 30);
+    lp > lp_threshold
+}
+
 /// Target-overlap profile for an agent class: which specific
 /// target ids did this class act on, and how often. Useful for
 /// agent classes whose target type carries an id (Pattern,

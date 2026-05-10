@@ -44,7 +44,8 @@ pub use action::{ActionKind, ActionPlan, FrontierTarget, SchedulerDecision};
 pub use agent_view::{
     agent_attention_share_recent, agent_classes, agent_episodes,
     agent_outcome_distribution, agent_target_overlap,
-    agent_temporal_density, target_kind_label, AgentClassSummary,
+    agent_temporal_density, compute_learning_progress,
+    drive_should_engage, target_kind_label, AgentClassSummary,
     AgentOutcomeDistribution, AgentTargetOverlap, AgentTemporalDensity,
 };
 pub use autonomous::AutonomousRuntime;

@@ -1,13 +1,15 @@
 //! Frontier subsystem (A1): candidate enumeration, dirty tracking,
 //! cooldown bookkeeping. ADR 0052 / A1.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use crate::{
     AxiomDiscoveryConfig, RSet, ESTABLISHED_MARKER, R,
     SHARED_AXIOM_MARKER,
 };
 use super::action::{ActionKind, FrontierTarget};
+use super::agent_view::compute_learning_progress;
+use super::memory::Episode;
 use super::scheduler_rule::RuleBasedScheduler;
 use super::{parse_action_kind, theory_pair_has_relation};
 use super::{ObjectHistory, ObjectHistoryStore};
@@ -193,7 +195,27 @@ impl Frontier {
 
     /// Enumerate candidate actions from the current RSet state and
     /// sort by priority (descending). ADR 0052 / A1.
+    ///
+    /// Backward-compatible thin wrapper that calls
+    /// `refresh_with_episodes` with an empty slice. Used by
+    /// existing tests + callers that don't have a memory ref.
+    /// Drive-driven candidate priority will skip
+    /// learning-progress weighting (ADR 0080) in this code path.
     pub fn refresh(&mut self, rset: &RSet, tick: u64) {
+        let empty: VecDeque<Episode> = VecDeque::new();
+        self.refresh_with_episodes(rset, tick, &empty);
+    }
+
+    /// Like `refresh` but consults episode log for ADR 0080
+    /// learning-progress weighting on drive-driven candidates.
+    /// Runtime should call this variant; tests and pre-0080
+    /// callers can stay on `refresh`.
+    pub fn refresh_with_episodes(
+        &mut self,
+        rset: &RSet,
+        tick: u64,
+        episodes: &VecDeque<Episode>,
+    ) {
         let mut items: Vec<FrontierItem> = Vec::new();
 
         // 1. TheoryCandidate: propose if discover_theory yields a
@@ -302,23 +324,41 @@ impl Frontier {
                     if raw_size >= 1 {
                         let size = raw_size.clamp(2, 5);
                         let modal_count = drive.modal_count() as f64;
-                        items.push(FrontierItem {
-                            id: format!(
-                                "drive_pattern_size_{}_{}",
-                                size, tick,
-                            ),
-                            kind: FrontierKind::PatternCandidate,
-                            target: FrontierTarget::PatternSize(size),
-                            priority: modal_count * 5.0,
-                            estimated_value: modal_count,
-                            estimated_cost: size as f64,
-                            novelty_score: modal_count,
-                            first_seen_tick: tick,
-                            last_visited_tick: None,
-                            revisit_count: 0,
-                            cooldown_until_tick: None,
-                            status: FrontierStatus::Fresh,
-                        });
+                        // ADR 0080 — learning-progress gating.
+                        // LP is in [0, 1]. = 1.0 when no recent DP
+                        // history at this size; in [0, 1) when
+                        // history exists.
+                        //
+                        // Below LP_THRESHOLD: don't even propose
+                        // drive-driven candidate. Above:
+                        // priority = modal_count * 5.0 * lp.
+                        // Threshold-based skipping prevents
+                        // frontier from carrying ~zero-priority
+                        // items that still cost scheduler iteration.
+                        const LP_WINDOW: usize = 30;
+                        const LP_THRESHOLD: f64 = 0.05;
+                        let lp = compute_learning_progress(
+                            episodes, size, LP_WINDOW,
+                        );
+                        if lp >= LP_THRESHOLD {
+                            items.push(FrontierItem {
+                                id: format!(
+                                    "drive_pattern_size_{}_{}",
+                                    size, tick,
+                                ),
+                                kind: FrontierKind::PatternCandidate,
+                                target: FrontierTarget::PatternSize(size),
+                                priority: modal_count * 5.0 * lp,
+                                estimated_value: modal_count * lp,
+                                estimated_cost: size as f64,
+                                novelty_score: modal_count,
+                                first_seen_tick: tick,
+                                last_visited_tick: None,
+                                revisit_count: 0,
+                                cooldown_until_tick: None,
+                                status: FrontierStatus::Fresh,
+                            });
+                        }
                     }
                 }
             }
