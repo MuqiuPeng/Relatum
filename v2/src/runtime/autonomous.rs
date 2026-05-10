@@ -379,6 +379,23 @@ impl AutonomousRuntime {
             //    context to avoid borrow conflicts (drive_mix +
             //    drives are owned, not borrowed via the context).
             let normalized_drive_signal = self.normalized_drive_signal();
+            // ADR 0079 (caching, 2026-05-11) — compute the
+            // unexplained-R drive signal once per active tick,
+            // pass it through SchedulerContext so stagnation
+            // bypass + thrash bypass don't each recompute it.
+            // Skip the compute when the maturity gate clearly
+            // fails (no axioms / sparse rset) — drive bypass
+            // wouldn't trigger anyway, and the gate fail keeps
+            // small lifecycle-test fixtures fast.
+            const DRIVE_CACHE_MATURE_FLOOR: usize = 100;
+            let drive_for_tick: Option<crate::UnexplainedDriveSignal> =
+                if !self.rset.axioms().is_empty()
+                    && self.rset.iter().count() >= DRIVE_CACHE_MATURE_FLOOR
+                {
+                    Some(self.rset.unexplained_drive_signal())
+                } else {
+                    None
+                };
             let decision = {
                 let ctx = SchedulerContext {
                     rset: &self.rset,
@@ -387,6 +404,7 @@ impl AutonomousRuntime {
                     mode: self.mode,
                     tick: self.tick,
                     normalized_drive_signal,
+                    cached_drive: drive_for_tick.as_ref(),
                 };
                 self.scheduler.choose(&ctx)
             };

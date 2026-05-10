@@ -477,6 +477,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let decision = scheduler.choose(&ctx);
         match decision {
@@ -1256,6 +1257,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.would_thrash(&ctx, RuntimeMode::Expand, RuntimeMode::Consolidate));
@@ -1286,6 +1288,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler {
             max_mode_oscillations: 4,
@@ -1323,6 +1326,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler {
             max_mode_oscillations: 4,
@@ -1356,6 +1360,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.pattern_cooldown_active(&ctx));
@@ -1387,6 +1392,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(sched.pattern_cooldown_active(&ctx));
@@ -1413,6 +1419,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.pattern_cooldown_active(&ctx));
@@ -1463,6 +1470,7 @@
             mode: RuntimeMode::Expand,
             tick: 1,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -1541,6 +1549,7 @@
             mode: RuntimeMode::Expand,
             tick: 1,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -1573,6 +1582,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.meta_meta_cooldown_active(&ctx));
@@ -1596,6 +1606,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(sched.meta_meta_cooldown_active(&ctx));
@@ -1623,6 +1634,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(!sched.meta_meta_cooldown_active(&ctx));
@@ -1649,6 +1661,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         assert!(sched.pattern_cooldown_active(&ctx));
@@ -1667,6 +1680,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         assert!(!sched.pattern_cooldown_active(&ctx2));
         assert!(sched.meta_meta_cooldown_active(&ctx2));
@@ -1711,6 +1725,7 @@
             mode: RuntimeMode::Expand,
             tick: 1,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -1875,6 +1890,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let sched = RuleBasedScheduler::default();
         // 4 uncovered edges ≥ 3 → pressure on. 1/20 = 5% NOT < 5%
@@ -1905,6 +1921,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -1924,6 +1941,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         match sched.choose(&ctx2) {
             SchedulerDecision::Sleep => {}
@@ -1961,6 +1979,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -2127,6 +2146,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         assert!(!RuleBasedScheduler::any_axiom_has_hit_rate(&ctx));
     }
@@ -2152,6 +2172,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         assert!(RuleBasedScheduler::any_axiom_has_hit_rate(&ctx));
     }
@@ -2213,6 +2234,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -2247,6 +2269,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         match sched.choose(&ctx) {
@@ -2311,6 +2334,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         meta.maybe_advance(&ctx);
         assert_eq!(meta.state, MetaABState::TestingB);
@@ -2353,6 +2377,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let pre_b_hit_rate = meta.candidate_b.min_pattern_hit_rate;
         let pre_a_hit_rate = meta.candidate_a.min_pattern_hit_rate;
@@ -2445,6 +2470,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut meta = MetaScheduler::new(
             RuleBasedScheduler::default(),
@@ -2730,6 +2756,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         assert!(RuleBasedScheduler::h1_1_bonus_kinds(&ctx).is_empty());
 
@@ -2752,6 +2779,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let bonus = RuleBasedScheduler::h1_1_bonus_kinds(&ctx2);
         assert_eq!(bonus.len(), 1);
@@ -2804,6 +2832,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         // No bonus — Theory wins (5.0 > 4.5).
         let mut empty: HashSet<ActionKind> = HashSet::new();
@@ -3822,6 +3851,7 @@
             mode: RuntimeMode::Expand,
             tick: 5,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         let decision = sched.choose(&ctx);
@@ -3856,6 +3886,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: -3.0, // < -2.0 threshold
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         let decision = sched.choose(&ctx);
@@ -3886,6 +3917,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.5, // > -2.0
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         let decision = sched.choose(&ctx_high);
@@ -3925,6 +3957,7 @@
             mode: RuntimeMode::Expand,
             tick: 5,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let ctx_high = SchedulerContext {
             rset: &rs,
@@ -3933,6 +3966,7 @@
             mode: RuntimeMode::Expand,
             tick: 5,
             normalized_drive_signal: 1.5,
+            cached_drive: None,
         };
         let mut sched_a = RuleBasedScheduler::default();
         let mut sched_b = RuleBasedScheduler::default();
@@ -3956,6 +3990,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler::default();
         let decision = sched.choose(&ctx);
@@ -4126,6 +4161,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         // Empty everything → inner returns Sleep or fallthrough;
         // wrapper should not modify it.
@@ -4246,6 +4282,7 @@
             mode: RuntimeMode::Expand,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         // Should not panic; should return inner's decision.
         let _ = sched.choose(&ctx);
@@ -5823,6 +5860,7 @@
             mode: RuntimeMode::Reflect,
             tick: 0,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         };
         let mut sched = RuleBasedScheduler {
             max_mode_oscillations: 4,

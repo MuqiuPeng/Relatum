@@ -4,7 +4,7 @@
 use super::action::{ActionKind, ActionPlan, FrontierTarget, SchedulerDecision};
 use super::lifecycle::RuntimeMode;
 use super::{Frontier, Memory};
-use crate::RSet;
+use crate::{RSet, UnexplainedDriveSignal};
 
 /// Read-only view handed to `Scheduler::choose`. ADR 0052 / A1.
 pub struct SchedulerContext<'a> {
@@ -18,6 +18,15 @@ pub struct SchedulerContext<'a> {
     /// callers / tests can leave this 0.0; the EP anti-stagnation
     /// gate consults it as one half of an AND with `zero_streak`.
     pub normalized_drive_signal: f64,
+    /// ADR 0079 (caching, 2026-05-11) — pre-computed
+    /// `UnexplainedDriveSignal` for this tick. When `Some`,
+    /// drive-aware gates (stagnation bypass / thrash bypass /
+    /// drive-driven candidate) consult this instead of calling
+    /// `rset.unexplained_drive_signal()` directly, avoiding
+    /// repeated O(unexplained) recomputation per active tick.
+    /// `None` is a safe fallback — consumers always have
+    /// `ctx.rset.unexplained_drive_signal()` available.
+    pub cached_drive: Option<&'a UnexplainedDriveSignal>,
 }
 
 impl<'a> SchedulerContext<'a> {
@@ -39,6 +48,7 @@ impl<'a> SchedulerContext<'a> {
             mode,
             tick,
             normalized_drive_signal: 0.0,
+            cached_drive: None,
         }
     }
 }

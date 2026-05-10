@@ -404,9 +404,15 @@ impl RuleBasedScheduler {
             // therefore bounded by mintability of remaining drive
             // canonicals.
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
+            // ADR 0079 (caching, 2026-05-11) — prefer cached drive
+            // signal from SchedulerContext when available.
+            let drive_has_signal = match ctx.cached_drive {
+                Some(d) => d.has_signal(),
+                None => ctx.rset.unexplained_drive_signal().has_signal(),
+            };
             let drive_alive = !ctx.rset.axioms().is_empty()
                 && ctx.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
-                && ctx.rset.unexplained_drive_signal().has_signal();
+                && drive_has_signal;
             if drive_alive {
                 return SchedulerDecision::SwitchMode(target);
             }
@@ -540,9 +546,16 @@ impl Scheduler for RuleBasedScheduler {
             // ping-pong with no dispatch progress (observed in
             // 2026-05-08 long-horizon re-run before this fix).
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
+            // ADR 0079 (caching, 2026-05-11) — prefer cached drive
+            // signal from SchedulerContext to avoid recomputation.
+            // Fallback path still works (legacy callers / tests).
+            let drive_has_signal = match ctx.cached_drive {
+                Some(d) => d.has_signal(),
+                None => ctx.rset.unexplained_drive_signal().has_signal(),
+            };
             let drive_alive = !ctx.rset.axioms().is_empty()
                 && ctx.rset.iter().count() >= MATURE_DATA_EDGE_FLOOR
-                && ctx.rset.unexplained_drive_signal().has_signal();
+                && drive_has_signal;
             if !drive_alive {
                 if !ctx.rset.axioms().is_empty()
                     && Self::predictions_have_pending_delta(ctx)
