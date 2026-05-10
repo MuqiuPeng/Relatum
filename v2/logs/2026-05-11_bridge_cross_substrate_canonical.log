@@ -1,0 +1,76 @@
+════════════════════════════════════════════════════════
+ Cross-substrate canonical-form comparison (ADR 0081 P1.D)
+ OQ#2 vs synthetic Lean dep
+════════════════════════════════════════════════════════
+
+ Building OQ#2 runtime state...
+ OQ#2: 9 patterns minted
+
+ Building synthetic Lean dep substrate...
+ Synthetic Lean: 15 patterns minted
+
+════════════════════════════════════════════════════════
+ Comparison
+════════════════════════════════════════════════════════
+
+ Shared canonicals: 5
+   can_356b87478aee25fa (OQ#2 p_8 / Lean p_3)
+     p_8 (2 roles, 2 edges, shape: bidirectional pair)
+   can_61c89385fc0342a0 (OQ#2 p_3 / Lean p_14)
+     p_3 (3 roles, 3 edges, shape: 3-cycle)
+   can_cb21943a71a9eb8e (OQ#2 p_7 / Lean p_11)
+     p_7 (4 roles, 3 edges, shape: star (hub of degree 3))
+   can_faefcad1cdc772d7 (OQ#2 p_0 / Lean p_2)
+     p_0 (3 roles, 2 edges, shape: fork (one source, two targets))
+   can_ff8b08ea746bf094 (OQ#2 p_1 / Lean p_0)
+     p_1 (3 roles, 2 edges, shape: chain (length 2))
+
+ OQ#2-only canonicals: 4
+   can_3a61899f5adb03b3 (p_5)
+     p_5 (4 roles, 4 edges, shape: 4-edge graph on 4 nodes)
+   can_50e49ab810d15188 (p_2)
+     p_2 (4 roles, 5 edges, shape: 5-edge graph on 4 nodes)
+   can_60b2e62089688ae8 (p_6)
+     p_6 (4 roles, 5 edges, shape: 5-edge graph on 4 nodes)
+   can_a5f5b64fb3c5dcb3 (p_4)
+     p_4 (3 roles, 3 edges, shape: 3-cycle)
+
+ Lean-only canonicals: 10
+   can_3c2076047a98a2c (p_7)
+     p_7 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   can_6c703fe9252e95f4 (p_9)
+     p_9 (4 roles, 3 edges, shape: star (hub of degree 3))
+   can_703239bca97249ae (p_1)
+     p_1 (3 roles, 2 edges, shape: merge (two sources, one target))
+   can_7679aa69e0bb9596 (p_10)
+     p_10 (4 roles, 3 edges, shape: star (hub of degree 3))
+   can_880e9405ad63a6f (p_5)
+     p_5 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   can_9b5977f5f4b9f5a9 (p_6)
+     p_6 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   can_9f59ef551dfa8102 (p_12)
+     p_12 (3 roles, 3 edges, shape: 3-edge triple)
+   can_e6c9d17738fc32ab (p_4)
+     p_4 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   can_f5d80d231c49007a (p_13)
+     p_13 (3 roles, 3 edges, shape: 3-edge triple)
+   can_fcb22008858d1d4 (p_8)
+     p_8 (4 roles, 3 edges, shape: star (hub of degree 3))
+
+════════════════════════════════════════════════════════
+ Verdict
+════════════════════════════════════════════════════════
+
+ Total OQ#2 canonicals:   9
+ Total Lean canonicals:   15
+ Shared:                  5
+ OQ#2-only:               4
+ Lean-only:               10
+ Jaccard(OQ#2, Lean):     0.2632
+
+ → Lean dep produces 10 structural canonicals that OQ#2
+   does NOT. The substrate is genuinely structurally distinct;
+   v2's pattern path discovers Lean-specific motifs not in
+   the canonical synthetic suite.
+
+--- end ---
