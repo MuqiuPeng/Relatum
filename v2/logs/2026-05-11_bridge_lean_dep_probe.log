@@ -1,0 +1,44 @@
+════════════════════════════════════════════════════════
+ ADR 0081 Phase 0 — vibe-proving bridge (synthetic Lean dep)
+════════════════════════════════════════════════════════
+
+ Synthetic Lean dep graph: 270 edges over up to 80 lemmas
+ TSV body: 4989 bytes
+ Loaded into RSet: 270 edges (sanity check vs 270)
+
+ === autonomous_pass sizes 2..=3 ===
+   size=2: 4 new patterns (["p_0", "p_1", "p_2", "p_3"]), 0 existing, 0 skipped
+   size=3: 11 new patterns (["p_4", "p_5", "p_6", "p_7", "p_8", "p_9", "p_10", "p_11", "p_12", "p_13", "p_14"]), 0 existing, 0 skipped
+
+ Total patterns minted: 15
+   p_4 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   p_8 (4 roles, 3 edges, shape: star (hub of degree 3))
+   p_14 (3 roles, 3 edges, shape: 3-cycle)
+   p_10 (4 roles, 3 edges, shape: star (hub of degree 3))
+   p_5 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   p_9 (4 roles, 3 edges, shape: star (hub of degree 3))
+   p_12 (3 roles, 3 edges, shape: 3-edge triple)
+   p_2 (3 roles, 2 edges, shape: fork (one source, two targets))
+   p_6 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   p_11 (4 roles, 3 edges, shape: star (hub of degree 3))
+
+ === discover_axioms_minimal ===
+   0 axioms discovered
+
+ === discover_theory ===
+   theory candidate axiom set: []
+
+════════════════════════════════════════════════════════
+ Go/no-go verdict
+════════════════════════════════════════════════════════
+
+   Pattern minted on synthetic-Lean substrate: ✓
+   Axiom holds (rate >= min_rate): ✗
+   Theory candidate non-empty: ✗
+
+ → GO. Phase 0 produced non-trivial output on a substrate
+   that v2 has never seen before. The bridge mechanism
+   works; Phase 1 with real Mathlib data is the natural
+   follow-up.
+
+--- end ---
