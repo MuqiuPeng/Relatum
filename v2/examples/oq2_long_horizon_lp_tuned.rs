@@ -17,8 +17,8 @@ use relatum_v2::{
     RSet,
 };
 
-const HORIZON_TICKS: u64 = 3000;
-const SNAPSHOT_INTERVAL: u64 = 250;
+const HORIZON_TICKS: u64 = 6000;
+const SNAPSHOT_INTERVAL: u64 = 500;
 
 fn main() {
     println!("════════════════════════════════════════════════════════");

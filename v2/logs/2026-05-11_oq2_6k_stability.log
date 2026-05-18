@@ -1,0 +1,50 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:257:19
+    |
+145 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+257 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:60
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:72
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\oq2_long_horizon_lp_tuned.exe`
+════════════════════════════════════════════════════════
+ OQ#2 long-horizon — ADR 0080 LP-threshold-tuned
+ HORIZON=6000 ticks  (pre-tuning hung at this size)
+════════════════════════════════════════════════════════
+
+ tick=  500 | rset= 323 ax= 2 ths= 2 pats= 5 eps=  21 | DP= 11/5(45%) prune= 2 | step 5.0s
+ tick= 1000 | rset= 485 ax= 2 ths= 2 pats=10 eps=  50 | DP= 33/12(36%) prune= 4 | step 34.8s
+ tick= 1500 | rset= 527 ax= 2 ths= 2 pats=11 eps=  55 | DP= 38/13(34%) prune= 4 | step 10.3s
+ tick= 2000 | rset= 587 ax= 2 ths= 2 pats=12 eps=  74 | DP= 50/17(34%) prune= 7 | step 33.3s
+ tick= 2500 | rset= 656 ax= 2 ths= 2 pats=14 eps=  85 | DP= 57/19(33%) prune= 8 | step 25.9s
+ tick= 3000 | rset= 665 ax= 2 ths= 2 pats=14 eps=  85 | DP= 57/19(33%) prune= 8 | step 2.3s
+ tick= 3500 | rset= 683 ax= 2 ths= 2 pats=14 eps=  85 | DP= 57/19(33%) prune= 8 | step 9.3s
+ tick= 4000 | rset= 785 ax= 2 ths= 2 pats=15 eps= 114 | DP= 86/20(23%) prune= 8 | step 137.2s
+ tick= 4500 | rset= 794 ax= 2 ths= 2 pats=15 eps= 114 | DP= 86/20(23%) prune= 8 | step 10.1s
+ tick= 5000 | rset= 794 ax= 2 ths= 2 pats=15 eps= 114 | DP= 86/20(23%) prune= 8 | step 0.0s
+ tick= 5500 | rset= 794 ax= 2 ths= 2 pats=15 eps= 114 | DP= 86/20(23%) prune= 8 | step 0.0s
+ tick= 6000 | rset= 794 ax= 2 ths= 2 pats=15 eps= 114 | DP= 86/20(23%) prune= 8 | step 0.0s
+
+ Total wall-clock: 268.3s (4.5 min)
+ Final state: rset=794 ax=2 ths=2 pats=15 eps=114
+
+--- end ---
