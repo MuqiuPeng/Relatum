@@ -1,0 +1,286 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:257:19
+    |
+145 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+257 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:60
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:72
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\phase_emergence_capability_demo.exe`
+════════════════════════════════════════════════════════
+ v2 capability demonstration on OQ#2
+ 2026-05-07 — full stack as of ADR 0078
+════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════
+  1. Discover axioms + theories from the stream (autonomously)
+════════════════════════════════════════════════════════
+
+ After 4500 ticks of OQ#2 (tournament + lattice + star):
+   2 axioms
+   2 theories
+   0 L2 shape families
+   15 patterns (runtime auto-mint)
+   114 episodes total
+
+ Theories:
+   t_1 = {ax_antisymmetry}
+   t_0 = {ax_antisymmetry, ax_totality}
+
+════════════════════════════════════════════════════════
+  2. Assess theory quality (ADR 0071)
+════════════════════════════════════════════════════════
+
+ theory  axs     p_mean     c_mean    class
+ t_0       2          —          —   Indet.
+ t_1       1          —          —   Indet.
+
+════════════════════════════════════════════════════════
+  3. Recommend theory intervention (ADR 0072)
+════════════════════════════════════════════════════════
+
+   t_0 → ShadowMonitor: no data on any quality dimension
+   t_1 → ShadowMonitor: no data on any quality dimension
+
+════════════════════════════════════════════════════════
+  4. Mint emergent patterns (ADR 0010 / 0018)
+════════════════════════════════════════════════════════
+
+ Manually invoke autonomous_pass for sizes 2-5:
+   16 patterns now registered
+
+ Pattern instance + participant counts:
+ id      size  instances   participants
+ p_0        2         10              6
+ p_1        2          4              5
+ p_10       4          4              6
+ p_11       3         11              8
+ p_12       2          2              2
+ p_14       5          4              9
+ p_15       5          4              9
+ p_16       5         18             15
+ p_17       3         20             25
+ p_2        5          7              6
+ p_3        3         33             12
+ p_4        3          5              6
+ p_5        4          3              5
+ p_6        5          7              6
+ p_7        5          3              6
+ p_8        3          3              5
+
+════════════════════════════════════════════════════════
+  5. Render minted patterns as readable shapes (ADR 0075 b)
+════════════════════════════════════════════════════════
+
+   p_0 (3 roles, 2 edges, shape: fork (one source, two targets))
+     r0 → r1
+     r0 → r2
+
+   p_1 (3 roles, 2 edges, shape: chain (length 2))
+     r0 → r1
+     r1 → r2
+
+   p_10 (4 roles, 4 edges, shape: 4-edge graph on 4 nodes)
+     r0 → r1
+     r0 → r2
+     r1 → r2
+     r1 → r3
+
+   p_11 (2 roles, 3 edges, shape: 2 self-loops + 1 cross-edge)
+     r0 → r0
+     r0 → r1
+     r1 → r1
+
+   p_12 (2 roles, 2 edges, shape: bidirectional pair)
+     r0 → r1
+     r1 → r0
+
+   p_14 (3 roles, 5 edges, shape: 3 self-loops + 2 cross-edges)
+     r0 → r0
+     r0 → r1
+     r0 → r2
+     r1 → r1
+     r2 → r2
+
+   p_15 (3 roles, 5 edges, shape: 3 self-loops + 2 cross-edges)
+     r0 → r0
+     r0 → r2
+     r1 → r1
+     r1 → r2
+     r2 → r2
+
+   p_16 (3 roles, 5 edges, shape: 1 self-loop + 4 cross-edges)
+     r0 → r0
+     r0 → r1
+     r0 → r2
+     r1 → r0
+     r2 → r0
+
+   p_17 (2 roles, 3 edges, shape: 1 self-loop + 2 cross-edges)
+     r0 → r0
+     r0 → r1
+     r1 → r0
+
+   p_2 (4 roles, 5 edges, shape: 5-edge graph on 4 nodes)
+     r0 → r1
+     r0 → r2
+     r0 → r3
+     r1 → r2
+     r1 → r3
+
+   p_3 (3 roles, 3 edges, shape: 3-cycle)
+     r0 → r1
+     r0 → r2
+     r1 → r2
+
+   p_4 (3 roles, 3 edges, shape: 3-cycle)
+     r0 → r1
+     r1 → r2
+     r2 → r0
+
+   p_5 (4 roles, 4 edges, shape: 4-edge graph on 4 nodes)
+     r0 → r1
+     r0 → r2
+     r0 → r3
+     r1 → r2
+
+   p_6 (4 roles, 5 edges, shape: 5-edge graph on 4 nodes)
+     r0 → r1
+     r0 → r2
+     r1 → r2
+     r1 → r3
+     r2 → r3
+
+   p_7 (5 roles, 5 edges, shape: 5-edge graph on 5 nodes)
+     r0 → r1
+     r0 → r2
+     r0 → r3
+     r0 → r4
+     r1 → r2
+
+   p_8 (4 roles, 3 edges, shape: star (hub of degree 3))
+     r0 → r1
+     r0 → r2
+     r0 → r3
+
+
+════════════════════════════════════════════════════════
+  6. Assess pattern quality (ADR 0077 + sampling)
+════════════════════════════════════════════════════════
+
+ id      size  inst   mdl  xsub    ovr      class
+ p_0        2    10     0     0   1.00  Redundant
+ p_1        2     4    14     3   1.00  Redundant
+ p_10       4     4     0     0   0.00      Mixed
+ p_11       3    11    72     0   0.75      Mixed
+ p_12       2     2     0     0   1.00  Redundant
+ p_14       5     4    20     0   0.67      Mixed
+ p_15       5     4    20     0   0.67      Mixed
+ p_16       5    18   145     0   1.00  Redundant
+ p_17       3    20    57     0   0.60      Mixed
+ p_2        5     7     0     0   1.00  Redundant
+ p_3        3    33   249     1   0.50      Mixed
+ p_4        3     5     9     0   1.00  Redundant
+ p_5        4     3     0     0   1.00  Redundant
+ p_6        5     7    55     0   0.83  Redundant
+ p_7        5     3     0     0   0.83  Redundant
+ p_8        3     3     0     0   1.00  Redundant
+
+════════════════════════════════════════════════════════
+  7. Recommend pattern intervention (ADR 0077)
+════════════════════════════════════════════════════════
+
+   p_0 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_1 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_10 → Manual: instance/overlap/MDL signals disagree (mdl=0 overlap=0.000)
+   p_11 → Manual: instance/overlap/MDL signals disagree (mdl=72 overlap=0.750)
+   p_12 → PatternMergeWith(p_8): overlap_score=1.000 with p_8
+   p_14 → Manual: instance/overlap/MDL signals disagree (mdl=20 overlap=0.667)
+   p_15 → Manual: instance/overlap/MDL signals disagree (mdl=20 overlap=0.667)
+   p_16 → PatternMergeWith(p_17): overlap_score=1.000 with p_17
+   p_17 → Manual: instance/overlap/MDL signals disagree (mdl=57 overlap=0.600)
+   p_2 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_3 → Manual: instance/overlap/MDL signals disagree (mdl=249 overlap=0.500)
+   p_4 → PatternMergeWith(p_3): overlap_score=1.000 with p_3
+   p_5 → PatternMergeWith(p_6): overlap_score=1.000 with p_6
+   p_6 → PatternMergeWith(p_5): overlap_score=0.833 with p_5
+   p_7 → PatternMergeWith(p_8): overlap_score=0.833 with p_8
+   p_8 → PatternMergeWith(p_7): overlap_score=1.000 with p_7
+
+════════════════════════════════════════════════════════
+  8. Read the runtime as a multi-agent ecosystem (ADR 0076)
+════════════════════════════════════════════════════════
+
+ 9 agent classes detected across 114 episodes:
+
+ agent class                         eps    succ% first/last tick
+ DiscoverPatterns/PatternSize(2)      84    21.4%     8-3637    
+ Declarativize/Pattern                14   100.0%   307-2412    
+ PruneLowValueObjects/Pattern          8   100.0%    10-2409    
+ Declarativize/Theory                  2     0.0%   309-310     
+ DiscoverTheory/WholeRSet              2   100.0%     1-2       
+ DiscoverPatterns/PatternSize(4)       1   100.0%   304-304     
+ DiscoverPatterns/PatternSize(5)       1   100.0%   313-313     
+ Declarativize/Axiom                   1     0.0%     4-4       
+ UpdateTheoryRelations/WholeRSet       1   100.0%     5-5       
+
+ Detail for DiscoverPatterns/PatternSize(2):
+   episode_count: 84, neg/zer/pos: 0/66/18
+   delta range: [0.000, 2.000], median 0.000
+
+ Detail for Declarativize/* (target overlap):
+   17 episodes over 17 distinct targets
+     1 × Axiom("ax_antisymmetry")
+     1 × Pattern("p_0")
+     1 × Pattern("p_1")
+
+════════════════════════════════════════════════════════
+  9. Detect what's not yet learned (ADR 0078)
+════════════════════════════════════════════════════════
+
+ Total data edges: 164
+ Unexplained edges: 23 (14.0%)
+ Distinct canonical shapes of unexplained R: 3
+
+ Top buckets (where the system should attend next):
+ rank   components    edges canonical_size
+ #1              2        2              1
+       e.g. R(l2_b, l2_t)
+       e.g. R(t3_0, t3_1)
+ #2              2       18              9
+       e.g. R(l3_b, l3_t)
+       e.g. R(l3_m1, l3_m1)
+ #3              1        3              3
+       e.g. R(t4_3, t4_4)
+       e.g. R(t4_2, t4_4)
+
+════════════════════════════════════════════════════════
+ Capability demonstration complete.
+════════════════════════════════════════════════════════
+
+ v2 stacks 9 distinct capabilities here, all working on
+ one substrate run. Every capability is a query / mint /
+ assessment that respects the constitution heavy reading:
+ no per-token signature classification, all object
+ emergence atomic with concept registration.
+
+--- end ---
