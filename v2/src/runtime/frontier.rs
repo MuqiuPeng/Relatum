@@ -169,6 +169,12 @@ pub struct Frontier {
     pub promotion: PromotionConfig,
     /// ADR 0054 / Phase D0.
     pub meta_meta: MetaMetaConfig,
+    /// Targets recently dispatched by `PruneLowValueObjects`.
+    /// Computed during `refresh_with_episodes`; used by
+    /// `refresh_stale_prune` to avoid re-proposing prune for
+    /// patterns whose previous prune attempt already happened
+    /// in the recent window (rate-limit fix 2026-05-11).
+    pub recent_prune_targets: HashSet<String>,
 }
 
 impl Default for Frontier {
@@ -180,6 +186,7 @@ impl Default for Frontier {
             staleness: StalenessConfig::default(),
             promotion: PromotionConfig::default(),
             meta_meta: MetaMetaConfig::default(),
+            recent_prune_targets: HashSet::new(),
         }
     }
 }
@@ -367,24 +374,87 @@ impl Frontier {
 
         // 3. LowValueObjectForPrune: every named object with
         //    counterfactual value < 0.
+        //
+        // Two corrections (2026-05-11 fix, follow-up to
+        // adr0080_lp_threshold_tuning):
+        //
+        // (a) `rank_by_counterfactual` returns patterns + theories
+        //     + extension_edges (per lib.rs:5086). The original
+        //     frontier wrapped ALL as `FrontierTarget::Pattern(id)`,
+        //     but `PruneLowValueObjects`'s Pattern(id) handler only
+        //     calls `retract_pattern`. For theories and extension
+        //     edges the retraction silently fails — the rset
+        //     doesn't change but the episode still counts.
+        //     Result observed in 3k OQ#2 LP-tuned run: 1000 prune
+        //     episodes between tick 2000-3000 with pats unchanged
+        //     at 9. Theories and extension edges with cv<0 were
+        //     being targeted indefinitely.
+        //
+        //     Fix: route to FrontierTarget::Theory(id) when the id
+        //     is a theory. Skip extension edges entirely — they
+        //     have no dedicated FrontierTarget variant and the
+        //     action handler's WholeRSet branch handles them, but
+        //     proposing them individually wastes scheduler cycles.
+        //
+        // (b) Recently-pruned id filter: even with correct routing,
+        //     if retract returns Err (e.g., counterfactual value
+        //     re-flips negative between mints), the same id keeps
+        //     being proposed. Skip ids that were targeted by Prune
+        //     in the last `RECENT_PRUNE_WINDOW` episodes.
+        const RECENT_PRUNE_WINDOW: usize = 50;
+        let recent_prune_targets: HashSet<String> = {
+            let start = episodes.len().saturating_sub(RECENT_PRUNE_WINDOW);
+            episodes
+                .iter()
+                .skip(start)
+                .filter(|ep| matches!(
+                    ep.action_kind,
+                    ActionKind::PruneLowValueObjects,
+                ))
+                .filter_map(|ep| match &ep.target {
+                    FrontierTarget::Pattern(id) => Some(id.clone()),
+                    FrontierTarget::Theory(id) => Some(id.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        // Cache recent prune targets on `self` so `refresh_stale_prune`
+        // (called immediately after this) can apply the same filter.
+        self.recent_prune_targets = recent_prune_targets.clone();
+        let pattern_ids: HashSet<&str> =
+            rset.patterns().into_iter().collect();
+        let theory_ids: HashSet<&str> =
+            rset.theories().into_iter().collect();
         for (id, cv) in rset.rank_by_counterfactual() {
-            if cv < 0.0 {
-                items.push(FrontierItem {
-                    id: format!("prune_{}_{}", id, tick),
-                    kind: FrontierKind::LowValueObjectForPrune,
-                    target: FrontierTarget::Pattern(id.clone()),
-                    priority: (-cv) * 2.0, // slight preference over
-                                            // equal-value discovery
-                    estimated_value: -cv,
-                    estimated_cost: 1.0,
-                    novelty_score: 0.0,
-                    first_seen_tick: tick,
-                    last_visited_tick: None,
-                    revisit_count: 0,
-                    cooldown_until_tick: None,
-                    status: FrontierStatus::Fresh,
-                });
-            }
+            if cv >= 0.0 { continue; }
+            if recent_prune_targets.contains(&id) { continue; }
+            let target = if pattern_ids.contains(id.as_str()) {
+                FrontierTarget::Pattern(id.clone())
+            } else if theory_ids.contains(id.as_str()) {
+                FrontierTarget::Theory(id.clone())
+            } else {
+                // Extension edge or other named object — skip.
+                // PruneLowValueObjects' single-target dispatch
+                // path can't handle these; they're handled by
+                // the WholeRSet branch which isn't proposed by
+                // this code path.
+                continue;
+            };
+            items.push(FrontierItem {
+                id: format!("prune_{}_{}", id, tick),
+                kind: FrontierKind::LowValueObjectForPrune,
+                target,
+                priority: (-cv) * 2.0, // slight preference over
+                                        // equal-value discovery
+                estimated_value: -cv,
+                estimated_cost: 1.0,
+                novelty_score: 0.0,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
         }
 
         // 4. TheoryNeedsRelations: ≥ 2 named theories AND at least one
@@ -460,6 +530,13 @@ impl Frontier {
                     && it.target == target
             });
             if already {
+                continue;
+            }
+            // Skip if a prune of this pattern already happened in
+            // the recent window (2026-05-11 fix to stop the
+            // per-tick prune loop observed in long-horizon runs
+            // after ADR 0080 LP gate closes).
+            if self.recent_prune_targets.contains(id) {
                 continue;
             }
             self.items.push(FrontierItem {

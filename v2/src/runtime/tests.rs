@@ -1531,6 +1531,7 @@
             staleness: StalenessConfig::default(),
             promotion: PromotionConfig::default(),
             meta_meta: MetaMetaConfig::default(),
+            recent_prune_targets: std::collections::HashSet::new(),
         };
         let mut memory = Memory::default();
         // Attempts above ADR 0075 piece 2 threshold (30); 0 positive.
@@ -1912,6 +1913,7 @@
             staleness: StalenessConfig::default(),
             promotion: PromotionConfig::default(),
             meta_meta: MetaMetaConfig::default(),
+            recent_prune_targets: std::collections::HashSet::new(),
         };
         let memory = Memory::default();
         let ctx = SchedulerContext {
@@ -1966,6 +1968,7 @@
             staleness: StalenessConfig::default(),
             promotion: PromotionConfig::default(),
             meta_meta: MetaMetaConfig::default(),
+            recent_prune_targets: std::collections::HashSet::new(),
         };
         let mut memory = Memory::default();
         memory
@@ -2211,6 +2214,7 @@
             staleness: StalenessConfig::default(),
             promotion: PromotionConfig::default(),
             meta_meta: MetaMetaConfig::default(),
+            recent_prune_targets: std::collections::HashSet::new(),
         };
         let mut memory = Memory::default();
         // Push three zero-delta episodes to engage the stagnation
@@ -2260,6 +2264,7 @@
             staleness: StalenessConfig::default(),
             promotion: PromotionConfig::default(),
             meta_meta: MetaMetaConfig::default(),
+            recent_prune_targets: std::collections::HashSet::new(),
         };
         let memory = Memory::default();
         let ctx = SchedulerContext {

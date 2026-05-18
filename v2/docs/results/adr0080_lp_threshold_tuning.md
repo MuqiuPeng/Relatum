@@ -78,15 +78,55 @@ pub const LP_DRIVE_THRESHOLD: f64 = 0.20;
 
 Previously these were local constants duplicated across 4 sites (`frontier.rs`, `autonomous.rs`, `scheduler_rule.rs` × 2). Refactor: all 4 sites now reference the centralized constants. Future re-tuning is a one-line change.
 
-## What this slice did NOT solve
+## What this slice did NOT solve initially — then fixed in follow-up
 
-A separate observation from the same run: **prune action enters a per-tick loop starting around tick 2000**. Episode count grows 1-per-tick (eps 248 at tick 2000 → 1000 at tick 3000); prune count grows 1-per-tick (193 → 1193). Step time grows from 32s → 94s linearly with tick.
+A separate observation from the LP-only run: **prune action entered a per-tick loop starting around tick 2000**. Episode count grew 1-per-tick (eps 248 at tick 2000 → 1000 at tick 3000); prune count grew 1-per-tick (193 → 1193). Step time grew from 32s → 94s.
 
-This is **NOT a LP-tuning issue** — DP rate stays cap'd at 39, LP gate is closed. The runtime is correctly suppressing drive-driven DiscoverPatterns dispatches. The growth comes from a different action class (PruneLowValueObjects) firing every tick when the runtime is awake.
+This was NOT a LP-tuning issue (DP rate stayed cap'd at 39). The prune-loop turned out to have two distinct causes:
 
-Likely cause: scheduler picks `PruneLowValueObjects` as the highest-priority frontier item when no DP candidate is alive (LP gate closed it). The prune action is not rate-limited. Each prune episode is cheap individually but accumulates linearly.
+### Cause A — type mismatch in target routing
 
-This is a separate scheduler tuning issue, not in scope for ADR 0080. Recorded as follow-up.
+`RSet::rank_by_counterfactual` returns three kinds of ids: patterns, theories, and extension edges. The frontier's `LowValueObjectForPrune` proposal wrapped ALL of them as `FrontierTarget::Pattern(id)`. The action handler's `Pattern(id)` branch only calls `retract_pattern`, which fails silently for theory ids or extension-edge ids. The same id then keeps appearing in `rank_by_counterfactual` next refresh and gets re-proposed indefinitely.
+
+**Fix (frontier.rs)**: route theory ids to `FrontierTarget::Theory(id)` and skip extension edges (no single-target prune handler for them; the WholeRSet branch handles them but isn't proposed here).
+
+### Cause B — second proposal site (refresh_stale_prune) bypassing filter
+
+The runtime calls `refresh_stale_prune` immediately after `refresh_with_episodes`. Stale-prune proposes `LowValueObjectForPrune` for any pattern whose `last_improved_tick` is too old. This is a SECOND proposal path that didn't apply the recently-pruned filter, so the same pattern got re-proposed every tick via the stale-prune route after its prune attempt failed.
+
+**Fix (frontier.rs + frontier struct)**: `refresh_with_episodes` now computes a `recent_prune_targets` set and caches it on `self`. `refresh_stale_prune` reads `self.recent_prune_targets` and skips proposing for any id already there. Both proposal paths now apply the same rate-limiting filter.
+
+### Final 3k OQ#2 wall-clock
+
+After both fixes:
+
+```
+HORIZON=3000 ticks (post-LP tuning + prune-routing + stale-prune filter):
+
+ tick=  250 | rset=  96 pats= 2 eps=  10 | DP=  5/2(40%) prune=1 | step  0.1s
+ tick=  500 | rset= 323 pats= 5 eps=  21 | DP= 11/5(45%) prune=2 | step  5.0s
+ tick=  750 | rset= 407 pats= 7 eps=  35 | DP= 21/8(38%) prune=3 | step 13.4s
+ tick= 1000 | rset= 485 pats=10 eps=  50 | DP= 33/12(36%) prune=4 | step 21.4s
+ tick= 1250 | rset= 527 pats=11 eps=  55 | DP= 38/13(34%) prune=4 | step 10.3s
+ tick= 1500 | rset= 527 pats=11 eps=  55 | DP= 38/13(34%) prune=4 | step  0.0s
+ tick= 1750 | rset= 552 pats=12 eps=  56 | DP= 39/14(35%) prune=4 | step  3.4s
+ tick= 2000 | rset= 587 pats=12 eps=  74 | DP= 50/17(34%) prune=7 | step 29.7s
+ tick= 2250 | rset= 660 pats=15 eps=  78 | DP= 54/19(35%) prune=7 | step 13.2s
+ tick= 2500 | rset= 656 pats=14 eps=  85 | DP= 57/19(33%) prune=8 | step 12.6s
+ tick= 2750 | rset= 665 pats=14 eps=  85 | DP= 57/19(33%) prune=8 | step  2.3s
+ tick= 3000 | rset= 665 pats=14 eps=  85 | DP= 57/19(33%) prune=8 | step  0.0s
+
+ Total wall-clock: 111.4s (1.9 min)
+```
+
+3000-tick OQ#2:
+- pre-tuning: hangs indefinitely
+- LP-tuning only: 6.2 min (1193 prune episodes from the prune-loop)
+- LP-tuning + prune-routing + stale-prune filter: **1.9 min** (8 prune episodes total)
+
+Bonus: with the prune loop gone, the LP gate sustained engagement properly, and the system **minted more patterns** (final pats=14 vs LP-only pats=9). The runtime now sleeps efficiently after canonical saturation but keeps drive-engaged when new structure arrives.
+
+Log: [`logs/2026-05-11_oq2_3k_full_prune_fix.log`](../../logs/2026-05-11_oq2_3k_full_prune_fix.log).
 
 ## Follow-ups
 
