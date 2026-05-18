@@ -354,3 +354,34 @@ Final files:
 
 This is exactly the kind of save the ARIS auto-review-loop is designed for: surface an over-claim, force it through a stricter experiment, and let the data overturn it rather than letting the original narrative ship.
 
+---
+
+## Round 4 — post-loop multi-seed follow-up (W4 + M3)
+
+After the ARIS loop exited at Round 3, the Round 3 reviewer's M3 caveat ("the within-canonical Jaccard at single seed could itself be outlier") and result doc §13.6's open question were both addressed by running a multi-seed scan with N=6 within-canonical pairs, N=15 within-synth-DAG pairs, N=24 cross pairs.
+
+Full follow-up doc: [`docs/results/bridge_multi_seed_scan.md`](../docs/results/bridge_multi_seed_scan.md).
+
+### Round 4 outcome
+
+```
+Within-canonical-suite (N=6):  mean=0.2636  std=0.3406  range [0.00, 1.00]
+Within-synth-DAG       (N=15): mean=0.9583  std=0.0589  range [0.88, 1.00]
+Cross                  (N=24): mean=0.1127  std=0.1158  range [0.00, 0.26]
+```
+
+### Round 4 verdict
+
+**Round 2 retraction is reinforced, not premature.** Within-canonical mean exceeds Cross mean by only 0.15, while within-canonical std (0.34) is more than 2× the gap. The "within > cross" difference is not statistically meaningful. The Round 2 single-seed 0.20 turned out to be typical (3 of 6 within-canonical pairs are in [0.18, 0.20]), not outlier.
+
+Within-synth-DAG mean 0.96 with std 0.06 stands as the only tight measurement, but per Round 3 M1 it is a property of the DAG generator's small invariant motif vocabulary, not of v2's substrate-sensitivity machinery.
+
+### Loop final-final state
+
+| Round | Score | Verdict | Key outcome |
+|-------|-------|---------|-------------|
+| 1 | 3/10 | not ready | W1-W7 surfaced |
+| 2 | 5/10 | not ready | 4 W's addressed; N1-N4 surfaced |
+| 3 | 7/10 | ready | N1-N4 addressed; H1 disconfirmed; retraction shipped; M1-M3 framing tweaks applied |
+| 4 (post-loop) | n/a | n/a | W4 / M3 follow-up via N>1 scan — retraction **reinforced** by multi-seed data |
+

@@ -1,0 +1,80 @@
+════════════════════════════════════════════════════════
+ Multi-seed scan — Phase 1.D Round 4 follow-up
+ (tests Round 2 N=1 fragility; W4 from Round 1)
+════════════════════════════════════════════════════════
+
+ Budget: sample_count=400, top_m=20 (saturation)
+
+ Building canonical-suite RSets (1000 ticks each)...
+
+ Building synth-DAG instances...
+
+════════════════════════════════════════════════════════
+ Within-canonical-suite Jaccards (C(4,2) = 6 pairs)
+════════════════════════════════════════════════════════
+   Within(     OQ#1,  narrow_a) = 0.2000
+   Within(     OQ#1,      OQ#2) = 0.1818
+   Within(     OQ#1,    long5k) = 0.2000
+   Within( narrow_a,      OQ#2) = 0.0000
+   Within( narrow_a,    long5k) = 1.0000
+   Within(     OQ#2,    long5k) = 0.0000
+
+   N=6  mean=0.2636  std=0.3406  min=0.0000  max=1.0000
+
+════════════════════════════════════════════════════════
+ Within-synth-DAG Jaccards (C(6,2) = 15 pairs)
+════════════════════════════════════════════════════════
+   Within(DAG_0, DAG_1) = 1.0000
+   Within(DAG_0, DAG_2) = 0.8750
+   Within(DAG_0, DAG_3) = 1.0000
+   Within(DAG_0, DAG_4) = 1.0000
+   Within(DAG_0, DAG_5) = 1.0000
+   Within(DAG_1, DAG_2) = 0.8750
+   Within(DAG_1, DAG_3) = 1.0000
+   Within(DAG_1, DAG_4) = 1.0000
+   Within(DAG_1, DAG_5) = 1.0000
+   Within(DAG_2, DAG_3) = 0.8750
+   Within(DAG_2, DAG_4) = 0.8750
+   Within(DAG_2, DAG_5) = 0.8750
+   Within(DAG_3, DAG_4) = 1.0000
+   Within(DAG_3, DAG_5) = 1.0000
+   Within(DAG_4, DAG_5) = 1.0000
+
+   N=15  mean=0.9583  std=0.0589  min=0.8750  max=1.0000
+
+════════════════════════════════════════════════════════
+ Cross-family Jaccards (4 canonical × 6 synth-DAG = 24)
+════════════════════════════════════════════════════════
+                   DAG_0   DAG_1   DAG_2   DAG_3   DAG_4   DAG_5
+          OQ#1   0.1875  0.1875  0.1875  0.1875  0.1875  0.1875
+      narrow_a   0.0000  0.0000  0.0000  0.0000  0.0000  0.0000
+          OQ#2   0.2632  0.2632  0.2632  0.2632  0.2632  0.2632
+        long5k   0.0000  0.0000  0.0000  0.0000  0.0000  0.0000
+
+   N=24  mean=0.1127  std=0.1158  min=0.0000  max=0.2632
+
+════════════════════════════════════════════════════════
+ Verdict — does the Round 2 retraction stand?
+════════════════════════════════════════════════════════
+
+ Round 2's single-seed value:
+   Within(OQ#1, narrow_a) = 0.2000
+   Cross(OQ#2, DAG_A)     = 0.2632
+
+ Multi-seed measurements:
+   Within(canonical pair):  N=6  mean=0.2636 std=0.3406  [min 0.0000, max 1.0000]
+   Within(synth-DAG pair):  N=15  mean=0.9583 std=0.0589  [min 0.8750, max 1.0000]
+   Cross(canonical, DAG):   N=24  mean=0.1127 std=0.1158  [min 0.0000, max 0.2632]
+
+   → Within-canonical mean 0.2636 mildly exceeds Cross mean
+     0.1127 by 0.1510. Modest substrate-suite signal but
+     small gap = weak evidence; Round 2 retraction is still
+     defensible but not strongly reinforced.
+
+ Within-DAG mean 0.9583 vs Within-canonical mean 0.2636: 
+   DAG family is 3.64× more self-consistent than canonical
+   suite. This is the surviving narrow positive: the synth-DAG
+   generator has a small invariant size-2/3 motif vocabulary
+   (Round 3 M1) that the canonical suite does not share.
+
+--- end ---

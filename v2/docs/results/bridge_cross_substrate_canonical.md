@@ -367,7 +367,66 @@ The original Phase 0 GO signal (richer pattern population on synth-DAG than OQ#2
 
 ### 13.6 Open questions left by Round 2
 
-- **Multi-seed scan on canonical-suite pairs.** Is Within(OQ#1, narrow_a) = 0.2 robust, or did this single seed happen to land on a bad value? This is a follow-up worth running.
+- **Multi-seed scan on canonical-suite pairs.** Is Within(OQ#1, narrow_a) = 0.2 robust, or did this single seed happen to land on a bad value? **Addressed by Round 4 multi-seed scan — see §14 below.**
 - **Bigger canonical sets.** OQ#1 only mints 4 canonicals; small sets make Jaccard noisy. Re-running at sizes 4-6 may produce larger canonical sets and more stable Jaccards.
 - **Different generative families.** Erdős–Rényi, preferential attachment, planted-partition — does the within-vs-cross pattern look the same across the structural-graph zoo, or is it idiosyncratic?
 - **Within-substrate-with-resampled-stream.** OQ#2 and OQ#1 are fully deterministic. Building stream-seeded variants of OQ#2 would enable a true OQ#2-self baseline. That's a substrate-engineering task.
+
+## 14. Round 4 — multi-seed scan (W4 follow-up)
+
+The Round 3 reviewer (M3) and §13.6 above both flagged that Round 2's `Within(OQ#1, narrow_a) = 0.20` was a single-seed value. A multi-seed scan was run on 2026-05-11 to test whether 0.20 was outlier or typical.
+
+Full follow-up doc: [`bridge_multi_seed_scan.md`](bridge_multi_seed_scan.md).
+Log: [`logs/2026-05-11_bridge_multi_seed_scan.log`](../../logs/2026-05-11_bridge_multi_seed_scan.log).
+Example: [`examples/bridge_multi_seed_scan.rs`](../../examples/bridge_multi_seed_scan.rs).
+
+### 14.1 Numbers
+
+```
+Within-canonical-suite (N=6 pairs from {OQ#1, narrow_a, OQ#2, long5k}):
+   mean = 0.2636   std = 0.3406   min = 0.0000   max = 1.0000
+
+   per-pair:
+      Within(OQ#1, narrow_a)     = 0.2000   ← Round 2 single seed (TYPICAL)
+      Within(OQ#1, OQ#2)         = 0.1818
+      Within(OQ#1, long5k)       = 0.2000
+      Within(narrow_a, OQ#2)     = 0.0000
+      Within(narrow_a, long5k)   = 1.0000
+      Within(OQ#2, long5k)       = 0.0000
+
+Within-synth-DAG (N=15 pairs from 6 DAG seeds):
+   mean = 0.9583   std = 0.0589   range [0.8750, 1.0000]
+
+Cross (N=24, 4 canonical × 6 DAG):
+   mean = 0.1127   std = 0.1158   range [0.0000, 0.2632]
+```
+
+### 14.2 What this says
+
+**Round 2 retraction is reinforced**, not premature:
+
+- Within-canonical mean 0.26 exceeds Cross mean 0.11 by **only 0.15**, while within-canonical std is **0.34** — more than twice the gap. The "within > cross" difference is **not statistically meaningful** given the dispersion.
+
+- Within-canonical Jaccards are **bimodal-ish**: 2 pairs share nothing (0.0), 1 pair shares everything (1.0), 3 pairs share ~20%. The "canonical suite" is not a substrate family in the variance-bounded sense Round 2's null baseline implicitly assumed.
+
+- Round 2's single-seed 0.20 is **typical**, not outlier (3 of 6 within-canonical pairs are 0.18-0.20).
+
+- The synth-DAG family genuinely IS tight: mean 0.96, std 0.06. This survives as the only positive signal, but it is a property of **the layered-random-DAG generator** (small invariant motif vocabulary at sizes 2-3), not of v2 substrate-sensitivity. Round 3 M1 framing stands.
+
+### 14.3 Surprising N=6 observations worth noting
+
+- `(narrow_a, long5k) = 1.0` — narrow_a's canonical set is a strict subset of long5k's (both anchored on regime-A diamond posets). They have IDENTICAL canonical fingerprints at sizes 2-3.
+- `(narrow_a, OQ#2) = 0.0` and `(OQ#2, long5k) = 0.0` — completely disjoint canonical sets between OQ#2 and the narrow_a/long5k family. The dense small subgraphs OQ#2 emits (4-5 edge canonicals on 4 nodes) are absent from regime-A-style substrates.
+- `narrow_a` and `long5k` have **zero** canonical overlap with the synth-DAG family. Only OQ#1 (Jaccard 0.19) and OQ#2 (Jaccard 0.26) share anything with the DAG.
+
+These observations are structurally informative about WHICH substrates have which motifs, but they do not support a general "v2 is substrate-sensitive" claim — they reflect the specific compositional content of each pre-built substrate.
+
+### 14.4 Final state of the Phase 1.D claim across 4 rounds
+
+| Round | Substantive claim | Status |
+|-------|------------------|--------|
+| 0 (original) | "v2 produces substrate-distinct emergence; 67% novel; Phase 2 motivated" | Withdrawn (Round 2) |
+| 1 (W1-W7 fixes) | "H1 supported at pre-registered thresholds" | Withdrawn (Round 2) |
+| 2 (N1+N2 corrected baseline) | "Phase 1.D verdict retracted; cross 0.26 not substrate-sensitivity evidence" | Stands |
+| 3 (M1-M3 framing) | "Surviving positive is DAG-generator invariance, not v2 capability" | Stands |
+| 4 (this scan) | "Within-canonical mean 0.26 std 0.34; gap < 1 std; canonical suite is not a variance-bounded family" | Stands; **strengthened by N>1** |
