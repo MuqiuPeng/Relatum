@@ -335,12 +335,13 @@ impl Frontier {
                         // Threshold-based skipping prevents
                         // frontier from carrying ~zero-priority
                         // items that still cost scheduler iteration.
-                        const LP_WINDOW: usize = 30;
-                        const LP_THRESHOLD: f64 = 0.05;
+                        // Constants centralized in agent_view (ADR 0080
+                        // threshold-tuning slice 2026-05-11).
+                        use super::agent_view::{LP_WINDOW, LP_DRIVE_THRESHOLD};
                         let lp = compute_learning_progress(
                             episodes, size, LP_WINDOW,
                         );
-                        if lp >= LP_THRESHOLD {
+                        if lp >= LP_DRIVE_THRESHOLD {
                             items.push(FrontierItem {
                                 id: format!(
                                     "drive_pattern_size_{}_{}",

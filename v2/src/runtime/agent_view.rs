@@ -13,6 +13,31 @@ use std::collections::HashMap;
 use super::action::{ActionKind, FrontierTarget};
 use super::memory::Episode;
 
+/// Learning-progress window in episodes. ADR 0080.
+///
+/// Was 30 (original ADR 0080 ship); reduced to 10 (2026-05-11
+/// threshold-tuning slice) because at ~10s per DiscoverPatterns
+/// dispatch, a 30-episode window kept gates open for ~5 minutes
+/// after a substrate saturated its canonical set. Reducing to 10
+/// cuts that to ~100s while staying robust to single-dispatch
+/// noise (one stray mint in a 10-window = 10% LP, just under the
+/// LP_DRIVE_THRESHOLD = 0.10 floor).
+pub const LP_WINDOW: usize = 10;
+
+/// Learning-progress threshold below which drive-driven actions
+/// stop engaging. ADR 0080.
+///
+/// Tuning history (2026-05-11):
+/// - 0.05 original — 800-tick OK; 3k OQ#2 hangs (gate too lenient).
+/// - 0.10 first tune — 3k OQ#2 step time grew to 9min at tick 1250
+///   because LP gates per-size while dispatches use multi-size
+///   fallback. If size-3 LP=30% and size-2 LP=0%, size-3 gate stays
+///   open while size-2 closes — aggregate 9% rate persists.
+/// - 0.20 current — at 0.20, a size needs >20% mint rate over the
+///   recent 10 attempts to keep its gate open. Sizes with rare
+///   single-shot mint events close. Aggregate dispatches drop.
+pub const LP_DRIVE_THRESHOLD: f64 = 0.20;
+
 /// Stable string key for a target's variant kind. Strips
 /// per-instance ids (e.g., `Pattern("p_3") → "Pattern"`) so
 /// dispatches against different specific patterns still cluster
@@ -390,7 +415,7 @@ where
     };
     let size = canonical.len().clamp(2, 5);
     let all: Vec<&Episode> = episodes.into_iter().collect();
-    let lp = compute_learning_progress(all.iter().copied(), size, 30);
+    let lp = compute_learning_progress(all.iter().copied(), size, LP_WINDOW);
     lp > lp_threshold
 }
 

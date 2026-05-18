@@ -404,7 +404,9 @@ impl RuleBasedScheduler {
             // therefore bounded by mintability of remaining drive
             // canonicals.
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
-            const DRIVE_LP_THRESHOLD: f64 = 0.05;
+            // DRIVE_LP_THRESHOLD now centralized in agent_view
+            // (2026-05-11 tuning, was 0.05 → 0.10).
+            use super::agent_view::LP_DRIVE_THRESHOLD as DRIVE_LP_THRESHOLD;
             // ADR 0079 (caching) + ADR 0080 (LP gating) — drive
             // alive requires both signal AND learning progress
             // at modal canonical's size > threshold.
@@ -554,7 +556,9 @@ impl Scheduler for RuleBasedScheduler {
             // ping-pong with no dispatch progress (observed in
             // 2026-05-08 long-horizon re-run before this fix).
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
-            const DRIVE_LP_THRESHOLD: f64 = 0.05;
+            // DRIVE_LP_THRESHOLD now centralized in agent_view
+            // (2026-05-11 tuning, was 0.05 → 0.10).
+            use super::agent_view::LP_DRIVE_THRESHOLD as DRIVE_LP_THRESHOLD;
             // ADR 0079 (caching, 2026-05-11) + ADR 0080
             // (learning-progress gating, 2026-05-11) — prefer
             // cached drive signal and require learning progress

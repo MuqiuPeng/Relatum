@@ -305,11 +305,11 @@ impl AutonomousRuntime {
             //    + ADR 0079.
             const DRIVE_WAKE_INTERVAL: u64 = 25;
             const MATURE_DATA_EDGE_FLOOR: usize = 100;
-            const DRIVE_LP_THRESHOLD: f64 = 0.05;
             // ADR 0080 — wake only if drive has signal AND
             // learning progress at modal canonical is non-trivial.
             // A bucket with no recent mint success at its size
             // doesn't justify waking the runtime.
+            // Constants centralized in agent_view (2026-05-11 tuning).
             let drive_wakes = !wake_signal
                 && self.lifecycle == LifecycleState::Sleeping
                 && self.tick % DRIVE_WAKE_INTERVAL == 0
@@ -320,7 +320,7 @@ impl AutonomousRuntime {
                     crate::runtime::drive_should_engage(
                         &drive,
                         &self.memory.episodes,
-                        DRIVE_LP_THRESHOLD,
+                        crate::runtime::agent_view::LP_DRIVE_THRESHOLD,
                     )
                 };
             if self.lifecycle == LifecycleState::Sleeping {
