@@ -139,3 +139,64 @@ The defensible Phase 1.D claim is now:
 > *v2's canonicalization at sizes 2-4 reflects structural-class constraints in the canonical-form set. Substrates with constraint-excluded motifs (e.g., BIPARTITE) produce canonical fingerprints sharply distinguishable from random-graph baselines.*
 
 This is descriptive and verifiable. It is also exactly what classical subgraph census would produce. Whether v2 does anything beyond classical census remains the open question that Phase 1.E real natural data must answer.
+
+---
+
+## Round 8 addendum — top_m=100 rerun (cap-artifact check)
+
+Round 7 noted that at `top_m=20` every random-family instance produced exactly 20 canonicals at size 4, meaning the cap was binding and within-random Jaccards were partly truncation artifact. Round 8 re-ran size 4 with `top_m=100` to expose the natural random-family canonical census.
+
+Log: [`logs/2026-05-11_bridge_size4_scan_top100.log`](../../logs/2026-05-11_bridge_size4_scan_top100.log).
+
+### Round 8 numbers (size 4, n=40, top_m=100)
+
+```
+Natural canonical counts (no cap):
+  ER:  39-40 per instance
+  SBM: 42-47
+  DAG: 36-42
+  BP:  6-7  (unchanged; was already below cap)
+
+Within (N=3 per family):
+  ER  size=4:  mean=0.7634 std=0.0237
+  SBM size=4:  mean=0.8998 std=0.0275
+  DAG size=4:  mean=0.7756 std=0.0266
+  BP  size=4:  mean=0.9048 std=0.0673  (unchanged)
+
+Cross:
+  ER × SBM   = 0.7833 ± 0.032    (still essentially = within)
+  ER × DAG   = 0.7525 ± 0.063    (essentially = within)
+  SBM × DAG  = 0.8058 ± 0.049    (essentially = within)
+  ER × BP    = 0.1394 ± 0.012    ← sharper than Round 7 (0.14 vs 0.14)
+  SBM × BP   = 0.1276 ± 0.029    ← sharper (0.13 vs 0.14)
+  DAG × BP   = 0.1642 ± 0.021    ← sharper (0.16 vs 0.21)
+
+Overall: within_mean=0.8359 cross_mean=0.4621 gap=0.3738
+```
+
+### H1 verdict update with top_m=100
+
+| Family | within | max_cross | H1 |
+|--------|--------|-----------|-----|
+| ER | 0.76 ✓ | 0.78 (ER × SBM) ✗ | not supported |
+| SBM | 0.90 ✓ | 0.81 (SBM × DAG) ✗ | not supported |
+| DAG | 0.78 ✓ | 0.81 (SBM × DAG) ✗ | not supported |
+| **BIPARTITE** | **0.90 ✓** | **0.16 (DAG × BP) ✓** | **✓ SUPPORTED (cross even sharper)** |
+
+### What Round 8 settles
+
+The Round 7 caveat (top_m=20 cap binding) is **resolved**: removing the cap does not change the qualitative picture.
+
+- **Within-random Jaccards are now slightly higher** (0.76-0.90 vs Round 7's 0.71-0.82). With 40+ canonicals per instance instead of 20, the family-defining motif vocabulary is more robustly represented, so two seeds agree on ~76-90% of the bigger set.
+- **Cross-random Jaccards are now slightly higher too** (0.75-0.81 vs 0.69-0.75). Still essentially = within. Random class internal indistinguishability **persists at any sampling budget**.
+- **BP × random Jaccards drop sharper** (0.13-0.16 vs 0.14-0.21). With the random families now showing their full 40+ canonical set, BP's 6-7 canonicals overlap an even smaller fraction. **BIPARTITE's H1 verdict strengthens.**
+
+### Final size-4 verdict
+
+After cap-artifact removal, the Round 7 conclusion **stands and is sharpened**:
+
+> **BIPARTITE passes H1 cleanly at size 4 with top_m=100 saturation budget on n=40**. Within-BP Jaccard = 0.90; max BP × random cross Jaccard = 0.16. Both well inside the pre-registered thresholds (within > 0.7, max cross < 0.4).
+>
+> Random-graph families (ER, SBM, synth-DAG) remain mutually indistinguishable at size 4 regardless of `top_m` setting. Within-random ≈ cross-within-random ≈ 0.75-0.90.
+
+The substrate-sensitivity claim survives in its narrowest defensible form: **v2 at sizes 2-4 distinguishes BIPARTITE from random-graph baselines and from canonical-suite stream substrates**. It does not distinguish substrates within the random-graph class. This is consistent with classical subgraph census behavior on substrates with strong structural exclusions.

@@ -22,8 +22,12 @@ use relatum_v2::{
 };
 use std::collections::HashSet;
 
+// Round 8: raised TOP_M from 20 to 100 to remove truncation artifact
+// observed at size 4 (Round 7: all random families produced exactly
+// 20 canonicals = cap). top_m=100 is large enough that the natural
+// canonical census fits within the cap for size-4 random graphs at n=40.
 const SAMPLE_COUNT: usize = 400;
-const TOP_M: usize = 20;
+const TOP_M: usize = 100;
 const RNG_SEED: u64 = 0xC0FFEE;
 const N_NODES: usize = 40;
 const SEEDS_PER_FAMILY: usize = 3;
