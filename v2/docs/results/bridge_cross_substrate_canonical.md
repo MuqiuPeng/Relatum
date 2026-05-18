@@ -541,3 +541,73 @@ This is graph theory (subgraph census reflecting structural constraints), not v2
 | 4 | N>1 confirmation of canonical-suite heterogeneity |
 | 5 | Universal small-motif vocabulary across random-graph families |
 | **6** | **Class-constraint-determined canonical census; bipartite cleanly distinguishable from random-DAG; tree-with-noise overlaps with random-DAG** |
+
+## 17. Round 7 — sizes 4 scan: BIPARTITE first H1-passing family
+
+Asked: does saturation regime break at size 4? Does within drop faster than cross, exposing real substrate-sensitivity?
+
+Full follow-up: [`bridge_size4_scan.md`](bridge_size4_scan.md). Log: [`logs/2026-05-11_bridge_size4_scan.log`](../../logs/2026-05-11_bridge_size4_scan.log).
+
+### 17.1 Numbers (n=40, saturation budget)
+
+```
+Per-size aggregate:
+            within_mean    cross_mean    gap
+size=2      1.0000         0.7500        0.25
+size=3      0.9571         0.6101        0.35
+size=4      0.8153         0.4395        0.38
+
+Size 4 per family within:
+  ER  = 0.715 ± 0.034    ⚠ top_m=20 cap artifact
+  SBM = 0.821 ± 0.068    ⚠ top_m=20 cap artifact
+  DAG = 0.821 ± 0.068    ⚠ top_m=20 cap artifact
+  BP  = 0.905 ± 0.067    natural census (6-7 canonicals, below cap)
+
+Size 4 cross:
+  ER × BP   = 0.14 ± 0.05    ← H1 ✓
+  SBM × BP  = 0.14 ± 0.02    ← H1 ✓
+  DAG × BP  = 0.21 ± 0.03    ← H1 ✓
+  ER × SBM  = 0.75            (random class internal, high)
+  ER × DAG  = 0.69
+  SBM × DAG = 0.70
+```
+
+### 17.2 Pre-registered H1 verdict per family
+
+| Family | within | max cross | H1 |
+|--------|--------|-----------|-----|
+| ER | 0.72 ✓ | 0.75 ✗ | not supported |
+| SBM | 0.82 ✓ | 0.75 ✗ | not supported |
+| synth-DAG | 0.82 ✓ | 0.75 ✗ | not supported |
+| **BIPARTITE** | **0.90 ✓** | **0.21 ✓** | **✓ SUPPORTED** |
+
+**BIPARTITE is the first family in 7 rounds to clearly pass H1's pre-registered thresholds.**
+
+### 17.3 Caveat (top_m artifact)
+
+ER/SBM/DAG each produce exactly 20 canonicals per instance at size 4 — the `top_m=20` cap, not natural census. BP produces only 6-7 (below cap), so BP measurement is unbiased; random-family within numbers conflate "natural saturation" with "top-20 truncation." The QUALITATIVE finding (BP × random sharply different) is unaffected; the within-random numbers should be revisited at top_m=100+.
+
+### 17.4 What this means
+
+- **Cross-class gap widens with size**: 0.25 → 0.35 → 0.38. Size 4 starts to discriminate where size 2 does not.
+- **BIPARTITE substrate-sensitivity is real at size 4**: within 0.90, max cross 0.21. Both inside H1 thresholds.
+- **Random-class internal indistinguishability persists at size 4**: ER × SBM × DAG cross ≈ 0.70. Round 5's universal-vocabulary finding extends to size 4.
+
+### 17.5 Updated surviving Phase 1.D claim
+
+After Round 7 the defensible claim is:
+
+> v2's canonicalization at sizes 2-4 reflects structural-class constraints. Substrates whose structure excludes motifs (e.g., BIPARTITE with no 3-cycle, no self-loop, no L→L) produce canonical-form sets sharply distinguishable from random-graph baselines (cross 0.14-0.21 vs within 0.90). At size 4 with saturation budget on n=40, BIPARTITE passes the pre-registered H1 thresholds. Within-random-class substrates (ER vs SBM vs synth-DAG) remain mutually indistinguishable at all sizes 2-4.
+
+This is real measured behavior. It is also exactly classical subgraph-census behavior on substrates with structural exclusions — not "emergent substrate-sensitivity beyond classical census." Phase 1.E real natural data remains the test for any stronger claim.
+
+### 17.6 Final state across 7 rounds
+
+| Round | Finding | Status |
+|-------|---------|--------|
+| 0-1 | "v2 substrate-distinct emergent abstraction" | Withdrawn |
+| 2-3 | Retraction shipped (ARIS loop exit at 7/10) | Stands |
+| 4 | Multi-seed reinforces retraction | Stands |
+| 5 | Universal vocabulary across random families | Stands |
+| 6 | Structural-class refinement | Stands |
+| **7** | **BIPARTITE first H1-passing family at size 4** | **Partial Phase 1.D revival under strict scope (BP-vs-random, sizes 2-4)** |

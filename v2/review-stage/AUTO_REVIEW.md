@@ -481,3 +481,51 @@ Cross:
 | 5 (post-loop) | — | Multi-family universal vocabulary; retraction substantially strengthens |
 | **6 (post-loop)** | **—** | **Class-constraint determines canonical census; BIPARTITE × random clean; TREE × random overlap** |
 
+---
+
+## Round 7 — sizes 4 scan: first H1-passing family
+
+Tested whether saturation regime breaks at size 4. Full doc: [`docs/results/bridge_size4_scan.md`](../docs/results/bridge_size4_scan.md). Log: [`logs/2026-05-11_bridge_size4_scan.log`](../logs/2026-05-11_bridge_size4_scan.log).
+
+### Round 7 outcomes
+
+```
+Aggregate trend by size (n=40):
+            within   cross   gap
+size=2      1.000    0.750   0.25
+size=3      0.957    0.610   0.35
+size=4      0.815    0.440   0.38
+
+Size 4 H1 per family:
+  ER         within=0.72 ✓  max_cross=0.75 ✗  → not supported
+  SBM        within=0.82 ✓  max_cross=0.75 ✗  → not supported
+  synth-DAG  within=0.82 ✓  max_cross=0.75 ✗  → not supported
+  BIPARTITE  within=0.90 ✓  max_cross=0.21 ✓  → SUPPORTED ✓
+```
+
+### Round 7 verdict
+
+**BIPARTITE is the FIRST family in 7 rounds to clearly pass the pre-registered H1 thresholds** (within > 0.7 AND max cross < 0.4). At size 4, within-BP=0.90 and max BP × random cross-Jaccard=0.21.
+
+**Random-class internal indistinguishability persists at size 4**: ER × SBM × DAG cross ≈ 0.70. The Round 5 finding extends to size 4 inside the random class.
+
+**Cross-class gap widens with size** (0.25 → 0.35 → 0.38). Size 4 starts to discriminate what size 2 cannot.
+
+**Caveat**: ER/SBM/DAG all hit top_m=20 cap at size 4, so within-random numbers are partly truncation artifact. BP at 6-7 canonicals is below cap (unbiased measurement). Re-run at top_m=100+ would tighten the random-class within values.
+
+### Updated Phase 1.D claim after Round 7
+
+> *v2's canonicalization at sizes 2-4 reflects structural-class constraints. Substrates whose structure excludes motifs (BIPARTITE: no 3-cycle, no self-loop, no L→L) produce canonical-form sets sharply distinguishable from random-graph baselines. BIPARTITE passes H1 pre-registered thresholds at size 4. Within-random-class substrates (ER vs SBM vs synth-DAG) remain mutually indistinguishable at sizes 2-4.*
+
+This is classical subgraph census reflecting structural constraints — measurable, defensible, but not "emergent substrate-sensitivity beyond classical census." Phase 1.E real Mathlib remains the gating experiment for any stronger claim.
+
+### Final state across 7 rounds
+
+| Round | Outcome |
+|-------|---------|
+| 1-3 | ARIS loop: 3/10 → 5/10 → 7/10 (exit at ready); H1 disconfirmed; retraction shipped |
+| 4 | Multi-seed N>1 reinforces retraction |
+| 5 | Multi-family: universal vocabulary across ER, SBM, synth-DAG |
+| 6 | Structural-class: BP × random distinguishable at sizes 2-3 |
+| **7** | **Size 4: BIPARTITE first H1-passing family; partial Phase 1.D revival under strict scope** |
+
