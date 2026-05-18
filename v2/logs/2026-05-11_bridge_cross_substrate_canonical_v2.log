@@ -1,0 +1,82 @@
+════════════════════════════════════════════════════════
+ Cross-substrate canonical-form comparison (ADR 0081 P1.D)
+ OQ#2 vs synthetic layered random DAG
+ (NOT Lean — see W1/W2/W6 disclaimer in source header)
+════════════════════════════════════════════════════════
+
+ Building OQ#2 runtime state...
+ OQ#2: 9 patterns minted
+
+ Building synthetic layered random DAG substrate...
+ Synthetic layered random DAG: 15 patterns minted
+
+════════════════════════════════════════════════════════
+ Comparison (set ops via direct CanonicalForm equality)
+════════════════════════════════════════════════════════
+
+ Shared canonicals: 5
+   (OQ#2 p_8 / DAG p_3) edges=2
+     p_8 (2 roles, 2 edges, shape: bidirectional pair)
+   (OQ#2 p_0 / DAG p_2) edges=2
+     p_0 (3 roles, 2 edges, shape: fork (one source, two targets))
+   (OQ#2 p_7 / DAG p_11) edges=3
+     p_7 (4 roles, 3 edges, shape: star (hub of degree 3))
+   (OQ#2 p_1 / DAG p_0) edges=2
+     p_1 (3 roles, 2 edges, shape: chain (length 2))
+   (OQ#2 p_3 / DAG p_14) edges=3
+     p_3 (3 roles, 3 edges, shape: 3-cycle)
+
+ OQ#2-only canonicals: 4
+   (p_2) edges=5
+     p_2 (4 roles, 5 edges, shape: 5-edge graph on 4 nodes)
+   (p_4) edges=3
+     p_4 (3 roles, 3 edges, shape: 3-cycle)
+   (p_6) edges=5
+     p_6 (4 roles, 5 edges, shape: 5-edge graph on 4 nodes)
+   (p_5) edges=4
+     p_5 (4 roles, 4 edges, shape: 4-edge graph on 4 nodes)
+
+ Synth-DAG-only canonicals: 10
+   (p_12) edges=3
+     p_12 (3 roles, 3 edges, shape: 3-edge triple)
+   (p_5) edges=3
+     p_5 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   (p_4) edges=3
+     p_4 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   (p_1) edges=2
+     p_1 (3 roles, 2 edges, shape: merge (two sources, one target))
+   (p_10) edges=3
+     p_10 (4 roles, 3 edges, shape: star (hub of degree 3))
+   (p_13) edges=3
+     p_13 (3 roles, 3 edges, shape: 3-edge triple)
+   (p_7) edges=3
+     p_7 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   (p_6) edges=3
+     p_6 (4 roles, 3 edges, shape: 3-edge graph on 4 nodes)
+   (p_8) edges=3
+     p_8 (4 roles, 3 edges, shape: star (hub of degree 3))
+   (p_9) edges=3
+     p_9 (4 roles, 3 edges, shape: star (hub of degree 3))
+
+════════════════════════════════════════════════════════
+ Verdict
+════════════════════════════════════════════════════════
+
+ Total OQ#2 canonicals:        9
+ Total synth-DAG canonicals:   15
+ Shared:                       5
+ OQ#2-only:                    4
+ Synth-DAG-only:               10
+ Jaccard(OQ#2, synth-DAG):     0.2632
+
+ → Synth-DAG produces 10 structural canonicals that OQ#2
+   does NOT. The substrate is structurally distinct from the
+   canonical synthetic suite; v2's pattern path discovers
+   substrate-specific motifs.
+
+   Interpretation guard: this distinguishes "layered random
+   DAG with clusters" from "OQ#2-style sequence". It does
+   NOT establish substrate-sensitivity for *Lean*, which
+   would require an actual Mathlib snapshot (Phase 1.E).
+
+--- end ---

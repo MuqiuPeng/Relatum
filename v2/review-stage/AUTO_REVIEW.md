@@ -130,3 +130,227 @@ Per ARIS auto-review-loop, weaknesses W1–W7 are now the input to Phase B (deci
 - **B.2 — Revise result doc prose only**: keep experiment, drop overclaims. Cheap; preserves the engineering record while removing inferential overreach.
 - **B.3 — Mark Phase 1.D as superseded by Phase 1.E (controlled re-run) when produced**: pending a follow-up experiment.
 - **B.4 — Stop here, file review as honest counter-evidence**: don't fix, keep as part of v2's self-critique trail. ARIS-philosophy-aligned but leaves the public claim unfixed.
+
+---
+
+## Round 1 — Phase B (triage decisions)
+
+Selected mixed strategy: highest-leverage W3 (null baseline) + W5 (hash vs canonical equality) shipped as code; W1 (rename), W2/W6/W7 (overclaim narrowing) shipped as prose; W4 (multi-seed) deferred to a named follow-up.
+
+| Weakness | Decision | Rationale |
+|----------|----------|-----------|
+| W1 | Fix (rename throughout) | Cheapest narrative fix; removes false Lean credibility framing. |
+| W2 | Acknowledge in prose; full fix deferred | N=10+ multi-family substrate scan is its own multi-day project. Round 1 doc explicitly narrows "consistent" claim. |
+| W3 | Fix (new null-baseline experiment) | Highest scientific leverage. Without this, cross 0.26 is uninterpretable per the reviewer's own falsifier F2. |
+| W4 | Acknowledge in prose; deferred | Multi-seed scan is the natural next slice; flagged in result doc §11 follow-ups. |
+| W5 | Fix (direct `CanonicalForm` set equality) | Cheap, technically correct, removes a real (if currently moot) bug. |
+| W6 | Fix (prose narrowing of "merge motif" claim) | Cheap; removes another false-credibility inference. |
+| W7 | Fix (prose narrowing of generalization verdict) | Cheap; removes the strongest overclaim. |
+
+## Round 1 — Phase C (implementation, all shipped 2026-05-11)
+
+### C.1 New experiment: `examples/bridge_null_baseline.rs`
+
+Pre-registers H0 vs H1 with explicit thresholds **before** running:
+
+```
+H1 (substrate-sensitive emergence):
+    Jaccard_within > 0.7  AND  Jaccard_cross < 0.4
+    (gap > 0.3)
+```
+
+Measures three Jaccards on the same discovery pipeline:
+1. `Jaccard_OQ#2_self` — same OQ#2 graph, different `autonomous_pass` RNG seeds.
+2. `Jaccard_DAG_self` — two synth-DAG draws from the same family, different graph-generation seeds.
+3. `Jaccard_cross` — OQ#2 vs synth-DAG (Phase 1.D reproduction).
+
+Result (single seed, log [`logs/2026-05-11_bridge_null_baseline.log`](../logs/2026-05-11_bridge_null_baseline.log)):
+
+```
+Jaccard_OQ#2_self    = 1.0000
+Jaccard_DAG_self     = 1.0000
+Jaccard_cross        = 0.2632
+gap (within - cross) = 0.7368
+```
+
+**H1 supported** under pre-registered thresholds. Honest caveat documented in result doc §4.1: within-family Jaccard 1.0 is suspiciously perfect; either discovery is saturating at sizes 2-3, or both substrate families really do have small invariant canonical vocabularies. Either way the conservative reading (deterministic structural fingerprint per substrate family, fingerprints differ between families) is supported. Multi-seed falsification is W4, deferred.
+
+### C.2 Hash → direct `CanonicalForm` equality (W5 fix)
+
+`examples/bridge_cross_substrate_canonical.rs` rewritten to use `HashSet<CanonicalForm>` (`= Vec<(u64,u64)>`) for set ops instead of truncated 64-bit hash tags. Numbers are unchanged (no collisions at this scale) but the technique is now correct. Verified by re-run log [`logs/2026-05-11_bridge_cross_substrate_canonical_v2.log`](../logs/2026-05-11_bridge_cross_substrate_canonical_v2.log).
+
+### C.3 Substrate renamed (W1 + W2 + W6)
+
+- `examples/bridge_cross_substrate_canonical.rs`: function `build_synthetic_lean_dep_graph` → `build_synthetic_layered_random_dag`; all "Lean" prose in source comments and `println!` rewritten to "synth-DAG"; explicit non-Lean disclaimer added in source header.
+- `docs/results/bridge_cross_substrate_canonical.md`: full rewrite with Round 1 disclosure section, renames, and explicit §9 "What this slice does NOT support."
+- `docs/decisions/0081-vibe-proving-bridge.md`: Round 1 disclosure note added at top.
+
+### C.4 Overclaim narrowing (W7)
+
+Result doc verdict §13 narrowed to claims actually supported by data:
+- **Drops** "first empirical evidence that v2's pattern path generalizes to natural-data structural categories." (No natural data was tested.)
+- **Drops** "67% of Lean canonicals are substrate-novel." Replaced with "67% of synth-DAG canonicals at sizes 2-3 do not appear in OQ#2's canonical set under this discovery budget."
+- **Drops** "Phase 2 of the bridge is empirically motivated." Replaced with "this slice strengthens but does not complete the case for Phase 1.E."
+- **Keeps**: cross 0.26, within 1.0, gap 0.74; substrate-sensitivity at canonical-form level between *synthetic* substrate families.
+
+---
+
+## Round 1 — Phase D (state persisted)
+
+Files modified:
+- `examples/bridge_cross_substrate_canonical.rs` — full rewrite
+- `examples/bridge_null_baseline.rs` — new
+- `docs/results/bridge_cross_substrate_canonical.md` — full rewrite
+- `docs/decisions/0081-vibe-proving-bridge.md` — Round 1 disclosure
+- `review-stage/AUTO_REVIEW.md` — this update
+- `logs/2026-05-11_bridge_cross_substrate_canonical_v2.log` — new
+- `logs/2026-05-11_bridge_null_baseline.log` — new
+
+The original log `logs/2026-05-11_bridge_cross_substrate_canonical.log` is **preserved** to anchor the original (overclaimed) finding alongside its correction.
+
+---
+
+## Round 2 — Phase A (re-review)
+
+After Phase C ships, a fresh sub-agent reviewer is spawned with access to the revised files. Round 2 review verbatim below.
+
+### Round 2 reviewer output (verbatim)
+
+**Score: 5/10**
+**Verdict: not ready** (one rung below the 6/10 exit threshold)
+
+The revision is substantively better than Round 1 — the framing has been pulled back in important ways, the W5 technical bug is correctly fixed, the renames are honest, and there is now a falsifiable pre-registered hypothesis. But the null-baseline experiment that does the heaviest scientific lifting is methodologically flawed in a way the §4.1 caveat acknowledges but does not actually neutralize. The headline "H1 supported" verdict therefore still overclaims relative to what the data underwrites.
+
+Per-weakness status (Round 1 W1-W7): W1 addressed, W2 partially, W3 partially, W4 deferred (borderline), W5 addressed, W6 addressed, W7 partially.
+
+New weaknesses identified:
+
+- **N1** — The OQ#2 within-substrate baseline is methodologically empty. Both `rt_oq2_a` and `rt_oq2_b` run the same deterministic OQ#2 stream and only vary the sampler RNG. That measures sampler determinism, not substrate-family variance. The DAG-side IS a legitimate family-variance test (two different `build_synth_dag` seeds → different graphs); the OQ#2 side is not.
+
+- **N2** — Discovery saturation hypothesis (§4.1 explanation 1) likely IS the dominant cause of Jaccard=1.0, and that bites the H1 verdict. Under saturation, both H0 and H1 predict Jaccard_within = 1.0 — the hypotheses are not actually well-separated by the experiment.
+
+- **N3** — Pre-registered thresholds were not pre-registered in any binding sense. They appear only in source comments and result doc both written after the Phase 1.D run. There is no commit hash showing the thresholds in the tree before the null-baseline numbers were observed. Use "ex-post-explicit" rather than "pre-registered."
+
+- **N4** — The "consistent with prior 0.17" claim in §10 silently re-imports the W2 problem. N=2 cannot establish consistency.
+
+The path forward — fixing the OQ#2 baseline to actually vary the graph, adding a saturation probe via raised/lowered `sample_count` to test the H0/H1 separation, and removing the N=2 consistency claim — would likely take the work to 6+.
+
+## Round 2 — Phase B (triage)
+
+Selected fixes for all four new weaknesses, since they were code-level methodological flaws not narrative excesses.
+
+| Weakness | Decision | Rationale |
+|----------|----------|-----------|
+| N1 | Fix (replace OQ#2-self with OQ#1 vs narrow_a) | OQ#1 and narrow_a are genuinely different graphs from the canonical v2 synthetic suite. This makes the "within-canonical-suite" baseline an actual family-variance test, not a sampler-determinism check. |
+| N2 | Fix (add saturation probe at low budget) | Re-run all comparisons at `sample_count=50, top_m=5`. Under H1, within-family Jaccard should stay high even at low budget; under saturation (H0), within-family Jaccard collapses. This is the discriminator. |
+| N3 | Fix (rename framing) | Replace "pre-registered" with "ex-post-explicit" in source and docs. Concedes the rigor claim was overstated. |
+| N4 | Fix (delete "consistent with 0.17" framing) | Already done in Round 1 §13 cleanup; Round 2 §13.4 explicitly retracts it. |
+
+## Round 2 — Phase C (implementation)
+
+Round 2 `bridge_null_baseline.rs` rewritten to:
+
+1. Build five RSets: OQ#1, narrow_a, OQ#2, DAG_A (seed_A), DAG_B (seed_B).
+2. Run all five through `autonomous_pass` at **saturation budget** (sample_count=400, top_m=20).
+3. Re-run all five at **low budget** (sample_count=50, top_m=5) — the saturation probe.
+4. Report four Jaccards per budget:
+   - `Within(OQ#1, narrow_a)` — within-canonical-suite (N1 fix)
+   - `Within(DAG_A, DAG_B)` — within-DAG-family (Round 1 keeper)
+   - `Cross(OQ#1, DAG_A)` — cross
+   - `Cross(OQ#2, DAG_A)` — cross (Phase 1.D's original number)
+
+### Round 2 outcome — empirical (log [`logs/2026-05-11_bridge_null_baseline_round2.log`](../logs/2026-05-11_bridge_null_baseline_round2.log))
+
+```
+Saturation budget:
+  Within(OQ#1, narrow_a) = 0.2000   ← FAILS H1 threshold of > 0.7
+  Within(DAG_A, DAG_B)   = 1.0000
+  Cross(OQ#1, DAG_A)     = 0.1875
+  Cross(OQ#2, DAG_A)     = 0.2632
+  within_mean=0.6000 cross_mean=0.2253
+
+Low budget:
+  Within(OQ#1, narrow_a) = 0.0000   ← drops further
+  Within(DAG_A, DAG_B)   = 0.7778   ← drops from 1.0
+  Cross(OQ#1, DAG_A)     = 0.2500
+  Cross(OQ#2, DAG_A)     = 0.1333
+  within_mean=0.3889 cross_mean=0.1917
+```
+
+**H1 NOT SUPPORTED at either budget.** Within(OQ#1, narrow_a) = 0.20 ≈ Cross(OQ#1, DAG_A) = 0.19. Two members of v2's canonical synthetic family are structurally as different from each other as one of them is from a synth-DAG. The cross-substrate Jaccard 0.26 is therefore **not interpretable** as evidence of substrate-sensitivity — it is comparable to the within-canonical-suite Jaccard.
+
+**Honest negative finding.** Phase 1.D's original substrate-sensitive verdict is **retracted** in result doc §13. The retraction is the substantive Round 2 outcome of the ARIS auto-review-loop:
+
+- The experiment's procedure was correctly executed.
+- The narrative ran far ahead of what the procedure could underwrite.
+- A corrected within-baseline disconfirms the claim at its own pre-registered thresholds.
+- Phase 1.E (real Mathlib) remains the next test; Phase 1.D is reclassified from "substantive finding" to "honest null-baseline check."
+
+## Round 2 — Phase D (state persisted)
+
+Files modified in Round 2:
+- `examples/bridge_null_baseline.rs` — full rewrite (N1+N2 fix)
+- `docs/results/bridge_cross_substrate_canonical.md` — §13 rewritten as Round 2 retraction; status banner updated to ⚠ Round 2 negative
+- `review-stage/AUTO_REVIEW.md` — this update
+- `logs/2026-05-11_bridge_null_baseline_round2.log` — new
+
+Files preserved (engineering record kept alongside retraction):
+- `logs/2026-05-11_bridge_null_baseline.log` (original Round 1, now flagged as methodologically empty for OQ#2)
+- `logs/2026-05-11_bridge_cross_substrate_canonical_v2.log` (Round 1 W5-fix re-run)
+- `logs/2026-05-11_bridge_cross_substrate_canonical.log` (original Phase 1.D)
+
+## Round 3 — Phase A (re-review)
+
+After Round 2 Phase C ships, a fresh sub-agent reviewer is spawned again on the revised + retracted artifact.
+
+### Round 3 reviewer output (verbatim)
+
+**Score: 7/10**
+**Verdict: ready**
+
+A negative result, honestly documented, with the substantive claim explicitly withdrawn. The scientific output (a pre-registered-ish discriminator that failed) is valid. The retraction is largely honest, though a few framing residues remain (M1, M2, M3). Above the 6/10 exit threshold because the document now claims roughly what the data supports and does *not* repackage the failure as a triumph.
+
+Round 2 N1-N4 status: N1 addressed, N2 addressed, N3 partially addressed (label changed but threshold rhetoric still works rhetorical lifting), N4 addressed.
+
+New weaknesses identified (all framing-level, not scientific):
+
+- **M1** — §13.3 #2 "Within(DAG_A, DAG_B) = 1.0 is a real signal about the DAG generator, not about v2" frames a property-of-generator as a v2 measurement. Should explicitly say "the generator family has a small invariant motif census at sizes 2–3" and not dress it as a v2 capability.
+- **M2** — §13.5 "still works in the engineering sense" listing after a retraction risks reading as a consolation prize. Should tighten to "the pipeline still runs end-to-end; that was never the contested claim."
+- **M3** — Saturation probe is single-paired and single-seed. The Within(OQ#1, narrow_a) = 0.0 at low budget could be a small-canonical-set artifact. The conclusion is robust because saturation-budget Within(OQ#1, narrow_a) = 0.20 already fails the threshold, but should phrase as "fails the pre-registered threshold at this single configuration" rather than "the structural-distinctness claim collapses."
+
+Should the document ship? **Yes.** It documents a real negative result against pre-set thresholds, retracts the prior verdict by name, preserves the original logs alongside the retraction, and identifies Phase 1.E (real Mathlib) as the next test rather than re-spinning the negative. The remaining issues (M1, M2, M3) are framing tweaks, not scientific problems.
+
+## Round 3 — Phase C (framing tweaks)
+
+All three M-tier issues applied to result doc §13:
+- M1: §13.2 reframes Within(DAG_A, DAG_B) = 1.0 as a property of the generator's small-motif vocabulary, not a v2 capability.
+- M2: §13.5 tightened to "the pipeline still runs end-to-end; that was never the contested claim."
+- M3: §13.2 reframes "structural-distinctness claim collapses" → "fails the threshold at this single configuration," explicitly noting Round 3 M3.
+
+## Round 3 — Phase D (state persisted; loop exit)
+
+Score 7/10 ≥ POSITIVE_THRESHOLD 6. **ARIS auto-review-loop exits successfully.**
+
+Final files:
+- `docs/results/bridge_cross_substrate_canonical.md` — Round 2 retraction + Round 3 M1/M2/M3 framing tweaks
+- `docs/decisions/0081-vibe-proving-bridge.md` — Round 1 disclosure
+- `examples/bridge_cross_substrate_canonical.rs` — Round 1 W5+W1 rewrite
+- `examples/bridge_null_baseline.rs` — Round 2 N1+N2 rewrite
+- `review-stage/AUTO_REVIEW.md` — this complete record across three rounds
+- `logs/2026-05-11_bridge_cross_substrate_canonical.log` — original (preserved)
+- `logs/2026-05-11_bridge_cross_substrate_canonical_v2.log` — Round 1 W5 re-run (preserved)
+- `logs/2026-05-11_bridge_null_baseline.log` — Round 1 baseline (preserved, methodologically flagged)
+- `logs/2026-05-11_bridge_null_baseline_round2.log` — **authoritative Round 2 baseline**
+
+## Loop outcome summary
+
+| Round | Score | Verdict | Key outcome |
+|-------|-------|---------|-------------|
+| 1 | 3/10 | not ready | 7 weaknesses W1-W7 surfaced |
+| 2 | 5/10 | not ready | 4 of 7 W's addressed; 4 new weaknesses N1-N4 surfaced |
+| 3 | 7/10 | ready | N1-N4 addressed by experimental rewrite that **disconfirmed** the original H1 claim; document retracted Phase 1.D's "substrate-sensitive" verdict; 3 framing tweaks M1-M3 applied. |
+
+**Net scientific result of the auto-review-loop**: an over-stated Phase 1.D claim was caught at the auto-review stage, corrected via a stronger experimental design (within-canonical-suite baseline + saturation probe), and retracted in the result doc. The bridge mechanism (ADR 0081 Phase 0) remains valid; the substrate-sensitivity narrative around it does not, pending Phase 1.E real Mathlib data.
+
+This is exactly the kind of save the ARIS auto-review-loop is designed for: surface an over-claim, force it through a stricter experiment, and let the data overturn it rather than letting the original narrative ship.
+

@@ -1,21 +1,33 @@
-//! Cross-substrate canonical-form comparison: OQ#2 vs synthetic Lean dep.
+//! Cross-substrate canonical-form comparison: OQ#2 vs synthetic layered random DAG.
 //!
 //! Phase 1 follow-up to ADR 0081 (vibe-proving bridge Phase 0).
 //! Compares the canonical forms (subgraph fingerprints) v2 mints on
-//! the canonical OQ#2 substrate vs the synthetic Lean dep substrate.
-//! Tests whether the bridge's "richer pattern population" is a
-//! genuinely different canonical set or just more of the same forms.
+//! the canonical OQ#2 substrate vs a synthetic layered random DAG
+//! with clique cliques. Tests whether v2's "richer pattern population"
+//! is a genuinely different canonical set or just more of the same forms.
+//!
+//! HONESTY DISCLAIMER (added in ARIS auto-review-loop Round 1, W1+W2+W6 fix):
+//!   The second substrate was originally labeled "synthetic Lean dep".
+//!   That framing was misleading. It is NOT Lean source. It is NOT a
+//!   sample of Mathlib. It is a purely synthetic random DAG with a
+//!   layered+clustered structure that loosely *resembles* what a math
+//!   library's dependency graph might look like at the level of "small
+//!   theorems depend on a few prior small theorems, and topic clusters
+//!   form little cliques". The substrate is renamed accordingly here.
+//!   Any claim of "Lean substrate sensitivity" requires actual Mathlib
+//!   data — see ADR 0081 Phase 1.E.
 //!
 //! Method:
 //!   1. Run OQ#2 to maturity + manual autonomous_pass(sizes 2-3)
-//!   2. Same on synthetic Lean dep graph (from bridge_lean_dep_probe)
+//!   2. Same on synthetic layered random DAG
 //!   3. Extract canonical forms via `pattern_structure(pid)`
-//!   4. Hash each canonical to a stable 12-hex tag
-//!   5. Set comparison: shared / OQ#2-only / Lean-only
-//!   6. Render each canonical's shape via `format_pattern_shape`
+//!   4. Set comparison via direct `CanonicalForm` (= Vec<(u64,u64)>)
+//!      equality (W5 fix — was previously truncated 64-bit hash)
+//!   5. Render each canonical's shape via `format_pattern_shape`
 //!
-//! ADR 0075 piece 3 used the same technique to compare OQ#1 vs
-//! OQ#2; this extends it across the bridge boundary.
+//! ADR 0075 piece 3 used a similar technique to compare OQ#1 vs
+//! OQ#2; this extends it to a synthetic structural family different
+//! from the canonical synthetic suite.
 
 use relatum_v2::{
     runtime::{
@@ -25,19 +37,9 @@ use relatum_v2::{
     AutonomousConfig, CanonicalForm, DiscoveryConfig, NamingPolicy,
     RSet, RefinementConfig,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 const RNG_SEED: u64 = 0xC0FFEE;
-
-/// Compact hash of a CanonicalForm to a short hex string for
-/// display. Same technique as `phase_emergence_canonical_form_diversity`.
-fn canonical_tag(canon: &CanonicalForm) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    canon.hash(&mut h);
-    format!("can_{:012x}", h.finish())
-}
 
 fn run_pass_on_size(rt: &mut AutonomousRuntime, size: usize) {
     let cfg = AutonomousConfig {
@@ -77,21 +79,30 @@ fn run_pass_on_rset(rset: &mut RSet, size: usize) {
     let _ = rset.autonomous_pass(&cfg);
 }
 
-fn collect_canonicals(rset: &RSet) -> Vec<(String, String, CanonicalForm)> {
-    // returns (pattern_id, canonical_tag, canonical)
+/// Returns (pattern_id, canonical_form). Uses direct CanonicalForm
+/// (Vec<(u64,u64)>) rather than hashing — hash collisions at 64 bits
+/// are unlikely but the W5 reviewer's point was right: structural
+/// equality is the correct primitive for set operations on canonicals.
+fn collect_canonicals(rset: &RSet) -> Vec<(String, CanonicalForm)> {
     let mut out = Vec::new();
     for pid in rset.patterns() {
         if let Some(canon) = rset.pattern_structure(pid) {
-            let tag = canonical_tag(&canon);
-            out.push((pid.to_string(), tag, canon));
+            out.push((pid.to_string(), canon));
         }
     }
     out
 }
 
-/// Build the synthetic Lean-style graph from bridge_lean_dep_probe.
-/// Duplicated here so this example is self-contained.
-fn build_synthetic_lean_dep_graph() -> Vec<(String, String)> {
+/// Synthetic layered random DAG with clique-style clusters.
+///
+/// Renamed from `build_synthetic_lean_dep_graph` (W1 fix). The graph
+/// is parameterized purely by the RNG seed below; no Lean source,
+/// no Mathlib snapshot, no proof-engine sequence is involved. The
+/// LOOSE INTUITION was: math-library dep graphs tend to have small
+/// theorems depending on a few earlier small theorems, with topic
+/// clusters forming little cliques. We replicate THAT STRUCTURAL
+/// FLAVOR — not Lean itself.
+fn build_synthetic_layered_random_dag() -> Vec<(String, String)> {
     let mut edges: HashSet<(String, String)> = HashSet::new();
     let n = 80usize;
     let mut rng_state: u64 = 0xCAFEBABE_DEADBEEF;
@@ -142,7 +153,8 @@ fn build_synthetic_lean_dep_graph() -> Vec<(String, String)> {
 fn main() {
     println!("════════════════════════════════════════════════════════");
     println!(" Cross-substrate canonical-form comparison (ADR 0081 P1.D)");
-    println!(" OQ#2 vs synthetic Lean dep");
+    println!(" OQ#2 vs synthetic layered random DAG");
+    println!(" (NOT Lean — see W1/W2/W6 disclaimer in source header)");
     println!("════════════════════════════════════════════════════════");
 
     // ── OQ#2 ────────────────────────────────────────────────
@@ -164,87 +176,102 @@ fn main() {
     let oq2_canonicals = collect_canonicals(&rt_oq2.rset);
     println!(" OQ#2: {} patterns minted", oq2_canonicals.len());
 
-    // ── Synthetic Lean dep ─────────────────────────────────
+    // ── Synthetic layered random DAG ───────────────────────
     println!();
-    println!(" Building synthetic Lean dep substrate...");
-    let edges = build_synthetic_lean_dep_graph();
-    let mut tsv = String::from("# synthetic lean-style dep graph\n");
+    println!(" Building synthetic layered random DAG substrate...");
+    let edges = build_synthetic_layered_random_dag();
+    let mut tsv = String::from("# synthetic layered random DAG\n");
     for (a, b) in &edges {
         tsv.push_str(&format!("{}\t{}\n", a, b));
     }
-    let mut rset_lean = match RSet::from_text(&tsv) {
+    let mut rset_dag = match RSet::from_text(&tsv) {
         Ok(rs) => rs,
         Err(e) => {
-            println!(" ✗ Lean substrate from_text failed: {:?}", e);
+            println!(" ✗ DAG substrate from_text failed: {:?}", e);
             return;
         }
     };
     for size in 2..=3 {
-        run_pass_on_rset(&mut rset_lean, size);
+        run_pass_on_rset(&mut rset_dag, size);
     }
-    let lean_canonicals = collect_canonicals(&rset_lean);
-    println!(" Synthetic Lean: {} patterns minted", lean_canonicals.len());
+    let dag_canonicals = collect_canonicals(&rset_dag);
+    println!(" Synthetic layered random DAG: {} patterns minted",
+             dag_canonicals.len());
 
-    // ── Set comparison ─────────────────────────────────────
-    let oq2_tags: HashMap<String, (String, CanonicalForm)> = oq2_canonicals
-        .into_iter()
-        .map(|(pid, tag, canon)| (tag, (pid, canon)))
+    // ── Set comparison via direct CanonicalForm equality (W5 fix) ──
+    // Previously: hashed each canonical to a truncated 64-bit tag
+    // and operated on tag strings. Reviewer's point: structural
+    // equality (Vec<(u64,u64)>) IS the canonical primitive — no
+    // need for a hash truncation that can collide.
+    let oq2_canon_set: HashSet<CanonicalForm> = oq2_canonicals
+        .iter()
+        .map(|(_, c)| c.clone())
         .collect();
-    let lean_tags: HashMap<String, (String, CanonicalForm)> = lean_canonicals
-        .into_iter()
-        .map(|(pid, tag, canon)| (tag, (pid, canon)))
+    let dag_canon_set: HashSet<CanonicalForm> = dag_canonicals
+        .iter()
+        .map(|(_, c)| c.clone())
         .collect();
 
-    let oq2_set: HashSet<&String> = oq2_tags.keys().collect();
-    let lean_set: HashSet<&String> = lean_tags.keys().collect();
-    let shared: BTreeMap<String, ()> = oq2_set
-        .intersection(&lean_set)
-        .map(|t| ((*t).clone(), ()))
+    // Build pid lookup for display.
+    let oq2_canon_to_pid: HashMap<CanonicalForm, String> = oq2_canonicals
+        .iter()
+        .map(|(pid, c)| (c.clone(), pid.clone()))
         .collect();
-    let oq2_only: BTreeMap<String, ()> = oq2_set
-        .difference(&lean_set)
-        .map(|t| ((*t).clone(), ()))
+    let dag_canon_to_pid: HashMap<CanonicalForm, String> = dag_canonicals
+        .iter()
+        .map(|(pid, c)| (c.clone(), pid.clone()))
         .collect();
-    let lean_only: BTreeMap<String, ()> = lean_set
-        .difference(&oq2_set)
-        .map(|t| ((*t).clone(), ()))
+
+    // BTreeSet to get stable display order.
+    let shared: BTreeSet<CanonicalForm> = oq2_canon_set
+        .intersection(&dag_canon_set)
+        .cloned()
+        .collect();
+    let oq2_only: BTreeSet<CanonicalForm> = oq2_canon_set
+        .difference(&dag_canon_set)
+        .cloned()
+        .collect();
+    let dag_only: BTreeSet<CanonicalForm> = dag_canon_set
+        .difference(&oq2_canon_set)
+        .cloned()
         .collect();
 
     println!();
     println!("════════════════════════════════════════════════════════");
-    println!(" Comparison");
+    println!(" Comparison (set ops via direct CanonicalForm equality)");
     println!("════════════════════════════════════════════════════════");
     println!();
     println!(" Shared canonicals: {}", shared.len());
-    for tag in shared.keys() {
-        let (oq2_pid, _) = &oq2_tags[tag];
-        let (lean_pid, _) = &lean_tags[tag];
+    for canon in &shared {
+        let oq2_pid = &oq2_canon_to_pid[canon];
+        let dag_pid = &dag_canon_to_pid[canon];
         let shape = rt_oq2.rset.format_pattern_shape(oq2_pid);
         let first_line = shape.lines().next().unwrap_or("(empty)");
-        println!("   {} (OQ#2 {} / Lean {})", tag, oq2_pid, lean_pid);
+        println!("   (OQ#2 {} / DAG {}) edges={}",
+                 oq2_pid, dag_pid, canon.len());
         println!("     {}", first_line);
     }
     println!();
     println!(" OQ#2-only canonicals: {}", oq2_only.len());
-    for tag in oq2_only.keys() {
-        let (pid, _) = &oq2_tags[tag];
+    for canon in &oq2_only {
+        let pid = &oq2_canon_to_pid[canon];
         let shape = rt_oq2.rset.format_pattern_shape(pid);
         let first_line = shape.lines().next().unwrap_or("(empty)");
-        println!("   {} ({})", tag, pid);
+        println!("   ({}) edges={}", pid, canon.len());
         println!("     {}", first_line);
     }
     println!();
-    println!(" Lean-only canonicals: {}", lean_only.len());
-    for tag in lean_only.keys() {
-        let (pid, _) = &lean_tags[tag];
-        let shape = rset_lean.format_pattern_shape(pid);
+    println!(" Synth-DAG-only canonicals: {}", dag_only.len());
+    for canon in &dag_only {
+        let pid = &dag_canon_to_pid[canon];
+        let shape = rset_dag.format_pattern_shape(pid);
         let first_line = shape.lines().next().unwrap_or("(empty)");
-        println!("   {} ({})", tag, pid);
+        println!("   ({}) edges={}", pid, canon.len());
         println!("     {}", first_line);
     }
 
     // ── Jaccard ────────────────────────────────────────────
-    let union_size = oq2_set.union(&lean_set).count() as f64;
+    let union_size = oq2_canon_set.union(&dag_canon_set).count() as f64;
     let inter_size = shared.len() as f64;
     let jaccard = if union_size > 0.0 {
         inter_size / union_size
@@ -257,22 +284,27 @@ fn main() {
     println!(" Verdict");
     println!("════════════════════════════════════════════════════════");
     println!();
-    println!(" Total OQ#2 canonicals:   {}", oq2_tags.len());
-    println!(" Total Lean canonicals:   {}", lean_tags.len());
-    println!(" Shared:                  {}", shared.len());
-    println!(" OQ#2-only:               {}", oq2_only.len());
-    println!(" Lean-only:               {}", lean_only.len());
-    println!(" Jaccard(OQ#2, Lean):     {:.4}", jaccard);
+    println!(" Total OQ#2 canonicals:        {}", oq2_canon_set.len());
+    println!(" Total synth-DAG canonicals:   {}", dag_canon_set.len());
+    println!(" Shared:                       {}", shared.len());
+    println!(" OQ#2-only:                    {}", oq2_only.len());
+    println!(" Synth-DAG-only:               {}", dag_only.len());
+    println!(" Jaccard(OQ#2, synth-DAG):     {:.4}", jaccard);
     println!();
 
-    if lean_only.len() > 0 {
-        println!(" → Lean dep produces {} structural canonicals that OQ#2",
-                 lean_only.len());
-        println!("   does NOT. The substrate is genuinely structurally distinct;");
-        println!("   v2's pattern path discovers Lean-specific motifs not in");
-        println!("   the canonical synthetic suite.");
+    if !dag_only.is_empty() {
+        println!(" → Synth-DAG produces {} structural canonicals that OQ#2",
+                 dag_only.len());
+        println!("   does NOT. The substrate is structurally distinct from the");
+        println!("   canonical synthetic suite; v2's pattern path discovers");
+        println!("   substrate-specific motifs.");
+        println!();
+        println!("   Interpretation guard: this distinguishes \"layered random");
+        println!("   DAG with clusters\" from \"OQ#2-style sequence\". It does");
+        println!("   NOT establish substrate-sensitivity for *Lean*, which");
+        println!("   would require an actual Mathlib snapshot (Phase 1.E).");
     } else {
-        println!(" → All Lean canonicals appear in OQ#2. The bridge's richer");
+        println!(" → All synth-DAG canonicals appear in OQ#2. The richer");
         println!("   pattern count is just more INSTANCES of the same canonicals,");
         println!("   not new structural categories.");
     }

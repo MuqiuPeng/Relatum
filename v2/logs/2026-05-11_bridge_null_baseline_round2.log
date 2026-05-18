@@ -1,0 +1,54 @@
+════════════════════════════════════════════════════════
+ Null baseline for ADR 0081 Phase 1.D — Round 2
+ (fixes Round 2 N1 + N2 from ARIS auto-review-loop)
+════════════════════════════════════════════════════════
+
+ Pre-registered hypotheses (ex-post-explicit, per N3):
+   H0: v2 is doing subgraph census →
+       at saturation: within ≈ cross (both high or both moderate)
+       at low budget: within ≈ cross (both noisy/low)
+
+   H1: substrate-sensitive emergence →
+       at saturation: within > 0.7 AND cross < 0.4
+       at low budget: within stays > 0.5 AND cross < 0.4
+
+ KEY DISCRIMINATOR: under LOW budget, does within stay HIGH?
+   If yes → substrate fingerprint is structurally real (H1)
+   If no  → it was just census saturation (H0)
+
+ === Budget: saturation (sample_count=400, top_m=20) ===
+   |canon| OQ#1=4 narrow_a=2 OQ#2=9 DAG_A=15 DAG_B=15
+   Within(OQ#1, narrow_a)     = 0.2000
+   Within(DAG_A, DAG_B)       = 1.0000
+   Cross(OQ#1, DAG_A)         = 0.1875
+   Cross(OQ#2, DAG_A)         = 0.2632
+
+ === Budget: low (anti-saturation) (sample_count=50, top_m=5) ===
+   |canon| OQ#1=2 narrow_a=2 OQ#2=9 DAG_A=8 DAG_B=8
+   Within(OQ#1, narrow_a)     = 0.0000
+   Within(DAG_A, DAG_B)       = 0.7778
+   Cross(OQ#1, DAG_A)         = 0.2500
+   Cross(OQ#2, DAG_A)         = 0.1333
+
+════════════════════════════════════════════════════════
+ Hypothesis verdict (vs pre-registered ranges)
+════════════════════════════════════════════════════════
+
+ Saturation budget:
+   within(OQ#1,narrow_a)=0.2000  within(DAG_A,DAG_B)=1.0000
+   cross(OQ#1,DAG_A)=0.1875      cross(OQ#2,DAG_A)=0.2632
+
+ Low budget (anti-saturation):
+   within(OQ#1,narrow_a)=0.0000  within(DAG_A,DAG_B)=0.7778
+   cross(OQ#1,DAG_A)=0.2500      cross(OQ#2,DAG_A)=0.1333
+
+ Averaged:
+   sat: within_mean=0.6000 cross_mean=0.2253 gap=0.3747
+   low: within_mean=0.3889 cross_mean=0.1917 gap=0.1972
+
+ H1 at saturation budget alone: NOT supported
+ H1 at BOTH budgets (discriminates H1 from saturation): NOT supported
+
+   → H1 NOT SUPPORTED at saturation budget either.
+
+--- end ---

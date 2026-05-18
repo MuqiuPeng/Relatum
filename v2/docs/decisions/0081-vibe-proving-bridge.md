@@ -5,6 +5,24 @@ Date: 2026-05-11
 
 Parent proposal: [`proposal-vibe-proving-bridge-2026-05-11.md`](../proposal-vibe-proving-bridge-2026-05-11.md)
 
+## 2026-05-11 Round 1 ARIS auto-review-loop disclosure
+
+The original Phase 0/1 work in this ADR used the label "synthetic
+Lean dep" to refer to a synthetic layered random DAG with clustered
+substructure. The ARIS auto-review-loop Round 1 reviewer correctly
+flagged that the "Lean" label overstates what the substrate is
+(W1+W2+W6). The substrate is renamed to "synthetic layered random
+DAG" in Phase 1.D result docs and in the example source as of
+2026-05-11. Any claim that v2 is "Lean-substrate-sensitive" requires
+real Mathlib data — see Phase 1.E in the result doc's §11
+follow-ups. The Phase 0 / Phase 1.D experiments establish v2's
+substrate-sensitivity at the canonical-form level between
+*synthetic substrate families*, NOT between OQ#2 and Lean.
+
+See [`docs/results/bridge_cross_substrate_canonical.md`](../results/bridge_cross_substrate_canonical.md)
+for the full revised finding and [`review-stage/AUTO_REVIEW.md`](../../review-stage/AUTO_REVIEW.md)
+for the Round 1 review preserved verbatim.
+
 ## Context
 
 The 5/11 proposal flagged a one-way ETL bridge from

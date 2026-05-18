@@ -1,0 +1,43 @@
+════════════════════════════════════════════════════════
+ Null baseline for ADR 0081 Phase 1.D
+ (ARIS auto-review-loop Round 1 fix — W3 + W5)
+════════════════════════════════════════════════════════
+
+ Pre-registered hypotheses:
+   H0: substrate is just doing subgraph census →
+       Jaccard_within ≈ Jaccard_cross (no within-vs-cross gap)
+   H1: substrate-sensitive emergent canonicals →
+       Jaccard_within > 0.7 AND Jaccard_cross < 0.4
+       (gap > 0.3)
+
+ === OQ#2 within-substrate baseline ===
+   OQ#2 draw A: 9 canonicals
+   OQ#2 draw B: 9 canonicals (different sampling seed)
+   Jaccard(OQ#2_A, OQ#2_B) = 1.0000
+
+ === Synthetic layered random DAG within-family baseline ===
+   DAG draw A: 270 edges, 15 canonicals
+   DAG draw B: 274 edges, 15 canonicals
+   Jaccard(DAG_A, DAG_B) = 1.0000
+
+ === Cross-substrate (reproduce Phase 1.D) ===
+   Jaccard(OQ#2_A, DAG_A) = 0.2632
+
+════════════════════════════════════════════════════════
+ Hypothesis verdict (vs pre-registered ranges)
+════════════════════════════════════════════════════════
+
+ Measurements:
+   Jaccard_OQ#2_self    = 1.0000
+   Jaccard_DAG_self     = 1.0000
+   Jaccard_cross        = 0.2632
+
+   mean within-family   = 1.0000
+   gap (within - cross) = 0.7368
+
+   → H1 SUPPORTED: substrate-sensitivity claim is
+     defensible. Within-family agreement >0.7 AND
+     cross-family <0.4 AND gap >0.3. Phase 1.D's
+     core claim survives this null-baseline test.
+
+--- end ---
