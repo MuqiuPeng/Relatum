@@ -1,0 +1,100 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:257:19
+    |
+145 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+257 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:60
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:72
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\bridge_structural_class_scan.exe`
+════════════════════════════════════════════════════════
+ Structural-class scan — Phase 1.D Round 6
+════════════════════════════════════════════════════════
+
+ Tests whether v2 at sizes 2-3 distinguishes structural
+ CLASSES (tree, bipartite, random-DAG, structured-stream)
+ even though Round 5 showed it cannot distinguish WITHIN
+ the random-graph class (ER ≈ SBM ≈ DAG).
+
+ Budget: sample_count=400, top_m=20
+ Seeds per generated family: 6
+
+ Building canonical-suite RSets...
+    [OQ#1] 641 R-instances, 4 canonicals (build 85.1s)
+    [narrow_a] 352 R-instances, 2 canonicals (build 1.1s)
+    [OQ#2] 462 R-instances, 9 canonicals (build 76.1s)
+    [long5k] 472 R-instances, 2 canonicals (build 7.1s)
+
+ Building TREE instances (rooted tree + forward DAG edges)...
+    [TREE_0] 156 edges, 12 canonicals (total 5.1s)
+    [TREE_1] 157 edges, 12 canonicals (total 3.3s)
+    [TREE_2] 155 edges, 12 canonicals (total 3.5s)
+    [TREE_3] 158 edges, 12 canonicals (total 4.8s)
+    [TREE_4] 152 edges, 12 canonicals (total 3.4s)
+    [TREE_5] 156 edges, 12 canonicals (total 3.6s)
+
+ Building BIPARTITE instances (40+40, p_cross=0.10)...
+    [BP_0] 161 edges, 5 canonicals (total 6.0s)
+    [BP_1] 155 edges, 5 canonicals (total 3.3s)
+    [BP_2] 158 edges, 5 canonicals (total 4.3s)
+    [BP_3] 177 edges, 5 canonicals (total 9.3s)
+    [BP_4] 159 edges, 5 canonicals (total 5.5s)
+    [BP_5] 169 edges, 5 canonicals (total 7.7s)
+
+ Building synth-DAG instances (random-class representative)...
+    [DAG_0] 270 edges, 15 canonicals (total 58.1s)
+    [DAG_1] 274 edges, 15 canonicals (total 78.5s)
+    [DAG_2] 266 edges, 15 canonicals (total 75.3s)
+    [DAG_3] 270 edges, 15 canonicals (total 73.3s)
+    [DAG_4] 267 edges, 15 canonicals (total 46.3s)
+    [DAG_5] 269 edges, 15 canonicals (total 65.9s)
+
+════════════════════════════════════════════════════════
+ WITHIN-class Jaccard distributions
+════════════════════════════════════════════════════════
+         canonical-suite (C(4,2)): N=  6 mean=0.2636 std=0.3406 [0.0000, 1.0000]
+                    TREE (C(6,2)): N= 15 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+               BIPARTITE (C(6,2)): N= 15 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+               synth-DAG (C(6,2)): N= 15 mean=0.9583 std=0.0589 [0.8750, 1.0000]
+
+════════════════════════════════════════════════════════
+ CROSS-class Jaccard distributions
+════════════════════════════════════════════════════════
+                 canonical × TREE: N= 24 mean=0.1165 std=0.1165 [0.0000, 0.2353]
+            canonical × BIPARTITE: N= 24 mean=0.1667 std=0.2041 [0.0000, 0.5000]
+            canonical × synth-DAG: N= 24 mean=0.1127 std=0.1158 [0.0000, 0.2632]
+                 TREE × BIPARTITE: N= 36 mean=0.4167 std=0.0000 [0.4167, 0.4167]
+                 TREE × synth-DAG: N= 36 mean=0.7813 std=0.0419 [0.6875, 0.8000]
+            BIPARTITE × synth-DAG: N= 36 mean=0.3333 std=0.0000 [0.3333, 0.3333]
+
+════════════════════════════════════════════════════════
+ H_class_sensitive test per class
+════════════════════════════════════════════════════════
+ Required: within > 0.7 AND max cross < 0.4
+
+           TREE: within=1.0000 (✓); max_cross=0.7813 (✗) → H1: not supported
+      BIPARTITE: within=1.0000 (✓); max_cross=0.4167 (✗) → H1: not supported
+      synth-DAG: within=0.9583 (✓); max_cross=0.7813 (✗) → H1: not supported
+
+   canonical-suite within=0.2636 (known low; not a variance-bounded family)
+
+--- end ---

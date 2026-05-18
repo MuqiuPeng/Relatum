@@ -496,3 +496,48 @@ This is a descriptive measurement, not an emergent-cognition capability. Phase 1
 | 3 (M1-M3 framing) | "Surviving positive is DAG-generator invariance, not v2 capability" | Stands |
 | 4 (multi-seed N>1) | "Canonical suite is not variance-bounded family" | Stands; strengthened |
 | **5 (multi-family)** | **"v2 sizes 2-3 produces universal small-motif vocabulary across random-graph families; cannot distinguish ER from SBM from synth-DAG"** | **Stands; substantially strengthens retraction** |
+
+## 16. Round 6 — structural-class scan (refinement)
+
+Asked: does v2 distinguish structural CLASSES (tree, bipartite, random) even though Round 5 showed it cannot within the random class?
+
+Full follow-up doc: [`bridge_structural_class_scan.md`](bridge_structural_class_scan.md). Log: [`logs/2026-05-11_bridge_structural_class_scan.log`](../../logs/2026-05-11_bridge_structural_class_scan.log).
+
+### 16.1 Numbers
+
+```
+Within-class:
+  canonical-suite (N=6): mean=0.26  std=0.34  [0.00, 1.00]
+  TREE (N=15):           mean=1.00  std=0.00  [1.00, 1.00]   ← PERFECT
+  BIPARTITE (N=15):      mean=1.00  std=0.00  [1.00, 1.00]   ← PERFECT
+  synth-DAG (N=15):      mean=0.96  std=0.06  [0.88, 1.00]
+
+Cross-class:
+  canonical × any random: 0.11-0.17
+  BIPARTITE × synth-DAG:  0.33    ← sharp distinction
+  BIPARTITE × TREE:       0.42    ← moderate
+  TREE × synth-DAG:       0.78    ← heavy overlap (both acyclic)
+```
+
+### 16.2 What this refines
+
+- **Structurally-constrained classes saturate to perfect invariance** (Jaccard = 1.0 across all seeds within TREE / BIPARTITE).
+- **BIPARTITE vs synth-DAG is the cleanest cross-class distinction** at cross-Jaccard 0.33 — bipartite excludes 3-cycle, self-loop, L→L motifs that synth-DAG has.
+- **TREE vs synth-DAG fails to distinguish** at cross-Jaccard 0.78 — both are acyclic; TREE's 12 canonicals are mostly a subset of DAG's 15. (Caveat: this "TREE" includes forward-DAG noise edges; pure tree might score lower.)
+- **No class strictly passes H1** at the within>0.7 AND max-cross<0.4 thresholds. BIPARTITE is marginal (max cross 0.42 vs TREE).
+
+### 16.3 Updated surviving narrow positive
+
+> Under saturation budget at sizes 2-3, v2 distinguishes substrates if and only if their structural constraints exclude different motifs from the size-2-3 canonical vocabulary.
+
+This is graph theory (subgraph census reflecting structural constraints), not v2-specific cognition or "emergent substrate-sensitivity." Phase 1.E real natural-data substrates remain the only experiment that could change the picture.
+
+### 16.4 Final state across 6 rounds
+
+| Round | Status |
+|-------|--------|
+| 0-1 | Original claim Withdrawn |
+| 2-3 | Retracted with framing tweaks |
+| 4 | N>1 confirmation of canonical-suite heterogeneity |
+| 5 | Universal small-motif vocabulary across random-graph families |
+| **6** | **Class-constraint-determined canonical census; bipartite cleanly distinguishable from random-DAG; tree-with-noise overlaps with random-DAG** |

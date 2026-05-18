@@ -441,3 +441,43 @@ The Phase 1.D substrate-sensitivity claim is now retracted on three independent 
 
 For substrate-sensitivity to revive, Phase 1.E real Mathlib (or sizes 4-6 / sparser graphs / non-saturating budget) is required. Round 5 confirms synthetic-data evidence cannot carry the claim.
 
+---
+
+## Round 6 — structural-class scan (refinement)
+
+Tested whether v2 distinguishes structural CLASSES (TREE, BIPARTITE, synth-DAG) even though Round 5 showed it cannot within the random-graph class. Full doc: [`docs/results/bridge_structural_class_scan.md`](../docs/results/bridge_structural_class_scan.md).
+
+### Round 6 outcomes
+
+```
+Within:
+  TREE (N=15)      = 1.00 ± 0.00    ← PERFECT (12 canonicals)
+  BIPARTITE (N=15) = 1.00 ± 0.00    ← PERFECT (5 canonicals)
+  synth-DAG (N=15) = 0.96 ± 0.06    (15 canonicals)
+
+Cross:
+  BIPARTITE × synth-DAG = 0.33   ← cleanly different
+  BIPARTITE × TREE      = 0.42   ← marginal
+  TREE × synth-DAG      = 0.78   ← heavy overlap
+```
+
+### Round 6 verdict
+
+- Structurally-constrained classes (TREE, BIPARTITE) saturate to **perfect within-class invariance** (Jaccard = 1.0 across all seeds).
+- BIPARTITE vs synth-DAG produces a clean cross-class distinction (0.33).
+- TREE × synth-DAG fails to distinguish (0.78) because both are acyclic and TREE includes forward-DAG noise.
+- No class strictly passes H1 (within > 0.7 AND max cross < 0.4); BIPARTITE marginal.
+
+**Substantive refinement of Round 5's universal-vocabulary finding**: v2 at sizes 2-3 distinguishes substrates if and only if their structural constraints exclude different motifs from the size-2-3 canonical vocabulary. This is classical subgraph census, not substrate-sensitive emergence.
+
+### Final state across 6 rounds
+
+| Round | Score / Verdict | Outcome |
+|-------|----------------|---------|
+| 1 | 3/10 not ready | W1-W7 surfaced |
+| 2 | 5/10 not ready | 4 W's fixed; N1-N4 surfaced |
+| 3 | 7/10 ready | H1 disconfirmed; retraction shipped |
+| 4 (post-loop) | — | Multi-seed N>1 reinforces retraction |
+| 5 (post-loop) | — | Multi-family universal vocabulary; retraction substantially strengthens |
+| **6 (post-loop)** | **—** | **Class-constraint determines canonical census; BIPARTITE × random clean; TREE × random overlap** |
+
