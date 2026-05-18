@@ -24,3 +24,10 @@ Thumbs.db
 .env
 .env.local
 *.local.json
+
+# ARIS deployment (per-machine local config, not committed)
+# Installed via `bash /path/to/ARIS/tools/install_aris.sh v2`.
+# Re-run on each clone to get a working ARIS skill set.
+.claude/
+.aris/
+CLAUDE.md
