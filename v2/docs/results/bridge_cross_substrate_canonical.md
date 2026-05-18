@@ -430,3 +430,69 @@ These observations are structurally informative about WHICH substrates have whic
 | 2 (N1+N2 corrected baseline) | "Phase 1.D verdict retracted; cross 0.26 not substrate-sensitivity evidence" | Stands |
 | 3 (M1-M3 framing) | "Surviving positive is DAG-generator invariance, not v2 capability" | Stands |
 | 4 (this scan) | "Within-canonical mean 0.26 std 0.34; gap < 1 std; canonical suite is not a variance-bounded family" | Stands; **strengthened by N>1** |
+
+## 15. Round 5 — multi-family scan (universal small-motif vocabulary)
+
+Per user direction "扩展 retraction 实证基础" (after Round 3 ARIS loop exit), a Round 5 scan added 3 more generative families (Erdős–Rényi, Barabási–Albert, stochastic block model) at 6 seeds each, all n=80 with ~250 directed edges, plus a full within / cross matrix at sizes 2-3 saturation budget.
+
+Full follow-up doc: [`bridge_multi_family_scan.md`](bridge_multi_family_scan.md). Log: [`logs/2026-05-11_bridge_multi_family_scan.log`](../../logs/2026-05-11_bridge_multi_family_scan.log).
+
+### 15.1 The killer finding
+
+**Three different random-graph families (ER, SBM, synth-DAG) at sizes 2-3 produce essentially identical canonical-form sets.**
+
+```
+Within-family Jaccards:
+  ER (N=15):         mean=0.87  std=0.05
+  SBM (N=15):        mean=0.95  std=0.04
+  synth-DAG (N=15):  mean=0.96  std=0.06
+
+Cross-family Jaccards:
+  ER × SBM (N=36):       mean=0.91  std=0.05    ← essentially = within
+  ER × synth-DAG (N=36): mean=0.91  std=0.05    ← essentially = within
+  SBM × synth-DAG (N=36): mean=0.95  std=0.05   ← essentially = within
+```
+
+ER vs SBM cross-Jaccard (0.91) is numerically indistinguishable from ER's own within-family Jaccard (0.87). For random-graph families at this scale, v2's canonical-form output is the **same regardless of generative process**.
+
+### 15.2 Cross to canonical-suite (consistent with Round 4)
+
+```
+canonical × ER:   N=24  mean=0.12  std=0.13
+canonical × SBM:  N=24  mean=0.12
+canonical × DAG:  N=24  mean=0.11  std=0.12
+```
+
+The canonical-suite differs sharply from random-graph families (cross ≈ 0.12), but is internally heterogeneous (Round 4 within-canonical mean 0.26 std 0.34). The original Phase 1.D 0.26 OQ#2-vs-synth-DAG cross sits comfortably inside this 0.0-0.33 cross-to-random range.
+
+### 15.3 BA scaling observation (separate)
+
+BA (Barabási–Albert, m=3) was attempted but skipped after a single instance took **38 minutes** for size=3 autonomous_pass (vs ER's ~100s). v2's discovery pipeline at saturation budget does **NOT scale on power-law hub-rich structures at n=80**. Documented as a quantitative scaling observation about v2's discovery pipeline, not a substrate-sensitivity result. ADR-grade investigation warranted if BA-style natural graphs (web link, scientific citation) become target substrates.
+
+### 15.4 What this tells us
+
+- **v2's pattern discovery at sizes 2-3 saturates on a universal small-motif vocabulary for random directed graphs of density ~0.04 on n=80**. ~13-16 canonicals, invariant to the generative process.
+- **The "substrate-sensitive emergence" claim is now triply retracted**:
+  - Round 2: cross ≈ within-OQ#2-sampler (initial baseline)
+  - Round 4: within-canonical-suite mean ≈ cross mean (with high std)
+  - Round 5: **all random-graph families produce the same canonical set; v2 cannot distinguish them**
+- **What v2 DOES distinguish at sizes 2-3**: hand-crafted stream substrates (canonical-suite) FROM "generic random graph" — cross ≈ 0.12 vs within-random ≈ 0.91. The 0.26 OQ#2-vs-synth-DAG Jaccard is exactly this, not "substrate-sensitivity in general."
+
+### 15.5 Updated surviving narrow positive
+
+After Round 5 the "narrow positive" of Round 3 M1 (DAG-generator-family fingerprint) is no longer special — ER and SBM produce the SAME fingerprint as synth-DAG. The discovery saturation regime is the explanation. The only surviving non-trivial measurement is:
+
+> **v2 at sizes 2-3 distinguishes "structured stream substrate" (canonical-suite) FROM "generic random graph" (ER/SBM/DAG) under this discovery configuration. Cross-Jaccard ≈ 0.12 vs within-random ≈ 0.91.**
+
+This is a descriptive measurement, not an emergent-cognition capability. Phase 1.E real Mathlib remains the gating experiment for any claim about v2 on real-world data.
+
+### 15.6 Final state of the Phase 1.D claim across 5 rounds
+
+| Round | Substantive claim | Status |
+|-------|------------------|--------|
+| 0 (original) | "v2 produces substrate-distinct emergence; 67% novel; Phase 2 motivated" | Withdrawn (Round 2) |
+| 1 (W1-W7 fixes) | "H1 supported at pre-registered thresholds" | Withdrawn (Round 2) |
+| 2 (N1+N2 baseline) | "Phase 1.D verdict retracted; cross 0.26 not substrate-sensitivity evidence" | Stands |
+| 3 (M1-M3 framing) | "Surviving positive is DAG-generator invariance, not v2 capability" | Stands |
+| 4 (multi-seed N>1) | "Canonical suite is not variance-bounded family" | Stands; strengthened |
+| **5 (multi-family)** | **"v2 sizes 2-3 produces universal small-motif vocabulary across random-graph families; cannot distinguish ER from SBM from synth-DAG"** | **Stands; substantially strengthens retraction** |

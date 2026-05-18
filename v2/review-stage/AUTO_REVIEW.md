@@ -384,4 +384,60 @@ Within-synth-DAG mean 0.96 with std 0.06 stands as the only tight measurement, b
 | 2 | 5/10 | not ready | 4 W's addressed; N1-N4 surfaced |
 | 3 | 7/10 | ready | N1-N4 addressed; H1 disconfirmed; retraction shipped; M1-M3 framing tweaks applied |
 | 4 (post-loop) | n/a | n/a | W4 / M3 follow-up via N>1 scan — retraction **reinforced** by multi-seed data |
+| 5 (post-loop) | n/a | n/a | Multi-family scan (ER, BA, SBM, synth-DAG) — retraction **substantially strengthened**; v2 cannot distinguish random-graph families at sizes 2-3 |
+
+---
+
+## Round 5 — multi-family follow-up (extend retraction evidence base)
+
+Per user direction "扩展 retraction 实证基础", a Round 5 scan extended the test from "is the canonical-suite the right within-family baseline?" to "is there ANY random-graph family where v2 produces substrate-sensitive canonicals?"
+
+Full follow-up doc: [`docs/results/bridge_multi_family_scan.md`](../docs/results/bridge_multi_family_scan.md).
+Log: [`logs/2026-05-11_bridge_multi_family_scan.log`](../logs/2026-05-11_bridge_multi_family_scan.log).
+
+### Round 5 outcomes
+
+```
+Within-family (N=15 per family):
+  canonical-suite:  mean=0.26  std=0.34   ← heterogeneous (Round 4)
+  ER:               mean=0.87  std=0.05   ← tight
+  SBM:              mean=0.95  std=0.04   ← tight
+  synth-DAG:        mean=0.96  std=0.06   ← tight
+
+Cross-family (N=36 per pair):
+  ER × SBM:         mean=0.91  std=0.05   ← essentially = ER within
+  ER × synth-DAG:   mean=0.91  std=0.05   ← essentially = ER within
+  SBM × synth-DAG:  mean=0.95  std=0.05   ← essentially = SBM within
+
+Cross to canonical-suite:
+  canonical × ER:   mean=0.12  std=0.13
+  canonical × SBM:  mean=0.12
+  canonical × DAG:  mean=0.11
+```
+
+### Round 5 verdict
+
+**No family passes H1 (within > 0.7 AND all cross < 0.4):**
+
+| Family | within_mean | max_cross_mean | H1 |
+|--------|-------------|----------------|----|
+| canonical-suite | 0.26 | (low) | fails on within |
+| ER | 0.87 ✓ | 0.91 ✗ | fails on cross |
+| SBM | 0.95 ✓ | 0.95 ✗ | fails on cross |
+| synth-DAG | 0.96 ✓ | 0.95 ✗ | fails on cross |
+
+**Cross between random-graph families ≈ within within those families.** v2 at sizes 2-3 saturates on a universal small-motif vocabulary that is invariant to whether the input is ER, SBM, or layered-DAG. The Round 1-4 retraction is not just defensible — it generalizes: v2's "substrate-sensitivity" claim was an artifact of comparing canonical-suite stream regimes against ONE random-graph instance, conflating "hand-crafted vs generic random graph" with "substrate-sensitivity in general."
+
+### Additional finding: BA infeasibility
+
+BA (Barabási–Albert, m=3) was skipped after a single instance's size=3 autonomous_pass took **38 minutes** (vs ER's ~100s). v2's discovery pipeline does NOT scale on power-law hub structures at n=80 saturation budget. Documented as a quantitative scaling observation worth ADR-grade attention if hub-rich natural graphs become target substrates.
+
+### Retraction depth after Round 5
+
+The Phase 1.D substrate-sensitivity claim is now retracted on three independent grounds:
+1. **Within-canonical mean ≈ cross mean** (Round 2-4): canonical-suite is not a variance-bounded family.
+2. **All random-graph families produce the same canonical census** (Round 5): v2 cannot distinguish them at sizes 2-3.
+3. **The 0.26 cross-Jaccard from Phase 1.D** sits inside the 0.0-0.33 "canonical-suite × random-graph" range — it is not a special measurement.
+
+For substrate-sensitivity to revive, Phase 1.E real Mathlib (or sizes 4-6 / sparser graphs / non-saturating budget) is required. Round 5 confirms synthetic-data evidence cannot carry the claim.
 

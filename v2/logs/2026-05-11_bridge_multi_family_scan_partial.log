@@ -1,0 +1,75 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:257:19
+    |
+145 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+257 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:60
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:72
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\bridge_multi_family_scan.exe`
+════════════════════════════════════════════════════════
+ Multi-family scan — Phase 1.D Round 5 follow-up
+════════════════════════════════════════════════════════
+
+ Budget: sample_count=400, top_m=20
+ Families: canonical-suite (4 fixed) + ER/BA/SBM/synth-DAG × 6 seeds
+
+ Building canonical-suite RSets...
+    [OQ#1] size=2 pass took 0.0s
+    [OQ#1] size=3 pass took 0.1s
+    [OQ#1] 641 R-instances, 4 canonicals (stream=85.9s)
+    [narrow_a] size=2 pass took 0.0s
+    [narrow_a] size=3 pass took 0.1s
+    [narrow_a] 352 R-instances, 2 canonicals (stream=1.1s)
+    [OQ#2] size=2 pass took 0.0s
+    [OQ#2] size=3 pass took 0.1s
+    [OQ#2] 462 R-instances, 9 canonicals (stream=76.2s)
+    [long5k] size=2 pass took 0.0s
+    [long5k] size=3 pass took 0.1s
+    [long5k] 472 R-instances, 2 canonicals (stream=7.2s)
+
+ Building ER instances (n=80, p~0.043)...
+    [ER_0] size=2 pass took 0.8s
+    [ER_0] size=3 pass took 91.0s
+    [ER_0] 261 edges, 13 canonicals (total 91.9s)
+    [ER_1] size=2 pass took 0.9s
+    [ER_1] size=3 pass took 118.5s
+    [ER_1] 277 edges, 15 canonicals (total 119.5s)
+    [ER_2] size=2 pass took 1.0s
+    [ER_2] size=3 pass took 125.9s
+    [ER_2] 283 edges, 16 canonicals (total 126.9s)
+    [ER_3] size=2 pass took 0.9s
+    [ER_3] size=3 pass took 106.9s
+    [ER_3] 271 edges, 15 canonicals (total 107.8s)
+    [ER_4] size=2 pass took 0.5s
+    [ER_4] size=3 pass took 49.2s
+    [ER_4] 245 edges, 14 canonicals (total 49.8s)
+    [ER_5] size=2 pass took 0.9s
+    [ER_5] size=3 pass took 127.9s
+    [ER_5] 276 edges, 15 canonicals (total 128.9s)
+
+ Building BA instances (n=80, m=3)...
+    [BA_0] size=2 pass took 2.8s
+    [BA_0] size=3 pass took 2269.1s
+    [BA_0] 240 edges, 12 canonicals (total 2272.1s)
+    [BA_1] size=2 pass took 2.3s
+error: process didn't exit successfully: `target\release\examples\bridge_multi_family_scan.exe` (exit code: 1)
