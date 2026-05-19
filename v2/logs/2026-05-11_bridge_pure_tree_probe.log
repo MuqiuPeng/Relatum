@@ -1,0 +1,118 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\bridge_pure_tree_probe.exe`
+════════════════════════════════════════════════════════
+ Pure-tree probe — Round 6 follow-up
+════════════════════════════════════════════════════════
+ Tests whether a PURE rooted tree (no forward-DAG noise)
+ passes H1 cleanly. Round 6's TREE-with-noise had
+ TREE × synth-DAG = 0.78 (heavy overlap).
+
+ Budget: sample_count=400, top_m=100
+ Seeds per family: 3
+
+ === n=40 size=2 ===
+    [TREE_0] size=2 39 edges, 2 canonicals (0.0s)
+    [TREE_1] size=2 39 edges, 2 canonicals (0.0s)
+    [TREE_2] size=2 39 edges, 2 canonicals (0.0s)
+    [DAG_0] size=2 118 edges, 4 canonicals (0.1s)
+    [DAG_1] size=2 117 edges, 4 canonicals (0.1s)
+    [DAG_2] size=2 122 edges, 4 canonicals (0.1s)
+    [BP_0] size=2 66 edges, 2 canonicals (0.0s)
+    [BP_1] size=2 59 edges, 2 canonicals (0.0s)
+    [BP_2] size=2 61 edges, 2 canonicals (0.0s)
+
+                 WITHIN pure-TREE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                 WITHIN synth-DAG: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                 WITHIN BIPARTITE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                CROSS  TREE × DAG: N= 9 mean=0.5000 std=0.0000 [0.5000, 0.5000]
+                 CROSS  TREE × BP: N= 9 mean=0.3333 std=0.0000 [0.3333, 0.3333]
+                  CROSS  DAG × BP: N= 9 mean=0.5000 std=0.0000 [0.5000, 0.5000]
+
+ PURE-TREE H1 at n=40 size=2: within=1.0000 max_cross=0.5000 → not supported
+
+ === n=40 size=3 ===
+    [TREE_0] size=3 39 edges, 4 canonicals (0.0s)
+    [TREE_1] size=3 39 edges, 4 canonicals (0.0s)
+    [TREE_2] size=3 39 edges, 4 canonicals (0.0s)
+    [DAG_0] size=3 118 edges, 10 canonicals (3.8s)
+    [DAG_1] size=3 117 edges, 11 canonicals (3.9s)
+    [DAG_2] size=3 122 edges, 11 canonicals (4.5s)
+    [BP_0] size=3 66 edges, 3 canonicals (0.3s)
+    [BP_1] size=3 59 edges, 3 canonicals (0.1s)
+    [BP_2] size=3 61 edges, 3 canonicals (0.1s)
+
+                 WITHIN pure-TREE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                 WITHIN synth-DAG: N= 3 mean=0.9394 std=0.0429 [0.9091, 1.0000]
+                 WITHIN BIPARTITE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                CROSS  TREE × DAG: N= 9 mean=0.3758 std=0.0171 [0.3636, 0.4000]
+                 CROSS  TREE × BP: N= 9 mean=0.1667 std=0.0000 [0.1667, 0.1667]
+                  CROSS  DAG × BP: N= 9 mean=0.2818 std=0.0129 [0.2727, 0.3000]
+
+ PURE-TREE H1 at n=40 size=3: within=1.0000 max_cross=0.3758 → SUPPORTED ✓
+
+ === n=40 size=4 ===
+    [TREE_0] size=4 39 edges, 9 canonicals (0.2s)
+    [TREE_1] size=4 39 edges, 8 canonicals (0.1s)
+    [TREE_2] size=4 39 edges, 9 canonicals (0.1s)
+    [DAG_0] size=4 118 edges, 42 canonicals (216.4s)
+    [DAG_1] size=4 117 edges, 40 canonicals (217.3s)
+    [DAG_2] size=4 122 edges, 36 canonicals (256.2s)
+    [BP_0] size=4 66 edges, 6 canonicals (7.9s)
+    [BP_1] size=4 59 edges, 7 canonicals (1.8s)
+    [BP_2] size=4 61 edges, 7 canonicals (2.0s)
+
+                 WITHIN pure-TREE: N= 3 mean=0.9259 std=0.0524 [0.8889, 1.0000]
+                 WITHIN synth-DAG: N= 3 mean=0.7756 std=0.0266 [0.7447, 0.8095]
+                 WITHIN BIPARTITE: N= 3 mean=0.9048 std=0.0673 [0.8571, 1.0000]
+                CROSS  TREE × DAG: N= 9 mean=0.2213 std=0.0188 [0.1905, 0.2500]
+                 CROSS  TREE × BP: N= 9 mean=0.0455 std=0.0322 [0.0000, 0.0714]
+                  CROSS  DAG × BP: N= 9 mean=0.1642 std=0.0209 [0.1395, 0.1944]
+
+ PURE-TREE H1 at n=40 size=4: within=0.9259 max_cross=0.2213 → SUPPORTED ✓
+
+ === n=80 size=2 ===
+    [TREE_0] size=2 79 edges, 2 canonicals (0.0s)
+    [TREE_1] size=2 79 edges, 2 canonicals (0.0s)
+    [TREE_2] size=2 79 edges, 2 canonicals (0.0s)
+    [DAG_0] size=2 236 edges, 4 canonicals (0.5s)
+    [DAG_1] size=2 227 edges, 4 canonicals (0.5s)
+    [DAG_2] size=2 238 edges, 3 canonicals (0.5s)
+    [BP_0] size=2 251 edges, 2 canonicals (0.8s)
+    [BP_1] size=2 242 edges, 2 canonicals (0.6s)
+    [BP_2] size=2 240 edges, 2 canonicals (0.6s)
+
+                 WITHIN pure-TREE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                 WITHIN synth-DAG: N= 3 mean=0.8333 std=0.1179 [0.7500, 1.0000]
+                 WITHIN BIPARTITE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                CROSS  TREE × DAG: N= 9 mean=0.5556 std=0.0786 [0.5000, 0.6667]
+                 CROSS  TREE × BP: N= 9 mean=0.3333 std=0.0000 [0.3333, 0.3333]
+                  CROSS  DAG × BP: N= 9 mean=0.5556 std=0.0786 [0.5000, 0.6667]
+
+ PURE-TREE H1 at n=80 size=2: within=1.0000 max_cross=0.5556 → not supported
+
+ === n=80 size=3 ===
+    [TREE_0] size=3 79 edges, 4 canonicals (0.1s)
+    [TREE_1] size=3 79 edges, 4 canonicals (0.0s)
+    [TREE_2] size=3 79 edges, 4 canonicals (0.1s)
+    [DAG_0] size=3 236 edges, 10 canonicals (34.7s)
+    [DAG_1] size=3 227 edges, 10 canonicals (32.8s)
+    [DAG_2] size=3 238 edges, 11 canonicals (36.5s)
+    [BP_0] size=3 251 edges, 3 canonicals (71.8s)
+    [BP_1] size=3 242 edges, 3 canonicals (43.5s)
+    [BP_2] size=3 240 edges, 3 canonicals (42.3s)
+
+                 WITHIN pure-TREE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                 WITHIN synth-DAG: N= 3 mean=0.9394 std=0.0429 [0.9091, 1.0000]
+                 WITHIN BIPARTITE: N= 3 mean=1.0000 std=0.0000 [1.0000, 1.0000]
+                CROSS  TREE × DAG: N= 9 mean=0.3879 std=0.0171 [0.3636, 0.4000]
+                 CROSS  TREE × BP: N= 9 mean=0.1667 std=0.0000 [0.1667, 0.1667]
+                  CROSS  DAG × BP: N= 9 mean=0.2909 std=0.0129 [0.2727, 0.3000]
+
+ PURE-TREE H1 at n=80 size=3: within=1.0000 max_cross=0.3879 → SUPPORTED ✓
+
+ === n=80 size=4 ===
+    [TREE_0] size=4 79 edges, 9 canonicals (0.8s)
+    [TREE_1] size=4 79 edges, 9 canonicals (0.3s)
+    [TREE_2] size=4 79 edges, 9 canonicals (0.5s)
+    [DAG_0] size=4 236 edges, 36 canonicals (4361.2s)
+error: process didn't exit successfully: `target\release\examples\bridge_pure_tree_probe.exe` (exit code: 1)
