@@ -1,0 +1,26 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\adr0083_pattern_policy_test.exe`
+════════════════════════════════════════════════════════
+ ADR 0083 — OQ#2 pattern policy execution loop test
+ Predicted: instance=1 anomalous patterns get retracted
+════════════════════════════════════════════════════════
+
+ tick= 150 | axs= 2 ths= 2 pats=  2 eps=   7 | ARPI=0/pos=0 ARI=0
+ tick= 300 | axs= 2 ths= 2 pats=  2 eps=   7 | ARPI=0/pos=0 ARI=0
+ tick= 450 | axs= 2 ths= 2 pats=  6 eps=  13 | ARPI=0/pos=0 ARI=0
+ tick= 600 | axs= 2 ths= 2 pats=  6 eps=  13 | ARPI=0/pos=0 ARI=0
+ tick= 750 | axs= 2 ths= 2 pats=  1 eps=  18 | ARPI=0/pos=0 ARI=0
+ tick= 900 | axs= 2 ths= 2 pats=  1 eps=  18 | ARPI=0/pos=0 ARI=0
+ tick=1050 | axs= 2 ths= 2 pats=  1 eps=  18 | ARPI=0/pos=0 ARI=0
+ tick=1200 | axs= 2 ths= 2 pats=  1 eps=  18 | ARPI=0/pos=0 ARI=0
+ tick=1350 | axs= 2 ths= 2 pats=  4 eps=  23 | ARPI=0/pos=0 ARI=0
+ tick=1500 | axs= 2 ths= 2 pats=  4 eps=  23 | ARPI=0/pos=0 ARI=0
+
+ Final state:
+   axioms = 2
+   theories = 2
+   patterns = 4
+
+ ApplyRecommendedPatternIntervention episodes: 0
+
+--- end ---

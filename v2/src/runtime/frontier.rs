@@ -674,11 +674,14 @@ impl Frontier {
                 .cloned()
                 .collect();
             let rec = RSet::recommend_pattern_intervention(report, &others);
-            // Only PatternRetract is actionable; PatternMergeWith has
-            // no merge_patterns lib API and stays advisory.
+            // Both PatternRetract (Anomalous) and PatternMergeWith
+            // (Redundant) are executable. ADR 0083 ship + 2026-05-19
+            // extension: PatternMergeWith → retract self (partner
+            // retains coverage, overlap ≥ 0.8).
             let actionable = matches!(
                 rec,
-                crate::RecommendedPatternIntervention::PatternRetract { .. },
+                crate::RecommendedPatternIntervention::PatternRetract { .. }
+                | crate::RecommendedPatternIntervention::PatternMergeWith { .. },
             );
             if !actionable { continue; }
             let already = self.items.iter().any(|it| {

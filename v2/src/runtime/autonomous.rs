@@ -1396,8 +1396,24 @@ impl AutonomousRuntime {
                 );
                 let pats_before = self.rset.patterns().len();
                 use crate::RecommendedPatternIntervention as RPI;
-                if let RPI::PatternRetract { .. } = rec {
-                    let _ = self.rset.retract_pattern(&pattern_id);
+                match rec {
+                    RPI::PatternRetract { .. } => {
+                        let _ = self.rset.retract_pattern(&pattern_id);
+                    }
+                    RPI::PatternMergeWith { .. } => {
+                        // ADR 0083 extension (2026-05-19) — semantic
+                        // mapping: Redundant-class recommendation
+                        // points to a higher-MDL partner with
+                        // overlap ≥ 0.8. The executable interpretation
+                        // is "retract self; partner retains coverage."
+                        // No structural merge needed because the two
+                        // patterns are different canonicals; the
+                        // partner's instance set covers ≥ 80% of
+                        // self's, so deletion is the lossy-but-
+                        // bounded consolidation.
+                        let _ = self.rset.retract_pattern(&pattern_id);
+                    }
+                    _ => {}
                 }
                 let pats_after = self.rset.patterns().len();
                 let delta = ((pats_before as i64)
