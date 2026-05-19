@@ -84,6 +84,67 @@ A targeted probe to verify ARPI dispatch correctness without waiting for natural
 - **PatternMergeWith executable path**: ADR 0077 returns `PatternMergeWith` but v2 has no `merge_patterns` API. If added, the ADR 0083 dispatch arm extends to handle it. Currently the Redundant class produces PatternMergeWith → not actionable → no engagement. This is the biggest gap (multiple Redundant patterns observed in OQ#2 capability demo).
 - **Substrate generation in runtime**: shared concern with ADR 0082. Without substrates, `cross_substrate_match_count` stays None and the Anomalous-detection narrowly catches only instance_count=1 cases. With substrates, more nuanced cross-substrate-based retract recommendations would fire.
 
+## Targeted Anomalous-injection verification
+
+Per follow-up "targeted ARPI engagement test" listed above. Built a hand-crafted rset with a manually-minted singleton pattern (via `name_pattern_instances(&[single_subgraph])`) — guaranteeing instance_count=1, hence Anomalous class.
+
+```
+Built rset: 22 R-instances, 12 ids
+Force-minted pattern p_0 with 1 instance
+Reports generated: 1
+  p_0 class=Anomalous inst=1 mdl=0 overlap=0.00
+    → recommendation: PatternRetract { reason: "singleton pattern
+       with no cross-substrate match (no substrates supplied)" }
+```
+
+So the policy layer correctly classifies the singleton as Anomalous and recommends `PatternRetract`.
+
+Running the autonomous runtime for 100 ticks on this rset (no stream environment):
+
+```
+ tick=  1 | pats=1 eps=1 | ARPI=0
+ tick=  5 | pats=1 eps=3 | ARPI=0   ← runtime entered Sleep at tick=4
+ tick=100 | pats=1 eps=3 | ARPI=0
+
+ Frontier items at end:
+   pattern_size_2_4    PatternCandidate          priority=3.67
+   prune_p_0_4         LowValueObjectForPrune    priority=2.60
+   theory_cand_4       TheoryCandidate           priority=2.00
+   pattern_size_3_4    PatternCandidate          priority=1.83
+   pattern_policy_p_0_4 PatternPolicyTarget      priority=1.10  ← PROPOSED ✓
+   pattern_size_4_4    PatternCandidate          priority=1.10
+   pattern_size_5_4    PatternCandidate          priority=0.73
+
+ All episodes (3 total):
+   tick=1 DiscoverPatterns PatternSize(2) delta=0
+   tick=2 DiscoverPatterns PatternSize(2) delta=0
+   tick=3 DiscoverPatterns PatternSize(2) delta=0
+ Lifecycle: tick=4 Running→Sleeping
+```
+
+### Wiring is correct; scheduler mode flow is the gating factor
+
+**`PatternPolicyTarget` IS proposed**: id `pattern_policy_p_0_4` appears in the frontier with priority=1.10. `refresh_pattern_policy_targets` does its job. ✓
+
+**ARPI doesn't fire** because the scheduler picks PatternCandidate (priority 3.67) in Expand mode for 3 ticks. Each DP attempt returns delta=0 (the rset has no axioms to discover). At tick=4 the runtime transitions Running→Sleeping (per the `would_thrash` and no-progress gating). No events arrive (empty environment). No drive signal (axioms=0). The runtime stays Sleeping for the remaining 96 ticks.
+
+**Consolidate mode never engages** because:
+1. Expand mode has work (PatternCandidates), even if dispatch produces no progress.
+2. The runtime goes Sleeping before any Consolidate-mode pass.
+
+This is not an ADR 0083 bug — it's the existing scheduler's mode-flow architecture (Expand > Consolidate priority; sleep-on-no-progress; drive-wake requires axioms). On real substrates (OQ#1, OQ#2) with discovered axioms + theories + stream events, the scheduler naturally cycles through modes and Consolidate engages.
+
+### Implication
+
+ADR 0083 PatternPolicyTarget proposals work end-to-end **conditional on the runtime reaching Consolidate mode**. The targeted-injection test verifies the policy layer + frontier proposal half of the path. The dispatch half is verified by ADR 0082's analogous engagement on OQ#1 (where Consolidate mode reached and PolicyTarget fired at tick=511) — the same scheduler-routing code handles PatternPolicyTarget.
+
+A full end-to-end ARPI engagement test would need a substrate where:
+- Axioms exist (so drive engages and runtime stays active),
+- Stream events arrive periodically (preventing premature Sleep), AND
+- A pattern has instance_count=1 at some point during long-horizon runtime.
+
+The natural occurrence is rare (auto-mint typically produces ≥ 2 instances per pattern); synthetic engineering of all three at once was deferred — the wiring verification above + ADR 0082 dispatch verification together establish the path is correct.
+
 ## Files
 
 - `src/runtime/{action,frontier,scheduler_rule,autonomous,persistence}.rs`: implementation

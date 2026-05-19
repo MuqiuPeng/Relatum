@@ -1,0 +1,44 @@
+   Compiling relatum-v2 v0.1.0 (E:\projects\Relatum\v2)
+    Finished `release` profile [optimized] target(s) in 0.75s
+     Running `target\release\examples\adr0083_targeted_anomalous_test.exe`
+════════════════════════════════════════════════════════
+ ADR 0083 targeted ARPI dispatch test
+ Substrate: hand-built rset with singleton size-3 motifs
+════════════════════════════════════════════════════════
+
+Built rset: 22 R-instances, 12 ids
+Force-minted pattern p_0 with 1 instance
+Post-mint: 1 patterns
+  p_0 → 1 instances
+Reports generated: 1
+  p_0 class=Anomalous inst=1 mdl=0 overlap=0.00
+    → recommendation: PatternRetract { reason: "singleton pattern with no cross-substrate match (no substrates supplied)" }
+ tick=  1 | pats= 1 eps=  1 | ARPI=0 pos=0
+ tick=  5 | pats= 1 eps=  3 | ARPI=0 pos=0
+ tick= 20 | pats= 1 eps=  3 | ARPI=0 pos=0
+ tick= 50 | pats= 1 eps=  3 | ARPI=0 pos=0
+ tick=100 | pats= 1 eps=  3 | ARPI=0 pos=0
+
+ Final state:
+   patterns = 1
+
+ ARPI episodes: 0
+
+ All episodes (3 total):
+   tick=1 kind=DiscoverPatterns target=PatternSize(2) delta=0
+   tick=2 kind=DiscoverPatterns target=PatternSize(2) delta=0
+   tick=3 kind=DiscoverPatterns target=PatternSize(2) delta=0
+
+ Frontier items at end:
+   id=pattern_size_2_4 kind=PatternCandidate target=PatternSize(2) priority=3.67
+   id=prune_p_0_4 kind=LowValueObjectForPrune target=Pattern("p_0") priority=2.60
+   id=theory_cand_4 kind=TheoryCandidate target=WholeRSet priority=2.00
+   id=pattern_size_3_4 kind=PatternCandidate target=PatternSize(3) priority=1.83
+   id=pattern_policy_p_0_4 kind=PatternPolicyTarget target=Pattern("p_0") priority=1.10
+   id=pattern_size_4_4 kind=PatternCandidate target=PatternSize(4) priority=1.10
+   id=pattern_size_5_4 kind=PatternCandidate target=PatternSize(5) priority=0.73
+
+ Lifecycle transitions: 1
+   tick=4 Running→Sleeping
+
+--- end ---
