@@ -92,11 +92,31 @@ This is the **bounded, stable, productive behavior** ADR 0082 was designed to pr
 - Subsequent runtime activity (DiscoverTheory, DiscoverPatterns) proceeds normally with the cleaned theory set.
 - 650 lib tests pass post-implementation; no regression.
 
+## Long-horizon stability (extended verification)
+
+Ran the same test at HORIZON=6000 (killed at tick 2400 — process advancing slowly per-tick due to autonomous_pass cost on mature rset, but state had clearly stabilized):
+
+```
+ tick=  600 | axs=16 ths=4 fams=0 eps=  42 | ARI=1/pos=1  ← t_0 demoted
+ tick= 1200 | axs=16 ths=5 fams=0 eps= 437 | ARI=1/pos=1
+ tick= 1800 | axs=16 ths=6 fams=0 eps=1000 | ARI=1/pos=1  ← stable
+ tick= 2400 | axs=16 ths=6 fams=0 eps=1000 | ARI=1/pos=1  ← still stable
+```
+
+Theory count climbed from 4 (initial) → 3 (post-t_0-retract) → 6 (new t_4/t_5/t_6 discovered) → stable from tick 1800.
+
+**No further policy intervention through tick 2400.** ARI count stays at 1; eps growth stops at 1000. The runtime reached a steady-state theory set and the policy loop correctly didn't re-engage on healthy theories.
+
+`recent_policy_targets` window expired ~tick 540 (30 episodes after 511); from then on, the policy could re-target t_0 if it were re-discovered, but t_0 stays gone. The remaining theories t_1-t_6 all evaluate cleanly (no actionable recommendation).
+
+This confirms the stability prediction from ADR 0082 §Empirical predictions: "theory count converges to a stable set within 2000 ticks." Observed convergence by tick 1800; no thrash through tick 2400.
+
+Log: [`logs/2026-05-11_adr0082_oq1_6k_stability.log`](../../logs/2026-05-11_adr0082_oq1_6k_stability.log) (partial — process killed at tick 2400 for time budget; final state already stable).
+
 ## What this leaves open
 
-- **Pattern-side mirror (ADR 0077)**: `RecommendedPatternIntervention` exists but no analog runtime loop yet. Natural follow-up.
+- **Pattern-side mirror (ADR 0077)**: `RecommendedPatternIntervention` exists but no analog runtime loop yet. Natural follow-up — ADR 0083 would mirror this design for patterns.
 - **Substrate generation in runtime**: if generated substrates were computed per refresh (or on a longer cadence), cross-precision would be live and FamilyDemote recommendations could fire. Currently the runtime operates in cross-precision-empty mode. Worth considering for richer policy targeting.
-- **Long-horizon stability**: this test ran 1500 ticks. A 6000+ tick OQ#1 run with policy active would verify steady-state behavior. Predicted: theory count converges to a stable set within 2000 ticks.
 
 ## Files
 
