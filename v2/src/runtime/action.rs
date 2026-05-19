@@ -88,6 +88,16 @@ pub enum ActionKind {
     /// delta = 0.0. Cooldown + recent-target filter prevent
     /// re-targeting the same theory in the recent window.
     ApplyRecommendedIntervention,
+    /// ADR 0083 — Pattern-side mirror of ADR 0082.
+    ///
+    /// Target carries a pattern id via `FrontierTarget::Pattern(id)`.
+    /// Dispatcher re-computes `RSet::recommend_pattern_intervention`
+    /// at execute time and routes to `rset.retract_pattern(pid)` for
+    /// the `PatternRetract` variant; other variants (None / Shadow /
+    /// PatternMergeWith / Manual) no-op.
+    ///
+    /// Episode delta = abs(pattern_count_before - pattern_count_after).
+    ApplyRecommendedPatternIntervention,
 }
 
 /// Where (in the RSet) the action should apply. ADR 0052 / A1.

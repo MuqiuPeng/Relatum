@@ -58,6 +58,7 @@ pub(crate) fn action_kind_to_str(a: ActionKind) -> &'static str {
         ActionKind::DiscoverAxiomShapeFamilies => "DiscoverAxiomShapeFamilies",
         ActionKind::RetractShapeFamily => "RetractShapeFamily",
         ActionKind::ApplyRecommendedIntervention => "ApplyRecommendedIntervention",
+        ActionKind::ApplyRecommendedPatternIntervention => "ApplyRecommendedPatternIntervention",
     }
 }
 
@@ -77,6 +78,9 @@ pub(crate) fn parse_action_kind(s: &str) -> Result<ActionKind, String> {
         "RetractShapeFamily" => Ok(ActionKind::RetractShapeFamily),
         "ApplyRecommendedIntervention" => {
             Ok(ActionKind::ApplyRecommendedIntervention)
+        }
+        "ApplyRecommendedPatternIntervention" => {
+            Ok(ActionKind::ApplyRecommendedPatternIntervention)
         }
         other => Err(format!("unknown ActionKind '{}'", other)),
     }

@@ -50,6 +50,12 @@ pub enum FrontierKind {
     /// ShadowMonitor / Manual recommendations are not proposed
     /// (no-op). Cooldown + recent-target filter prevent thrash.
     PolicyTarget,
+    /// ADR 0083 — A pattern whose current quality report yields a
+    /// `PatternRetract` recommendation. Scheduler dispatches
+    /// `ApplyRecommendedPatternIntervention` which re-computes at
+    /// execute time and routes to `retract_pattern`. Mirror of
+    /// PolicyTarget for the pattern side.
+    PatternPolicyTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -619,6 +625,86 @@ impl Frontier {
         }
         // Re-sort items so new PolicyTargets settle into priority
         // order alongside everything else proposed above.
+        self.items.sort_by(|a, b| {
+            b.priority
+                .partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+    }
+
+    /// Append `PatternPolicyTarget` items for patterns whose
+    /// `recommend_pattern_intervention` returns `PatternRetract`.
+    /// ADR 0083 — mirror of `refresh_policy_targets` for patterns.
+    ///
+    /// Empty substrates → cross_substrate_match_count = None →
+    /// only the Anomalous-class path (instance_count == 1) triggers
+    /// PatternRetract. The other actionable variant (PatternMergeWith)
+    /// has no executable lib API and is skipped.
+    pub fn refresh_pattern_policy_targets(
+        &mut self,
+        rset: &RSet,
+        episodes: &VecDeque<Episode>,
+        tick: u64,
+    ) {
+        const RECENT_PATTERN_POLICY_WINDOW: usize = 30;
+        let recent_targets: HashSet<String> = {
+            let start = episodes.len()
+                .saturating_sub(RECENT_PATTERN_POLICY_WINDOW);
+            episodes.iter().skip(start)
+                .filter(|ep| matches!(
+                    ep.action_kind,
+                    ActionKind::ApplyRecommendedPatternIntervention,
+                ))
+                .filter_map(|ep| match &ep.target {
+                    FrontierTarget::Pattern(id) => Some(id.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let substrates: Vec<RSet> = Vec::new();
+        let reports = rset.pattern_quality_report_all(&substrates, None);
+        for report in &reports {
+            if recent_targets.contains(&report.pattern_id) {
+                continue;
+            }
+            let others: Vec<crate::PatternQualityReport> = reports
+                .iter()
+                .filter(|r| r.pattern_id != report.pattern_id)
+                .cloned()
+                .collect();
+            let rec = RSet::recommend_pattern_intervention(report, &others);
+            // Only PatternRetract is actionable; PatternMergeWith has
+            // no merge_patterns lib API and stays advisory.
+            let actionable = matches!(
+                rec,
+                crate::RecommendedPatternIntervention::PatternRetract { .. },
+            );
+            if !actionable { continue; }
+            let already = self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::PatternPolicyTarget)
+                    && it.target == FrontierTarget::Pattern(report.pattern_id.clone())
+            });
+            if already { continue; }
+            self.items.push(FrontierItem {
+                id: format!("pattern_policy_{}_{}",
+                            report.pattern_id, tick),
+                kind: FrontierKind::PatternPolicyTarget,
+                target: FrontierTarget::Pattern(report.pattern_id.clone()),
+                // Priority 1.1: slightly below theory PolicyTarget
+                // (1.2) so theory consolidation precedes pattern
+                // consolidation when both pending.
+                priority: 1.1,
+                estimated_value: 1.0,
+                estimated_cost: 1.0,
+                novelty_score: 0.0,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
+        }
         self.items.sort_by(|a, b| {
             b.priority
                 .partial_cmp(&a.priority)

@@ -235,6 +235,9 @@ impl RuleBasedScheduler {
             FrontierKind::PolicyTarget => {
                 ActionKind::ApplyRecommendedIntervention
             }
+            FrontierKind::PatternPolicyTarget => {
+                ActionKind::ApplyRecommendedPatternIntervention
+            }
         }
     }
 
@@ -338,6 +341,7 @@ impl RuleBasedScheduler {
                     | FrontierKind::TheoryNeedsRelations
                     | FrontierKind::EstablishedPromotion
                     | FrontierKind::PolicyTarget
+                    | FrontierKind::PatternPolicyTarget
             )
         })
     }

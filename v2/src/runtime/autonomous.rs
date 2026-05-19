@@ -360,6 +360,12 @@ impl AutonomousRuntime {
                     &self.memory.episodes,
                     self.tick,
                 );
+                // ADR 0083 — policy-driven pattern maintenance.
+                self.frontier.refresh_pattern_policy_targets(
+                    &self.rset,
+                    &self.memory.episodes,
+                    self.tick,
+                );
                 self.frontier.refresh_established_promotions(
                     &self.rset,
                     &self.memory.object_history,
@@ -1363,6 +1369,40 @@ impl AutonomousRuntime {
                     }
                     Err(_) => return Some(0.0),
                 }
+            }
+            ActionKind::ApplyRecommendedPatternIntervention => {
+                // ADR 0083 — re-compute pattern recommendation at
+                // execute time; route PatternRetract to retract_pattern.
+                let pattern_id = match &plan.target {
+                    FrontierTarget::Pattern(id) => id.clone(),
+                    _ => return Some(0.0),
+                };
+                let substrates: Vec<RSet> = Vec::new();
+                let reports = self.rset
+                    .pattern_quality_report_all(&substrates, None);
+                let focal = match reports.iter()
+                    .find(|r| r.pattern_id == pattern_id)
+                {
+                    Some(r) => r.clone(),
+                    None => return Some(0.0),
+                };
+                let others: Vec<crate::PatternQualityReport> = reports
+                    .iter()
+                    .filter(|r| r.pattern_id != pattern_id)
+                    .cloned()
+                    .collect();
+                let rec = RSet::recommend_pattern_intervention(
+                    &focal, &others,
+                );
+                let pats_before = self.rset.patterns().len();
+                use crate::RecommendedPatternIntervention as RPI;
+                if let RPI::PatternRetract { .. } = rec {
+                    let _ = self.rset.retract_pattern(&pattern_id);
+                }
+                let pats_after = self.rset.patterns().len();
+                let delta = ((pats_before as i64)
+                    - (pats_after as i64)).abs() as f64;
+                return Some(delta);
             }
             ActionKind::ApplyRecommendedIntervention => {
                 // ADR 0082 — re-compute the recommendation at execute
