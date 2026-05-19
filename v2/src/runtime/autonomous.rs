@@ -353,6 +353,13 @@ impl AutonomousRuntime {
                     &self.memory.object_history,
                     self.tick,
                 );
+                // ADR 0082 — policy-driven theory maintenance.
+                self.frontier.refresh_policy_targets(
+                    &self.rset,
+                    &self.memory.prediction_state,
+                    &self.memory.episodes,
+                    self.tick,
+                );
                 self.frontier.refresh_established_promotions(
                     &self.rset,
                     &self.memory.object_history,
@@ -1356,6 +1363,81 @@ impl AutonomousRuntime {
                     }
                     Err(_) => return Some(0.0),
                 }
+            }
+            ActionKind::ApplyRecommendedIntervention => {
+                // ADR 0082 — re-compute the recommendation at execute
+                // time (state may have changed since proposal), then
+                // route to the appropriate lib API.
+                let theory_id = match &plan.target {
+                    FrontierTarget::Theory(id) => id.clone(),
+                    _ => return Some(0.0),
+                };
+                // Recompute primary_rates + reports + recommendation.
+                const MIN_AXIOM_PREDICTIONS: u64 = 5;
+                let mut primary_rates: std::collections::HashMap<String, f64>
+                    = std::collections::HashMap::new();
+                for ax in self.rset.axioms() {
+                    if let Some(r) = self.memory.prediction_state
+                        .hit_rate(ax, MIN_AXIOM_PREDICTIONS)
+                    {
+                        primary_rates.insert(ax.to_string(), r);
+                    }
+                }
+                let substrates: Vec<RSet> = Vec::new();
+                let reports = self.rset
+                    .theory_quality_report_all(&substrates, &primary_rates);
+                let focal = match reports
+                    .iter().find(|r| r.theory_id == theory_id)
+                {
+                    Some(r) => r.clone(),
+                    None => return Some(0.0),
+                };
+                let others: Vec<crate::TheoryQualityReport> = reports
+                    .iter()
+                    .filter(|r| r.theory_id != theory_id)
+                    .cloned()
+                    .collect();
+                let rec = RSet::recommend_intervention(&focal, &others);
+                // Track the mutation by comparing axiom + theory counts
+                // (more reliable than abstraction_score for these
+                // structural retractions which can DROP the score
+                // even when successful).
+                let axioms_before = self.rset.axioms().len();
+                let theories_before = self.rset.theories().len();
+                use crate::RecommendedIntervention as RI;
+                match rec {
+                    RI::FamilyDemote { family_id, .. } => {
+                        let _ = self.rset.retract_shape_family(&family_id);
+                    }
+                    RI::AxiomRepair { axiom_ids } => {
+                        for ax in &axiom_ids {
+                            let _ = self.rset.retract_theory_member(
+                                &theory_id, ax,
+                            );
+                        }
+                    }
+                    RI::TheoryDemote { .. } |
+                    RI::DemoteSuperset { .. } => {
+                        let _ = self.rset.retract_theory(&theory_id);
+                    }
+                    RI::Merge { partner_theory, .. } => {
+                        let _ = self.rset.merge_theories(
+                            &theory_id, &partner_theory,
+                        );
+                    }
+                    RI::None | RI::ShadowMonitor { .. } | RI::Manual { .. } => {
+                        // Recommendation flipped to no-op variant
+                        // between propose and execute. Episode is
+                        // recorded with delta=0.
+                    }
+                }
+                let axioms_after = self.rset.axioms().len();
+                let theories_after = self.rset.theories().len();
+                let delta = ((axioms_before as i64) - (axioms_after as i64))
+                    .abs() as f64
+                    + ((theories_before as i64) - (theories_after as i64))
+                    .abs() as f64;
+                return Some(delta);
             }
         }
         None

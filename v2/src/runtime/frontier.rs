@@ -42,6 +42,14 @@ pub enum FrontierKind {
     /// count > the count at last family discovery (cheap freshness
     /// check; no need to enumerate all premises here).
     ShapeFamilyDiscoveryCandidate,
+    /// ADR 0082 — A theory whose current quality report yields an
+    /// actionable `recommend_intervention` result (FamilyDemote /
+    /// AxiomRepair / TheoryDemote / DemoteSuperset / Merge). The
+    /// scheduler dispatches `ApplyRecommendedIntervention` which
+    /// re-computes the recommendation at execute time. None /
+    /// ShadowMonitor / Manual recommendations are not proposed
+    /// (no-op). Cooldown + recent-target filter prevent thrash.
+    PolicyTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -498,6 +506,125 @@ impl Frontier {
         self.items = items;
         self.last_full_refresh_tick = tick;
         self.dirty = false;
+    }
+
+    /// Append `PolicyTarget` items for theories whose
+    /// `recommend_intervention` returns an actionable variant. ADR 0082.
+    ///
+    /// Called by the runtime after `refresh_with_episodes`. Re-uses
+    /// the cached `recent_prune_targets` pattern via a new
+    /// `recent_policy_targets` set: skip ids that were targeted by
+    /// `ApplyRecommendedIntervention` in the recent window.
+    ///
+    /// `None`, `ShadowMonitor`, and `Manual` recommendations are not
+    /// proposed (they're no-op or not actionable). Only `FamilyDemote`,
+    /// `AxiomRepair`, `TheoryDemote`, `DemoteSuperset`, and `Merge`
+    /// produce frontier items.
+    pub fn refresh_policy_targets(
+        &mut self,
+        rset: &RSet,
+        prediction_state: &super::memory::PredictionState,
+        episodes: &VecDeque<Episode>,
+        tick: u64,
+    ) {
+        // Compute recent policy targets — skip ids tried in last
+        // RECENT_POLICY_WINDOW episodes (mirror prune-loop fix).
+        const RECENT_POLICY_WINDOW: usize = 30;
+        let recent_policy_targets: HashSet<String> = {
+            let start = episodes.len().saturating_sub(RECENT_POLICY_WINDOW);
+            episodes
+                .iter()
+                .skip(start)
+                .filter(|ep| matches!(
+                    ep.action_kind,
+                    ActionKind::ApplyRecommendedIntervention,
+                ))
+                .filter_map(|ep| match &ep.target {
+                    FrontierTarget::Theory(id) => Some(id.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        // Compute primary_rates from prediction state for each axiom.
+        // MIN_AXIOM_PREDICTIONS=5 mirrors the diagnostic example.
+        const MIN_AXIOM_PREDICTIONS: u64 = 5;
+        let mut primary_rates: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
+        for ax in rset.axioms() {
+            if let Some(r) = prediction_state.hit_rate(ax, MIN_AXIOM_PREDICTIONS) {
+                primary_rates.insert(ax.to_string(), r);
+            }
+        }
+
+        // Empty substrates → cross_precision metrics in reports degrade
+        // to None; recommend_intervention falls back to non-cross-
+        // precision-driven paths. The runtime doesn't have generated
+        // substrates readily available; this is the conservative
+        // operational stance.
+        let substrates: Vec<RSet> = Vec::new();
+        let reports = rset.theory_quality_report_all(&substrates, &primary_rates);
+        let other_reports: Vec<&crate::TheoryQualityReport> =
+            reports.iter().collect();
+
+        for report in &reports {
+            if recent_policy_targets.contains(&report.theory_id) {
+                continue;
+            }
+            // Borrow reports excluding the current focal.
+            let others: Vec<crate::TheoryQualityReport> = reports
+                .iter()
+                .filter(|r| r.theory_id != report.theory_id)
+                .cloned()
+                .collect();
+            let _ = other_reports; // silence
+            let rec = RSet::recommend_intervention(report, &others);
+            // Skip non-actionable variants.
+            let actionable = matches!(
+                &rec,
+                crate::RecommendedIntervention::FamilyDemote { .. }
+                    | crate::RecommendedIntervention::AxiomRepair { .. }
+                    | crate::RecommendedIntervention::TheoryDemote { .. }
+                    | crate::RecommendedIntervention::DemoteSuperset { .. }
+                    | crate::RecommendedIntervention::Merge { .. },
+            );
+            if !actionable {
+                continue;
+            }
+            // De-dupe: skip if an existing PolicyTarget already
+            // points at this theory (idempotent within a refresh).
+            let already = self.items.iter().any(|it| {
+                matches!(it.kind, FrontierKind::PolicyTarget)
+                    && it.target == FrontierTarget::Theory(report.theory_id.clone())
+            });
+            if already { continue; }
+            self.items.push(FrontierItem {
+                id: format!("policy_{}_{}", report.theory_id, tick),
+                kind: FrontierKind::PolicyTarget,
+                target: FrontierTarget::Theory(report.theory_id.clone()),
+                // Mid-low priority — sits between TheoryNeedsRelations
+                // (1.5) and large-graph PatternCandidate. Policy
+                // interventions are corrective, not exploratory; they
+                // should fire when no fresh discovery work dominates.
+                priority: 1.2,
+                estimated_value: 1.0,
+                estimated_cost: 1.0,
+                novelty_score: 0.0,
+                first_seen_tick: tick,
+                last_visited_tick: None,
+                revisit_count: 0,
+                cooldown_until_tick: None,
+                status: FrontierStatus::Fresh,
+            });
+        }
+        // Re-sort items so new PolicyTargets settle into priority
+        // order alongside everything else proposed above.
+        self.items.sort_by(|a, b| {
+            b.priority
+                .partial_cmp(&a.priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
     }
 
     /// Append `LowValueObjectForPrune` items for named patterns whose

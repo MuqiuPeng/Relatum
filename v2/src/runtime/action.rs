@@ -68,6 +68,26 @@ pub enum ActionKind {
     /// (L2) or the count of member links removed (L3+); 0 if the
     /// family is not registered.
     RetractShapeFamily,
+    /// ADR 0082 — Apply the recommendation returned by
+    /// `RSet::recommend_intervention` for the target theory.
+    ///
+    /// The target theory id is carried on `ActionPlan` via
+    /// `FrontierTarget::Theory(id)`. The dispatcher re-computes
+    /// the recommendation at execute time (state may have shifted
+    /// since proposal), then routes to the appropriate lib API:
+    ///
+    /// - FamilyDemote      → rset.retract_shape_family(family_id)
+    /// - AxiomRepair       → rset.retract_theory_member(theory, ax) ×N
+    /// - TheoryDemote      → rset.retract_theory(theory_id)
+    /// - DemoteSuperset    → rset.retract_theory(theory_id)
+    /// - Merge             → rset.merge_theories(theory, partner)
+    /// - None/Shadow/Manual → no-op
+    ///
+    /// Episode delta is the abstraction-score change from before
+    /// to after; if no mutation happened (no-op variants),
+    /// delta = 0.0. Cooldown + recent-target filter prevent
+    /// re-targeting the same theory in the recent window.
+    ApplyRecommendedIntervention,
 }
 
 /// Where (in the RSet) the action should apply. ADR 0052 / A1.

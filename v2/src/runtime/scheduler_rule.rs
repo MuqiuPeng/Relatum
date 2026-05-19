@@ -232,6 +232,9 @@ impl RuleBasedScheduler {
             FrontierKind::ShapeFamilyDiscoveryCandidate => {
                 ActionKind::DiscoverAxiomShapeFamilies
             }
+            FrontierKind::PolicyTarget => {
+                ActionKind::ApplyRecommendedIntervention
+            }
         }
     }
 
@@ -334,6 +337,7 @@ impl RuleBasedScheduler {
                 FrontierKind::LowValueObjectForPrune
                     | FrontierKind::TheoryNeedsRelations
                     | FrontierKind::EstablishedPromotion
+                    | FrontierKind::PolicyTarget
             )
         })
     }
@@ -665,6 +669,7 @@ impl Scheduler for RuleBasedScheduler {
                         FrontierKind::LowValueObjectForPrune
                             | FrontierKind::TheoryNeedsRelations
                             | FrontierKind::EstablishedPromotion
+                            | FrontierKind::PolicyTarget
                     )
                 }) {
                     return SchedulerDecision::Execute(ActionPlan {

@@ -1,0 +1,28 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\adr0082_policy_loop_test.exe`
+════════════════════════════════════════════════════════
+ ADR 0082 empirical test — OQ#1 policy execution loop
+ Predicted: t_0 → FamilyDemote on noise family
+════════════════════════════════════════════════════════
+
+ Initial state: 0 axioms, 0 theories, 0 families
+ tick= 150 | axs=13 ths= 4 fams= 0 eps=  30 | ARI=0/0/pos=0 RSF=0
+ tick= 300 | axs=13 ths= 4 fams= 0 eps=  30 | ARI=0/0/pos=0 RSF=0
+ tick= 450 | axs=13 ths= 4 fams= 0 eps=  30 | ARI=0/0/pos=0 RSF=0
+ tick= 600 | axs=16 ths= 4 fams= 0 eps=  42 | ARI=1/1/pos=1 RSF=0
+ tick= 750 | axs=16 ths= 4 fams= 0 eps=  52 | ARI=1/1/pos=1 RSF=0
+ tick= 900 | axs=16 ths= 4 fams= 0 eps= 146 | ARI=1/1/pos=1 RSF=0
+ tick=1050 | axs=16 ths= 4 fams= 0 eps= 290 | ARI=1/1/pos=1 RSF=0
+ tick=1200 | axs=16 ths= 5 fams= 0 eps= 437 | ARI=1/1/pos=1 RSF=0
+ tick=1350 | axs=16 ths= 5 fams= 0 eps= 584 | ARI=1/1/pos=1 RSF=0
+ tick=1500 | axs=16 ths= 5 fams= 0 eps= 734 | ARI=1/1/pos=1 RSF=0
+
+ Final state:
+   axioms = 16
+   theories = 5 (["t_1", "t_4", "t_2", "t_3", "t_5"])
+   shape families = 0
+
+ ApplyRecommendedIntervention episodes: 1
+   tick=511 target=Theory("t_0") delta=1
+
+--- end ---
