@@ -5121,7 +5121,12 @@ impl RSet {
         let total = ids.len();
         let present = ids
             .iter()
-            .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+            .filter(|id| {
+                self.instances.contains(&R::new(
+                    (*id).clone(),
+                    (*id).clone(),
+                ))
+            })
             .count();
         let rate = if total == 0 { 1.0 } else { present as f64 / total as f64 };
         ReflexivityEvidence {

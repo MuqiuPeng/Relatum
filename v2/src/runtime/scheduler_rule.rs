@@ -254,6 +254,13 @@ impl RuleBasedScheduler {
     /// `EvaluatePredictions` is even meaningful — without
     /// hit-rate data, the action would always emit delta = 0.
     /// ADR 0059 / Phase G1.5.
+    ///
+    /// Kept for empirical-coverage tests (Phase G1.5 originally
+    /// wired this into Reflect; later refactoring moved the gate
+    /// into `EvaluatePredictions` dispatch logic itself, leaving
+    /// this helper as a pure query). Retained for future re-wiring
+    /// and 2026-05-11 tests reference it directly.
+    #[allow(dead_code)]
     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
         const MIN_TOTAL_FOR_HIT_RATE: u64 = 5;
         for ax in ctx.rset.axioms() {
