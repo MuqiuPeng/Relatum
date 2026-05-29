@@ -329,7 +329,101 @@ M3 is substantially complete:
 - T5 indirect-effect emerges: ✓ (predict_chain_composition)
 - Scheduling enters: ✓ (DriveSeekingScheduler driven by T5 error)
 
-Open (M4 territory):
+### M4 first slice — n-ary primitives (2026-05-30)
+
+Done:
+
+- `nary::NaryMechanism` trait: `arity()`, `binary_projection()`,
+  `is_irreducible()`. The A4 build-time contract — any n-ary mechanism
+  added to v3 must implement this or fails at the type level. No path
+  to ship n-ary without honoring the obligation.
+- `nary::PredictedPair` — the binary projection's per-pair predicted
+  marginal: `(source, target, expected_latency, max_effect_size)`.
+- `nary::MechanismE` (gating): three nodes `gate / source / target`,
+  A and B independent walks, C tracks B at lag when A is above
+  threshold and free-walks otherwise. Binary projection lists all 6
+  ordered pairs; recovery matches latencies exactly and respects
+  `effect_size` upper bounds. `is_irreducible()` = true.
+- `nary::MechanismF` (discrete XOR): C is `0.75` when
+  `(A > 0.5) ⊕ (B > 0.5)` else `0.25`, plus tiny noise. All 6 pairwise
+  marginals stay below `effect_size = 0.25` at 2400 timesteps,
+  matching the projection. Observationally indistinguishable from
+  `Independent3` at the pair level — only `is_irreducible() = true`
+  carries the joint structure.
+
+Design notes / lessons:
+
+- **Continuous `(A + B) mod 1` leaks through `velocity_effect`.** The
+  boundary crossings at 1 produce dC jumps that differ in frequency
+  between source quartile bins (the high source quartile pushes
+  `A + B` above 1 more often). Discrete XOR with a fixed threshold
+  has step boundaries that are equally frequent in every source
+  quartile, so it stays pair-null. Any future "irreducible n-ary"
+  needs a similar pair-null check at simulator-author time.
+- **Pair-null is asymptotic, not exact.** Quartile binning with
+  300-sample bins (1200-step episodes) leaves a ~0.3 noise floor on
+  `effect_size`. F runs at 2400 timesteps to stay under the projection
+  bound of 0.25. Larger pair libraries will need either bigger
+  episodes or a noise-floor-aware bound.
+- **Irreducibility is metadata, not observable, at M4.** Both E and F
+  assert `is_irreducible() = true` by author intent. The fingerprint
+  engine cannot recover this from pairwise observation alone:
+  - F is indistinguishable from Independent3 (joint structure
+    invisible to pair-level estimators).
+  - E's gating shows partial pair-level signal (B→C latency
+    recovered with reduced strength, A→C with CE/VE signature) but
+    nothing in the engine names "the third variable conditions the
+    relation between the first two".
+  Recovery of irreducibility — conditional-independence tests,
+  joint-state binning, mutual-information-style measures — is M5+.
+
+### M5 first slice — joint-structure recovery (2026-05-30)
+
+Done — **the substrate now detects irreducibility from observation
+alone, without reading the `is_irreducible()` metadata**:
+
+- `joint::joint_position_effect` — 4-cell joint eta-squared on
+  source-pair quartile extremes (total joint structure).
+- `joint::joint_interaction_effect` — 2-way ANOVA interaction term
+  via unbalanced-design-safe residuals from the additive fit. This
+  is the **gatekeeper signal**: only fires when joint cells deviate
+  from the additive single-source model.
+- `joint::conditional_effect_variance` — `|PE(source→target |
+  conditioner high) − PE(source→target | conditioner low)|`.
+- `joint::irreducibility_signal` — gated combination:
+  `interaction < 0.05` returns `0` directly (the joint structure is
+  additive, no irreducibility); otherwise reports
+  `max(interaction, cond_a, cond_b)`.
+
+Empirical separation (run-table):
+
+| pattern        | interaction | cond_a | cond_b | signal |
+|----------------|-------------|--------|--------|--------|
+| F (XOR)        | 0.987       | 0.002  | 0.000  | 0.987  |
+| E (gating)     | 0.176       | 0.848  | 0.276  | 0.848  |
+| ChainBB        | 0.000       | 0.299  | 0.354  | 0.000  |
+| Independent3   | 0.010       | 0.008  | 0.082  | 0.010  |
+
+`ChainBB`'s high cond values are mediation noise: A is correlated
+with B through the chain (B = A(t−lag)), so within-subset quartile
+re-binning of B distorts PE estimates. The interaction term clamps
+to zero because the chain is purely additive in single-source
+effects, gating these false-positive contributions out.
+
+Design lessons (recorded in memory):
+
+- `SS_cells − SS_A − SS_B` is the wrong interaction formula for
+  unbalanced cells (can go negative). Use the additive-fit residual
+  formulation instead.
+- Conditional-PE variance is a strength signal, not a structure
+  signal. Without the interaction gate it identifies binary chains
+  as irreducible. Memory: `v3_irreducibility_gate.md`.
+- The substrate cannot resolve gating vs XOR from `signal` alone
+  (E reads 0.848, F reads 0.987 — both large, but the source of the
+  signal differs). Two-mechanism classification (which class of
+  irreducibility) is M5+ work.
+
+Open (still M5+):
 
 - Negative-lag scan so backward latency is recoverable directly
   (currently the scan is `k ≥ 0`, so backward B reads `latency = 0`).
@@ -339,9 +433,10 @@ Open (M4 territory):
 - Lag-shuffle noise floor for the latency estimator.
 - T5 composition laws for other patterns (FanOut shared-driver, Loop
   cycle-closure, FanIn mixed-source).
-- n-ary primitives (E, F) with A4 binary-projection + irreducibility
-  obligations — the M4 milestone proper.
-- Bridge crate to v2 R-closure (M5).
+- **Irreducibility class recovery** — distinguish gating from
+  XOR-style joint determination from observation alone (which
+  mechanism family produced the signal).
+- Bridge crate to v2 R-closure.
 
 ## Open questions
 

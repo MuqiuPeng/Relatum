@@ -10,12 +10,19 @@
 //! Ontological commitments: see `docs/constitution.md`.
 
 pub mod fingerprint;
+pub mod joint;
+pub mod nary;
 pub mod rng;
 pub mod scheduling;
 pub mod sim;
 pub mod similarity;
 
 pub use fingerprint::{Fingerprint, estimate_all};
+pub use joint::{
+    conditional_effect_variance, irreducibility_signal, joint_interaction_effect,
+    joint_position_effect,
+};
+pub use nary::{MechanismE, MechanismF, NaryMechanism, PredictedPair};
 pub use scheduling::{DriveSeekingScheduler, RoundRobinScheduler, Scheduler};
 pub use sim::{
     ChainBB, FanIn3, FanOut3, Independent3, Loop3, MechanismA, MechanismB, MechanismC, MechanismD,
