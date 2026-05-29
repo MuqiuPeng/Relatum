@@ -11,10 +11,12 @@
 
 pub mod fingerprint;
 pub mod rng;
+pub mod scheduling;
 pub mod sim;
 pub mod similarity;
 
 pub use fingerprint::{Fingerprint, estimate_all};
+pub use scheduling::{DriveSeekingScheduler, RoundRobinScheduler, Scheduler};
 pub use sim::{
     ChainBB, FanIn3, FanOut3, Independent3, Loop3, MechanismA, MechanismB, MechanismC, MechanismD,
 };

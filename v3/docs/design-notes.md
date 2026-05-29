@@ -294,7 +294,42 @@ Guards in place:
   (self-similarity across seeds) dominates every off-diagonal entry
   across {Chain, FanOut, FanIn, Loop, Independent}.
 
-Open (deferred):
+### M3 fourth slice — scheduling enters (2026-05-29)
+
+Done:
+
+- `scheduling::Scheduler` trait: `next() -> Option<usize>`,
+  `record_drive(idx, drive: f64)`, `pool_size()`. Abstract over
+  candidate selection; drive signal is left to the caller (T5
+  prediction error is the natural choice for L4 / T5 work).
+- `scheduling::RoundRobinScheduler` — drive-blind baseline, uniformly
+  cycles the candidate pool until budget is exhausted.
+- `scheduling::DriveSeekingScheduler` — cold-start explores each
+  candidate once, then prefers highest-drive candidate. Ties broken
+  by oldest last-use to avoid starvation.
+
+Guards in place:
+
+- Round-robin distributes uniformly across the pool, ignores drive,
+  terminates at budget.
+- Drive seeker cold-starts every candidate once before any drive-
+  influenced selection.
+- Drive seeker post-cold-start dominantly issues the high-drive
+  candidate.
+- End-to-end T5 drive test: scheduler picks among three ChainBB
+  configs (lag pairs `(1,1)`, `(2,3)`, `(3,4)`), drive is
+  `1 − fingerprint_similarity(predicted_AC, observed_AC)` from the
+  T5 composition law. Loop runs to budget without panics; all three
+  candidates touched at least once (cold-start guarantee).
+
+This closes the **scheduling enters** item of the M3 milestone table.
+M3 is substantially complete:
+
+- L4 chains and small loops: ✓ (Chain, FanOut, FanIn, Loop, Indep)
+- T5 indirect-effect emerges: ✓ (predict_chain_composition)
+- Scheduling enters: ✓ (DriveSeekingScheduler driven by T5 error)
+
+Open (M4 territory):
 
 - Negative-lag scan so backward latency is recoverable directly
   (currently the scan is `k ≥ 0`, so backward B reads `latency = 0`).
@@ -302,9 +337,11 @@ Open (deferred):
   clustering where Euclidean alone may not suffice.
 - Intervention-based reversibility.
 - Lag-shuffle noise floor for the latency estimator.
-- Intrinsic drive enters scheduling — the third M3 milestone item.
-- T5 composition for other patterns (FanOut shared-driver, Loop
-  cycle-closure).
+- T5 composition laws for other patterns (FanOut shared-driver, Loop
+  cycle-closure, FanIn mixed-source).
+- n-ary primitives (E, F) with A4 binary-projection + irreducibility
+  obligations — the M4 milestone proper.
+- Bridge crate to v2 R-closure (M5).
 
 ## Open questions
 
