@@ -231,17 +231,80 @@ distance) and distinguishability holds. The "Euclidean over the full
 vector" approach is the right L3/T3 primitive; no per-field argmax
 classifier is needed at M2 scope.
 
-Pending (M3 territory):
+### M3 first + second slice (2026-05-29)
 
-- n-node episode similarity (bijection search blows up factorially;
-  use canonical-form pre-filtering and graph-matching heuristics).
+Done:
+
+- `sim::ChainBB` — 3-node chain composition, two stacked B mechanisms.
+- `sim::Independent3` — 3 uncoupled random walkers, null baseline.
+- `sim::FanOut3` — A → B and A → C, shared-driver pattern.
+- `similarity::episode_similarity` — general n-node, enumerates `n!`
+  bijections via permutation search. 2-node fast path
+  (`episode_similarity_2node`) delegates to the general function.
+
+Guards in place:
+
+- **Composition recovery (T5 first cut)**: for `ChainBB` with
+  `lag_ab = 2, lag_bc = 3`, the directly-observed `A → C` fingerprint
+  reports `latency = 5` (= lag_ab + lag_bc). All backward latencies
+  stay 0. Recovery side has no access to the chain structure (A2).
+- **Shared-driver lag gap (FanOut recovery)**: `A → B` reports `lag_b`,
+  `A → C` reports `lag_c`, `B → C` reports the derived
+  `lag_c − lag_b` — the substrate correctly identifies the gap from
+  observation alone without inferring direct B → C propagation.
+- 3-node rename invariance: `episode_similarity` over an arbitrary
+  bijection of `{N1, N2, N3}` returns exactly 1.0 — the rename's
+  inverse-bijection wins over the 6 permutations.
+- Independent3 null baseline: all forward latencies = 0,
+  position_effect < 0.15, velocity_effect < 0.35 (the finite-sample
+  noise floor of quartile-binned variance ratio).
+- Chain vs Independent distinguishability: Chain self-sim across
+  seeds > Chain-Indep cross-sim (large gap because Indep fingerprints
+  are near-zero while Chain has clear forward latencies).
+
+### M3 third slice (2026-05-29)
+
+Done:
+
+- `sim::FanIn3` — A and B independent walkers, C is noisy mixture of
+  their lagged values. Distinct sparsity (4 zero pairs, 2 nonzero).
+- `sim::Loop3` — 3-cycle, every directed pair has positive forward
+  lag (1 for direct hop, 2 for two-hop path). Densest 3-node pattern.
+- `similarity::predict_chain_composition` — T5 baseline composition
+  law: latency additive, `CE/PE/VE/reversibility` multiplicative,
+  stability minimum, directionality averaged.
+- **Structure-aware similarity**: `episode_similarity` now reports
+  `max-over-bijections of *min-over-pairs*` instead of average. The
+  worst-matched pair gates the score — true to the meaning of
+  structural isomorphism. Chain-vs-FanOut now distinguishes cleanly,
+  the previous false-isomorphism collapsed.
+
+Guards in place:
+
+- **FanIn3 recovery**: `A → C` lag = `lag_a`, `B → C` lag = `lag_b`;
+  `A → B` and `B → A` both 0 (no shared driver, no hidden coupling).
+- **Loop3 recovery**: every directed pair has nonzero forward lag.
+  Direct hops `A → B`, `B → C`, `C → A` all at lag 1. Two-hop paths
+  `A → C`, `B → A`, `C → B` all at lag 2.
+- **T5 composition match**: on ChainBB(2, 3), the predicted AC
+  fingerprint (from AB and BC alone) has the additive latency 5
+  matching the observed AC, and the full operational vector has
+  `fingerprint_similarity` > 0.8 to observed.
+- **5-pattern distinguishability matrix**: every diagonal entry
+  (self-similarity across seeds) dominates every off-diagonal entry
+  across {Chain, FanOut, FanIn, Loop, Independent}.
+
+Open (deferred):
+
 - Negative-lag scan so backward latency is recoverable directly
   (currently the scan is `k ≥ 0`, so backward B reads `latency = 0`).
-- Calibrated absolute magnitudes per field — for the eventual T4
-  unsupervised clustering task where Euclidean alone may not suffice.
-- L4 dataset: chains, loops, fan-in, fan-out (3+ nodes).
-- T5 composition prediction.
-- Intrinsic drive enters scheduling.
+- Calibrated absolute magnitudes per field — for T4 unsupervised
+  clustering where Euclidean alone may not suffice.
+- Intervention-based reversibility.
+- Lag-shuffle noise floor for the latency estimator.
+- Intrinsic drive enters scheduling — the third M3 milestone item.
+- T5 composition for other patterns (FanOut shared-driver, Loop
+  cycle-closure).
 
 ## Open questions
 

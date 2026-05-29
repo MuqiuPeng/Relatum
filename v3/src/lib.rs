@@ -15,8 +15,13 @@ pub mod sim;
 pub mod similarity;
 
 pub use fingerprint::{Fingerprint, estimate_all};
-pub use sim::{MechanismA, MechanismB, MechanismC, MechanismD};
-pub use similarity::{L1Pair, episode_similarity_2node, fingerprint_similarity};
+pub use sim::{
+    ChainBB, FanIn3, FanOut3, Independent3, Loop3, MechanismA, MechanismB, MechanismC, MechanismD,
+};
+pub use similarity::{
+    L1Pair, episode_similarity, episode_similarity_2node, fingerprint_similarity,
+    predict_chain_composition,
+};
 
 use std::collections::BTreeMap;
 
