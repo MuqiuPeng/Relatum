@@ -20,7 +20,7 @@ Relational closure engine with axiom instantiation.
 
 Frozen. No further development except critical fixes.
 
-### [v2/](v2/) — active
+### [v2/](v2/) — paused (2026-05-29)
 
 Rebuild from a single ontological commitment: `R(x, y)` as the only primitive.
 Self-driven abstraction over R instances. No frontend.
@@ -28,11 +28,30 @@ Self-driven abstraction over R instances. No frontend.
 See [v2/docs/constitution.md](v2/docs/constitution.md) for the five
 non-negotiable commitments that define v2.
 
+Paused, not frozen — the closure / theory runtime is mature through ADR 0083
+and stable on the long-horizon OQ#1 (tick 2400). Work resumes when v3 reaches
+M5 (the bridge milestone).
+
+### [v3/](v3/) — active
+
+World-model substrate. Primitive shifts from `R(x, y)` to `state(node, t)` /
+`transition(node, t → t+1)`; `R(x, y)` becomes a *derived* layer recovered
+from anonymous state sequences.
+
+Working proposition: recover de-named relation structure from anonymous
+state sequences. n-ary primitives are allowed natively, with mandatory
+binary projection + irreducibility test.
+
+See [v3/docs/constitution.md](v3/docs/constitution.md) for the changed
+primitive, the changed arity, and the v3-specific augmented commitments
+(A1–A4).
+
 ## Why the split
 
-v1 proved that relational closure can discover and derive. It does not,
-however, *construct* new relations from intrinsic drive. v2 is a rebuild from
-the stance that cognition is continuous abstraction — the system's ongoing
-activity is the generation of new relations, not the closure of given ones.
+v1 proved that relational closure can discover and derive. v2 added
+self-driven abstraction over given R. v3 attacks the layer underneath:
+recovering R from state dynamics, with anonymization as the test bench.
 
-v1 remains as the benchmark; v2 is the current direction.
+v1 is the benchmark; v2 is the closure / theory runtime; v3 is the
+world-model substrate. The three coexist by design — v3 has no `Cargo`
+dependency on v2 and vice versa.

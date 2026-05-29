@@ -1,0 +1,8 @@
+[package]
+name = "relatum-v3"
+version = "0.1.0"
+edition = "2021"
+description = "World-model substrate: recover de-named relation structure from anonymous state sequences"
+license = "MIT"
+
+[dependencies]
