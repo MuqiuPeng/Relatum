@@ -9,6 +9,7 @@
 //!
 //! Ontological commitments: see `docs/constitution.md`.
 
+pub mod causal;
 pub mod fingerprint;
 pub mod joint;
 pub mod nary;
@@ -17,10 +18,15 @@ pub mod scheduling;
 pub mod sim;
 pub mod similarity;
 
+pub use causal::{
+    CausalDirection, CausalPair, EvalSummary, PairMeta, evaluate, iid_directionality, judge_pair,
+    load_tubingen_dataset, pair_from_meta, pair_to_episode, parse_pair_data,
+    parse_pairmeta_line,
+};
 pub use fingerprint::{Fingerprint, estimate_all};
 pub use joint::{
-    conditional_effect_variance, irreducibility_signal, joint_interaction_effect,
-    joint_position_effect,
+    IrreducibilityClass, classify_irreducibility, conditional_effect_variance,
+    irreducibility_signal, joint_interaction_effect, joint_position_effect,
 };
 pub use nary::{MechanismE, MechanismF, NaryMechanism, PredictedPair};
 pub use scheduling::{DriveSeekingScheduler, RoundRobinScheduler, Scheduler};

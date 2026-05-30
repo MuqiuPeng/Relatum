@@ -242,6 +242,62 @@ pub fn irreducibility_signal(
     interaction.max(cond_a).max(cond_b)
 }
 
+/// The class of irreducibility detected for nodes `(a, b)` jointly
+/// driving `c`. Reported by `classify_irreducibility`.
+///
+/// Beyond the binary reducible/irreducible split of
+/// `irreducibility_signal`, this distinguishes the two M4 n-ary
+/// families. The discriminator is the *shape* of the
+/// `(interaction, cond_a, cond_b)` triple:
+///
+/// - XOR-like: interaction dominates, both conditional variances
+///   stay low (symmetric joint, no regime asymmetry).
+/// - Gating: interaction modest, one conditional variance dominates
+///   (the conditioner whose regime gates the other's effect).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IrreducibilityClass {
+    /// Joint structure is additive in single-source effects — chains,
+    /// fan-out, fan-in, loops, and independent walks all land here.
+    Reducible,
+    /// Joint cells deviate from the additive fit symmetrically; both
+    /// conditional-PE variances are low. Matches `MechanismF`.
+    XorLike,
+    /// Joint cells deviate from the additive fit asymmetrically; one
+    /// conditioner's regime controls whether the other's effect on
+    /// the target manifests. The `gate` field names that conditioner.
+    /// Matches `MechanismE`.
+    Gating { gate: NodeId },
+}
+
+/// Classify the joint structure spanning `(a, b)` → `c` from
+/// observation alone. Substrate-side counterpart to the M4
+/// `NaryMechanism::is_irreducible` author flag.
+///
+/// Robust to argument order: passing `(a, b, c)` vs `(b, a, c)`
+/// agrees on the class and identifies the same gate node in
+/// `Gating` cases.
+pub fn classify_irreducibility(
+    ep: &Episode,
+    a: &NodeId,
+    b: &NodeId,
+    c: &NodeId,
+) -> IrreducibilityClass {
+    let interaction = joint_interaction_effect(ep, a, b, c);
+    if interaction < INTERACTION_GATE {
+        return IrreducibilityClass::Reducible;
+    }
+    let cond_a = conditional_effect_variance(ep, a, b, c);
+    let cond_b = conditional_effect_variance(ep, b, a, c);
+    let cond_max = cond_a.max(cond_b);
+
+    if interaction >= cond_max {
+        IrreducibilityClass::XorLike
+    } else {
+        let gate = if cond_a > cond_b { a.clone() } else { b.clone() };
+        IrreducibilityClass::Gating { gate }
+    }
+}
+
 // ---- helpers ------------------------------------------------------------
 
 fn quartile_thresholds(values: impl Iterator<Item = f64>) -> (f64, f64) {
@@ -342,6 +398,118 @@ mod tests {
         let ep = m.generate("E", 1500, 7);
         let cond = conditional_effect_variance(&ep, &m.gate, &m.source, &m.target);
         assert!(cond > 0.1, "E conditional variance too low: {cond}");
+    }
+
+    /// Class recovery: F → XorLike, E → Gating{gate=A},
+    /// ChainBB → Reducible, Independent3 → Reducible.
+    #[test]
+    fn class_recovery_separates_xor_from_gating_and_reducible() {
+        let n1 = NodeId::new("N1");
+        let n2 = NodeId::new("N2");
+        let n3 = NodeId::new("N3");
+
+        let f_ep =
+            MechanismF::default_triple(n1.clone(), n2.clone(), n3.clone()).generate("F", 2400, 5);
+        let e_ep = MechanismE::default_triple(n1.clone(), n2.clone(), n3.clone())
+            .generate("E", 1500, 7);
+        let ch_ep =
+            ChainBB::default_triple(n1.clone(), n2.clone(), n3.clone()).generate("Ch", 1500, 7);
+        let in_ep =
+            Independent3::default_triple(n1.clone(), n2.clone(), n3.clone()).generate("I", 1500, 5);
+
+        assert_eq!(
+            classify_irreducibility(&f_ep, &n1, &n2, &n3),
+            IrreducibilityClass::XorLike
+        );
+        assert_eq!(
+            classify_irreducibility(&e_ep, &n1, &n2, &n3),
+            IrreducibilityClass::Gating { gate: n1.clone() }
+        );
+        assert_eq!(
+            classify_irreducibility(&ch_ep, &n1, &n2, &n3),
+            IrreducibilityClass::Reducible
+        );
+        assert_eq!(
+            classify_irreducibility(&in_ep, &n1, &n2, &n3),
+            IrreducibilityClass::Reducible
+        );
+    }
+
+    /// Gate identification survives argument permutation. The gate
+    /// node is the same regardless of whether it is passed as `a` or
+    /// `b` to the classifier.
+    #[test]
+    fn gating_class_identifies_gate_under_argument_swap() {
+        let n1 = NodeId::new("N1");
+        let n2 = NodeId::new("N2");
+        let n3 = NodeId::new("N3");
+        // gate = N2 (not N1 — explicit swap to test classifier
+        // doesn't have a positional bias).
+        let m = MechanismE {
+            gate: n2.clone(),
+            source: n1.clone(),
+            target: n3.clone(),
+            gate_threshold: 0.5,
+            propagation_lag: 2,
+            propagation_noise: 0.03,
+            free_step_sigma: 0.12,
+            source_step_sigma: 0.08,
+        };
+        let ep = m.generate("E", 1500, 7);
+
+        assert_eq!(
+            classify_irreducibility(&ep, &n1, &n2, &n3),
+            IrreducibilityClass::Gating { gate: n2.clone() }
+        );
+        assert_eq!(
+            classify_irreducibility(&ep, &n2, &n1, &n3),
+            IrreducibilityClass::Gating { gate: n2.clone() }
+        );
+    }
+
+    /// All 3-node binary patterns from the M3 library classify as
+    /// Reducible — Chain, FanOut, FanIn, Loop, and Independent.
+    #[test]
+    fn all_binary_patterns_classify_as_reducible() {
+        let n1 = NodeId::new("N1");
+        let n2 = NodeId::new("N2");
+        let n3 = NodeId::new("N3");
+        let chains: Vec<(&str, Episode)> = vec![
+            (
+                "Chain",
+                ChainBB::default_triple(n1.clone(), n2.clone(), n3.clone())
+                    .generate("E", 1500, 11),
+            ),
+            (
+                "FanOut",
+                crate::sim::FanOut3::default_triple(n1.clone(), n2.clone(), n3.clone())
+                    .generate("E", 1500, 11),
+            ),
+            (
+                "FanIn",
+                crate::sim::FanIn3::default_triple(n1.clone(), n2.clone(), n3.clone())
+                    .generate("E", 1500, 11),
+            ),
+            (
+                "Loop",
+                crate::sim::Loop3::default_triple(n1.clone(), n2.clone(), n3.clone())
+                    .generate("E", 1500, 11),
+            ),
+            (
+                "Indep",
+                Independent3::default_triple(n1.clone(), n2.clone(), n3.clone())
+                    .generate("E", 1500, 11),
+            ),
+        ];
+        for (label, ep) in chains {
+            let class = classify_irreducibility(&ep, &n1, &n2, &n3);
+            assert_eq!(
+                class,
+                IrreducibilityClass::Reducible,
+                "{label} should be reducible, got {:?}",
+                class
+            );
+        }
     }
 
     /// F's irreducibility signal saturates (joint pathway).
