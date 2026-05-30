@@ -13,6 +13,7 @@ pub mod causal;
 pub mod fingerprint;
 pub mod joint;
 pub mod nary;
+pub mod physical;
 pub mod rng;
 pub mod scheduling;
 pub mod sim;
@@ -29,6 +30,7 @@ pub use joint::{
     irreducibility_signal, joint_interaction_effect, joint_position_effect,
 };
 pub use nary::{MechanismE, MechanismF, NaryMechanism, PredictedPair};
+pub use physical::GatedBouncingBall;
 pub use scheduling::{DriveSeekingScheduler, RoundRobinScheduler, Scheduler};
 pub use sim::{
     ChainBB, FanIn3, FanOut3, Independent3, Loop3, MechanismA, MechanismB, MechanismC, MechanismD,
