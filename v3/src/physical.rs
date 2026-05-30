@@ -108,11 +108,72 @@ impl GatedBouncingBall {
     }
 }
 
+/// Spring-mass follower: physical-realm analogue of mechanism B.
+///
+/// Node `source` is a random walker. Node `target` has position and
+/// velocity, with a damped spring force pulling it toward source's
+/// current value: `F = spring_k · (source − target) − damping · v`.
+/// The target's position chases the source with a phase lag set by
+/// the spring + damping parameters; cross-correlation of source-
+/// derivative against target-derivative peaks at a positive lag.
+///
+/// This is the smoothed / physical version of `MechanismB`'s hard
+/// fixed-lag propagation. Both belong to the "latency propagation"
+/// class — same mechanism, different realm.
+pub struct SpringMassFollower {
+    pub source: NodeId,
+    pub target: NodeId,
+    pub source_step_sigma: f64,
+    pub spring_k: f64,
+    pub damping: f64,
+    pub process_noise: f64,
+}
+
+impl SpringMassFollower {
+    pub fn default_pair(source: NodeId, target: NodeId) -> Self {
+        SpringMassFollower {
+            source,
+            target,
+            source_step_sigma: 0.08,
+            spring_k: 0.20,
+            damping: 0.50,
+            process_noise: 0.005,
+        }
+    }
+
+    pub fn generate(&self, episode_id: impl Into<String>, steps: u64, seed: u64) -> Episode {
+        let mut rng = Rng::new(seed);
+        let mut s: f64 = 0.5;
+        let mut t: f64 = 0.5;
+        let mut v_t: f64 = 0.0;
+        let mut observations = Vec::with_capacity(steps as usize);
+        for t_idx in 0..steps {
+            s = (s + rng.normal(0.0, self.source_step_sigma)).clamp(0.0, 1.0);
+            let force = self.spring_k * (s - t) - self.damping * v_t;
+            v_t += force;
+            v_t = v_t.clamp(-0.3, 0.3);
+            t += v_t;
+            t = (t + rng.normal(0.0, self.process_noise)).clamp(0.0, 1.0);
+
+            let mut states = BTreeMap::new();
+            states.insert(self.source.clone(), vec![s]);
+            states.insert(self.target.clone(), vec![t]);
+            observations.push(Observation { t: t_idx, states });
+        }
+        Episode {
+            id: episode_id.into(),
+            nodes: vec![self.source.clone(), self.target.clone()],
+            observations,
+            interventions: vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::estimate_all;
-    use crate::sim::MechanismA;
+    use crate::sim::{MechanismA, MechanismB};
     use crate::similarity::fingerprint_similarity;
     use crate::Fingerprint;
 
@@ -168,8 +229,6 @@ mod tests {
     /// propagation) to either.
     #[test]
     fn cross_realm_mechanism_a_fingerprint_agreement() {
-        use crate::sim::MechanismB;
-
         let s_node = NodeId::new("S");
         let t_node = NodeId::new("T");
 
@@ -199,6 +258,53 @@ mod tests {
         assert!(
             cross_realm_a > off_mechanism,
             "cross-realm A vs A ({cross_realm_a}) should exceed A vs B ({off_mechanism})"
+        );
+    }
+
+    /// Structural recovery on the physical-B realm: the spring-mass
+    /// follower has a positive forward latency (target chases source
+    /// with phase lag) and backward latency stays at 0 (no signal
+    /// for negative lags under k ≥ 0 scan).
+    #[test]
+    fn spring_mass_follower_shows_mechanism_b_signature() {
+        let s = NodeId::new("S");
+        let t = NodeId::new("T");
+        let sim = SpringMassFollower::default_pair(s.clone(), t.clone());
+        let ep = sim.generate("phys-B", 1500, 7);
+        let fps = estimate_all(&ep);
+        let fwd = forward(&fps, "S", "T");
+        let bwd = forward(&fps, "T", "S");
+        assert!(fwd.latency > 0, "forward latency should be positive: {}", fwd.latency);
+        assert_eq!(bwd.latency, 0, "backward latency should be 0: {}", bwd.latency);
+    }
+
+    /// **Cross-realm fingerprint agreement on mechanism B.** v3's
+    /// fingerprint recovered from synthetic `MechanismB` and from the
+    /// physical `SpringMassFollower` should be more similar to each
+    /// other than to an off-mechanism control (synthetic `MechanismA`).
+    #[test]
+    fn cross_realm_mechanism_b_fingerprint_agreement() {
+        let s = NodeId::new("S");
+        let t = NodeId::new("T");
+
+        let synthetic_b = MechanismB::default_pair(s.clone(), t.clone()).generate("syn-B", 500, 11);
+        let physical_b = SpringMassFollower::default_pair(s.clone(), t.clone())
+            .generate("phys-B", 1500, 7);
+        let synthetic_a = MechanismA::default_pair(s.clone(), t.clone()).generate("syn-A", 400, 42);
+
+        let syn_b_fps = estimate_all(&synthetic_b);
+        let phys_b_fps = estimate_all(&physical_b);
+        let syn_a_fps = estimate_all(&synthetic_a);
+        let syn_b_fp = forward(&syn_b_fps, "S", "T");
+        let phys_b_fp = forward(&phys_b_fps, "S", "T");
+        let syn_a_fp = forward(&syn_a_fps, "S", "T");
+
+        let cross_realm_b = fingerprint_similarity(syn_b_fp, phys_b_fp);
+        let off_mechanism = fingerprint_similarity(syn_b_fp, syn_a_fp);
+
+        assert!(
+            cross_realm_b > off_mechanism,
+            "cross-realm B vs B ({cross_realm_b}) should exceed B vs A ({off_mechanism})"
         );
     }
 }
