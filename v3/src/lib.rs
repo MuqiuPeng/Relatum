@@ -30,7 +30,9 @@ pub use joint::{
     irreducibility_signal, joint_interaction_effect, joint_position_effect,
 };
 pub use nary::{MechanismE, MechanismF, NaryMechanism, PredictedPair};
-pub use physical::{CommonDriveReceivers, GatedBouncingBall, SpringMassFollower};
+pub use physical::{
+    CommonDriveReceivers, FrictionGate, GatedBouncingBall, SpringMassFollower,
+};
 pub use scheduling::{DriveSeekingScheduler, RoundRobinScheduler, Scheduler};
 pub use sim::{
     ChainBB, FanIn3, FanOut3, Independent3, Loop3, MechanismA, MechanismB, MechanismC, MechanismD,

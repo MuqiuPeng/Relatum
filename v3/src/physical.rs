@@ -229,11 +229,82 @@ impl CommonDriveReceivers {
     }
 }
 
+/// Friction gate: physical-realm analogue of mechanism D.
+///
+/// Node `controller` random-walks. Node `target` has position and
+/// velocity; at each step the controller's state sets the friction
+/// coefficient — high when controller > threshold (target nearly
+/// frozen), low otherwise (target free-walks under random kicks).
+///
+/// Velocity update: `v ← v · (1 − friction) + N(0, kick_sigma)`.
+/// Position update: `target ← clamp(target + v, 0, 1)`. Walls
+/// half-absorb the velocity on contact.
+///
+/// Velocity-suppression analogue: controller's regime gates target's
+/// motion magnitude. VE forward saturates; CE moderate (frozen
+/// target positions vary across runs); PE near zero.
+pub struct FrictionGate {
+    pub controller: NodeId,
+    pub target: NodeId,
+    pub controller_step_sigma: f64,
+    pub friction_threshold: f64,
+    pub high_friction: f64,
+    pub low_friction: f64,
+    pub kick_sigma: f64,
+}
+
+impl FrictionGate {
+    pub fn default_pair(controller: NodeId, target: NodeId) -> Self {
+        FrictionGate {
+            controller,
+            target,
+            controller_step_sigma: 0.08,
+            friction_threshold: 0.5,
+            high_friction: 0.95,
+            low_friction: 0.10,
+            kick_sigma: 0.04,
+        }
+    }
+
+    pub fn generate(&self, episode_id: impl Into<String>, steps: u64, seed: u64) -> Episode {
+        let mut rng = Rng::new(seed);
+        let mut c: f64 = 0.5;
+        let mut t: f64 = 0.5;
+        let mut v: f64 = 0.0;
+        let mut observations = Vec::with_capacity(steps as usize);
+        for t_idx in 0..steps {
+            c = (c + rng.normal(0.0, self.controller_step_sigma)).clamp(0.0, 1.0);
+            let friction = if c > self.friction_threshold {
+                self.high_friction
+            } else {
+                self.low_friction
+            };
+            v = v * (1.0 - friction) + rng.normal(0.0, self.kick_sigma);
+            let new_t = (t + v).clamp(0.0, 1.0);
+            if new_t == 0.0 || new_t == 1.0 {
+                v = -v * 0.5;
+            }
+            t = new_t;
+
+            let mut states = BTreeMap::new();
+            states.insert(self.controller.clone(), vec![c]);
+            states.insert(self.target.clone(), vec![t]);
+            observations.push(Observation { t: t_idx, states });
+        }
+        Episode {
+            id: episode_id.into(),
+            nodes: vec![self.controller.clone(), self.target.clone()],
+            observations,
+            interventions: vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::estimate_all;
-    use crate::sim::{MechanismA, MechanismB, MechanismC};
+    use crate::sim::{MechanismA, MechanismB, MechanismC, MechanismD};
     use crate::similarity::fingerprint_similarity;
     use crate::Fingerprint;
 
@@ -418,6 +489,59 @@ mod tests {
         assert!(
             cross_realm_c > off_mechanism,
             "cross-realm C vs C ({cross_realm_c}) should exceed C vs A ({off_mechanism})"
+        );
+    }
+
+    /// Structural recovery on the physical-D realm: friction gate
+    /// shows velocity-suppression signature — VE dominates over PE,
+    /// no latency.
+    #[test]
+    fn friction_gate_shows_mechanism_d_signature() {
+        let c = NodeId::new("C");
+        let t = NodeId::new("T");
+        let sim = FrictionGate::default_pair(c.clone(), t.clone());
+        let ep = sim.generate("phys-D", 1500, 7);
+        let fps = estimate_all(&ep);
+        let fwd = forward(&fps, "C", "T");
+        assert!(fwd.velocity_effect > 0.5, "VE too low: {}", fwd.velocity_effect);
+        assert!(
+            fwd.velocity_effect > fwd.position_effect,
+            "VE should dominate PE: VE={}, PE={}",
+            fwd.velocity_effect,
+            fwd.position_effect
+        );
+        assert_eq!(fwd.latency, 0);
+    }
+
+    /// **Cross-realm fingerprint agreement on mechanism D.** v3's
+    /// fingerprint recovered from synthetic `MechanismD` and from
+    /// the physical `FrictionGate` should be more similar to each
+    /// other than to an off-mechanism control. Uses `MechanismC` as
+    /// control (instead of A) since A and D both leak VE moderately
+    /// in synthetic, so A is too close to D in fingerprint space.
+    #[test]
+    fn cross_realm_mechanism_d_fingerprint_agreement() {
+        let s = NodeId::new("S");
+        let t = NodeId::new("T");
+
+        let synthetic_d = MechanismD::default_pair(s.clone(), t.clone()).generate("syn-D", 400, 9);
+        let physical_d =
+            FrictionGate::default_pair(s.clone(), t.clone()).generate("phys-D", 1500, 7);
+        let synthetic_c = MechanismC::default_pair(s.clone(), t.clone()).generate("syn-C", 400, 5);
+
+        let syn_d_fps = estimate_all(&synthetic_d);
+        let phys_d_fps = estimate_all(&physical_d);
+        let syn_c_fps = estimate_all(&synthetic_c);
+        let syn_d_fp = forward(&syn_d_fps, "S", "T");
+        let phys_d_fp = forward(&phys_d_fps, "S", "T");
+        let syn_c_fp = forward(&syn_c_fps, "S", "T");
+
+        let cross_realm_d = fingerprint_similarity(syn_d_fp, phys_d_fp);
+        let off_mechanism = fingerprint_similarity(syn_d_fp, syn_c_fp);
+
+        assert!(
+            cross_realm_d > off_mechanism,
+            "cross-realm D vs D ({cross_realm_d}) should exceed D vs C ({off_mechanism})"
         );
     }
 }
