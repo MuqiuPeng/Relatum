@@ -169,11 +169,71 @@ impl SpringMassFollower {
     }
 }
 
+/// Common-drive receivers: physical-realm analogue of mechanism C.
+///
+/// A hidden driver `d` random-walks. Both nodes are low-pass-filtered
+/// noisy observations of `d`: `node[t] = α · node[t−1] + (1−α) · d[t]
+/// + noise`. Both filters share the same `α`, so both nodes lag the
+/// driver by the same amount and stay in-phase with each other. The
+/// fingerprint should report symmetric mean-shift (PE both ways),
+/// near-zero directionality, no latency, and low constraint-effect.
+///
+/// The "physical" flavour vs the synthetic version is the inertia —
+/// receivers don't snap to the driver instantaneously but smooth it
+/// through a first-order filter. Real-world common-driver setups
+/// (two thermometers in one room, two strain gauges on the same
+/// beam, two cells in the same medium) have this character.
+pub struct CommonDriveReceivers {
+    pub left: NodeId,
+    pub right: NodeId,
+    pub driver_step_sigma: f64,
+    pub filter_alpha: f64,
+    pub observation_noise: f64,
+}
+
+impl CommonDriveReceivers {
+    pub fn default_pair(left: NodeId, right: NodeId) -> Self {
+        CommonDriveReceivers {
+            left,
+            right,
+            driver_step_sigma: 0.10,
+            filter_alpha: 0.5,
+            observation_noise: 0.03,
+        }
+    }
+
+    pub fn generate(&self, episode_id: impl Into<String>, steps: u64, seed: u64) -> Episode {
+        let mut rng = Rng::new(seed);
+        let mut d: f64 = 0.5;
+        let mut l: f64 = 0.5;
+        let mut r: f64 = 0.5;
+        let mut observations = Vec::with_capacity(steps as usize);
+        for t_idx in 0..steps {
+            d = (d + rng.normal(0.0, self.driver_step_sigma)).clamp(0.0, 1.0);
+            l = self.filter_alpha * l + (1.0 - self.filter_alpha) * d;
+            l = (l + rng.normal(0.0, self.observation_noise)).clamp(0.0, 1.0);
+            r = self.filter_alpha * r + (1.0 - self.filter_alpha) * d;
+            r = (r + rng.normal(0.0, self.observation_noise)).clamp(0.0, 1.0);
+
+            let mut states = BTreeMap::new();
+            states.insert(self.left.clone(), vec![l]);
+            states.insert(self.right.clone(), vec![r]);
+            observations.push(Observation { t: t_idx, states });
+        }
+        Episode {
+            id: episode_id.into(),
+            nodes: vec![self.left.clone(), self.right.clone()],
+            observations,
+            interventions: vec![],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::estimate_all;
-    use crate::sim::{MechanismA, MechanismB};
+    use crate::sim::{MechanismA, MechanismB, MechanismC};
     use crate::similarity::fingerprint_similarity;
     use crate::Fingerprint;
 
@@ -305,6 +365,59 @@ mod tests {
         assert!(
             cross_realm_b > off_mechanism,
             "cross-realm B vs B ({cross_realm_b}) should exceed B vs A ({off_mechanism})"
+        );
+    }
+
+    /// Structural recovery on the physical-C realm: the common-drive
+    /// receivers show symmetric mean-shift (PE both ways), near-zero
+    /// directionality, and no latency — mechanism C's signature.
+    #[test]
+    fn common_drive_receivers_show_mechanism_c_signature() {
+        let l = NodeId::new("L");
+        let r = NodeId::new("R");
+        let sim = CommonDriveReceivers::default_pair(l.clone(), r.clone());
+        let ep = sim.generate("phys-C", 1500, 7);
+        let fps = estimate_all(&ep);
+        let lr = forward(&fps, "L", "R");
+        let rl = forward(&fps, "R", "L");
+
+        assert!(lr.position_effect > 0.3, "L->R PE too low: {}", lr.position_effect);
+        assert!(rl.position_effect > 0.3, "R->L PE too low: {}", rl.position_effect);
+        assert!(
+            lr.directionality.abs() < 0.2,
+            "symmetric mechanism should have near-zero directionality, got {}",
+            lr.directionality
+        );
+        assert_eq!(lr.latency, 0, "no propagation lag expected");
+    }
+
+    /// **Cross-realm fingerprint agreement on mechanism C.** v3's
+    /// fingerprint recovered from synthetic `MechanismC` and from
+    /// the physical `CommonDriveReceivers` should be more similar to
+    /// each other than to an off-mechanism control.
+    #[test]
+    fn cross_realm_mechanism_c_fingerprint_agreement() {
+        let l = NodeId::new("L");
+        let r = NodeId::new("R");
+
+        let synthetic_c = MechanismC::default_pair(l.clone(), r.clone()).generate("syn-C", 400, 5);
+        let physical_c = CommonDriveReceivers::default_pair(l.clone(), r.clone())
+            .generate("phys-C", 1500, 7);
+        let synthetic_a = MechanismA::default_pair(l.clone(), r.clone()).generate("syn-A", 400, 42);
+
+        let syn_c_fps = estimate_all(&synthetic_c);
+        let phys_c_fps = estimate_all(&physical_c);
+        let syn_a_fps = estimate_all(&synthetic_a);
+        let syn_c_fp = forward(&syn_c_fps, "L", "R");
+        let phys_c_fp = forward(&phys_c_fps, "L", "R");
+        let syn_a_fp = forward(&syn_a_fps, "L", "R");
+
+        let cross_realm_c = fingerprint_similarity(syn_c_fp, phys_c_fp);
+        let off_mechanism = fingerprint_similarity(syn_c_fp, syn_a_fp);
+
+        assert!(
+            cross_realm_c > off_mechanism,
+            "cross-realm C vs C ({cross_realm_c}) should exceed C vs A ({off_mechanism})"
         );
     }
 }
