@@ -39,7 +39,7 @@ pub use sim::{
 };
 pub use similarity::{
     L1Pair, episode_similarity, episode_similarity_2node, fingerprint_similarity,
-    predict_chain_composition,
+    fingerprint_similarity_v2, predict_chain_composition,
 };
 
 use std::collections::BTreeMap;

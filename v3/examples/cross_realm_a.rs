@@ -5,7 +5,7 @@
 use relatum_v3::physical::{
     CommonDriveReceivers, FrictionGate, GatedBouncingBall, SpringMassFollower,
 };
-use relatum_v3::similarity::fingerprint_similarity;
+use relatum_v3::similarity::{fingerprint_similarity, fingerprint_similarity_v2};
 use relatum_v3::sim::{MechanismA, MechanismB, MechanismC, MechanismD};
 use relatum_v3::{NodeId, estimate_all};
 
@@ -68,36 +68,23 @@ fn main() {
     row("physical D", &pd_fp);
 
     println!();
-    println!("cross-realm agreements:");
-    println!("  A:  {:.4}", fingerprint_similarity(&a_fp, &pa_fp));
-    println!("  B:  {:.4}", fingerprint_similarity(&b_fp, &pb_fp));
-    println!("  C:  {:.4}", fingerprint_similarity(&c_fp, &pc_fp));
-    println!("  D:  {:.4}", fingerprint_similarity(&d_fp, &pd_fp));
+    println!("                    v1      v2");
+    println!("cross-realm A:  {:.4}  {:.4}", fingerprint_similarity(&a_fp, &pa_fp), fingerprint_similarity_v2(&a_fp, &pa_fp));
+    println!("cross-realm B:  {:.4}  {:.4}", fingerprint_similarity(&b_fp, &pb_fp), fingerprint_similarity_v2(&b_fp, &pb_fp));
+    println!("cross-realm C:  {:.4}  {:.4}", fingerprint_similarity(&c_fp, &pc_fp), fingerprint_similarity_v2(&c_fp, &pc_fp));
+    println!("cross-realm D:  {:.4}  {:.4}", fingerprint_similarity(&d_fp, &pd_fp), fingerprint_similarity_v2(&d_fp, &pd_fp));
 
     println!();
-    println!("off-mech baselines (synthetic):");
+    println!("off-mech baselines (synthetic):    v1      v2");
     let syns = [("A", &a_fp), ("B", &b_fp), ("C", &c_fp), ("D", &d_fp)];
     for i in 0..syns.len() {
         for j in (i + 1)..syns.len() {
             println!(
-                "  syn_{} vs syn_{}: {:.4}",
+                "  syn_{} vs syn_{}:              {:.4}  {:.4}",
                 syns[i].0,
                 syns[j].0,
-                fingerprint_similarity(syns[i].1, syns[j].1)
-            );
-        }
-    }
-
-    println!();
-    println!("same-realm cross-mech (physical):");
-    let phys = [("A", &pa_fp), ("B", &pb_fp), ("C", &pc_fp), ("D", &pd_fp)];
-    for i in 0..phys.len() {
-        for j in (i + 1)..phys.len() {
-            println!(
-                "  phys_{} vs phys_{}: {:.4}",
-                phys[i].0,
-                phys[j].0,
-                fingerprint_similarity(phys[i].1, phys[j].1)
+                fingerprint_similarity(syns[i].1, syns[j].1),
+                fingerprint_similarity_v2(syns[i].1, syns[j].1)
             );
         }
     }

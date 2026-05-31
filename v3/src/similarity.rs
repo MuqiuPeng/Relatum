@@ -105,6 +105,62 @@ pub fn predict_chain_composition(ab: &Fingerprint, bc: &Fingerprint) -> Fingerpr
     }
 }
 
+/// Structure-aware fingerprint similarity (v2).
+///
+/// Extends `fingerprint_similarity` with **categorical latency**:
+/// presence-vs-absence of forward lag is a structural discriminator
+/// (a mechanism either propagates with delay or it doesn't). When
+/// two fingerprints disagree on whether latency is present, a fixed
+/// penalty applies. The continuous lag value is otherwise excluded
+/// from the distance — the exact lag magnitude carries much less
+/// information than the lag-existence flag.
+///
+/// Targets the M5-recorded B-vs-C soft spot: both saturate `PE` at
+/// 1.0 but differ in latency (B has lag, C does not). The v1 metric
+/// underweighted this; v2 makes it a hard discriminator.
+///
+/// **Does not** resolve the A-vs-D soft spot. A (snap-to-centre) and
+/// D (velocity suppression) both elevate CE and VE at overlapping
+/// magnitudes, and the structural distinction (target's position
+/// is anchored at a specific value vs. target's position is wherever
+/// it happens to be but doesn't move) is not captured by any of the
+/// six fingerprint fields. Resolving A-vs-D requires a new field
+/// (target-position-concentration), not a reweighting. Documented
+/// in `memory/v3_cross_realm_mechanism_a.md`.
+///
+/// An earlier draft also added saturation-mismatch weighting (when
+/// one field is > 0.9 and the other isn't, double its weight). That
+/// backfired on cross-realm A — realm differences happened to push
+/// CE and stability into saturation mismatch *more* than the
+/// mechanism difference did, so it widened the soft spot rather than
+/// closing it. Dropped.
+///
+/// Returns similarity in `[0, 1]`. Preserves the bit-equal-1.0
+/// property under node renaming.
+pub fn fingerprint_similarity_v2(a: &Fingerprint, b: &Fingerprint) -> f64 {
+    let fields = [
+        (a.constraint_effect, b.constraint_effect),
+        (a.position_effect, b.position_effect),
+        (a.velocity_effect, b.velocity_effect),
+        (a.reversibility, b.reversibility),
+        (a.stability, b.stability),
+    ];
+
+    let dist_sq: f64 = fields.iter().map(|(av, bv)| (av - bv).powi(2)).sum();
+    let cont_dist = (dist_sq / fields.len() as f64).sqrt();
+    let cont_sim = 1.0 - cont_dist;
+
+    let lat_a_present = a.latency != 0;
+    let lat_b_present = b.latency != 0;
+    let lat_penalty = if lat_a_present != lat_b_present {
+        0.3
+    } else {
+        0.0
+    };
+
+    (cont_sim - lat_penalty).clamp(0.0, 1.0)
+}
+
 fn fingerprint_vec(f: &Fingerprint) -> [f64; 6] {
     [
         f.constraint_effect,
@@ -241,6 +297,64 @@ mod tests {
         let renamed = rename_2(&e, "X1", "X2");
         let sim = episode_similarity_2node(&e, &renamed);
         assert_eq!(sim.to_bits(), 1.0f64.to_bits(), "sim: {sim}");
+    }
+
+    /// v2 similarity preserves the perfect-rename property: bit-equal
+    /// fingerprints → similarity exactly 1.0.
+    #[test]
+    fn fingerprint_similarity_v2_preserves_rename_invariance() {
+        let e = MechanismA::default_pair(NodeId::new("N1"), NodeId::new("N2"))
+            .generate("E", 400, 7);
+        let renamed = rename_2(&e, "X1", "X2");
+        let fps_e = estimate_all(&e);
+        let fps_r = estimate_all(&renamed);
+        let fe = fps_e
+            .iter()
+            .find(|f| f.source == NodeId::new("N1") && f.target == NodeId::new("N2"))
+            .unwrap();
+        let fr = fps_r
+            .iter()
+            .find(|f| f.source == NodeId::new("X1") && f.target == NodeId::new("X2"))
+            .unwrap();
+        assert_eq!(fingerprint_similarity_v2(fe, fr).to_bits(), 1.0f64.to_bits());
+    }
+
+    /// v2 closes the B-vs-C soft spot: cross-realm B agreement
+    /// strictly exceeds B-vs-C similarity under v2 (where v1 had
+    /// them at 0.74 vs 0.73, dangerously close).
+    ///
+    /// The A-vs-D soft spot is **not** closed by v2 — see
+    /// `fingerprint_similarity_v2` doc. Tracked as a known
+    /// limitation of the 6-field pairwise schema.
+    #[test]
+    fn fingerprint_similarity_v2_closes_b_vs_c_soft_spot() {
+        use crate::physical::SpringMassFollower;
+
+        let s = NodeId::new("S");
+        let t = NodeId::new("T");
+
+        let syn_b = MechanismB::default_pair(s.clone(), t.clone()).generate("syn-B", 500, 11);
+        let phys_b =
+            SpringMassFollower::default_pair(s.clone(), t.clone()).generate("phys-B", 1500, 7);
+        let syn_c = MechanismC::default_pair(s.clone(), t.clone()).generate("syn-C", 400, 5);
+
+        let pick = |ep: &Episode| {
+            let fps = estimate_all(ep);
+            fps.iter()
+                .find(|f| f.source == s && f.target == t)
+                .unwrap()
+                .clone()
+        };
+        let (b, pb, c) = (pick(&syn_b), pick(&phys_b), pick(&syn_c));
+
+        let cross_b = fingerprint_similarity_v2(&b, &pb);
+        let soft_b_c = fingerprint_similarity_v2(&b, &c);
+        // v1 had cross_B (0.7377) barely above B-vs-C (0.7270), a
+        // 0.01 margin. v2 should give a comfortable margin.
+        assert!(
+            cross_b - soft_b_c > 0.1,
+            "v2 margin too small: cross_B={cross_b}, B-C={soft_b_c}"
+        );
     }
 
     /// Same-mechanism episodes (different seeds) are more similar than
