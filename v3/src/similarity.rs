@@ -323,9 +323,14 @@ mod tests {
     /// strictly exceeds B-vs-C similarity under v2 (where v1 had
     /// them at 0.74 vs 0.73, dangerously close).
     ///
-    /// The A-vs-D soft spot is **not** closed by v2 — see
-    /// `fingerprint_similarity_v2` doc. Tracked as a known
-    /// limitation of the 6-field pairwise schema.
+    /// The A-vs-D soft spot is **not** closed by v2 — a
+    /// `position_concentration` field was prototyped and reverted
+    /// when it proved unable to discriminate cleanly within a single
+    /// fingerprint pair (the mechanism's active threshold cannot be
+    /// reliably inferred from the source's empirical distribution
+    /// across all seeds, so single-bin or single-run statistics on
+    /// the active set are unstable). Memory:
+    /// `v3_fingerprint_v2_lessons.md`.
     #[test]
     fn fingerprint_similarity_v2_closes_b_vs_c_soft_spot() {
         use crate::physical::SpringMassFollower;
