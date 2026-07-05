@@ -438,6 +438,24 @@ Open (still M5+):
   mechanism family produced the signal).
 - Bridge crate to v2 R-closure.
 
+## Scope boundaries
+
+Declared out of scope (2026-07-06, recorded in v2 ADR 0084 §6 as part
+of the cross-project housekeeping pass):
+
+- **Additive-noise causal pairs (Tübingen-class).** The Tübingen
+  cause-effect benchmark (108 pairs) scores 52% with
+  `iid_directionality` — chance level. This is a domain boundary, not
+  a bug: the CE / PE / VE fingerprint family is built for
+  regime-shift / constraint-class mechanisms (state-space compression,
+  latency propagation, synchronization, suppression) over episodic
+  state sequences, not for additive functional dependence in iid
+  samples. The Tübingen result stands as the recorded boundary marker.
+
+  **Rule**: no estimator work targeting additive-noise pairs without a
+  dedicated ADR-grade decision arguing why that class belongs in v3's
+  target domain. Incremental estimator additions do not qualify.
+
 ## Open questions
 
 - How is the fingerprint dimensionality fixed? Six fields above are a

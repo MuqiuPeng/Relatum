@@ -1,6 +1,20 @@
 # Proposal: vibe-proving as RSet data source (2026-05-11)
 
-Status: Proposed (not yet an ADR)
+Status: **Closed 2026-07-06 per [ADR 0084](decisions/0084-direction-housekeeping.md).**
+Promoted to [ADR 0081](decisions/0081-vibe-proving-bridge.md) on 2026-05-11; Phase 0
+ran on a synthetic stand-in and the headline substrate-sensitivity claim was
+retracted through the 8/9-round ARIS review arc (see retrospective-2026-05-19).
+The surviving scientific content — v2 on naturally-occurring math graphs — is
+exactly N1 (Phase 1.E real Mathlib) in forward-directions-2026-05-19, which needs
+no vibe-proving integration (this proposal's own Option A). Reopen = explicit
+user commitment to N1's multi-week scope; N1 inherits this proposal's
+pre-registered go/no-go/abort criteria, including the tokenization-leak abort test.
+
+Original text below, unchanged.
+
+---
+
+Status at time of writing: Proposed (not yet an ADR)
 Author trigger: cross-project investigation — `E:/projects/vibe-proving-math`
 analyzed 2026-05-11 for whether it intersects v2.
 

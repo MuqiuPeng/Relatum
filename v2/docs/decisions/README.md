@@ -92,7 +92,17 @@ Commit hash(es), file pointers.
 - [0050](0050-sampling-scale-benchmark.md) — Large-scale sampling-mode benchmark
 - [0051](0051-adaptive-drive-config.md) — Adaptive drive config (RSet-aware auto-tuning)
 - [0052](0052-autonomous-runtime-architecture.md) — Autonomous runtime architecture (Proposed)
-- [0063](0063-drive-self-modification.md) — Drive self-modification (Phase H2, Proposed)
+- [0053](0053-selective-declarativization.md) — Selective declarativization (M1)
+- [0054](0054-meta-meta-pattern-discovery.md) — Meta-meta-pattern discovery (Phase D)
+- [0055](0055-canonical-direction-distinction.md) — Direction-distinguishing canonical form (Phase E0)
+- [0056](0056-phase-d-verification-battery.md) — Phase D verification battery (Phase F0)
+- [0057](0057-anomaly-coverage-drive.md) — Anomaly-coverage drive (Phase G0; system-level effect bounded — null result documented)
+- [0058](0058-axiom-forward-application.md) — Axiom forward-application semantics (Phase G1.0)
+- [0059](0059-prediction-error-drive.md) — Prediction-error drive (Phases G1.3–G1.5)
+- [0060](0060-meta-mechanism.md) — Meta-mechanism: runtime self-tuning via prediction error (Phase H0)
+- [0061](0061-action-sequence-mining.md) — Action-sequence mining (Phases H1.0–H1.2)
+- [0062](0062-sequence-demotion-and-ngrams.md) — Sequence demotion + N-gram extension (Phases H1.3/H1.4)
+- [0063](0063-drive-self-modification.md) — Drive self-modification (Phase H2; H2.0 shipped through step 3b, H2.2 never implemented — frozen per 0084)
 - [0064](0064-drives-as-meta-r.md) — Drives as meta-R objects (Phase H2.1, Proposed)
 - [0065](0065-ucb-composite-selection.md) — UCB1 composite selection (Phase Alpha-1, Accepted with negative empirical finding)
 - [0066](0066-theory-tournament.md) — Theory self-play tournament (Phase Alpha-3, Accepted with strong positive empirical finding)
@@ -110,3 +120,8 @@ Commit hash(es), file pointers.
 - [0078](0078-pattern-aware-drive-metric.md) — Pattern-aware drive metric (constitution-compliant). `UnexplainedDriveSignal` groups unexplained R by connected-component canonical form (subgraph-level, never per-token). Replaces the withdrawn 2026-05-06 first form (per-edge `EdgeFingerprint`, forbidden by heavy reading). Shipped 2026-05-07; reveals OQ#2 leaves **91% of edges unexplained at maturity** organized into 5 canonical buckets matching its stream regimes. Scheduler integration deferred to follow-up ADR.
 - [0079](0079-drive-driven-frontier-candidate.md) — Drive→scheduler integration (sustained cognition). Three coordinated changes: drive-driven `PatternCandidate` in `Frontier::refresh`, drive-wake in `run_bounded` sleep short-circuit, drive bypass in `RuleBasedScheduler` stagnation gate. Shipped 2026-05-08; v2 crosses **reactive→proactive**: OQ#2 jumps from 2 patterns / 10 episodes (single-shot) to 7 patterns / 24 episodes (sustained). OQ#1-clade unchanged (their drive is silent, bypass doesn't engage). Partial fix — Phase 3 freeze observed at long horizon, resolved by ADR 0079.1.
 - [0079.1](0079-1-drive-aware-thrash-bypass.md) — Drive-aware mode-thrash bypass. The OQ#2 long-horizon observation revealed Phase 3 freeze (wake-on-drive triggered but `would_thrash` gate sent runtime back to Sleep without dispatching). 5-line bypass in `switch_or_sleep` mirrors ADR 0079's stagnation bypass. Shipped 2026-05-08; second-half episodes +14 (was 0), pattern instances +11 (was 0), drive metric now drains as a thermostat (stays at 0 throughout) instead of plateau-ing at 124. Pattern count remains 7 — that's the structural canonical ceiling, the correct constitution-compliant upper bound.
+- [0080](0080-learning-progress-aware-drive.md) — Learning-progress-aware drive (LP gates on canonical-bucket unexplained counts; thresholds tuned 2026-05-19: LP_WINDOW 30→10, LP_DRIVE_THRESHOLD 0.05→0.20)
+- [0081](0081-vibe-proving-bridge.md) — vibe-proving bridge / external substrate ingestion (Phase 0 ran on synthetic layered random DAG; headline substrate-sensitivity claim retracted via 8/9-round ARIS review; closed by 0084, folded into N1 real Mathlib)
+- [0082](0082-recommendation-execution-loop.md) — Recommendation execution loop (theory-side policy execution; shipped + verified — runtime autonomously demoted t_0 on OQ#1 at tick 511, stable through tick 2400)
+- [0083](0083-pattern-policy-execution-loop.md) — Pattern policy execution loop (pattern-side mirror of 0082; PatternRetract executable, PatternMergeWith skipped pending merge API)
+- [0084](0084-direction-housekeeping.md) — Direction housekeeping: freeze H2.2 + C.3a–d (handed to v3), close Alpha-2 MCTS + vibe-proving bridge (folded into N1), formalize N3/N5 reopen triggers, declare v3 additive-noise out of scope, errata + index backfill. Every item carries a written reopen trigger.

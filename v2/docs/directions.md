@@ -47,10 +47,12 @@ META_SHAPE_FAMILY_MARKER + discover_nested_shape_families: groups premise famili
 ### C.2 — Cross-precision validation on long5k | ✓ done
 STRONGLY POSITIVE. long5k @ 1500 ticks discovers same 4 theories with same axiom counts as OQ#1. t_0 cross-precision column mean = 0.3248 (vs 0.3756 on OQ#1). Beta-1 mints **identical 6 shape families**. Cross-precision + shape-family signals generalize across substrates that share regime types. [Result](results/C.2_long5k_validation.md).
 
-### C.3 — Integer-direction prep work | pending
+### C.3 — Integer-direction prep work | frozen (ADR 0084)
 **Goal**: Implement the smallest mechanism that mints a new identifier via axiom application. E.g., a "successor closure" rule that, given seed `0` and rule `R(succ_marker, n) → R(succ_marker, S(n))`, generates `S(0), S(S(0)), ...`.
 
 **Risk**: deep — requires ADR on identifier minting, constitution check on commitment 4 (deterministic minting must produce token-identical results to external input).
+
+**Status update 2026-07-06**: the construction half shipped as the G-series (G.1–G.7, ADR 0069). The detection half (C.3a–d, see [results/C.3_prep.md](results/C.3_prep.md)) is frozen in v2 and handed to v3 per [ADR 0084](decisions/0084-direction-housekeeping.md) §3 — C.3d's unbounded-extension semantics is a primitive-layer hole that v3's state/transition primitive is designed to attack. Reopen in v2 when a chain-rich substrate arrives (M5 bridge or N1).
 
 ## Phase D — Dream phase follow-ups
 
@@ -65,10 +67,12 @@ Soundness gap closed: antisymmetry enforced via DAG-restriction at seed time (sa
 ### D.3 — Composite scheduler signal | ✓ done
 α=0.5 blend mechanism shipped + 5-T sweep on OQ#1. Composite matches cross-precision speed (both cross 0.50 threshold at T=100, vs primary T=350). Mechanism POSITIVE; arbitration value not yet shown — OQ#1 has both signals always agreeing. Future D.3.1: construct a substrate where signals disagree. [Result](results/D.3_composite_signal.md).
 
-### D.4 — Continuous dream loop in runtime | pending
+### D.4 — Continuous dream loop in runtime | ✓ done (see Round 2 entry)
 **Goal**: Run dream phase every K ticks; demote whenever cross-precision drops below threshold. Tests stability and overhead.
 
 **Risk**: dream phase has nontrivial cost (substrate generation). Needs careful K tuning.
+
+**Accounting fix 2026-07-06 (ADR 0084 §8)**: this entry was stale — D.4 completed in Round 2 (6 phases × 300 ticks, converges in 1 demote, idempotent post-convergence). See the Round 2 entry below and [results/D.4_continuous_dream.md](results/D.4_continuous_dream.md).
 
 ## Phase E — Constitutional cleanup (drive layer)
 
@@ -80,10 +84,12 @@ Soundness gap closed: antisymmetry enforced via DAG-restriction at seed time (sa
 
 **Risk**: H2 area is high-risk for breaking EP. Default to shadow-mode (compute new query path, compare to old, log discrepancy).
 
-### E.3 — Drive synthesis (H2.2 proposed) | blocked
+### E.3 — Drive synthesis (H2.2 proposed) | frozen (ADR 0084)
 **Goal**: Compose new drive functions from existing ones at runtime.
 
 **Status**: ADR 0063 H2.2 still proposed. Major design surface. Defer until E.1/E.2 ship.
+
+**Status update 2026-07-06**: frozen per [ADR 0084](decisions/0084-direction-housekeeping.md) §1. E.3's own sketch self-assessed "most speculative v2 direction"; H2.1.1/H2.1.2 never shipped. Reopen when v3's intrinsic drive has empirical validation (M4 self-curriculum cell filled), or H2.1.1/H2.1.2 ship with verification.
 
 ## Phase A — ILP perf follow-ups
 

@@ -6,6 +6,34 @@ positioning. Continuous-editing doc — no `Status:` header. First
 written 2026-04-28 from a discussion comparing Relatum to
 AlphaGo.
 
+## Errata (2026-07-06, per ADR 0084 §7)
+
+Two corrections that were overdue. Original text below is kept
+unchanged so the errors stay visible.
+
+1. **The search-vs-construction table and the "roughly 70%
+   construction" characterization are pre-amendment.** They were
+   written 2026-04-28, before the constitution's 2026-05-06
+   strict-reading amendment. Under reflection 0001's four-way
+   classification (curation / explicit naming / implicit
+   conceptualization / genuine emergence), most operations this
+   doc labels "construction" — `DiscoverPatterns`,
+   `DiscoverTheory`, `DiscoverMetaMetaPatterns`,
+   `UpdateTheoryRelations` — are curation or naming acts, not
+   construction of new ontology. ADR 0075's audit later
+   identified which subset qualifies as a compliant
+   concept-creation kernel. Read the table as "mints runtime
+   objects" rather than "constructs concepts"; the 70/30 split
+   overstates C.
+2. **MCTS has a second obstacle this doc missed: low branching
+   factor.** ADR 0065's empirical result (UCB1 ≡ greedy,
+   byte-identical over 2000 ticks) showed v2 substrates produce
+   0–1 eligible composites per decision point — search collapses
+   to selection regardless of cost. The MCTS discussion below
+   flags only cost asymmetry; both obstacles must fall before any
+   Alpha-2-style work reopens (see ADR 0084 §2 for the closure
+   and its reopen trigger).
+
 ## What this doc is for
 
 ADRs 0061 / 0062 / 0063 / 0064 sketched the H1 and H2 phases

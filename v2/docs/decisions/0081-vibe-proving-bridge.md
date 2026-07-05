@@ -1,6 +1,6 @@
 # 0081: vibe-proving bridge — external substrate ingestion
 
-Status: Proposed (Phase 0 ships in this ADR; Phase 1 conditional)
+Status: Closed by [0084](0084-direction-housekeeping.md) (Phase 0 ran on synthetic data; headline claim retracted 2026-05-19; Phase 1 folded into N1 real Mathlib — reopen requires explicit user commitment to N1)
 Date: 2026-05-11
 
 Parent proposal: [`proposal-vibe-proving-bridge-2026-05-11.md`](../proposal-vibe-proving-bridge-2026-05-11.md)
