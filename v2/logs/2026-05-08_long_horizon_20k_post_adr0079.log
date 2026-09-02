@@ -1,0 +1,11 @@
+════════════════════════════════════════════════════════
+ Phase Emergence — long-horizon observation
+════════════════════════════════════════════════════════
+ Runtime auto-mint is enabled (ADR 0075 piece 2
+ revisited). Observe each substrate over 20000 ticks to
+ answer: does mint-and-trim equilibrate? grow? decay?
+ Snapshots every 500 ticks.
+
+════════════════════════════════════════════════════════
+ Substrate: OQ#1 (20000 ticks horizon)
+════════════════════════════════════════════════════════

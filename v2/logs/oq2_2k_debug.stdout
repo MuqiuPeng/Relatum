@@ -1,0 +1,19 @@
+════════════════════════════════════════════════════════
+ OQ#2 long-horizon — ADR 0080 LP-threshold-tuned
+ HORIZON=2100 ticks  (pre-tuning hung at this size)
+════════════════════════════════════════════════════════
+
+ tick=  250 | rset=  96 ax= 2 ths= 2 pats= 2 eps=  10 | DP=  5/2(40%) prune= 1 | step 0.1s
+ tick=  500 | rset= 323 ax= 2 ths= 2 pats= 5 eps=  21 | DP= 11/5(45%) prune= 2 | step 5.0s
+ tick=  750 | rset= 407 ax= 2 ths= 2 pats= 7 eps=  35 | DP= 21/8(38%) prune= 3 | step 13.5s
+ tick= 1000 | rset= 485 ax= 2 ths= 2 pats=10 eps=  50 | DP= 33/12(36%) prune= 4 | step 21.5s
+ tick= 1250 | rset= 527 ax= 2 ths= 2 pats=11 eps=  55 | DP= 38/13(34%) prune= 4 | step 10.3s
+ tick= 1500 | rset= 527 ax= 2 ths= 2 pats=11 eps=  55 | DP= 38/13(34%) prune= 4 | step 0.0s
+ tick= 1750 | rset= 552 ax= 2 ths= 2 pats=12 eps=  56 | DP= 39/14(35%) prune= 4 | step 3.4s
+ tick= 2000 | rset= 492 ax= 2 ths= 2 pats= 9 eps= 248 | DP= 39/14(35%) prune=193 | step 31.3s
+ tick= 2100 | rset= 492 ax= 2 ths= 2 pats= 9 eps= 348 | DP= 39/14(35%) prune=293 | step 15.9s
+
+ Total wall-clock: 100.9s (1.7 min)
+ Final state: rset=492 ax=2 ths=2 pats=9 eps=348
+
+--- end ---

@@ -1,0 +1,30 @@
+warning: associated function `any_axiom_has_hit_rate` is never used
+   --> src\runtime\scheduler_rule.rs:257:19
+    |
+145 | impl RuleBasedScheduler {
+    | ----------------------- associated function in this implementation
+...
+257 |     pub(crate) fn any_axiom_has_hit_rate(ctx: &SchedulerContext<'_>) -> bool {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:60
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                            ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: using `.clone()` on a double reference, which returns `&String` instead of cloning the inner type
+    --> src\lib.rs:5124:72
+     |
+5124 |             .filter(|id| self.instances.contains(&R::new(id.clone(), id.clone())))
+     |                                                                        ^^^^^^^^
+
+warning: `relatum-v2` (lib) generated 3 warnings
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running `target\release\examples\oq2_long_horizon_lp_tuned.exe`
+[FRONTIER-DBG tick=2000] 0 neg-cv objects:
+[FRONTIER-DBG] recent_prune_targets={"p_0"}
